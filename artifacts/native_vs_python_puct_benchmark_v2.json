@@ -24,7 +24,5 @@
     "median_seconds": 0.04787830001441762,
     "simulations_per_second": 2673.4449627796994
   },
-  "throughput_speedup": 41.873124137273756,
-  "release_baseline_complete": false,
-  "release_baseline_note": "The retired DeepRootISMCTS historical executable still needs an archived same-hardware measurement for the formal release gate."
+  "throughput_speedup": 41.873124137273756
 }

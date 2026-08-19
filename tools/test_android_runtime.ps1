@@ -23,7 +23,7 @@ $lock = Get-ToolchainLock -RepoRoot $repoRoot
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
 Assert-ReleaseDeepFallbackContract -Manifest $release
 $releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
-$compatibleModelCount = [int]$release.compatible_model_count
+$modelCount = [int]$release.model_count
 $deepState = if ([bool]$release.deep_runtime_enabled) { 'enabled' } else { 'disabled' }
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
@@ -42,8 +42,8 @@ foreach ($requiredTool in @($adb, $aapt, $apksigner, $java)) {
 if ($ExpectedModels -lt 0) {
     throw 'ExpectedModels cannot be negative.'
 }
-if ($ExpectedModels -ne $compatibleModelCount) {
-    throw 'ExpectedModels does not match release_manifest compatible_model_count.'
+if ($ExpectedModels -ne $modelCount) {
+    throw 'ExpectedModels does not match release_manifest model_count.'
 }
 
 function Install-AndroidPackage {
@@ -111,7 +111,6 @@ function Get-ApkRuntimeHashes {
                 $name.StartsWith('lib/arm64-v8a/', [System.StringComparison]::Ordinal) -or
                 $name -match '^assets/data/ai_models/[^/]+\.onnx$' -or
                 $name -in @(
-                    'assets/data/ai_models.json',
                     'assets/data/ai_models_runtime.json',
                     'assets/data/release_manifest.json'
                 )
@@ -271,7 +270,6 @@ if (
     throw 'Android runtime payload does not contain exactly universal.onnx.'
 }
 foreach ($requiredRuntimeInput in @(
-    'assets/data/ai_models.json',
     'assets/data/ai_models_runtime.json',
     'assets/data/release_manifest.json',
     'lib/arm64-v8a/libonnxruntime.so'
@@ -290,7 +288,6 @@ if ($nativeModelLibraries.Count -ne 1) {
     throw 'Android runtime payload must contain exactly one native Pokemon AI library.'
 }
 $sourcePayloads = [ordered]@{
-    'assets/data/ai_models.json' = Join-Path $repoRoot 'godot\data\ai_models.json'
     'assets/data/ai_models_runtime.json' = Join-Path $repoRoot 'godot\data\ai_models_runtime.json'
     'assets/data/release_manifest.json' = Join-Path $repoRoot 'godot\data\release_manifest.json'
     'lib/arm64-v8a/libonnxruntime.so' = Join-Path $repoRoot 'godot\bin\android\libonnxruntime.so'
@@ -435,7 +432,7 @@ do {
     $logText = $logRows -join "`n"
     if (
         $logText.Contains('PHASE6_EXPORT_RELEASE_OK') -and
-        $logText.Contains("compatible_models=$ExpectedModels") -and
+        $logText.Contains("models=$ExpectedModels") -and
         $logText.Contains("deep=$deepState") -and
         $logText.Contains("onnx_assets=$ExpectedModels")
     ) {
@@ -454,14 +451,14 @@ do {
 
 if (
     -not $logText.Contains('PHASE6_EXPORT_RELEASE_OK') -or
-    -not $logText.Contains("compatible_models=$ExpectedModels") -or
+    -not $logText.Contains("models=$ExpectedModels") -or
     -not $logText.Contains("deep=$deepState") -or
     -not $logText.Contains("onnx_assets=$ExpectedModels")
 ) {
     $tail = (($logText -split "`n") | Select-Object -Last 120) -join "`n"
     throw "Android release model smoke timed out after $TimeoutSeconds seconds.`n$tail"
 }
-Write-Host "ANDROID_RELEASE_AI_OK serial=$serial deep=$deepState compatible_models=$ExpectedModels onnx_assets=$ExpectedModels"
+Write-Host "ANDROID_RELEASE_AI_OK serial=$serial deep=$deepState models=$ExpectedModels onnx_assets=$ExpectedModels"
 
 # The phase6 command intentionally exits. Relaunch normally and verify that the
 # packaged application also remains alive after startup.

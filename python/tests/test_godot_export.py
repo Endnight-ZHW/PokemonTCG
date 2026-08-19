@@ -20,7 +20,7 @@ from scripts.export_godot_data import (
     export,
 )
 from engine.actions import ChoiceOption
-from engine.ai.dl.encoder import ActionStateEncoder, card_bucket, card_index
+from engine.ai.dl.encoder import ActionStateEncoder, card_index
 from engine.ai.observation import Observation
 from engine.game_state import GameState
 from engine.commands.descriptors import descriptor_export_payload
@@ -488,7 +488,6 @@ class GodotDataExportTests(unittest.TestCase):
             second_cards = json.loads((second / "data" / "cards.json").read_text(encoding="utf-8"))
             self.assertEqual(first_cards, second_cards)
             self.assertEqual(len(first_cards), 137)
-            self.assertEqual(first_cards["svi-chim"]["card_bucket"], 3624)
             self.assertEqual(first_cards["svi-chim"]["ai_card_index"], 92)
             self.assertIn("compiled_effects", first_cards["svi-chim"]["attacks"][0])
             compiled_dump = json.dumps(first_cards, sort_keys=True)
@@ -566,51 +565,6 @@ class GodotDataExportTests(unittest.TestCase):
             self.assertEqual(
                 first_cards["svi-chim"]["image_path"],
                 "res://assets/cards/svi-chim.webp",
-            )
-
-    def test_model_manifest_covers_all_release_decks(self):
-        with tempfile.TemporaryDirectory() as output_dir:
-            output = Path(output_dir)
-            export(output, copy_images=False)
-            manifest = json.loads((output / "data" / "ai_models.json").read_text(encoding="utf-8"))
-
-            self.assertEqual(manifest["state_numeric_size"], 960)
-            self.assertEqual(manifest["state_card_slots"], 128)
-            self.assertEqual(manifest["card_vocab_version"], 1)
-            self.assertEqual(manifest["card_vocab_size"], 139)
-            self.assertEqual(manifest["action_numeric_size"], 178)
-            self.assertEqual(manifest["search_simulations"], 64)
-            self.assertEqual(
-                set(manifest["models"]),
-                {
-                    "fire",
-                    "water",
-                    "psychic",
-                    "lightning",
-                    "fighting",
-                    "colorless",
-                    "dragon",
-                    "grass",
-                    "steel",
-                    "darkness",
-                },
-            )
-            existing_release_checkpoints = {
-                key
-                for key, row in manifest["models"].items()
-                if bool(row["checkpoint_exists"])
-            }
-            self.assertTrue(
-                {
-                    "fire",
-                    "water",
-                    "psychic",
-                    "lightning",
-                    "fighting",
-                    "colorless",
-                    "dragon",
-                    "grass",
-                }.issubset(existing_release_checkpoints)
             )
 
     def test_export_removes_obsolete_card_assets(self):

@@ -17,7 +17,7 @@ $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
 Assert-ReleaseDeepFallbackContract -Manifest $release
 $version = [string]$release.version
-$compatibleModelCount = [int]$release.compatible_model_count
+$modelCount = [int]$release.model_count
 
 $releaseInputs = @(
     (Join-Path $repoRoot 'docs\RELEASE_NOTES.md'),
@@ -28,7 +28,6 @@ $releaseInputs = @(
     (Join-Path $projectRoot 'data\effects.json'),
     (Join-Path $projectRoot 'data\card_images.json'),
     (Join-Path $projectRoot 'data\card_image_hashes.json'),
-    (Join-Path $projectRoot 'data\ai_models.json'),
     (Join-Path $projectRoot 'data\ai_models_runtime.json'),
     (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE'),
     (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt')
@@ -192,8 +191,7 @@ $buildInfo = [ordered]@{
     action_schema = [int]$release.schemas.godot_actions
     rng_schema = [int]$release.schemas.rng
     onnx_runtime = [string]$release.onnx.runtime_version
-    onnx_models = $compatibleModelCount
-    legacy_models = [int]$release.legacy_model_count
+    onnx_models = $modelCount
     deep_runtime_enabled = [bool]$release.deep_runtime_enabled
     deep_fallback = [string]$release.deep_fallback
     windows_arch = 'x86_64'
@@ -208,7 +206,7 @@ $stagedOnnxFiles = @(
         Where-Object { $_.Extension -ieq '.onnx' }
 )
 if ($stagedOnnxFiles.Count -ne 0) {
-    throw 'Windows release staging contains legacy ONNX models.'
+    throw 'Windows release staging contains unexpected non-universal ONNX models.'
 }
 
 $zipPath = Join-Path $distRoot "PokemonTCG-Windows-x86_64-$version.zip"

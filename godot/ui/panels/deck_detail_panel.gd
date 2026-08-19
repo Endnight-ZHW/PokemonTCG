@@ -46,7 +46,7 @@ func configure(p_catalog: CardCatalog, deck_key: String) -> bool:
 	deck_name_label.text = str(deck.get("name", deck_key))
 	deck_meta_label.text = "%s · %s · 共 %d 张" % [
 		deck_key,
-		_energy_display_name(energy_type),
+		EnergyIconCatalog.type_display_name_for(energy_type),
 		int(deck.get("card_count", 0)),
 	]
 	deck_summary_label.text = "宝可梦 %d　 训练家 %d　 能量 %d" % [
@@ -125,7 +125,17 @@ func _add_core_card(card_id: String) -> void:
 	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	image.texture = _card_texture(str(card.get("image_path", "")))
+	var tree := Engine.get_main_loop() as SceneTree
+	var texture_cache := (
+		tree.root.get_node_or_null("CardTextureCache")
+		if tree and tree.root
+		else null
+	)
+	image.texture = (
+		texture_cache.call("get_texture", str(card.get("image_path", ""))) as Texture2D
+		if texture_cache
+		else null
+	)
 	frame.add_child(image)
 	core_grid.add_child(button)
 
@@ -214,32 +224,3 @@ func _clear_dynamic_content() -> void:
 		categories.remove_child(child)
 		child.queue_free()
 	_category_grids.clear()
-
-
-func _energy_display_name(energy_type: String) -> String:
-	return {
-		"Grass": "草属性",
-		"Fire": "火属性",
-		"Water": "水属性",
-		"Lightning": "雷属性",
-		"Psychic": "超能力",
-		"Fighting": "斗属性",
-		"Darkness": "恶属性",
-		"Metal": "钢属性",
-		"Dragon": "龙属性",
-		"Colorless": "无色",
-	}.get(energy_type, energy_type)
-
-
-func _card_texture(path: String) -> Texture2D:
-	if path.is_empty():
-		return null
-	var tree := Engine.get_main_loop() as SceneTree
-	var cache := (
-		tree.root.get_node_or_null("CardTextureCache")
-		if tree and tree.root
-		else null
-	)
-	if cache and cache.has_method("get_texture"):
-		return cache.call("get_texture", path) as Texture2D
-	return load(path) as Texture2D if ResourceLoader.exists(path) else null

@@ -2918,12 +2918,6 @@ class AlphaZeroV2Trainer:
         candidate_enabled = False
         candidate_release["deep_runtime_enabled"] = candidate_enabled
         candidate_release["model_count"] = 1 if candidate_enabled else 0
-        candidate_release["compatible_model_count"] = (
-            1 if candidate_enabled else 0
-        )
-        candidate_release["legacy_model_count"] = (
-            0 if candidate_enabled else len(RELEASE_DECKS)
-        )
         candidate_release["native_ai"]["production_ready"] = bool(
             _native_production_ready()
         )

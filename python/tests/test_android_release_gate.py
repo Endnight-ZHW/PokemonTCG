@@ -65,7 +65,7 @@ class AndroidReleaseGateTests(unittest.TestCase):
         self.assertIn("search_deadline_passed", source)
         self.assertIn("minimum_simulations_passed", source)
         self.assertIn("fallback_path_passed", source)
-        self.assertIn("compatible_models=$ExpectedModels", source)
+        self.assertIn("models=$ExpectedModels", source)
         self.assertIn("onnx_assets=$ExpectedModels", source)
         self.assertIn("deep=$deepState", source)
         self.assertIn("Assert-ReleaseDeepFallbackContract", source)
@@ -107,9 +107,9 @@ class AndroidReleaseGateTests(unittest.TestCase):
         smoke_runner = (
             REPO_ROOT / "godot" / "scenes" / "main" / "export_smoke_runner.gd"
         ).read_text(encoding="utf-8")
-        self.assertIn("_legacy_onnx_assets_absent", smoke_runner)
+        self.assertIn("_onnx_assets_absent", smoke_runner)
         self.assertIn("onnx_assets=0", smoke_runner)
-        self.assertIn('FileAccess.file_exists("res://data/ai_models/%s.onnx"', smoke_runner)
+        self.assertIn('DirAccess.open("res://data/ai_models")', smoke_runner)
 
     def test_build_and_release_paths_include_the_smoke_artifact(self):
         build = (REPO_ROOT / "tools" / "build_godot.ps1").read_text(
@@ -137,7 +137,10 @@ class AndroidReleaseGateTests(unittest.TestCase):
         self.assertIn("'.onnx'", release_test)
         self.assertIn("deep_runtime_enabled", package)
         self.assertIn("deep_fallback", package)
-        self.assertIn("Windows release staging contains legacy ONNX", package)
+        self.assertIn(
+            "Windows release staging contains unexpected non-universal ONNX",
+            package,
+        )
 
         candidate_android = (
             REPO_ROOT / "tools" / "test_alphazero_v2_candidate_android.ps1"

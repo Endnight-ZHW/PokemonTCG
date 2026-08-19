@@ -35,8 +35,6 @@ func verify(
 	if (
 		not runtime.runtime_enabled
 		or int(runtime.release_manifest.get("model_count", 0)) != 1
-		or int(runtime.release_manifest.get(
-			"compatible_model_count", 0)) != 1
 		or model_rows.size() != 1
 	):
 		errors.append("candidate_manifest_contract")
@@ -266,7 +264,7 @@ func _native_search_probe(backend: Variant) -> Dictionary:
 		return failure
 	kernel.call("vm_set_cards", cards)
 	kernel.call("simulation_set_decks", decks)
-	var planner := DeepRootISMCTS.new()
+	var planner := InformationSetPUCT.new()
 	planner._native = kernel
 	var runtime_state := _mask_runtime_state(state, 0)
 	var action_result: Dictionary = planner.decide({
@@ -344,9 +342,9 @@ func _native_search_probe(backend: Variant) -> Dictionary:
 		failure["error"] = "formal_choice_apply"
 		return failure
 	var minimum := (
-		DeepRootISMCTS.ANDROID_MIN_SIMULATIONS
+		InformationSetPUCT.ANDROID_MIN_SIMULATIONS
 		if OS.get_name() == "Android"
-		else DeepRootISMCTS.WINDOWS_MIN_SIMULATIONS
+		else InformationSetPUCT.WINDOWS_MIN_SIMULATIONS
 	)
 	var action_elapsed := float(action_result.get("elapsed_ms", INF))
 	var choice_elapsed := float(choice_result.get("elapsed_ms", INF))
@@ -396,7 +394,7 @@ func _fallback_probe() -> Dictionary:
 		and str(fallback.get("fallback_reason", ""))
 		== "runtime_unavailable"
 		and str(Dictionary(fallback.get("deep_failure", {})).get(
-			"planner", "")) == DeepRootISMCTS.PLANNER_ID
+			"planner", "")) == InformationSetPUCT.PLANNER_ID
 	)
 	return {
 		"passed": passed,

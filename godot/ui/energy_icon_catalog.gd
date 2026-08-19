@@ -45,6 +45,19 @@ const DISPLAY_NAMES := {
 	"Unknown": "未知能量",
 }
 
+const TYPE_DISPLAY_NAMES := {
+	"Grass": "草属性",
+	"Fire": "火属性",
+	"Water": "水属性",
+	"Lightning": "雷属性",
+	"Psychic": "超能力",
+	"Fighting": "斗属性",
+	"Darkness": "恶属性",
+	"Metal": "钢属性",
+	"Dragon": "龙属性",
+	"Colorless": "无色",
+}
+
 const SHORT_LABELS := {
 	"Grass": "G",
 	"Fire": "F",
@@ -89,6 +102,10 @@ static func display_name_for(energy_type: String, fallback := "") -> String:
 		energy_type,
 		fallback if not str(fallback).is_empty() else energy_type,
 	))
+
+
+static func type_display_name_for(energy_type: String) -> String:
+	return str(TYPE_DISPLAY_NAMES.get(energy_type, energy_type))
 
 
 static func short_label_for(energy_type: String) -> String:

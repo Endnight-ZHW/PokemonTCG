@@ -15,7 +15,7 @@ func _run() -> void:
 	settings.set("animation_mode", "cinematic")
 	settings.set("reduced_motion", false)
 
-	var battle_scene := load("res://scenes/battle/battle_screen.tscn") as PackedScene
+	var battle_scene := load("res://scenes/battle/components/battle_table.tscn") as PackedScene
 	var battle := battle_scene.instantiate()
 	root.add_child(battle)
 	battle.initialize_ui()
@@ -93,14 +93,14 @@ func _run() -> void:
 	)
 	_expect(
 		draw_image != null
-		and draw_image.texture == battle.table._texture_for_card_id(""),
+		and draw_image.texture == battle._texture_for_card_id(""),
 		"local deck draw did not start with the physical card back",
 	)
 
 	await create_timer(0.27).timeout
 	_expect(
 		draw_image != null
-		and draw_image.texture == battle.table._texture_for_card_id("sv1-151"),
+		and draw_image.texture == battle._texture_for_card_id("sv1-151"),
 		"hidden-to-public draw did not flip to its face during flight",
 	)
 	_expect(
@@ -108,20 +108,20 @@ func _run() -> void:
 		or battle.hand_views[1].position.distance_to(old_positions[1]) > 1.0,
 		"incoming card did not push the existing hand after contact",
 	)
-	var staged_count_before_resize: int = battle.table._presentation_hand_stage_count
+	var staged_count_before_resize: int = battle._presentation_hand_stage_count
 	battle.board_canvas.size.x = maxf(640.0, battle.board_canvas.size.x - 48.0)
-	battle.table._layout_board()
+	battle._layout_board()
 	_expect(
-		battle.table._presentation_hand_stage_count == staged_count_before_resize
+		battle._presentation_hand_stage_count == staged_count_before_resize
 		and battle.hand_views[2].is_presentation_hidden(),
 		"resize bypassed the active hand staging transaction",
 	)
 	_expect(
-		battle.table._hand_layout_motion_handles.is_empty(),
+		battle._hand_layout_motion_handles.is_empty(),
 		"resize left a pre-resize hand tween writing stale coordinates",
 	)
 	_expect(
-		not battle.table._hand_transition_sequences.is_empty(),
+		not battle._hand_transition_sequences.is_empty(),
 		"draw reflow/landing was not registered in the event MotionGroup",
 	)
 
@@ -158,17 +158,17 @@ func _run() -> void:
 	await _run_startup_shuffle_contract(battle)
 	await _run_preflight_and_event_cleanup_contract(battle, empty_rows)
 
-	battle.table._on_hand_drag_started(0)
+	battle._on_hand_drag_started(0)
 	await process_frame
 	var drag_context: Dictionary = battle.active_drag_context()
 	_expect(not drag_context.is_empty(), "drag session was not created")
 	_expect(
 		battle.hand_views[0].is_drag_masked()
 		and not battle.hand_views[0].content_root.visible
-		and battle.table._drag_session.proxy != null,
+		and battle._drag_session.proxy != null,
 		"drag displayed both the source card and proxy",
 	)
-	var drag_proxy := battle.table._drag_session.proxy as Control
+	var drag_proxy := battle._drag_session.proxy as Control
 	_expect(
 		_is_full_face_motion_token(drag_proxy),
 		"drag proxy still rendered a paper edge, filled shadow, or white frame",
@@ -179,19 +179,19 @@ func _run() -> void:
 		"world feedback can still be covered by the drag card proxy",
 	)
 	var session_id: String = battle.mark_drag_pending("contract:drag", true)
-	battle.table._on_hand_drag_ended()
+	battle._on_hand_drag_ended()
 	await process_frame
 	_expect(
 		battle.active_drag_context().get("session_id", "") == session_id,
 		"native drag end destroyed a pending authority proxy",
 	)
-	var pending_proxy_id: int = battle.table._drag_session.proxy.get_instance_id()
+	var pending_proxy_id: int = battle._drag_session.proxy.get_instance_id()
 	var secondary_index := 1 if battle.hand_views.size() > 1 else 0
-	battle.table._on_hand_drag_started(secondary_index)
+	battle._on_hand_drag_started(secondary_index)
 	await process_frame
 	_expect(
 		battle.active_drag_context().get("session_id", "") == session_id
-		and battle.table._drag_session.proxy.get_instance_id() == pending_proxy_id
+		and battle._drag_session.proxy.get_instance_id() == pending_proxy_id
 		and battle.hand_views[0].is_drag_masked()
 		and (
 			secondary_index == 0
@@ -207,7 +207,7 @@ func _run() -> void:
 		"cancelled drag did not return ownership to the real card",
 	)
 
-	battle.table._on_hand_drag_started(0)
+	battle._on_hand_drag_started(0)
 	await process_frame
 	battle.mark_drag_pending("contract:resync", true)
 	battle.world_feedback.floating_text(
@@ -317,7 +317,7 @@ func _run_dense_hand_hover_order_contract(
 				false,
 				"test",
 			)
-			battle.table._layout_board()
+			battle._layout_board()
 			for _frame in range(4):
 				await process_frame
 			_expect(
@@ -329,14 +329,14 @@ func _run_dense_hand_hover_order_contract(
 			# Exercise a user-owned scroll position whenever this fan overflows. The
 			# hover contract must not silently snap it back to the layout center.
 			var horizontal_bar := (
-				battle.table.hand_scroll.get_h_scroll_bar() as HScrollBar
+				battle.hand_scroll.get_h_scroll_bar() as HScrollBar
 			)
 			var maximum_scroll := maxi(
 				0,
 				roundi(horizontal_bar.max_value - horizontal_bar.page),
 			)
 			if maximum_scroll > 4:
-				battle.table.hand_scroll.scroll_horizontal = maxi(
+				battle.hand_scroll.scroll_horizontal = maxi(
 					1,
 					roundi(float(maximum_scroll) * 0.27),
 				)
@@ -476,7 +476,7 @@ func _run_dense_hand_hover_order_contract(
 	root.size = previous_window_size
 	for _frame in range(4):
 		await process_frame
-	battle.table._layout_board()
+	battle._layout_board()
 	await process_frame
 
 
@@ -519,7 +519,7 @@ func _run_multi_draw_contract(
 	await process_frame
 	await process_frame
 	_expect(
-		battle.table._presentation_hand_stage_count == 2,
+		battle._presentation_hand_stage_count == 2,
 		"multi-draw reserved incoming hand slots before contact",
 	)
 	_expect(
@@ -542,12 +542,12 @@ func _run_multi_draw_contract(
 	var first_wait_frames := await _wait_for_hand_stage_count(battle, 3)
 	_expect(
 		first_wait_frames >= 0
-		and battle.table._presentation_hand_stage_count == 3,
+		and battle._presentation_hand_stage_count == 3,
 		"multi-draw did not insert only its first anchor at contact",
 	)
 	await process_frame
 	_expect(
-		battle.table._presentation_hand_stage_count == 3,
+		battle._presentation_hand_stage_count == 3,
 		"multi-draw inserted its second anchor without the configured stagger",
 	)
 	_expect(
@@ -558,18 +558,18 @@ func _run_multi_draw_contract(
 	var second_wait_frames := await _wait_for_hand_stage_count(battle, 4)
 	_expect(
 		second_wait_frames >= 2
-		and battle.table._presentation_hand_stage_count == 4,
+		and battle._presentation_hand_stage_count == 4,
 		"multi-draw second anchor was not inserted as a distinct staggered step",
 	)
 	await process_frame
 	_expect(
-		battle.table._presentation_hand_stage_count == 4,
+		battle._presentation_hand_stage_count == 4,
 		"multi-draw inserted its third anchor without the configured stagger",
 	)
 	var third_wait_frames := await _wait_for_hand_stage_count(battle, 5)
 	_expect(
 		third_wait_frames >= 2
-		and battle.table._presentation_hand_stage_count == 5,
+		and battle._presentation_hand_stage_count == 5,
 		"multi-draw third anchor was not inserted as a distinct staggered step",
 	)
 	var first_landing_handed_off := false
@@ -582,7 +582,7 @@ func _run_multi_draw_contract(
 			break
 		await process_frame
 	var stale_completed_flyer_visible := false
-	for flyer_value in battle.table._active_flyers:
+	for flyer_value in battle._active_flyers:
 		var flyer := flyer_value as Control
 		if (
 			flyer != null
@@ -716,11 +716,11 @@ func _run_professor_snapshot_proxy_contract(
 	)
 
 	await _wait_for_director_event(started_types, "trainer_played")
-	var trainer_keys: Array = battle.table._presentation_event_hand_sources.get(
+	var trainer_keys: Array = battle._presentation_event_hand_sources.get(
 		trainer_event_id,
 		[],
 	)
-	var discard_keys: Array = battle.table._presentation_event_hand_sources.get(
+	var discard_keys: Array = battle._presentation_event_hand_sources.get(
 		discard_event_id,
 		[],
 	)
@@ -731,10 +731,10 @@ func _run_professor_snapshot_proxy_contract(
 		% [str(trainer_keys), str(discard_keys)],
 	)
 	var remaining_proxy_keys := _snapshot_proxy_keys(
-		battle.table._presentation_hand_source_proxies)
-	var active_trainer_keys := _snapshot_proxy_keys(battle.table._active_flyers)
+		battle._presentation_hand_source_proxies)
+	var active_trainer_keys := _snapshot_proxy_keys(battle._active_flyers)
 	var trainer_motion_is_full_face := false
-	for flyer_value in battle.table._active_flyers:
+	for flyer_value in battle._active_flyers:
 		var flyer := flyer_value as Control
 		if flyer != null and str(flyer.get_meta("snapshot_hand_key", "")) == "snapshot:1":
 			trainer_motion_is_full_face = _is_full_face_motion_token(flyer)
@@ -746,16 +746,16 @@ func _run_professor_snapshot_proxy_contract(
 		"Professor flight hid or consumed the other old hand proxies: remaining=%s active=%s"
 		% [str(remaining_proxy_keys), str(active_trainer_keys)],
 	)
-	for proxy in battle.table._presentation_hand_source_proxies:
+	for proxy in battle._presentation_hand_source_proxies:
 		_expect(
 			proxy != null and is_instance_valid(proxy) and proxy.visible,
 			"An old hand proxy was not visible while Professor's Research was in flight",
 		)
 
 	await _wait_for_director_event(started_types, "cards_discarded")
-	var active_discard_keys := _snapshot_proxy_keys(battle.table._active_flyers)
+	var active_discard_keys := _snapshot_proxy_keys(battle._active_flyers)
 	_expect(
-		battle.table._presentation_hand_source_proxies.is_empty()
+		battle._presentation_hand_source_proxies.is_empty()
 		and active_discard_keys == ["snapshot:0", "snapshot:2"],
 		"Remaining hand proxies were not consumed by the later discard event: %s"
 		% str(active_discard_keys),
@@ -763,8 +763,8 @@ func _run_professor_snapshot_proxy_contract(
 	await _wait_for_handle(handle, battle)
 	_expect(
 		handle.status == PresentationHandle.COMPLETED
-		and battle.table._presentation_hand_source_proxies.is_empty()
-		and battle.table._presentation_hand_proxy_by_key.is_empty()
+		and battle._presentation_hand_source_proxies.is_empty()
+		and battle._presentation_hand_proxy_by_key.is_empty()
 		and battle.effects.find_children(
 			"SnapshotHandProxy", "", true, false).is_empty(),
 		"Professor transition left a snapshot hand proxy behind",
@@ -801,7 +801,7 @@ func _run_opponent_judge_hand_contract(
 	for view_value in battle.opponent_hand_views:
 		var view := view_value as CardView
 		if view != null and view.visible:
-			original_centers.append(battle.table._effects_local(view.global_center()))
+			original_centers.append(battle._effects_local(view.global_center()))
 
 	var after := before.clone_state()
 	after.revision = 73
@@ -885,7 +885,7 @@ func _run_opponent_judge_hand_contract(
 	await _wait_for_director_event(started_ids, trainer_event_id)
 	await process_frame
 	var stationary_sources_are_exact := original_centers.size() == 4
-	for proxy_value in battle.table._presentation_opponent_hand_proxies:
+	for proxy_value in battle._presentation_opponent_hand_proxies:
 		var proxy := proxy_value as Control
 		var original_index := int(proxy.get_meta(
 			"snapshot_opponent_hand_index",
@@ -897,19 +897,19 @@ func _run_opponent_judge_hand_contract(
 			and original_index < original_centers.size()
 			and (proxy.position + proxy.size * 0.5).distance_to(
 				original_centers[original_index]) < 0.5
-			and not battle.table._hand_layout_motion_handles.has(
+			and not battle._hand_layout_motion_handles.has(
 				proxy.get_instance_id())
 		)
 	_expect(
 		stationary_sources_are_exact
-		and battle.table._presentation_opponent_hand_proxies.size() == 3,
+		and battle._presentation_opponent_hand_proxies.size() == 3,
 		"Judge moved the opponent's remaining hand before its return-to-deck event",
 	)
 	await _wait_for_director_event(started_ids, return_event_id)
 	await process_frame
 	var outgoing_sources := 0
 	var outgoing_sources_are_exact := original_centers.size() == 4
-	for flyer_value in battle.table._active_flyers:
+	for flyer_value in battle._active_flyers:
 		var flyer := flyer_value as Control
 		if flyer == null or str(flyer.get_meta("motion_event_id", "")) != return_event_id:
 			continue
@@ -972,8 +972,8 @@ func _run_hidden_opponent_draw_contract(
 	if entities.size() == 1:
 		var entity := entities[0] as Control
 		var image := entity.get_node_or_null("PaperImage") as TextureRect
-		var back_texture: Texture2D = battle.table._texture_for_card_id("")
-		var front_texture: Texture2D = battle.table._texture_for_card_id("sv1-151")
+		var back_texture: Texture2D = battle._texture_for_card_id("")
+		var front_texture: Texture2D = battle._texture_for_card_id("sv1-151")
 		var metadata_leaked := false
 		for meta_name in entity.get_meta_list():
 			if str(entity.get_meta(meta_name)).contains("sv1-151"):
@@ -1025,8 +1025,8 @@ func _run_queued_revision_contract(
 		started_rows.append({
 			"batch_id": started_handle.batch_id,
 			"revision_before_apply": (
-				battle.table.state_ref.revision
-				if battle.table.state_ref != null
+				battle.state_ref.revision
+				if battle.state_ref != null
 				else -1
 			),
 		})
@@ -1078,20 +1078,20 @@ func _run_queued_revision_contract(
 	var second_started := await _wait_for_handle_status(
 		second_handle, PresentationHandle.RUNNING)
 	_expect(second_started, "second queued revision never began")
-	var second_snapshot_hand: Array = battle.table._presentation_snapshot.get("hand", [])
+	var second_snapshot_hand: Array = battle._presentation_snapshot.get("hand", [])
 	_expect(
 		started_rows.size() == 2
 		and int(started_rows[0].get("revision_before_apply", -1)) == 50
 		and int(started_rows[1].get("revision_before_apply", -1)) == 51
 		and second_snapshot_hand.size() == 2
-		and battle.table.state_ref.revision == 52,
+		and battle.state_ref.revision == 52,
 		"second revision did not own a snapshot of the first revision target",
 	)
 	await _wait_for_handle(second_handle, battle)
 	_expect(
 		completed_batches == [first_handle.batch_id, second_handle.batch_id]
-		and battle.table.state_ref.revision == 52
-		and battle.table.state_ref.players[0].hand.size() == 3
+		and battle.state_ref.revision == 52
+		and battle.state_ref.players[0].hand.size() == 3
 		and _count_motion_entities(battle) == 0,
 		"queued revisions did not reconcile in batch order",
 	)
@@ -1132,7 +1132,7 @@ func _run_reduced_transition_contract(
 	)
 	_expect(
 		not handle.is_completed()
-		and battle.table.state_ref.revision == 60,
+		and battle.state_ref.revision == 60,
 		"reduced transition completed synchronously before callers could connect",
 	)
 	await process_frame
@@ -1142,8 +1142,8 @@ func _run_reduced_transition_contract(
 		"reduced transition did not complete exactly once on the next frame",
 	)
 	_expect(
-		battle.table.state_ref.revision == 61
-		and battle.table.state_ref.players[0].hand.size() == 2
+		battle.state_ref.revision == 61
+		and battle.state_ref.players[0].hand.size() == 2
 		and battle.hand_views.size() >= 2
 		and not battle.hand_views[1].is_presentation_hidden()
 		and _count_motion_entities(battle) == 0,
@@ -1153,7 +1153,7 @@ func _run_reduced_transition_contract(
 		battle.cancel_presentations("reduced_contract_cleanup", target_view)
 		await process_frame
 
-	var switch_before: GameState = battle.table.state_ref.clone_state()
+	var switch_before: GameState = battle.state_ref.clone_state()
 	switch_before.players[0].active = PokemonState.new("sv1-104")
 	switch_before.players[0].active.energy_card_ids.assign([
 		"sv1-ener-2",
@@ -1185,12 +1185,12 @@ func _run_reduced_transition_contract(
 	)
 	await process_frame
 	await process_frame
-	var reduced_active: CardView = battle.table.get_slot_view(0, "active")
-	var reduced_bench: CardView = battle.table.get_slot_view(0, "bench_0")
+	var reduced_active: CardView = battle.get_slot_view(0, "active")
+	var reduced_bench: CardView = battle.get_slot_view(0, "bench_0")
 	_expect(
 		reduced_switch.status == PresentationHandle.COMPLETED
 		and _count_motion_entities(battle) == 0
-		and battle.table._presentation_slot_covers.is_empty()
+		and battle._presentation_slot_covers.is_empty()
 		and reduced_active != null
 		and reduced_bench != null
 		and not reduced_active.is_presentation_hidden()
@@ -1248,24 +1248,24 @@ func _run_reduced_transition_contract(
 		},
 	], 63, 0)
 	battle.update_view(reduced_tail_after, 0, empty_rows, "", false, "test")
-	battle.table._stage_presentation_targets(
+	battle._stage_presentation_targets(
 		reduced_tail_events,
 		reduced_tail_snapshot,
 	)
-	var expected_incoming_cover := battle.table._presentation_slot_covers.get(
+	var expected_incoming_cover := battle._presentation_slot_covers.get(
 		"0:bench_0",
 	) as CardView
-	battle.table._on_presentation_event_started(reduced_tail_events[0])
-	battle.table._spawn_slot_transition(
+	battle._on_presentation_event_started(reduced_tail_events[0])
+	battle._spawn_slot_transition(
 		reduced_tail_events[0],
 		0.0,
 		str(reduced_tail_events[0].get("event_id", "")),
 	)
-	var reduced_tail_cover := battle.table._presentation_slot_covers.get(
+	var reduced_tail_cover := battle._presentation_slot_covers.get(
 		"0:active",
 	) as CardView
 	var live_slot_covers := 0
-	for child in battle.table.effects.find_children("*", "CardView", true, false):
+	for child in battle.effects.find_children("*", "CardView", true, false):
 		if (
 			str(child.get_meta("battle_transient_kind", "")) == "SlotStateCover"
 			and not child.is_queued_for_deletion()
@@ -1277,18 +1277,18 @@ func _run_reduced_transition_contract(
 		and reduced_tail_cover.pokemon != null
 		and reduced_tail_cover.pokemon.card_id == "svi-chim"
 		and live_slot_covers == 1
-		and battle.table._active_flyers.is_empty(),
+		and battle._active_flyers.is_empty(),
 		"reduced switch replaced the incoming staged Pokemon or orphaned a source cover",
 	)
-	battle.table._on_presentation_event_finished(reduced_tail_events[0])
+	battle._on_presentation_event_finished(reduced_tail_events[0])
 	for tail_index in range(1, reduced_tail_events.size()):
-		battle.table._on_presentation_event_started(reduced_tail_events[tail_index])
-		battle.table._on_presentation_event_finished(reduced_tail_events[tail_index])
+		battle._on_presentation_event_started(reduced_tail_events[tail_index])
+		battle._on_presentation_event_finished(reduced_tail_events[tail_index])
 	await process_frame
-	var reduced_tail_active: CardView = battle.table.get_slot_view(0, "active")
+	var reduced_tail_active: CardView = battle.get_slot_view(0, "active")
 	_expect(
-		battle.table._presentation_slot_covers.is_empty()
-		and battle.table._presentation_mask_counts.is_empty()
+		battle._presentation_slot_covers.is_empty()
+		and battle._presentation_mask_counts.is_empty()
 		and reduced_tail_active != null
 		and reduced_tail_active.pokemon != null
 		and reduced_tail_active.pokemon.card_id == "svi-chim"
@@ -1325,13 +1325,13 @@ func _run_drag_identity_contract(
 		"duplicate hand cards did not receive distinct local visual identities",
 	)
 
-	battle.table._on_hand_drag_started(1)
+	battle._on_hand_drag_started(1)
 	await process_frame
 	var variant_session_id: String = str(
 		battle.active_drag_context().get("session_id", ""))
-	if battle.table._drag_session != null:
-		battle.table._drag_session.state = CardDragSession.AWAITING_VARIANT
-	battle.table._on_hand_drag_ended()
+	if battle._drag_session != null:
+		battle._drag_session.state = CardDragSession.AWAITING_VARIANT
+	battle._on_hand_drag_ended()
 	await process_frame
 	_expect(
 		not variant_session_id.is_empty()
@@ -1343,7 +1343,7 @@ func _run_drag_identity_contract(
 	battle.clear_pending_drag("variant_contract_cancel")
 	await _wait_for_drag_idle(battle)
 
-	battle.table._on_hand_drag_started(1)
+	battle._on_hand_drag_started(1)
 	await process_frame
 	var stale_context: Dictionary = battle.active_drag_context()
 	_expect(
@@ -1390,12 +1390,12 @@ func _run_local_drag_success_contract(
 	_expect(source_view != null, "local drag fixture did not render its source card")
 	if source_view == null:
 		return
-	var snapshot_source_center: Vector2 = battle.table._effects_local(
+	var snapshot_source_center: Vector2 = battle._effects_local(
 		source_view.global_center())
 
-	battle.table._on_hand_drag_started(0)
+	battle._on_hand_drag_started(0)
 	await process_frame
-	var session = battle.table._drag_session
+	var session = battle._drag_session
 	var proxy := session.proxy as Control if session != null else null
 	_expect(proxy != null, "local drag success fixture did not create a proxy")
 	if proxy == null:
@@ -1403,7 +1403,7 @@ func _run_local_drag_success_contract(
 		await _wait_for_drag_idle(battle)
 		return
 	var proxy_instance_id := proxy.get_instance_id()
-	battle.table._park_drag_session(0, "bench_0")
+	battle._park_drag_session(0, "bench_0")
 	session.state = CardDragSession.AWAITING_VARIANT
 	await create_timer(0.16).timeout
 	var parked_center := proxy.position + proxy.size * 0.5
@@ -1546,7 +1546,7 @@ func _run_bench_search_anchor_contract(
 	var bench_one = battle.get_slot_view(0, "bench_1")
 	var entities := _motion_entities(battle)
 	var actual_finish: Vector2 = (
-		battle.table._effects_local(bench_zero.global_center())
+		battle._effects_local(bench_zero.global_center())
 		if bench_zero != null
 		else Vector2.ZERO
 	)
@@ -1658,7 +1658,7 @@ func _run_caitlin_full_hand_batch_contract(
 ) -> void:
 	var previous_quality := str(settings.get("quality_profile"))
 	settings.set("quality_profile", "low")
-	battle.table._apply_runtime_settings()
+	battle._apply_runtime_settings()
 	var returned_ids: Array[String] = [
 		"sv1-104",
 		"sv1-ener-1",
@@ -1727,10 +1727,10 @@ func _run_caitlin_full_hand_batch_contract(
 	var observed_rolling_queue := false
 	var draw_started_before_return_complete := false
 	for _frame in range(960):
-		peak_active = maxi(peak_active, battle.table._active_flyers.size())
-		if not battle.table._card_motion_batches.is_empty():
+		peak_active = maxi(peak_active, battle._active_flyers.size())
+		if not battle._card_motion_batches.is_empty():
 			observed_rolling_queue = true
-		for flyer_value in battle.table._active_flyers:
+		for flyer_value in battle._active_flyers:
 			var flyer := flyer_value as Control
 			if flyer == null or not flyer.has_meta("motion_batch_ordinal"):
 				continue
@@ -1741,7 +1741,7 @@ func _run_caitlin_full_hand_batch_contract(
 			elif event_id == draw_event_id:
 				seen_draw_ordinals[ordinal] = true
 		if (
-			battle.table._active_presentation_event_id == draw_event_id
+			battle._active_presentation_event_id == draw_event_id
 			and seen_return_ordinals.size() < returned_ids.size()
 		):
 			draw_started_before_return_complete = true
@@ -1757,16 +1757,16 @@ func _run_caitlin_full_hand_batch_contract(
 		% [str(seen_return_ordinals.keys()), str(seen_draw_ordinals.keys())],
 	)
 	_expect(
-		peak_active <= battle.table._max_active_flyers()
+		peak_active <= battle._max_active_flyers()
 		and not draw_started_before_return_complete,
 		"Caitlin rolling batch exceeded its quality budget or released the event barrier early",
 	)
 	_expect(
 		handle.status == PresentationHandle.COMPLETED
-		and battle.table._card_motion_batches.is_empty()
-		and battle.table._presentation_hand_source_proxies.is_empty()
+		and battle._card_motion_batches.is_empty()
+		and battle._presentation_hand_source_proxies.is_empty()
 		and _count_motion_entities(battle) == 0
-		and battle.table.state_ref.players[0].hand == drawn_ids,
+		and battle.state_ref.players[0].hand == drawn_ids,
 		"Caitlin full-hand transition did not reconcile or left queued proxies behind",
 	)
 	if not handle.is_completed():
@@ -1775,7 +1775,7 @@ func _run_caitlin_full_hand_batch_contract(
 
 	# A resync can arrive while the ninth proxy is still queued. It must cancel
 	# the coordinator before active-handle cancellation tries to refill the queue.
-	var cancel_before: GameState = battle.table.state_ref.clone_state()
+	var cancel_before: GameState = battle.state_ref.clone_state()
 	var cancel_after: GameState = cancel_before.clone_state()
 	cancel_after.revision = cancel_before.revision + 1
 	cancel_after.players[0].hand.clear()
@@ -1803,7 +1803,7 @@ func _run_caitlin_full_hand_batch_contract(
 	await process_frame
 	await process_frame
 	_expect(
-		not battle.table._card_motion_batches.is_empty(),
+		not battle._card_motion_batches.is_empty(),
 		"Caitlin cancellation contract did not reach an oversized queued batch",
 	)
 	battle.cancel_presentations("caitlin_batch_cancelled", cancel_target)
@@ -1811,23 +1811,23 @@ func _run_caitlin_full_hand_batch_contract(
 	await process_frame
 	_expect(
 		cancel_handle.status == PresentationHandle.SNAPPED
-		and battle.table._card_motion_batches.is_empty()
-		and battle.table._event_motion_completions.is_empty()
-		and battle.table._active_flyers.is_empty()
+		and battle._card_motion_batches.is_empty()
+		and battle._event_motion_completions.is_empty()
+		and battle._active_flyers.is_empty()
 		and battle.effects.find_children(
 			"SnapshotHandProxy", "", true, false).is_empty(),
 		"Cancelling Caitlin's queued full-hand motion left state behind: status=%s batches=%d barriers=%d flyers=%d proxies=%d"
 		% [
 			cancel_handle.status,
-			battle.table._card_motion_batches.size(),
-			battle.table._event_motion_completions.size(),
-			battle.table._active_flyers.size(),
+			battle._card_motion_batches.size(),
+			battle._event_motion_completions.size(),
+			battle._active_flyers.size(),
 			battle.effects.find_children(
 				"SnapshotHandProxy", "", true, false).size(),
 		],
 	)
 	settings.set("quality_profile", previous_quality)
-	battle.table._apply_runtime_settings()
+	battle._apply_runtime_settings()
 
 
 func _run_attachment_motion_contract(
@@ -1851,17 +1851,17 @@ func _run_attachment_motion_contract(
 	_expect(source_view != null, "attachment motion fixture did not render opponent bench_0")
 	if source_view == null:
 		return
-	var source_badge: Vector2 = battle.table._effects_local(
+	var source_badge: Vector2 = battle._effects_local(
 		source_view.attachment_anchor_global("energy", "sv1-ener-5", 1)
 	)
-	var first_energy_badge: Vector2 = battle.table._effects_local(
+	var first_energy_badge: Vector2 = battle._effects_local(
 		source_view.attachment_anchor_global("energy", "sv1-ener-4", 0)
 	)
 	_expect(
 		source_badge.distance_to(first_energy_badge) > 2.0,
 		"distinct attached energy identities still resolved to the first badge",
 	)
-	var source_card_center: Vector2 = battle.table._effects_local(
+	var source_card_center: Vector2 = battle._effects_local(
 		source_view.global_center()
 	)
 	var own_hand_center: Vector2 = battle.resolve_endpoint_center({
@@ -1954,7 +1954,7 @@ func _run_attachment_motion_contract(
 		and attachment_motion_image != null
 		and attachment_motion_image.texture == EnergyIconCatalog.texture_for("Psychic")
 		and entities[0].get_meta("motion_flip_texture", null)
-		== battle.table._public_motion_texture_for_card_id("sv1-ener-5"),
+		== battle._public_motion_texture_for_card_id("sv1-ener-5"),
 		"opponent attachment discard did not start at its snapshot energy badge",
 	)
 	_expect(
@@ -1997,7 +1997,7 @@ func _run_attachment_motion_contract(
 	)
 	if target_view_node == null:
 		return
-	var card_center: Vector2 = battle.table._effects_local(
+	var card_center: Vector2 = battle._effects_local(
 		target_view_node.global_center()
 	)
 	var landing_probe := Control.new()
@@ -2010,7 +2010,7 @@ func _run_attachment_motion_contract(
 		)
 		var original_position := anchor_control.position
 		anchor_control.position += Vector2(11.0, 7.0)
-		var expected_anchor: Vector2 = battle.table._effects_local(
+		var expected_anchor: Vector2 = battle._effects_local(
 			target_view_node.attachment_anchor_global(attachment_type)
 		)
 		var endpoint := {
@@ -2020,7 +2020,7 @@ func _run_attachment_motion_contract(
 		}
 		landing_probe.set_meta("motion_landing_attachment_type", attachment_type)
 		var resolved_anchor: Vector2 = battle.resolve_endpoint_center(endpoint)
-		var dynamic_finish: Vector2 = battle.table._motion_entity_finish(
+		var dynamic_finish: Vector2 = battle._motion_entity_finish(
 			landing_probe,
 			card_center,
 		)
@@ -2031,7 +2031,7 @@ func _run_attachment_motion_contract(
 			"%s attachment landing did not follow its live badge anchor" % attachment_type,
 		)
 		anchor_control.position = original_position
-	var indexed_expected: Vector2 = battle.table._effects_local(
+	var indexed_expected: Vector2 = battle._effects_local(
 		target_view_node.attachment_anchor_global("energy", "sv1-ener-2", 1),
 	)
 	var canonical_indexed := {
@@ -2053,7 +2053,7 @@ func _run_attachment_motion_contract(
 		) < 0.1,
 		"canonical attachment index or legacy attachment_index fallback resolved the wrong badge",
 	)
-	var inferred_fire_index: int = battle.table._landing_attachment_index_for_event(
+	var inferred_fire_index: int = battle._landing_attachment_index_for_event(
 		{
 			"player": 0,
 			"slot": "active",
@@ -2069,7 +2069,7 @@ func _run_attachment_motion_contract(
 	landing_probe.set_meta("motion_landing_attachment_index", inferred_fire_index)
 	_expect(
 		inferred_fire_index == 1
-		and battle.table._motion_entity_finish(
+		and battle._motion_entity_finish(
 			landing_probe,
 			card_center,
 		).distance_to(indexed_expected) < 0.1,
@@ -2091,23 +2091,23 @@ func _run_attachment_motion_contract(
 			str(descriptor_row.get("type", "")),
 			str(descriptor_row.get("card_id", "")),
 			descriptor_index,
-			battle.table.catalog,
+			battle.catalog,
 		)
 		var expected_marker := str(descriptor_row.get("expected", ""))
 		var expects_marker := bool(descriptor_row.get("marker", true))
 		var badge_texture: Texture2D = (
 			descriptor.icon
 			if descriptor.icon != null
-			else battle.table._neutral_public_card_texture()
+			else battle._neutral_public_card_texture()
 		)
-		var badge_proxy: Control = battle.table._create_paper_card_token(
+		var badge_proxy: Control = battle._create_paper_card_token(
 			badge_texture,
 			Vector2(24.0, 24.0),
 			"ContractAttachmentBadge",
 			1,
 		)
 		badge_proxy.set_meta("attachment_badge_proxy", true)
-		battle.table._configure_attachment_badge_marker(badge_proxy, descriptor)
+		battle._configure_attachment_badge_marker(badge_proxy, descriptor)
 		var marker := badge_proxy.get_node_or_null("AttachmentBadgeMarker") as Label
 		var marker_matches := (
 			marker != null
@@ -2164,12 +2164,12 @@ func _run_tool_attachment_landing_contract(
 		},
 	}], 147, 0)
 	battle.update_view(after, 0, empty_rows, "", false, "test")
-	battle.table._stage_presentation_targets(events, snapshot)
+	battle._stage_presentation_targets(events, snapshot)
 	var event: Dictionary = events[0]
-	var cover := battle.table._presentation_slot_covers.get(
+	var cover := battle._presentation_slot_covers.get(
 		"0:active",
 	) as CardView
-	var authoritative_target: CardView = battle.table.get_slot_view(0, "active")
+	var authoritative_target: CardView = battle.get_slot_view(0, "active")
 	_expect(
 		cover != null
 		and authoritative_target != null
@@ -2177,17 +2177,17 @@ func _run_tool_attachment_landing_contract(
 		"Tool-attach tween fixture did not stage its pre-event CardView",
 	)
 	if cover == null or authoritative_target == null:
-		battle.table._clear_transient_visuals()
+		battle._clear_transient_visuals()
 		return
 
 	var prospective_rect := cover.prospective_attachment_visual_global_rect(
 		"tool",
 		"sv1-202",
 	)
-	var prospective_center: Vector2 = battle.table._effects_local(
+	var prospective_center: Vector2 = battle._effects_local(
 		prospective_rect.get_center()
 	)
-	var staged_card_center: Vector2 = battle.table._effects_local(
+	var staged_card_center: Vector2 = battle._effects_local(
 		cover.global_center()
 	)
 	var completion := _start_staged_event_motion(battle, event, 0.46)
@@ -2197,7 +2197,7 @@ func _run_tool_attachment_landing_contract(
 		"contract:attachment:tool-landing",
 	)
 	var dynamic_finish: Vector2 = (
-		battle.table._motion_entity_finish(flyer, Vector2.ZERO)
+		battle._motion_entity_finish(flyer, Vector2.ZERO)
 		if flyer != null
 		else Vector2.ZERO
 	)
@@ -2227,13 +2227,13 @@ func _run_tool_attachment_landing_contract(
 		"Tool-attach tween did not finish on the prospective badge geometry",
 	)
 
-	battle.table._on_presentation_event_finished(event)
+	battle._on_presentation_event_finished(event)
 	await process_frame
 	var rendered_tool_rect := authoritative_target.attachment_visual_global_rect(
 		"tool",
 		"sv1-202",
 	)
-	var rendered_tool_center: Vector2 = battle.table._effects_local(
+	var rendered_tool_center: Vector2 = battle._effects_local(
 		rendered_tool_rect.get_center()
 	)
 	_expect(
@@ -2242,16 +2242,16 @@ func _run_tool_attachment_landing_contract(
 		and rendered_tool_rect.size.x > 0.0
 		and rendered_tool_center.distance_to(landed_center) < 0.2
 		and rendered_tool_center.distance_to(
-			battle.table._effects_local(authoritative_target.global_center())
+			battle._effects_local(authoritative_target.global_center())
 		) > 4.0
-		and not battle.table._presentation_slot_covers.has("0:active")
+		and not battle._presentation_slot_covers.has("0:active")
 		and _event_motion_entity(
 			battle,
 			"contract:attachment:tool-landing",
 		) == null,
 		"Tool badge jumped at handoff or left staged motion state behind",
 	)
-	battle.table._clear_transient_visuals()
+	battle._clear_transient_visuals()
 
 
 func _run_attachment_batch_anchor_contract(
@@ -2301,13 +2301,13 @@ func _run_attachment_batch_anchor_contract(
 		},
 	], 143, 0)
 	battle.update_view(attach_after, 0, empty_rows, "", false, "test")
-	battle.table._stage_presentation_targets(attach_events, attach_snapshot)
-	var attach_real_active: CardView = battle.table.get_slot_view(0, "active")
-	var attach_cover := battle.table._presentation_slot_covers.get(
+	battle._stage_presentation_targets(attach_events, attach_snapshot)
+	var attach_real_active: CardView = battle.get_slot_view(0, "active")
+	var attach_cover := battle._presentation_slot_covers.get(
 		"0:active",
 	) as CardView
 	var real_active_mask_before := int(
-		battle.table._presentation_mask_counts.get(
+		battle._presentation_mask_counts.get(
 			attach_real_active.get_instance_id(),
 			0,
 		)
@@ -2328,7 +2328,7 @@ func _run_attachment_batch_anchor_contract(
 		else Vector2.ZERO
 	)
 	var prospective_fire_anchor: Vector2 = (
-		battle.table._effects_local(
+		battle._effects_local(
 			attach_cover.prospective_attachment_visual_global_rect(
 				"energy",
 				"sv1-ener-2",
@@ -2339,7 +2339,7 @@ func _run_attachment_batch_anchor_contract(
 		else Vector2.ZERO
 	)
 	var existing_psychic_anchor: Vector2 = (
-		battle.table._effects_local(attach_cover.attachment_anchor_global(
+		battle._effects_local(attach_cover.attachment_anchor_global(
 			"energy",
 			"sv1-ener-5",
 			0,
@@ -2348,7 +2348,7 @@ func _run_attachment_batch_anchor_contract(
 		else Vector2.ZERO
 	)
 	var attach_dynamic_finish: Vector2 = (
-		battle.table._motion_entity_finish(attach_flyer, Vector2.ZERO)
+		battle._motion_entity_finish(attach_flyer, Vector2.ZERO)
 		if attach_flyer != null
 		else Vector2.ZERO
 	)
@@ -2375,13 +2375,13 @@ func _run_attachment_batch_anchor_contract(
 		await attach_completion.completed
 	_expect(
 		attach_real_active.is_presentation_hidden()
-		and int(battle.table._presentation_mask_counts.get(
+		and int(battle._presentation_mask_counts.get(
 			attach_real_active.get_instance_id(),
 			0,
 		)) == real_active_mask_before,
 		"attachment landing consumed the later switch mask",
 	)
-	battle.table._on_presentation_event_finished(attach_events[0])
+	battle._on_presentation_event_finished(attach_events[0])
 	var switch_completion := _start_staged_event_motion(
 		battle,
 		attach_events[1],
@@ -2404,8 +2404,8 @@ func _run_attachment_batch_anchor_contract(
 	)
 	if not switch_completion.is_finished():
 		await switch_completion.completed
-	battle.table._on_presentation_event_finished(attach_events[1])
-	battle.table._clear_transient_visuals()
+	battle._on_presentation_event_finished(attach_events[1])
+	battle._clear_transient_visuals()
 
 	# Switch -> discard -> transfer: later source proxies must resolve from the
 	# remapped retained cover. Discarding the first energy also moves Fire from the
@@ -2473,7 +2473,7 @@ func _run_attachment_batch_anchor_contract(
 		},
 	], 145, 0)
 	battle.update_view(chain_after, 0, empty_rows, "", false, "test")
-	battle.table._stage_presentation_targets(chain_events, chain_snapshot)
+	battle._stage_presentation_targets(chain_events, chain_snapshot)
 	var chain_switch_completion := _start_staged_event_motion(
 		battle,
 		chain_events[0],
@@ -2481,15 +2481,15 @@ func _run_attachment_batch_anchor_contract(
 	)
 	if not chain_switch_completion.is_finished():
 		await chain_switch_completion.completed
-	battle.table._on_presentation_event_finished(chain_events[0])
-	var retained_active := battle.table._presentation_slot_covers.get(
+	battle._on_presentation_event_finished(chain_events[0])
+	var retained_active := battle._presentation_slot_covers.get(
 		"0:active",
 	) as CardView
-	var retained_bench := battle.table._presentation_slot_covers.get(
+	var retained_bench := battle._presentation_slot_covers.get(
 		"0:bench_0",
 	) as CardView
 	var fire_anchor_before_discard: Vector2 = (
-		battle.table._effects_local(
+		battle._effects_local(
 			retained_active.attachment_layout_visual_global_rect(
 				"energy",
 				"sv1-ener-2",
@@ -2500,7 +2500,7 @@ func _run_attachment_batch_anchor_contract(
 		else Vector2.ZERO
 	)
 	var psychic_anchor_before_discard: Vector2 = (
-		battle.table._effects_local(
+		battle._effects_local(
 			retained_active.attachment_layout_visual_global_rect(
 				"energy",
 				"sv1-ener-5",
@@ -2510,8 +2510,8 @@ func _run_attachment_batch_anchor_contract(
 		if retained_active != null
 		else Vector2.ZERO
 	)
-	var real_chain_active: CardView = battle.table.get_slot_view(0, "active")
-	var chain_active_mask := int(battle.table._presentation_mask_counts.get(
+	var real_chain_active: CardView = battle.get_slot_view(0, "active")
+	var chain_active_mask := int(battle._presentation_mask_counts.get(
 		real_chain_active.get_instance_id(),
 		0,
 	))
@@ -2547,12 +2547,12 @@ func _run_attachment_batch_anchor_contract(
 	)
 	if not discard_completion.is_finished():
 		await discard_completion.completed
-	battle.table._on_presentation_event_finished(chain_events[1])
-	retained_active = battle.table._presentation_slot_covers.get(
+	battle._on_presentation_event_finished(chain_events[1])
+	retained_active = battle._presentation_slot_covers.get(
 		"0:active",
 	) as CardView
 	var shifted_fire_anchor: Vector2 = (
-		battle.table._effects_local(
+		battle._effects_local(
 			retained_active.attachment_layout_visual_global_rect(
 				"energy",
 				"sv1-ener-2",
@@ -2565,14 +2565,14 @@ func _run_attachment_batch_anchor_contract(
 	_expect(
 		shifted_fire_anchor.distance_to(fire_anchor_before_discard) > 8.0
 		and real_chain_active.is_presentation_hidden()
-		and int(battle.table._presentation_mask_counts.get(
+		and int(battle._presentation_mask_counts.get(
 			real_chain_active.get_instance_id(),
 			0,
 		)) == chain_active_mask,
 		"discard did not preserve the switch barrier or reflow the remaining badge",
 	)
-	var real_chain_bench: CardView = battle.table.get_slot_view(0, "bench_0")
-	var chain_bench_mask := int(battle.table._presentation_mask_counts.get(
+	var real_chain_bench: CardView = battle.get_slot_view(0, "bench_0")
+	var chain_bench_mask := int(battle._presentation_mask_counts.get(
 		real_chain_bench.get_instance_id(),
 		0,
 	))
@@ -2597,7 +2597,7 @@ func _run_attachment_batch_anchor_contract(
 		else null
 	)
 	var prospective_transfer_anchor: Vector2 = (
-		battle.table._effects_local(
+		battle._effects_local(
 			retained_bench.prospective_attachment_visual_global_rect(
 				"energy",
 				"sv1-ener-2",
@@ -2608,7 +2608,7 @@ func _run_attachment_batch_anchor_contract(
 		else Vector2.ZERO
 	)
 	var transfer_finish: Vector2 = (
-		battle.table._motion_entity_finish(transfer_flyer, Vector2.ZERO)
+		battle._motion_entity_finish(transfer_flyer, Vector2.ZERO)
 		if transfer_flyer != null
 		else Vector2.ZERO
 	)
@@ -2644,21 +2644,21 @@ func _run_attachment_batch_anchor_contract(
 		await transfer_completion.completed
 	_expect(
 		real_chain_bench.is_presentation_hidden()
-		and int(battle.table._presentation_mask_counts.get(
+		and int(battle._presentation_mask_counts.get(
 			real_chain_bench.get_instance_id(),
 			0,
 		)) == chain_bench_mask,
 		"transfer landing consumed the retained switch mask before its barrier",
 	)
-	battle.table._on_presentation_event_finished(chain_events[2])
+	battle._on_presentation_event_finished(chain_events[2])
 	_expect(
-		battle.table._presentation_slot_covers.is_empty()
-		and battle.table._presentation_mask_counts.is_empty()
+		battle._presentation_slot_covers.is_empty()
+		and battle._presentation_mask_counts.is_empty()
 		and not real_chain_active.is_presentation_hidden()
 		and not real_chain_bench.is_presentation_hidden(),
 		"attachment batch left a retained cover or half-transparent target",
 	)
-	battle.table._clear_transient_visuals()
+	battle._clear_transient_visuals()
 
 	# Attachment staging used to apply the same 12/8 cap before the generic card
 	# motion path even saw the batch. Keep all physical indices so a large discard
@@ -2697,13 +2697,13 @@ func _run_attachment_batch_anchor_contract(
 		},
 	}
 	var dense_attachment_events: Array[Dictionary] = [dense_attachment_event]
-	battle.table._stage_attachment_source_proxies(dense_attachment_events)
-	var dense_specs: Array = battle.table._presentation_attachment_source_specs.get(
+	battle._stage_attachment_source_proxies(dense_attachment_events)
+	var dense_specs: Array = battle._presentation_attachment_source_specs.get(
 		"contract:attachment-overflow-batch",
 		[],
 	)
-	battle.table._activate_attachment_source_proxies(dense_attachment_event)
-	var dense_proxies: Array = battle.table._presentation_attachment_source_proxies.get(
+	battle._activate_attachment_source_proxies(dense_attachment_event)
+	var dense_proxies: Array = battle._presentation_attachment_source_proxies.get(
 		"contract:attachment-overflow-batch",
 		[],
 	)
@@ -2712,7 +2712,7 @@ func _run_attachment_batch_anchor_contract(
 		and dense_proxies.size() == dense_energy_ids.size(),
 		"Oversized attachment batch was truncated before entering the rolling scheduler",
 	)
-	battle.table._clear_attachment_source_proxies()
+	battle._clear_attachment_source_proxies()
 
 
 func _start_staged_event_motion(
@@ -2720,10 +2720,10 @@ func _start_staged_event_motion(
 	event: Dictionary,
 	duration: float,
 ) -> PresentationDirector.EventCompletion:
-	battle.table._on_presentation_event_started(event)
+	battle._on_presentation_event_started(event)
 	var completion := PresentationDirector.EventCompletion.new(duration)
-	battle.table._on_presentation_event_completion_requested(event, completion)
-	battle.table._on_card_motion_requested(event, duration)
+	battle._on_presentation_event_completion_requested(event, completion)
+	battle._on_card_motion_requested(event, duration)
 	return completion
 
 
@@ -2790,11 +2790,11 @@ func _run_slot_visual_transaction_contract(
 		},
 	], 131, 0)
 	battle.update_view(after, 0, empty_rows, "", false, "test")
-	battle.table._stage_presentation_targets(events, snapshot)
-	var active_cover := battle.table._presentation_slot_covers.get(
+	battle._stage_presentation_targets(events, snapshot)
+	var active_cover := battle._presentation_slot_covers.get(
 		"0:active",
 	) as CardView
-	var active_cover_state := battle.table._presentation_slot_cover_states.get(
+	var active_cover_state := battle._presentation_slot_cover_states.get(
 		"0:active",
 	) as PokemonState
 	_expect(
@@ -2809,40 +2809,40 @@ func _run_slot_visual_transaction_contract(
 		and not battle.log_panel.log_label.text.contains("事务后日志"),
 		"battle log committed the final action before presentation contact",
 	)
-	battle.table._on_presentation_event_started(events[0])
+	battle._on_presentation_event_started(events[0])
 	_expect(
 		active_cover_state.damage_counters == 3,
 		"damage cover did not commit counters on the impact event",
 	)
-	battle.table._on_presentation_event_finished(events[0])
+	battle._on_presentation_event_finished(events[0])
 	_expect(
-		battle.table._presentation_slot_covers.has("0:active"),
+		battle._presentation_slot_covers.has("0:active"),
 		"damage cover disappeared before the later retreat sequence",
 	)
-	battle.table._on_presentation_event_started(events[1])
-	battle.table._on_presentation_event_finished(events[1])
-	var retreat_source_row: Dictionary = battle.table._snapshot_slot_row(0, "active")
+	battle._on_presentation_event_started(events[1])
+	battle._on_presentation_event_finished(events[1])
+	var retreat_source_row: Dictionary = battle._snapshot_slot_row(0, "active")
 	var retreat_source_state: Dictionary = retreat_source_row.get("pokemon", {})
 	_expect(
 		active_cover_state.energy_card_ids.is_empty()
 		and Array(retreat_source_state.get("energy_card_ids", [])).is_empty()
-		and battle.table._presentation_slot_covers.has("0:active"),
+		and battle._presentation_slot_covers.has("0:active"),
 		"retreat cost did not advance the visual source state before movement",
 	)
-	battle.table._on_presentation_event_started(events[2])
+	battle._on_presentation_event_started(events[2])
 	_expect(
-		battle.table._presentation_slot_covers.has("0:active")
-		and battle.table._presentation_slot_covers.has("0:bench_0"),
+		battle._presentation_slot_covers.has("0:active")
+		and battle._presentation_slot_covers.has("0:bench_0"),
 		"retreat released its composite slot covers before motion claimed them",
 	)
-	var retreat_flyer_start_count: int = battle.table._active_flyers.size()
-	var retreat_spawned: bool = battle.table._spawn_slot_transition(
+	var retreat_flyer_start_count: int = battle._active_flyers.size()
+	var retreat_spawned: bool = battle._spawn_slot_transition(
 		events[2],
 		0.46,
 		str(events[2].get("event_id", "")),
 	)
 	var retreat_flyer_count: int = (
-		battle.table._active_flyers.size() - retreat_flyer_start_count
+		battle._active_flyers.size() - retreat_flyer_start_count
 	)
 	_expect(
 		retreat_spawned and retreat_flyer_count == 2,
@@ -2874,12 +2874,12 @@ func _run_slot_visual_transaction_contract(
 		var first_finish := Vector2(retreat_movers[0].get_meta("motion_finish"))
 		var second_start := Vector2(retreat_movers[1].get_meta("motion_start"))
 		var second_finish := Vector2(retreat_movers[1].get_meta("motion_finish"))
-		var first_control: Vector2 = battle.table._slot_composite_control_point(
+		var first_control: Vector2 = battle._slot_composite_control_point(
 			first_start,
 			first_finish,
 			float(retreat_movers[0].get_meta("slot_composite_lane_offset", 0.0)),
 		)
-		var second_control: Vector2 = battle.table._slot_composite_control_point(
+		var second_control: Vector2 = battle._slot_composite_control_point(
 			second_start,
 			second_finish,
 			float(retreat_movers[1].get_meta("slot_composite_lane_offset", 0.0)),
@@ -2889,7 +2889,7 @@ func _run_slot_visual_transaction_contract(
 			"bidirectional retreat movers still shared the same collision lane",
 		)
 		for mover in retreat_movers:
-			battle.table._update_slot_composite_motion(
+			battle._update_slot_composite_motion(
 				0.5,
 				mover,
 				Vector2(mover.get_meta("motion_start")),
@@ -2913,7 +2913,7 @@ func _run_slot_visual_transaction_contract(
 		) as CardView
 		if retarget_view != null:
 			var original_target_position: Vector2 = retarget_view.position
-			battle.table._update_slot_composite_motion(
+			battle._update_slot_composite_motion(
 				0.5,
 				retarget_probe,
 				Vector2(retarget_probe.get_meta("motion_start")),
@@ -2923,7 +2923,7 @@ func _run_slot_visual_transaction_contract(
 			)
 			var center_before_retarget: Vector2 = retarget_probe.position + retarget_probe.size * 0.5
 			retarget_view.position += Vector2(40.0, 0.0)
-			battle.table._update_slot_composite_motion(
+			battle._update_slot_composite_motion(
 				0.5,
 				retarget_probe,
 				Vector2(retarget_probe.get_meta("motion_start")),
@@ -2943,7 +2943,7 @@ func _run_slot_visual_transaction_contract(
 		< _effective_canvas_z(battle.world_feedback),
 		"slot composite rendered above world feedback",
 	)
-	battle.table._clear_transient_visuals()
+	battle._clear_transient_visuals()
 
 	var attach_switch_before := UIPreviewStateFactory.battle_state(20260807)
 	attach_switch_before.revision = 134
@@ -2995,13 +2995,13 @@ func _run_slot_visual_transaction_contract(
 		},
 	], 135, 0)
 	battle.update_view(attach_switch_after, 0, empty_rows, "", false, "test")
-	battle.table._stage_presentation_targets(
+	battle._stage_presentation_targets(
 		attach_switch_events,
 		attach_switch_snapshot,
 	)
-	battle.table._on_presentation_event_started(attach_switch_events[0])
-	battle.table._on_presentation_event_finished(attach_switch_events[0])
-	var attached_source_row: Dictionary = battle.table._snapshot_slot_row(0, "active")
+	battle._on_presentation_event_started(attach_switch_events[0])
+	battle._on_presentation_event_finished(attach_switch_events[0])
+	var attached_source_row: Dictionary = battle._snapshot_slot_row(0, "active")
 	var attached_source_state: Dictionary = attached_source_row.get("pokemon", {})
 	_expect(
 		Array(attached_source_state.get("energy_card_ids", [])).size() == 9
@@ -3010,20 +3010,20 @@ func _run_slot_visual_transaction_contract(
 		) == 2,
 		"attached energy was not committed to the next movement source snapshot",
 	)
-	battle.table._on_presentation_event_started(attach_switch_events[1])
+	battle._on_presentation_event_started(attach_switch_events[1])
 	_expect(
-		battle.table._presentation_slot_covers.has("0:active")
-		and battle.table._presentation_slot_covers.has("0:bench_0"),
+		battle._presentation_slot_covers.has("0:active")
+		and battle._presentation_slot_covers.has("0:bench_0"),
 		"switch released the attached composite before its motion request",
 	)
-	var switch_flyer_start_count: int = battle.table._active_flyers.size()
-	var switch_spawned: bool = battle.table._spawn_slot_transition(
+	var switch_flyer_start_count: int = battle._active_flyers.size()
+	var switch_spawned: bool = battle._spawn_slot_transition(
 		attach_switch_events[1],
 		0.46,
 		str(attach_switch_events[1].get("event_id", "")),
 	)
 	var switch_flyer_count: int = (
-		battle.table._active_flyers.size() - switch_flyer_start_count
+		battle._active_flyers.size() - switch_flyer_start_count
 	)
 	_expect(
 		switch_spawned and switch_flyer_count == 2,
@@ -3050,7 +3050,7 @@ func _run_slot_visual_transaction_contract(
 		and not switch_contains_paper_attachment,
 		"energy attached earlier in the batch did not remain a badge on its composite Pokemon",
 	)
-	battle.table._clear_transient_visuals()
+	battle._clear_transient_visuals()
 
 	var promotion_before := UIPreviewStateFactory.battle_state(20260808)
 	promotion_before.revision = 136
@@ -3100,10 +3100,10 @@ func _run_slot_visual_transaction_contract(
 	], 137, 0)
 	var promotion_event: Dictionary = promotion_events[0]
 	battle.update_view(promotion_after, 0, empty_rows, "", false, "test")
-	battle.table._stage_presentation_targets(promotion_events, promotion_snapshot)
-	battle.table._on_presentation_event_started(promotion_event)
-	var promotion_start_count: int = battle.table._active_flyers.size()
-	var promotion_spawned: bool = battle.table._spawn_slot_transition(
+	battle._stage_presentation_targets(promotion_events, promotion_snapshot)
+	battle._on_presentation_event_started(promotion_event)
+	var promotion_start_count: int = battle._active_flyers.size()
+	var promotion_spawned: bool = battle._spawn_slot_transition(
 		promotion_event,
 		0.46,
 		str(promotion_event.get("event_id", "")),
@@ -3111,7 +3111,7 @@ func _run_slot_visual_transaction_contract(
 	var promotion_movers := _slot_composite_movers(battle)
 	_expect(
 		promotion_spawned
-		and battle.table._active_flyers.size() - promotion_start_count == 1
+		and battle._active_flyers.size() - promotion_start_count == 1
 		and promotion_movers.size() == 1
 		and promotion_movers[0].pokemon != null
 		and promotion_movers[0].pokemon.energy_card_ids == ["sv1-ener-2"]
@@ -3123,12 +3123,12 @@ func _run_slot_visual_transaction_contract(
 		"promotion did not use exactly one complete Pokemon composite",
 	)
 	if not promotion_movers.is_empty():
-		var promotion_tween := battle.table._flyer_tweens.get(
+		var promotion_tween := battle._flyer_tweens.get(
 			promotion_movers[0].get_instance_id(),
 		) as Tween
 		if promotion_tween != null and promotion_tween.is_valid():
 			promotion_tween.kill()
-		battle.table._finish_retained_slot_composite(
+		battle._finish_retained_slot_composite(
 			promotion_movers[0],
 			promotion_movers[0].get_meta("motion_landing_view") as CardView,
 			"0:active",
@@ -3136,8 +3136,8 @@ func _run_slot_visual_transaction_contract(
 			Vector2(promotion_movers[0].get_meta("motion_finish")),
 			"promoted",
 		)
-	battle.table._on_presentation_event_finished(promotion_events[0])
-	var promoted_cover_state := battle.table._presentation_slot_cover_states.get(
+	battle._on_presentation_event_finished(promotion_events[0])
+	var promoted_cover_state := battle._presentation_slot_cover_states.get(
 		"0:active",
 	) as PokemonState
 	_expect(
@@ -3146,18 +3146,18 @@ func _run_slot_visual_transaction_contract(
 		and promoted_cover_state.energy_card_ids == ["sv1-ener-2"],
 		"empty active destination lost its planned post-promotion mutation queue",
 	)
-	battle.table._on_presentation_event_started(promotion_events[1])
-	battle.table._on_presentation_event_finished(promotion_events[1])
-	battle.table._on_presentation_event_started(promotion_events[2])
-	battle.table._on_presentation_event_finished(promotion_events[2])
-	var promoted_real_view: CardView = battle.table.get_slot_view(0, "active")
+	battle._on_presentation_event_started(promotion_events[1])
+	battle._on_presentation_event_finished(promotion_events[1])
+	battle._on_presentation_event_started(promotion_events[2])
+	battle._on_presentation_event_finished(promotion_events[2])
+	var promoted_real_view: CardView = battle.get_slot_view(0, "active")
 	_expect(
-		not battle.table._presentation_slot_covers.has("0:active")
+		not battle._presentation_slot_covers.has("0:active")
 		and promoted_real_view != null
 		and not promoted_real_view.is_presentation_hidden(),
 		"promotion mutation tail did not release the final active CardView",
 	)
-	battle.table._clear_transient_visuals()
+	battle._clear_transient_visuals()
 
 	var chained_before := UIPreviewStateFactory.battle_state(20260809)
 	chained_before.revision = 138
@@ -3207,9 +3207,9 @@ func _run_slot_visual_transaction_contract(
 		},
 	], 139, 0)
 	battle.update_view(chained_after, 0, empty_rows, "", false, "test")
-	battle.table._stage_presentation_targets(chained_events, chained_snapshot)
-	battle.table._on_presentation_event_started(chained_events[0])
-	battle.table._spawn_slot_transition(
+	battle._stage_presentation_targets(chained_events, chained_snapshot)
+	battle._on_presentation_event_started(chained_events[0])
+	battle._spawn_slot_transition(
 		chained_events[0],
 		0.46,
 		str(chained_events[0].get("event_id", "")),
@@ -3228,12 +3228,12 @@ func _run_slot_visual_transaction_contract(
 		"switch did not preserve the destination slot's later mutation queue",
 	)
 	if chained_active_mover != null:
-		var chained_tween := battle.table._flyer_tweens.get(
+		var chained_tween := battle._flyer_tweens.get(
 			chained_active_mover.get_instance_id(),
 		) as Tween
 		if chained_tween != null and chained_tween.is_valid():
 			chained_tween.kill()
-		battle.table._finish_retained_slot_composite(
+		battle._finish_retained_slot_composite(
 			chained_active_mover,
 			chained_active_mover.get_meta("motion_landing_view") as CardView,
 			"0:active",
@@ -3241,11 +3241,11 @@ func _run_slot_visual_transaction_contract(
 			Vector2(chained_active_mover.get_meta("motion_finish")),
 			"switched",
 		)
-	battle.table._on_presentation_event_finished(chained_events[0])
-	var chained_cover_state := battle.table._presentation_slot_cover_states.get(
+	battle._on_presentation_event_finished(chained_events[0])
+	var chained_cover_state := battle._presentation_slot_cover_states.get(
 		"0:active",
 	) as PokemonState
-	var chained_snapshot_state: Dictionary = battle.table._snapshot_slot_row(
+	var chained_snapshot_state: Dictionary = battle._snapshot_slot_row(
 		0,
 		"active",
 	).get("pokemon", {})
@@ -3257,29 +3257,29 @@ func _run_slot_visual_transaction_contract(
 		and str(chained_snapshot_state.get("card_id", "")) == "svi-chim",
 		"switch landing did not remap the incoming Pokemon cover/snapshot before later mutations",
 	)
-	battle.table._on_presentation_event_started(chained_events[1])
+	battle._on_presentation_event_started(chained_events[1])
 	_expect(
 		chained_cover_state != null
 		and chained_cover_state.damage_counters == 3
-		and battle.table.get_slot_view(0, "active").is_presentation_hidden(),
+		and battle.get_slot_view(0, "active").is_presentation_hidden(),
 		"post-switch damage bypassed the retained incoming-Pokemon cover",
 	)
-	battle.table._on_presentation_event_finished(chained_events[1])
+	battle._on_presentation_event_finished(chained_events[1])
 	_expect(
-		battle.table._presentation_slot_covers.has("0:active"),
+		battle._presentation_slot_covers.has("0:active"),
 		"post-switch cover released before the later attachment event",
 	)
-	battle.table._on_presentation_event_started(chained_events[2])
-	battle.table._on_presentation_event_finished(chained_events[2])
-	var chained_real_view: CardView = battle.table.get_slot_view(0, "active")
+	battle._on_presentation_event_started(chained_events[2])
+	battle._on_presentation_event_finished(chained_events[2])
+	var chained_real_view: CardView = battle.get_slot_view(0, "active")
 	_expect(
-		not battle.table._presentation_slot_covers.has("0:active")
+		not battle._presentation_slot_covers.has("0:active")
 		and chained_real_view != null
 		and not chained_real_view.is_presentation_hidden()
 		and chained_real_view.modulate.a > 0.99,
 		"post-switch mutation queue did not hand off its final state cleanly",
 	)
-	battle.table._clear_transient_visuals()
+	battle._clear_transient_visuals()
 
 	var ko_before := UIPreviewStateFactory.battle_state(20260731)
 	ko_before.revision = 132
@@ -3341,19 +3341,19 @@ func _run_slot_visual_transaction_contract(
 		},
 	], 133, 0)
 	battle.update_view(ko_after, 0, empty_rows, "", false, "test")
-	battle.table._stage_presentation_targets(ko_events, ko_snapshot)
-	var ko_cover_state := battle.table._presentation_slot_cover_states.get(
+	battle._stage_presentation_targets(ko_events, ko_snapshot)
+	var ko_cover_state := battle._presentation_slot_cover_states.get(
 		"1:active",
 	) as PokemonState
 	var source_endpoint := {"player": 1, "slot": "active"}
 	var component_ids := ["sv1-104", "sv1-202", "sv1-ener-4", "sv1-ener-5"]
-	var component_points: Array[Vector2] = battle.table._source_points_for_event(
+	var component_points: Array[Vector2] = battle._source_points_for_event(
 		source_endpoint,
 		component_ids,
 		component_ids.size(),
 		Vector2.ZERO,
 	)
-	var component_sizes: Array[Vector2] = battle.table._source_sizes_for_event(
+	var component_sizes: Array[Vector2] = battle._source_sizes_for_event(
 		source_endpoint,
 		component_ids,
 		component_ids.size(),
@@ -3376,36 +3376,36 @@ func _run_slot_visual_transaction_contract(
 		"KO components did not leave from their rendered badges at attachment size",
 	)
 	_expect(
-		battle.table._public_motion_texture_for_card_id(
+		battle._public_motion_texture_for_card_id(
 			"contract-missing-public-attachment",
-		) != battle.table._texture_for_card_id(""),
+		) != battle._texture_for_card_id(""),
 		"public missing attachment art still masqueraded as a concealed card back",
 	)
-	battle.table._on_presentation_event_started(ko_events[0])
-	battle.table._on_presentation_event_finished(ko_events[0])
+	battle._on_presentation_event_started(ko_events[0])
+	battle._on_presentation_event_finished(ko_events[0])
 	_expect(
 		ko_cover_state != null
 		and ko_cover_state.damage_counters == 12
-		and battle.table._presentation_slot_covers.has("1:active"),
+		and battle._presentation_slot_covers.has("1:active"),
 		"KO target disappeared before its damage/impact completed",
 	)
-	battle.table._on_presentation_event_started(ko_events[1])
+	battle._on_presentation_event_started(ko_events[1])
 	_expect(
-		battle.table._presentation_slot_covers.has("1:active"),
+		battle._presentation_slot_covers.has("1:active"),
 		"KO source cover disappeared before KO feedback could hit the old stack",
 	)
-	battle.table._on_card_motion_requested(ko_events[1], 0.24)
+	battle._on_card_motion_requested(ko_events[1], 0.24)
 	_expect(
-		battle.table._presentation_slot_covers.has("1:active"),
+		battle._presentation_slot_covers.has("1:active"),
 		"Deferred KO declaration incorrectly started leave-play motion",
 	)
-	battle.table._on_presentation_event_finished(ko_events[1])
-	battle.table._on_presentation_event_started(ko_events[2])
+	battle._on_presentation_event_finished(ko_events[1])
+	battle._on_presentation_event_started(ko_events[2])
 	_expect(
-		not battle.table._presentation_slot_covers.has("1:active"),
+		not battle._presentation_slot_covers.has("1:active"),
 		"KO source cover remained over the explicit leave-play motion",
 	)
-	battle.table._clear_transient_visuals()
+	battle._clear_transient_visuals()
 
 
 func _run_prize_stack_transaction_contract(
@@ -3439,17 +3439,17 @@ func _run_prize_stack_transaction_contract(
 		},
 	], 135, 0)
 	battle.update_view(after, 0, empty_rows, "", false, "test")
-	battle.table._stage_presentation_targets(events, snapshot)
+	battle._stage_presentation_targets(events, snapshot)
 	var endpoint := {"player": 0, "zone": "prizes"}
-	var first_offset: Vector2 = battle.table._zone_motion_offset(endpoint, 0, 1, true)
-	battle.table._apply_presentation_zone_event(events[0])
-	var second_offset: Vector2 = battle.table._zone_motion_offset(endpoint, 0, 1, true)
+	var first_offset: Vector2 = battle._zone_motion_offset(endpoint, 0, 1, true)
+	battle._apply_presentation_zone_event(events[0])
+	var second_offset: Vector2 = battle._zone_motion_offset(endpoint, 0, 1, true)
 	_expect(
 		first_offset.distance_to(second_offset) > 2.0
 		and first_offset.length() > second_offset.length(),
 		"consecutive prizes reused the same source fan slot",
 	)
-	battle.table._clear_transient_visuals()
+	battle._clear_transient_visuals()
 
 
 func _run_local_handoff_contract() -> void:
@@ -3495,8 +3495,8 @@ func _run_local_handoff_contract() -> void:
 		and ui.modal_layer.visible
 		and ui.modal_title.text == "准备阶段"
 		and not ui.modal_confirm.disabled
-		and ui.battle_screen.table._local_hand_privacy_hidden
-		and not ui.battle_screen.table.hand_scroll.visible
+		and ui.battle_screen._local_hand_privacy_hidden
+		and not ui.battle_screen.hand_scroll.visible
 		and not ui.battle_screen.is_presentation_busy(),
 		(
 			"Eventless player-2 setup completion exposed or stranded the ready player's waiting view "
@@ -3512,8 +3512,8 @@ func _run_local_handoff_contract() -> void:
 			str(ui.modal_layer.visible),
 			ui.modal_title.text,
 			str(ui.modal_confirm.disabled),
-			str(ui.battle_screen.table._local_hand_privacy_hidden),
-			str(ui.battle_screen.table.hand_scroll.visible),
+			str(ui.battle_screen._local_hand_privacy_hidden),
+			str(ui.battle_screen.hand_scroll.visible),
 			str(ui.battle_screen.is_presentation_busy()),
 		],
 	)
@@ -3521,11 +3521,11 @@ func _run_local_handoff_contract() -> void:
 	await create_timer(0.18).timeout
 	_expect(
 		not ui.modal_layer.visible
-		and not ui.battle_screen.table._local_hand_privacy_hidden,
+		and not ui.battle_screen._local_hand_privacy_hidden,
 		"Eventless setup handoff privacy gate did not release to the next player modal=%s privacy=%s"
 		% [
 			str(ui.modal_layer.visible),
-			str(ui.battle_screen.table._local_hand_privacy_hidden),
+			str(ui.battle_screen._local_hand_privacy_hidden),
 		],
 	)
 
@@ -3722,7 +3722,7 @@ func _run_local_handoff_contract() -> void:
 		"",
 		BattleTransitionRequest.CAUSE_LOCAL_ACTION,
 	)
-	var gated_state: GameState = ui.battle_screen.table.state_ref
+	var gated_state: GameState = ui.battle_screen.state_ref
 	_expect(
 		ui.modal_layer.visible
 		and float(ui.modal_shade.color.a) >= 0.99
@@ -3790,7 +3790,7 @@ func _run_local_handoff_contract() -> void:
 	_expect(
 		started_types == ["turn_start", "cards_drawn"]
 		and "turn_start" in finished_types
-		and ui.battle_screen.table.state_ref.players[1].hand
+		and ui.battle_screen.state_ref.players[1].hand
 		== ["svi-chim", "sv1-151"],
 		"Turn draw started before the turn-start announcement completion barrier",
 	)
@@ -3834,8 +3834,8 @@ func _run_local_handoff_contract() -> void:
 		and float(ui.modal_shade.color.a) >= 0.99
 		and ui.modal_title.text == "规则选择"
 		and ui.active_request == null
-		and ui.battle_screen.table._local_hand_privacy_hidden
-		and not ui.battle_screen.table.hand_scroll.visible,
+		and ui.battle_screen._local_hand_privacy_hidden
+		and not ui.battle_screen.hand_scroll.visible,
 		"Chained Choice owner change exposed the next player's view before its privacy gate",
 	)
 	await process_frame
@@ -3847,7 +3847,7 @@ func _run_local_handoff_contract() -> void:
 	await create_timer(0.18).timeout
 	_expect(
 		ui.active_request == chained_choice
-		and not ui.battle_screen.table._local_hand_privacy_hidden,
+		and not ui.battle_screen._local_hand_privacy_hidden,
 		"Confirmed chained Choice handoff did not open the new owner's request",
 	)
 	ui._close_modal()
@@ -3879,7 +3879,7 @@ func _run_local_handoff_contract() -> void:
 		and float(ui.modal_shade.color.a) >= 0.99
 		and ui.modal_title.text == "规则选择"
 		and ui.active_request == null
-		and ui.battle_screen.table._local_hand_privacy_hidden,
+		and ui.battle_screen._local_hand_privacy_hidden,
 		"Action-result Choice owner change bypassed the shared privacy gate",
 	)
 	ui.modal_confirm.pressed.emit()
@@ -4026,7 +4026,7 @@ func _run_public_coin_contract(battle: Control) -> void:
 	}], 91, 1)
 	await process_frame
 	await process_frame
-	var showcase: CoinShowcase = battle.table.coin_showcase
+	var showcase: CoinShowcase = battle.coin_showcase
 	_expect(
 		showcase != null
 		and showcase.visible
@@ -4072,7 +4072,7 @@ func _run_empty_public_reveal_contract(battle: Control, settings: Node) -> void:
 		}], 92 if mode == "standard" else 93, 0)
 		await process_frame
 		await process_frame
-		var showcase: Control = battle.table.reveal_layer._showcase as Control
+		var showcase: Control = battle.reveal_layer._showcase as Control
 		var summary := (
 			showcase.get_node_or_null("RevealSummary") as Label
 			if showcase != null
@@ -4080,7 +4080,7 @@ func _run_empty_public_reveal_contract(battle: Control, settings: Node) -> void:
 		)
 		_expect(
 			showcase != null
-			and battle.table.reveal_layer.is_presenting()
+			and battle.reveal_layer.is_presenting()
 			and Array(showcase.get_meta("reveal_cards", [])).is_empty()
 			and summary != null
 			and summary.text == "未翻到能量"
@@ -4092,7 +4092,7 @@ func _run_empty_public_reveal_contract(battle: Control, settings: Node) -> void:
 			await process_frame
 		_expect(
 			not battle.director.is_playing()
-			and not battle.table.reveal_layer.is_presenting()
+			and not battle.reveal_layer.is_presenting()
 			and not battle.input_blocker.visible,
 			"%s zero-card reveal did not release its completion barrier" % mode,
 		)
@@ -4180,14 +4180,14 @@ func _run_public_reveal_damage_sequence_contract(
 			str(event.get("event_type", "")),
 		)
 		lifecycle.append("start:%s" % event_type)
-		var cover_state := battle.table._presentation_slot_cover_states.get(
+		var cover_state := battle._presentation_slot_cover_states.get(
 			"1:active",
 		) as PokemonState
 		if event_type == "deck_shuffled" and cover_state != null:
 			probes["cover_before_damage"] = cover_state.damage_counters
 		if event_type == "damage_dealt":
 			probes["damage_started_while_revealing"] = (
-				battle.table.reveal_layer.is_presenting()
+				battle.reveal_layer.is_presenting()
 			)
 			if cover_state != null:
 				probes["cover_at_damage"] = cover_state.damage_counters
@@ -4209,13 +4209,13 @@ func _run_public_reveal_damage_sequence_contract(
 	)
 	await process_frame
 	await process_frame
-	var showcase := battle.table.reveal_layer._showcase as Control
+	var showcase := battle.reveal_layer._showcase as Control
 	var summary := (
 		showcase.get_node_or_null("RevealSummary") as Label
 		if showcase != null
 		else null
 	)
-	var staged_damage := battle.table._presentation_slot_cover_states.get(
+	var staged_damage := battle._presentation_slot_cover_states.get(
 		"1:active",
 	) as PokemonState
 	_expect(
@@ -4314,19 +4314,19 @@ func _run_preflight_and_event_cleanup_contract(
 	var pending_drag := Control.new()
 	pending_drag.set_meta("drag_session_id", "contract:future-drag")
 	battle.effects.add_child(pending_drag)
-	battle.table._active_flyers.append(pending_drag)
+	battle._active_flyers.append(pending_drag)
 	var old_event_flyer := Control.new()
 	old_event_flyer.set_meta("motion_event_id", "contract:old-stadium")
 	battle.effects.add_child(old_event_flyer)
-	battle.table._active_flyers.append(old_event_flyer)
-	battle.table._clear_active_flyers_for_event("contract:old-stadium")
+	battle._active_flyers.append(old_event_flyer)
+	battle._clear_active_flyers_for_event("contract:old-stadium")
 	_expect(
 		is_instance_valid(pending_drag)
-		and pending_drag in battle.table._active_flyers
+		and pending_drag in battle._active_flyers
 		and not is_instance_valid(old_event_flyer),
 		"Finishing one event cleared the parked proxy owned by a later event",
 	)
-	battle.table._dispose_flyer(pending_drag)
+	battle._dispose_flyer(pending_drag)
 
 	var duplicate_snapshot: Dictionary = battle.capture_presentation_snapshot()
 	var duplicate_event := PresentationEvent.normalize({
@@ -4357,9 +4357,9 @@ func _run_preflight_and_event_cleanup_contract(
 	)
 	await _wait_for_handle(duplicate_handle, battle)
 	_expect(
-		battle.table._presentation_slot_covers.is_empty()
-		and battle.table._presentation_reveals.is_empty()
-		and battle.table._presentation_mask_counts.is_empty(),
+		battle._presentation_slot_covers.is_empty()
+		and battle._presentation_reveals.is_empty()
+		and battle._presentation_mask_counts.is_empty(),
 		"Duplicate-only batch left presentation staging without a sequence barrier",
 	)
 	battle.director._seen_event_ids.erase("contract:duplicate-only")
@@ -4374,7 +4374,7 @@ func _run_startup_shuffle_contract(battle: Control) -> void:
 	battle.update_view(startup_state, 0, empty_rows, "", false, "test")
 	await process_frame
 	await process_frame
-	battle.table._on_hand_drag_started(0)
+	battle._on_hand_drag_started(0)
 	await process_frame
 	_expect(
 		not battle.active_drag_context().is_empty(),
@@ -4382,7 +4382,7 @@ func _run_startup_shuffle_contract(battle: Control) -> void:
 	)
 	battle.set_startup_blocked(true)
 	_expect(
-		battle.table._startup_input_blocked
+		battle._startup_input_blocked
 		and battle.input_blocker.visible
 		and battle.active_drag_context().is_empty()
 		and not battle.hand_views[0].is_drag_masked(),
@@ -4390,7 +4390,7 @@ func _run_startup_shuffle_contract(battle: Control) -> void:
 	)
 	battle.set_startup_blocked(false)
 	_expect(
-		not battle.table._startup_input_blocked
+		not battle._startup_input_blocked
 		and not battle.input_blocker.visible,
 		"Startup blocker remained after choreography release",
 	)
@@ -4423,11 +4423,11 @@ func _run_startup_shuffle_contract(battle: Control) -> void:
 					physical_pile_geometry_exact = false
 			elif control is Label and (control as Label).text == "再战 ×2":
 				mulligan_summary_found = true
-	var own_deck := battle.table.zones.get("own_deck") as ZoneView
-	var opponent_deck := battle.table.zones.get("opponent_deck") as ZoneView
+	var own_deck := battle.zones.get("own_deck") as ZoneView
+	var opponent_deck := battle.zones.get("opponent_deck") as ZoneView
 	_expect(
 		not handle.is_finished()
-		and startup_cards == battle.table._shuffle_card_count() * 2
+		and startup_cards == battle._shuffle_card_count() * 2
 		and physical_pile_cards == startup_cards
 		and physical_pile_geometry_exact
 		and own_deck != null
@@ -4451,17 +4451,17 @@ func _run_startup_shuffle_contract(battle: Control) -> void:
 		and not leftover
 		and not own_deck.is_stack_presentation_hidden()
 		and not opponent_deck.is_stack_presentation_hidden()
-		and battle.table._shuffle_source_masks.is_empty(),
+		and battle._shuffle_source_masks.is_empty(),
 		"Startup shuffle did not finish its MotionHandle or clear proxy nodes",
 	)
 	var cancelled_handle: MotionHandle = battle.play_startup_shuffle([])
 	await process_frame
-	battle.table._cancel_startup_shuffle()
+	battle._cancel_startup_shuffle()
 	_expect(
 		cancelled_handle.is_finished()
 		and not own_deck.is_stack_presentation_hidden()
 		and not opponent_deck.is_stack_presentation_hidden()
-		and battle.table._shuffle_source_masks.is_empty(),
+		and battle._shuffle_source_masks.is_empty(),
 		"Cancelled startup shuffle did not restore the physical deck piles",
 	)
 
@@ -4487,7 +4487,7 @@ func _run_feedback_layer_contract(
 	battle: Control,
 	empty_rows: Array[Dictionary],
 ) -> void:
-	var table = battle.table
+	var table = battle
 	var world = battle.world_feedback
 	var announcements = battle.announcement_layer
 	var detail_panel := table.detail_panel as Control
@@ -4688,11 +4688,11 @@ func _run_fast_feedback_lifecycle_contract(
 	settings.set("reduced_motion", false)
 	battle.director.set_speed_mode("fast")
 	battle.world_feedback.clear_transients()
-	var after: GameState = battle.table.state_ref.clone_state()
+	var after: GameState = battle.state_ref.clone_state()
 	after.revision += 1
 	var target_view := BattleViewModel.capture(
 		after,
-		battle.table.view_player,
+		battle.view_player,
 		empty_rows,
 		"",
 		false,
@@ -4715,7 +4715,7 @@ func _run_fast_feedback_lifecycle_contract(
 	)
 	await _wait_for_handle(handle, battle)
 	var camera_positions: Array[Vector2] = []
-	for target_value in battle.table.camera_rig._targets:
+	for target_value in battle.camera_rig._targets:
 		var target := target_value as Control
 		camera_positions.append(target.position)
 	var floating_positions: Array[Vector2] = []
@@ -4726,7 +4726,7 @@ func _run_fast_feedback_lifecycle_contract(
 	await process_frame
 	var positions_unchanged := true
 	for index in range(camera_positions.size()):
-		var target := battle.table.camera_rig._targets[index] as Control
+		var target := battle.camera_rig._targets[index] as Control
 		if target.position.distance_to(camera_positions[index]) > 0.01:
 			positions_unchanged = false
 	for index in range(mini(
@@ -4740,7 +4740,7 @@ func _run_fast_feedback_lifecycle_contract(
 			positions_unchanged = false
 	_expect(
 		handle.status == PresentationHandle.COMPLETED
-		and battle.table.camera_rig._impulse_handle == null
+		and battle.camera_rig._impulse_handle == null
 		and positions_unchanged,
 		"fast feedback kept writing positions after the event barrier",
 	)
@@ -4798,7 +4798,7 @@ func _wait_for_hand_stage_count(
 	max_frames: int = 120,
 ) -> int:
 	for frame in range(max_frames):
-		if battle.table._presentation_hand_stage_count >= expected_count:
+		if battle._presentation_hand_stage_count >= expected_count:
 			return frame
 		await process_frame
 	_expect(false, "hand staging timed out at %d cards" % expected_count)
@@ -4827,9 +4827,9 @@ func _wait_for_handle(handle: RefCounted, battle: Control) -> void:
 		if handle.is_completed():
 			return
 		await process_frame
-	var motion_rows: Dictionary = battle.table._event_motion_completions
+	var motion_rows: Dictionary = battle._event_motion_completions
 	var tween_rows: Array[String] = []
-	for tween_value in battle.table._flyer_tweens.values():
+	for tween_value in battle._flyer_tweens.values():
 		var tween := tween_value as Tween
 		tween_rows.append("valid=%s running=%s elapsed=%.3f" % [
 			str(tween != null and tween.is_valid()),
@@ -4936,7 +4936,7 @@ func _motion_entities(battle: Control) -> Array[Control]:
 
 func _slot_composite_movers(battle: Control) -> Array[CardView]:
 	var result: Array[CardView] = []
-	for value in battle.table._active_flyers:
+	for value in battle._active_flyers:
 		var mover := value as CardView
 		if (
 			mover != null
@@ -4962,9 +4962,9 @@ func _dense_hand_geometry_snapshot(battle: Control, hand_count: int) -> Dictiona
 		"positions": positions,
 		"global_positions": global_positions,
 		"rotations": rotations,
-		"surface_minimum_width": battle.table.hand_surface.custom_minimum_size.x,
-		"surface_width": battle.table.hand_surface.size.x,
-		"scroll_horizontal": battle.table.hand_scroll.scroll_horizontal,
+		"surface_minimum_width": battle.hand_surface.custom_minimum_size.x,
+		"surface_width": battle.hand_surface.size.x,
+		"scroll_horizontal": battle.hand_scroll.scroll_horizontal,
 	}
 
 
@@ -4996,14 +4996,14 @@ func _dense_hand_geometry_matches(
 			return false
 	return (
 		is_equal_approx(
-			battle.table.hand_surface.custom_minimum_size.x,
+			battle.hand_surface.custom_minimum_size.x,
 			float(expected.get("surface_minimum_width", -1.0)),
 		)
 		and is_equal_approx(
-			battle.table.hand_surface.size.x,
+			battle.hand_surface.size.x,
 			float(expected.get("surface_width", -1.0)),
 		)
-		and battle.table.hand_scroll.scroll_horizontal
+		and battle.hand_scroll.scroll_horizontal
 		== int(expected.get("scroll_horizontal", -1))
 	)
 
@@ -5024,7 +5024,7 @@ func _dense_hand_is_canonical(battle: Control, hand_count: int) -> bool:
 		var view := _visible_hand_view_at_index(battle, hand_index)
 		if (
 			view == null
-			or view.get_parent() != battle.table.hand_surface
+			or view.get_parent() != battle.hand_surface
 			or view.get_index() != hand_index
 		):
 			return false
@@ -5055,7 +5055,7 @@ func _selected_hand_is_topmost(
 		selected_view == null
 		or not selected_view.selected
 		or selected_view.get_index()
-		!= battle.table.hand_surface.get_child_count() - 1
+		!= battle.hand_surface.get_child_count() - 1
 	):
 		return false
 	var previous_sibling_index := -1

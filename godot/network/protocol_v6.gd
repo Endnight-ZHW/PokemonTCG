@@ -538,34 +538,6 @@ static func _validate_legal_action_group(value: Variant) -> Dictionary:
 	return {"ok": true}
 
 
-static func _validate_action_params(params: Dictionary) -> bool:
-	for field_and_maximum in [
-		["hand_idx", MAX_DECK_CARDS - 1],
-		["bench_idx", MAX_BENCH_SIZE - 1],
-		["attack_idx", 31],
-	]:
-		var field := str(field_and_maximum[0])
-		if params.has(field) and not _bounded_int(
-			params, field, 0, int(field_and_maximum[1])
-		):
-			return false
-	for field in ["slot", "target", "target_slot", "ability_name"]:
-		if params.has(field) and not _bounded_string(params[field], MAX_IDENTIFIER_BYTES):
-			return false
-	if params.has("energy_indices"):
-		var indices: Variant = params["energy_indices"]
-		if not indices is Array or Array(indices).size() > MAX_DECK_CARDS:
-			return false
-		for index_value in indices:
-			if (
-				not _is_integer_number(index_value)
-				or int(index_value) < 0
-				or int(index_value) >= MAX_DECK_CARDS
-			):
-				return false
-	return true
-
-
 static func _validate_entity_ref(value: Variant) -> bool:
 	return EntityRef.validate_dict(value).is_empty()
 

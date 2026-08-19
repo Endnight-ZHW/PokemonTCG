@@ -17,7 +17,7 @@ $lock = Get-ToolchainLock -RepoRoot $repoRoot
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
 Assert-ReleaseDeepFallbackContract -Manifest $release
 $version = [string]$release.version
-$compatibleModelCount = [int]$release.compatible_model_count
+$modelCount = [int]$release.model_count
 $zipPath = Join-Path $distRoot "PokemonTCG-Windows-x86_64-$version.zip"
 $apkPath = Join-Path $distRoot "PokemonTCG-Android-arm64-$version-test.apk"
 $smokeApkPath = Join-Path $projectRoot 'dist\release\android\PokemonTCG-smoke.apk'
@@ -95,8 +95,7 @@ try {
         $reader.Dispose()
     }
     if (
-        [int]$buildInfo.onnx_models -ne $compatibleModelCount -or
-        [int]$buildInfo.legacy_models -ne [int]$release.legacy_model_count -or
+        [int]$buildInfo.onnx_models -ne $modelCount -or
         [bool]$buildInfo.deep_runtime_enabled -ne [bool]$release.deep_runtime_enabled -or
         [string]$buildInfo.deep_fallback -ne 'challenge'
     ) {
@@ -142,15 +141,15 @@ $actualApkModels = @(
         ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) } |
         Sort-Object
 )
-if ($actualApkModels.Count -ne $compatibleModelCount) {
-    throw "Android release APK contains $($actualApkModels.Count) compatible models; expected $compatibleModelCount."
+if ($actualApkModels.Count -ne $modelCount) {
+    throw "Android release APK contains $($actualApkModels.Count) models; expected $modelCount."
 }
-Write-Host "ANDROID_RELEASE_APK_OK signing=test compatible_models=$compatibleModelCount abi=arm64-v8a"
+Write-Host "ANDROID_RELEASE_APK_OK signing=test models=$modelCount abi=arm64-v8a"
 
 & (Join-Path $PSScriptRoot 'test_android_runtime.ps1') `
     -ApkPath $apkPath `
     -SmokeApkPath $smokeApkPath `
-    -ExpectedModels $compatibleModelCount `
+    -ExpectedModels $modelCount `
     -RequireDevice:$RequireAndroidDevice `
     -AllowCleanInstall:$AllowAndroidCleanInstall
 if ($LASTEXITCODE -ne 0) {

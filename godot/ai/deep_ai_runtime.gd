@@ -228,12 +228,12 @@ func _planner_matches() -> bool:
 			last_error = "deep_planner_manifest_mismatch"
 			return false
 	return (
-		str(runtime.get("planner_id", "")) == DeepRootISMCTS.PLANNER_ID
+		str(runtime.get("planner_id", "")) == InformationSetPUCT.PLANNER_ID
 		and int(runtime.get("schema_version", 0))
-		== DeepRootISMCTS.SCHEMA_VERSION
+		== InformationSetPUCT.SCHEMA_VERSION
 		and is_equal_approx(
 			float(runtime.get("c_puct", 0.0)),
-			DeepRootISMCTS.C_PUCT)
+			InformationSetPUCT.C_PUCT)
 		and str(runtime.get("leaf_evaluator", "")) == "neural_wdl"
 		and str(runtime.get("value_head_mode", "")) == "search_backup"
 		and is_zero_approx(float(

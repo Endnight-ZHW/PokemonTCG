@@ -482,15 +482,6 @@ func _clamp_to_safe_rect(position: Vector2, panel_size: Vector2) -> Vector2:
 	)
 
 
-func _collides(rect: Rect2) -> bool:
-	if rect.intersects(_source_rect.grow(2.0)):
-		return true
-	for avoid_rect in _avoid_rects:
-		if rect.intersects(avoid_rect.grow(2.0)):
-			return true
-	return false
-
-
 func _collision_area(rect: Rect2) -> float:
 	var source_overlap := _intersection_area(rect, _source_rect.grow(2.0))
 	var result := 0.0

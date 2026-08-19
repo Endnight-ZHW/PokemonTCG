@@ -22,11 +22,7 @@ from engine.ai.dl.alphazero_v2 import (  # noqa: E402
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=(
-            "Train the universal information-set AlphaZero v2 Deep AI. "
-            "Legacy teacher_dagger_rl, alpha_zero_rl, and "
-            "hybrid_population_rl pipelines have been removed."
-        )
+        description="Train the universal information-set AlphaZero v2 Deep AI."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

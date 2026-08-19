@@ -57,8 +57,6 @@ def _release_payload(
     result = json.loads(json.dumps(source))
     result["deep_runtime_enabled"] = True
     result["model_count"] = 1
-    result["compatible_model_count"] = 1
-    result["legacy_model_count"] = 0
     result["native_ai"]["production_ready"] = True
     result["deep_model"]["status"] = "released"
     result["deep_planner"]["evidence_sha256"] = evidence_sha256

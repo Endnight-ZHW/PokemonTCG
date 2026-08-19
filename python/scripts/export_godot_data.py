@@ -57,16 +57,7 @@ from engine.actions import (
     PokemonRef,
 )
 from engine.ai.observation import Observation
-from engine.ai.dl.encoder import (
-    ACTION_NUMERIC_SIZE,
-    CARD_BUCKET_COUNT,
-    ENCODER_SCHEMA_VERSION,
-    STATE_CARD_SLOTS,
-    STATE_NUMERIC_SIZE,
-    ActionStateEncoder,
-    card_bucket,
-)
-from engine.ai.planner import PLANNER_SCHEMA_VERSION
+from engine.ai.dl.encoder import ENCODER_SCHEMA_VERSION, ActionStateEncoder
 from engine.commands.dsl_compiler import (
     DEFAULT_COMMAND_REGISTRY,
     compile_effect_to_spec,
@@ -157,16 +148,13 @@ def _release_manifest() -> dict[str, Any]:
     if len(release_decks) != len(set(release_decks)):
         raise RuntimeError("release_manifest.json contains duplicate release deck keys")
     model_count = int(payload.get("model_count") or 0)
-    if model_count not in {0, 1, len(release_decks)}:
+    if model_count not in {0, 1}:
         raise RuntimeError(
-            "release_manifest.json model_count is not a valid universal or legacy count"
+            "release_manifest.json model_count must be 0 or 1"
         )
     if set(release_decks) != set(DECKS):
         raise RuntimeError("release_manifest.json release_decks do not match Python deck data")
     return payload
-
-DEEP_AI_MODEL_DECK_KEYS = tuple(_release_manifest()["release_decks"])
-
 
 def _json_value(value: Any) -> Any:
     if dataclasses.is_dataclass(value):
@@ -385,7 +373,6 @@ def _card_payload(image_paths: dict[str, str]) -> dict[str, dict[str, Any]]:
         _add_compiled_effects(payload)
         payload.update(
             {
-                "card_bucket": card_bucket(card_id),
                 "ai_card_index": card_vocab_index(card_id),
                 "ai_semantic_features": encoder._card_semantic_features(card),
                 "image_path": image_paths.get(card_id, ""),
@@ -440,52 +427,6 @@ def _deck_payload() -> dict[str, dict[str, Any]]:
             "cards": rows,
         }
     return payload
-
-
-def _model_manifest() -> dict[str, Any]:
-    model_root = PYTHON_ROOT / "data" / "ai_models"
-    models: dict[str, Any] = {}
-    for deck_key in DEEP_AI_MODEL_DECK_KEYS:
-        checkpoint = model_root / f"{deck_key}.pt"
-        sidecar = model_root / f"{deck_key}.json"
-        metadata: dict[str, Any] = {}
-        if sidecar.is_file():
-            raw = json.loads(sidecar.read_text(encoding="utf-8"))
-            metadata = dict(raw.get("metadata") or {})
-        schema_current = (
-            int(metadata.get("rules_version") or 0) == RULES_SCHEMA_VERSION
-            and int(metadata.get("action_version") or 0) == ACTION_SCHEMA_VERSION
-            and int(metadata.get("encoder_version") or 0) == ENCODER_SCHEMA_VERSION
-            and int(metadata.get("planner_version") or 0) == PLANNER_SCHEMA_VERSION
-        )
-        models[deck_key] = {
-            "deck_key": deck_key,
-            "source_checkpoint": f"python/data/ai_models/{deck_key}.pt",
-            "onnx_path": f"res://data/ai_models/{deck_key}.onnx",
-            "checkpoint_exists": checkpoint.is_file(),
-            "checkpoint_size": checkpoint.stat().st_size if checkpoint.is_file() else 0,
-            "checkpoint_sha256": _sha256(checkpoint) if checkpoint.is_file() else "",
-            "accepted": bool(metadata.get("accepted")) and schema_current,
-            "verified": bool(metadata.get("verified")) and schema_current,
-            "rules_version": int(metadata.get("rules_version") or 0),
-            "action_version": int(metadata.get("action_version") or 0),
-            "encoder_version": int(metadata.get("encoder_version") or 0),
-            "planner_version": int(metadata.get("planner_version") or 0),
-        }
-    return {
-        "format_version": 1,
-        "inference_format": "onnx-fp32",
-        "search_simulations": 64,
-        "state_numeric_size": STATE_NUMERIC_SIZE,
-        "state_card_slots": STATE_CARD_SLOTS,
-        "action_numeric_size": ACTION_NUMERIC_SIZE,
-        "card_bucket_count": CARD_BUCKET_COUNT,
-        "card_identity_mode": "vocab_v1",
-        "card_vocab_version": CARD_VOCAB_VERSION,
-        "card_vocab_size": card_vocab_size(),
-        "card_vocab_sha256": card_vocab_sha256(),
-        "models": models,
-    }
 
 
 def _portable_rng_sequence(seed: int, count: int) -> list[int]:
@@ -557,7 +498,6 @@ def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, 
             "godot_action_version": int(release_schemas["godot_actions"]),
             "protocol_version": int(release_schemas["protocol"]),
             "encoder_version": ENCODER_SCHEMA_VERSION,
-            "planner_version": PLANNER_SCHEMA_VERSION,
             "rng_version": RNG_SCHEMA_VERSION,
         },
         "counts": {
@@ -572,16 +512,6 @@ def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, 
             for key, value in effect_examples.items()
         },
         "deck_sizes": {key: deck["card_count"] for key, deck in decks.items()},
-        "card_bucket_samples": {
-            card_id: cards[card_id]["card_bucket"]
-            for card_id in (
-                "svi-chim",
-                "sv2-grex",
-                "sv1-ener-2",
-                "sv1-153",
-                "svg2-tort",
-            )
-        },
         "ai_card_index_samples": {
             card_id: cards[card_id]["ai_card_index"]
             for card_id in (
@@ -3220,12 +3150,7 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
     _write_json(data_root / "ai_strategies.json", build_ai_strategy_catalog(DECKS))
     _write_json(data_root / "card_images.json", image_paths)
     _write_json(data_root / "card_image_hashes.json", image_hashes)
-    _write_json(
-        data_root / "card_buckets.json",
-        {card_id: cards[card_id]["card_bucket"] for card_id in sorted(cards)},
-    )
     _write_json(data_root / "ai_card_vocab.json", load_card_vocab())
-    _write_json(data_root / "ai_models.json", _model_manifest())
     _write_json(data_root / "release_manifest.json", _release_manifest())
     _write_json(data_root / "vm_command_descriptors.json", descriptor_payload)
     golden = _golden_contract(cards, decks)
@@ -3273,9 +3198,7 @@ def main() -> None:
                 Path("data/ai_strategies.json"),
                 Path("data/card_images.json"),
                 Path("data/card_image_hashes.json"),
-                Path("data/card_buckets.json"),
                 Path("data/ai_card_vocab.json"),
-                Path("data/ai_models.json"),
                 Path("data/release_manifest.json"),
                 Path("data/vm_command_descriptors.json"),
                 Path("tests/fixtures/data_contract.json"),

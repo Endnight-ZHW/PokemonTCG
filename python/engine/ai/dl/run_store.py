@@ -15,12 +15,12 @@ import time
 from pathlib import Path
 from typing import Any, Iterable
 
-from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
-from engine.ai.dl.encoder import (
-    CARD_VOCAB_SHA256,
-    CARD_VOCAB_SIZE,
+from data.ai_card_vocab import (
     CARD_VOCAB_VERSION,
+    card_vocab_sha256,
+    card_vocab_size,
 )
+from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
 from engine.ai.dl.v2_contract import (
     CHECKPOINT_VERSION,
     ENCODER_SCHEMA_VERSION,
@@ -283,8 +283,8 @@ def build_fingerprint(
         "python/engine/actions.py",
         "python/engine/ai/dl/encoder.py",
         "python/data/ai_card_vocab.json",
-        "python/engine/ai/dl/model.py",
-        "python/engine/ai/dl/training.py",
+        "python/engine/ai/dl/model_v2.py",
+        "python/engine/ai/dl/alphazero_v2.py",
         "python/engine/ai/dl/production_contract.py",
         "python/engine/ai/dl/run_store.py",
         *(str(Path(item).as_posix()) for item in extra_files),
@@ -302,8 +302,8 @@ def build_fingerprint(
         "encoder": ENCODER_SCHEMA_VERSION,
         "checkpoint": CHECKPOINT_VERSION,
         "card_vocab_version": CARD_VOCAB_VERSION,
-        "card_vocab_size": CARD_VOCAB_SIZE,
-        "card_vocab_sha256": CARD_VOCAB_SHA256,
+        "card_vocab_size": card_vocab_size(),
+        "card_vocab_sha256": card_vocab_sha256(),
         "deep_planner": DEEP_PLANNER_SCHEMA_VERSION,
     }
     return {

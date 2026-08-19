@@ -6,7 +6,7 @@ signal presentation_checkpoint_ready(percent: int, kind: String)
 const TITLE_SCENE := preload("res://scenes/title/title_page.tscn")
 const DECK_SCENE := preload("res://scenes/decks/deck_select_page.tscn")
 const NETWORK_SCENE := preload("res://scenes/network/network_lobby_page.tscn")
-const BATTLE_SCENE := preload("res://scenes/battle/battle_screen.tscn")
+const BATTLE_SCENE := preload("res://scenes/battle/components/battle_table.tscn")
 const VICTORY_SCENE := preload("res://scenes/end/victory_screen.tscn")
 const SETTINGS_SCENE := preload("res://ui/dialogs/settings_panel.tscn")
 const CHOICE_SCENE := preload("res://ui/dialogs/choice_panel.tscn")
@@ -17,7 +17,7 @@ const DECK_DETAIL_PANEL_SCENE := preload("res://ui/panels/deck_detail_panel.tscn
 const FRONTEND_THEME := preload("res://ui/frontend/front_end_theme.tres")
 
 var catalog := CardCatalog.new()
-var current_battle: BattleScreen
+var current_battle: BattleTable
 var sample_state: GameState
 var event_sequence := 0
 var current_presentation_kind := "draw"
@@ -341,7 +341,7 @@ func _show_deck_detail() -> void:
 func _show_battle() -> void:
 	preview_caption.text = "战斗场景 · 使用左侧按钮触发演出"
 	sample_state = UIPreviewStateFactory.battle_state()
-	current_battle = BATTLE_SCENE.instantiate() as BattleScreen
+	current_battle = BATTLE_SCENE.instantiate() as BattleTable
 	preview_host.add_child(current_battle)
 	current_battle.initialize_ui()
 	current_battle.update_view(
@@ -360,7 +360,7 @@ func _show_ai_thinking() -> void:
 	sample_state = UIPreviewStateFactory.battle_state()
 	sample_state.active_player_idx = 1
 	sample_state.players[1].name = "Challenge AI"
-	current_battle = BATTLE_SCENE.instantiate() as BattleScreen
+	current_battle = BATTLE_SCENE.instantiate() as BattleTable
 	preview_host.add_child(current_battle)
 	current_battle.initialize_ui()
 	current_battle.update_view(
@@ -566,9 +566,9 @@ func _apply_presentation_fixture(fixture: Dictionary) -> void:
 func _presentation_duration(event: Dictionary) -> float:
 	if current_battle == null or not is_instance_valid(current_battle):
 		return 0.0
-	if current_battle.table == null or current_battle.table.director == null:
+	if current_battle == null or current_battle.director == null:
 		return 0.0
-	return float(current_battle.table.director.call("_duration_for", event))
+	return float(current_battle.director.call("_duration_for", event))
 
 
 func _normalize_checkpoint(percent: float) -> int:
@@ -653,15 +653,6 @@ func _card_thumb(card_id: String, hidden: bool) -> CardView:
 	card.configure(card_id, null, hidden, -1, -1, "", true)
 	card.tooltip_text = "隐藏卡牌" if hidden else catalog.card_name(card_id)
 	return card
-
-
-func _card_image(card_id: String, min_size: Vector2) -> TextureRect:
-	var image := TextureRect.new()
-	image.custom_minimum_size = min_size
-	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	image.texture = CardTextureCache.get_texture(str(catalog.get_card(card_id).get("image_path", "")))
-	return image
 
 
 func _clear_preview() -> void:

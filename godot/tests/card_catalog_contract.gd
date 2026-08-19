@@ -116,13 +116,6 @@ func _run_contract() -> void:
 	_check(session.engine.catalog == repository, "authoritative engine must share session catalog")
 	_check(
 		_source_contains(
-			"res://scenes/battle/battle_screen.gd",
-			"var catalog: CardCatalog = CardCatalog.shared()",
-		),
-		"battle screen default must reuse runtime repository",
-	)
-	_check(
-		_source_contains(
 			"res://scenes/battle/components/battle_table.gd",
 			"var catalog: CardCatalog = CardCatalog.shared()",
 		),

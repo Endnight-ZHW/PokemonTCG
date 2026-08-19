@@ -42,7 +42,7 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(set(decks), set(DECKS))
 
     def test_release_070_metadata_and_deep_contract_are_explicit(self):
-        self.assertEqual(self.manifest["format_version"], 3)
+        self.assertEqual(self.manifest["format_version"], 4)
         self.assertEqual(self.manifest["version"], "0.7.0")
         self.assertEqual(self.manifest["android_version_code"], 8)
         self.assertEqual(self.manifest["deep_fallback"], "challenge")
@@ -56,16 +56,13 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(deep_planner["leaf_evaluator"], "neural_wdl")
         self.assertFalse(deep_planner["full_turn_rollout"])
         if self.manifest["deep_runtime_enabled"]:
-            self.assertEqual(self.manifest["compatible_model_count"], 1)
-            self.assertEqual(self.manifest["legacy_model_count"], 0)
+            self.assertEqual(self.manifest["model_count"], 1)
             self.assertRegex(
                 deep_planner["evidence_sha256"], r"^[0-9a-f]{64}$"
             )
         else:
-            self.assertEqual(self.manifest["compatible_model_count"], 0)
-            self.assertEqual(self.manifest["legacy_model_count"], 10)
+            self.assertEqual(self.manifest["model_count"], 0)
             self.assertEqual(deep_planner["evidence_sha256"], "")
-
         expected_schemas = {
             "protocol": 6,
             "godot_rules": 6,
@@ -206,10 +203,15 @@ class ReleaseManifestTests(unittest.TestCase):
             )
         )
         self.assertEqual(
-            frozen_strategy["content_hash"], production_strategy["content_hash"]
+            frozen_strategy["content_hash"],
+            "703535c35babe7046f55974057e4ef14feff68d48b4f613c4c467cfd5fc58b5a",
+        )
+        self.assertEqual(
+            set(frozen_strategy["strategies"]),
+            set(production_strategy["strategies"]),
         )
 
-    def test_release_pipeline_keeps_legacy_models_out_of_packages(self):
+    def test_release_pipeline_packages_only_the_runtime_model_contract(self):
         package_script = (
             REPO_ROOT / "tools" / "package_release.ps1"
         ).read_text(encoding="utf-8")
@@ -227,7 +229,6 @@ class ReleaseManifestTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertNotIn('file = "models/', package_script)
         self.assertNotIn("export_onnx_models.py", package_script)
-        self.assertIn("compatible_model_count", release_test)
         self.assertNotIn("export_onnx_models.ps1", standard_test)
         for name, source in (
             ("package_release.ps1", package_script),
@@ -238,8 +239,8 @@ class ReleaseManifestTests(unittest.TestCase):
         ):
             with self.subTest(script=name):
                 self.assertIn("Assert-ReleaseDeepFallbackContract", source)
-        self.assertIn("-ExpectedModels $compatibleModelCount", release_test)
-        self.assertIn("-ExpectedModels $compatibleModelCount", build_smoke)
+        self.assertIn("-ExpectedModels $modelCount", release_test)
+        self.assertIn("-ExpectedModels $modelCount", build_smoke)
         self.assertNotIn("-ExpectedModels 0", release_test)
         self.assertNotIn("-ExpectedModels 0", build_smoke)
 
@@ -291,6 +292,7 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(rows["numpy"], toolchain["numpy"])
         self.assertEqual(rows["onnx"], toolchain["onnx"])
         self.assertEqual(rows["onnxruntime"], toolchain["onnxruntime"])
+        self.assertEqual(rows["pybind11"], toolchain["pybind11"])
         self.assertEqual(rows["torch"].split("+", 1)[0], toolchain["torch"])
         expected_cuda_tag = "cu" + str(toolchain["cuda"]).replace(".", "")
         self.assertEqual(rows["torch"].split("+", 1)[1], expected_cuda_tag)

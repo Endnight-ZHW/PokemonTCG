@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
 from engine.actions import ChoiceRequest, ChoiceResponse, GameAction
-from engine.ai.observation import Observation, fair_search_clone
+from engine.ai.observation import fair_search_clone
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_engine import DEFAULT_GAME_ENGINE, GameEngine
 from engine.random_source import SamplingRandomSource
@@ -18,11 +18,7 @@ from engine.ai.dl.production_contract import (
 )
 
 
-PLANNER_SCHEMA_VERSION = 1
 HEURISTIC_PRIOR_TEMPERATURE = 80.0
-NEURAL_PRIOR_BLEND = 0.15
-NEURAL_PRIOR_MIN_TOP_PROB = 0.45
-HEURISTIC_PRIOR_CLEAR_GAP = 0.12
 
 
 def terminal_outcome_value(state, perspective: int) -> float:
@@ -109,83 +105,6 @@ class HeuristicBackend:
             request.request_id,
             tuple(option.option_id for option in request.options[:count]),
         )
-
-
-class NeuralBackend(HeuristicBackend):
-    def __init__(self, model, encoder, device: str, fallback: HeuristicBackend, deck_key: str | None):
-        super().__init__(
-            priority=fallback._priority,
-            evaluator=fallback._evaluator,
-            choice_resolver=fallback._choice_resolver,
-        )
-        self.model = model
-        self.encoder = encoder
-        self.device = device
-        self.fallback = fallback
-        self.deck_key = deck_key
-        self.search_perspective: int | None = None
-        self._value_cache: dict[tuple, float] = {}
-
-    def set_perspective(self, perspective: int) -> None:
-        self.search_perspective = perspective
-        self._value_cache.clear()
-
-    def priors(self, state, actor: int, actions: list[GameAction]) -> list[float]:
-        if self.search_perspective is not None and actor != self.search_perspective:
-            return self.fallback.priors(state, actor, actions)
-        heuristic_priors = self.fallback.priors(state, actor, actions)
-        try:
-            from engine.ai.dl.model import TORCH_AVAILABLE, torch
-            if not TORCH_AVAILABLE or torch is None or self.model is None:
-                return heuristic_priors
-            observation = Observation.from_state(state, actor)
-            encoded_state = self.encoder.encode_observation(observation, self.deck_key)
-            encoded_actions = [
-                self.encoder.encode_game_action(observation, action)
-                for action in actions
-            ]
-            state_numeric_size = int(getattr(self.model, "state_numeric_size", len(encoded_state.numeric)))
-            state_card_slots = int(getattr(self.model, "state_card_slots", len(encoded_state.card_ids)))
-            action_numeric_size = int(getattr(self.model, "action_numeric_size", len(encoded_actions[0].numeric)))
-            with torch.no_grad():
-                state_numeric = torch.tensor(
-                    [_fit(encoded_state.numeric, state_numeric_size, 0.0)],
-                    dtype=torch.float32,
-                    device=self.device,
-                )
-                state_cards = torch.tensor(
-                    [_fit(encoded_state.card_ids, state_card_slots, 0)],
-                    dtype=torch.long,
-                    device=self.device,
-                )
-                action_numeric = torch.tensor(
-                    [[_fit(item.numeric, action_numeric_size, 0.0) for item in encoded_actions]],
-                    dtype=torch.float32,
-                    device=self.device,
-                )
-                action_cards = torch.tensor(
-                    [[item.card_id for item in encoded_actions]],
-                    dtype=torch.long,
-                    device=self.device,
-                )
-                logits, model_value = self.model(
-                    state_numeric,
-                    state_cards,
-                    action_numeric,
-                    action_cards,
-                )
-                self._value_cache[observation.information_key] = float(
-                    model_value.reshape(-1)[0].detach().cpu().item()
-                )
-                neural_priors = torch.softmax(logits[0], dim=0).detach().cpu().tolist()
-                return _guarded_neural_priors(neural_priors, heuristic_priors)
-        except Exception:
-            return heuristic_priors
-
-    def value(self, state, perspective: int) -> float:
-        # This backend belongs to the legacy generic AnytimePlanner used by
-        # non-v2 experiments. AlphaZero v2 uses puct_v2 and its WDL head.
-        return self.fallback.value(state, perspective)
 
 
 class AnytimePlanner:
@@ -483,49 +402,6 @@ def _dirichlet(
     return [value / total for value in values]
 
 
-def _top_two(priors: list[float]) -> tuple[int, float, float]:
-    if not priors:
-        return -1, 0.0, 0.0
-    top_idx = max(range(len(priors)), key=lambda idx: priors[idx])
-    top = float(priors[top_idx])
-    second = max(
-        (float(value) for idx, value in enumerate(priors) if idx != top_idx),
-        default=0.0,
-    )
-    return top_idx, top, second
-
-
-def _guarded_neural_priors(
-    neural_priors: list[float],
-    heuristic_priors: list[float],
-    *,
-    blend: float = NEURAL_PRIOR_BLEND,
-    min_top_prob: float = NEURAL_PRIOR_MIN_TOP_PROB,
-    clear_gap: float = HEURISTIC_PRIOR_CLEAR_GAP,
-) -> list[float]:
-    """Use neural priors only as a guarded nudge over the mature heuristic prior."""
-    heuristic = _normalize_priors(list(heuristic_priors))
-    if len(neural_priors) != len(heuristic) or not heuristic:
-        return heuristic
-    neural = _normalize_priors(list(neural_priors))
-    if len(neural) != len(heuristic):
-        return heuristic
-    neural_top, neural_peak, _ = _top_two(neural)
-    heuristic_top, heuristic_peak, heuristic_second = _top_two(heuristic)
-    if neural_peak < float(min_top_prob):
-        return heuristic
-    heuristic_gap = heuristic_peak - heuristic_second
-    if neural_top != heuristic_top and heuristic_gap >= float(clear_gap):
-        return heuristic
-    effective_blend = max(0.0, min(1.0, float(blend)))
-    if neural_top != heuristic_top:
-        effective_blend *= 0.5
-    return _normalize_priors([
-        (1.0 - effective_blend) * heuristic[idx] + effective_blend * neural[idx]
-        for idx in range(len(heuristic))
-    ])
-
-
 def _map_legacy_choice(request: ChoiceRequest, choice) -> ChoiceResponse | None:
     option_ids = list(getattr(choice, "option_ids", []) or [])
     if option_ids:
@@ -592,7 +468,3 @@ def _map_legacy_choice(request: ChoiceRequest, choice) -> ChoiceResponse | None:
         if ids:
             return ChoiceResponse(request.request_id, tuple(ids))
     return None
-
-
-def _fit(values: list, size: int, pad):
-    return values[:size] if len(values) >= size else values + [pad] * (size - len(values))

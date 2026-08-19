@@ -207,10 +207,6 @@ def _validate_performance(
         f"{prefix}.speedup",
         float(payload.get("throughput_speedup", 0.0)) >= 10.0,
     )
-    gate.check(
-        f"{prefix}.historical_baseline",
-        payload.get("release_baseline_complete") is True,
-    )
 
 
 def _validate_windows(
@@ -602,8 +598,6 @@ def finalize_release_evidence(
     release["deep_planner"]["evidence_sha256"] = evidence_hash
     release["deep_runtime_enabled"] = True
     release["model_count"] = 1
-    release["compatible_model_count"] = 1
-    release["legacy_model_count"] = 0
     release["native_ai"]["production_ready"] = True
     release["deep_model"]["status"] = "candidate"
     atomic_write_json(runtime_path, runtime)

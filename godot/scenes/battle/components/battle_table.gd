@@ -19,6 +19,9 @@ signal choice_target_selected(option_id: String)
 signal choice_option_toggled(option_id: String)
 signal choice_selection_confirmed
 signal choice_cancel_requested
+signal transition_started(handle: PresentationHandle)
+signal transition_finished(handle: PresentationHandle)
+signal presentation_busy_changed(busy: bool)
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 const CARD_DRAG_SESSION := preload("res://presentation/card_drag_session.gd")
@@ -235,6 +238,7 @@ var _startup_shuffle_handle: MotionHandle
 var _shuffle_source_masks: Dictionary = {}
 var _local_hand_privacy_hidden := false
 var _resync_tween: Tween
+var presentation_coordinator: BattlePresentationCoordinator
 
 
 func _ready() -> void:
@@ -260,6 +264,7 @@ func initialize_ui() -> void:
 	if _initialized:
 		return
 	_resolve_scene_nodes()
+	_ensure_presentation_coordinator()
 	anchor_resolver.configure(self)
 	hand_motion_controller.configure(self, _hand_layout_tweens)
 	_initialized = true
@@ -279,6 +284,49 @@ func initialize_ui() -> void:
 	call_deferred("_layout_board")
 	if not _settings_reduced_motion():
 		animation_player.play("enter")
+
+
+func _ensure_presentation_coordinator() -> void:
+	if presentation_coordinator != null:
+		presentation_coordinator.configure(self)
+		return
+	presentation_coordinator = BattlePresentationCoordinator.new()
+	presentation_coordinator.name = "BattlePresentationCoordinator"
+	add_child(presentation_coordinator)
+	presentation_coordinator.configure(self)
+	presentation_coordinator.transition_started.connect(transition_started.emit)
+	presentation_coordinator.transition_finished.connect(transition_finished.emit)
+	presentation_coordinator.busy_changed.connect(presentation_busy_changed.emit)
+
+
+func submit_transition(request: BattleTransitionRequest) -> PresentationHandle:
+	_ensure_presentation_coordinator()
+	return presentation_coordinator.submit(request)
+
+
+func is_presentation_busy() -> bool:
+	return (
+		presentation_coordinator != null
+		and presentation_coordinator.is_busy()
+	)
+
+
+func cancel_presentations(
+	reason: String = "cancelled",
+	replacement: BattleViewModel = null,
+) -> void:
+	_ensure_presentation_coordinator()
+	presentation_coordinator.cancel_all(reason, replacement)
+
+
+## Recovery snapshots are not transitions: cancel every in-flight/queued visual
+## transaction and synchronously render the authoritative replacement.
+func snap_to_authoritative_view(
+	replacement: BattleViewModel,
+	reason: String = "resync",
+) -> void:
+	_ensure_presentation_coordinator()
+	presentation_coordinator.cancel_all(reason, replacement)
 
 
 func _apply_runtime_settings() -> void:
@@ -605,6 +653,8 @@ func play_startup_shuffle(mulligan_counts: Array = []) -> MotionHandle:
 	_startup_shuffle_handle = handle
 	if not is_inside_tree() or effects == null:
 		handle.finish()
+		_ensure_presentation_coordinator()
+		presentation_coordinator.set_preflight(handle)
 		return handle
 	var mode_scale: float = float({
 		"cinematic": 1.0,
@@ -645,6 +695,8 @@ func play_startup_shuffle(mulligan_counts: Array = []) -> MotionHandle:
 		_on_startup_shuffle_completed.bind(handle),
 		CONNECT_ONE_SHOT,
 	)
+	_ensure_presentation_coordinator()
+	presentation_coordinator.set_preflight(handle)
 	return handle
 
 
@@ -726,6 +778,13 @@ func _clear_startup_shuffle_visuals() -> void:
 
 
 func clear_presentation_for_resync() -> void:
+	if presentation_coordinator != null:
+		presentation_coordinator.cancel_all("resync")
+		return
+	clear_presentation_visuals_for_resync()
+
+
+func clear_presentation_visuals_for_resync() -> void:
 	if _resync_tween != null and _resync_tween.is_valid():
 		_resync_tween.kill()
 	_resync_tween = null
@@ -1342,12 +1401,6 @@ func _bind_card_view(view: CardView) -> void:
 	view.drag_ended.connect(_on_hand_drag_ended)
 
 
-func _on_phase_advance_pressed() -> void:
-	var action: GameAction = phase_advance_button.get_meta("action") as GameAction
-	if action:
-		action_requested.emit(action)
-
-
 func _input(event: InputEvent) -> void:
 	# PresentationInputBlocker owns the GUI phase while an effect sequence runs.
 	# Global input must stay read-only so it cannot dismiss transient surfaces
@@ -1743,7 +1796,6 @@ func _refresh_opponent_hand() -> void:
 		view.configure("", null, true, -1, opponent_player, "", true)
 		view.set_selected(false)
 		view.set_targetable(false)
-		view.set_actions([])
 		view.tooltip_text = "对手手牌（隐藏）"
 	opponent_hand_surface.visible = hand_count > 0
 	opponent_hand_count_badge.visible = hand_count > 0
@@ -4053,10 +4105,6 @@ func _tween_drag_hand_layout() -> void:
 			duration,
 		)
 	_apply_hand_interaction_order()
-
-
-func _drag_source_layout_center() -> Vector2:
-	return Vector2(_drag_source_layout_pose().get("center", _own_hand_center()))
 
 
 func _drag_source_layout_pose() -> Dictionary:
@@ -10203,22 +10251,6 @@ func _remove_revealed_node_for_event(node: Control, event_id: String) -> void:
 	_presentation_reveals[event_id] = nodes
 
 
-func _mask_and_reveal_drawn_cards(count: int, duration: float) -> void:
-	var visible_views: Array[CardView] = []
-	for view in hand_views:
-		if view.visible:
-			visible_views.append(view)
-	var first := maxi(0, visible_views.size() - count)
-	for index in range(first, visible_views.size()):
-		var view := visible_views[index]
-		view.modulate.a = 0.0
-		var tween := create_tween()
-		tween.tween_interval(
-			duration * 0.58 + float(index - first) * motion_stagger_delay,
-		)
-		tween.tween_property(view, "modulate:a", 1.0, 0.14)
-
-
 func _prune_flyers() -> void:
 	var live: Array[Control] = []
 	for flyer in _active_flyers:
@@ -10428,19 +10460,6 @@ func _opponent_hand_center() -> Vector2:
 
 func _effects_local(global_point: Vector2) -> Vector2:
 	return effects.get_global_transform_with_canvas().affine_inverse() * global_point
-
-
-func _info_label() -> Label:
-	var label := Label.new()
-	label.add_theme_font_size_override("font_size", 13)
-	label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
-	return label
-
-
-func _free_children(parent: Node) -> void:
-	for child in parent.get_children():
-		parent.remove_child(child)
-		child.queue_free()
 
 
 func _phase_name(phase: String) -> String:

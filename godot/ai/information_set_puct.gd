@@ -1,9 +1,7 @@
-class_name DeepRootISMCTS
+class_name InformationSetPUCT
 extends RefCounted
 
-## Compatibility name retained for AICoordinator. All search work is owned by
-## the C++ NativeDeepSearch implementation; the retired GDScript root bandit,
-## Challenge leaf evaluator, and full-turn heuristic rollout no longer exist.
+## Godot adapter for the native information-set PUCT implementation.
 
 const PLANNER_ID := "infoset_puct_v2"
 const SCHEMA_VERSION := 2

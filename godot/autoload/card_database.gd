@@ -6,15 +6,11 @@ signal load_failed(message: String)
 const CARDS_PATH := "res://data/cards.json"
 const DECKS_PATH := "res://data/decks.json"
 const EFFECTS_PATH := "res://data/effects.json"
-const BUCKETS_PATH := "res://data/card_buckets.json"
-const MODELS_PATH := "res://data/ai_models.json"
 const RELEASE_MANIFEST_PATH := "res://data/release_manifest.json"
 
 var cards: Dictionary = {}
 var decks: Dictionary = {}
 var effects: Dictionary = {}
-var card_buckets: Dictionary = {}
-var ai_models: Dictionary = {}
 var release_manifest: Dictionary = {}
 var is_loaded := false
 var catalog: CardCatalog = CardCatalog.shared()
@@ -27,8 +23,6 @@ func _ready() -> void:
 func load_all() -> bool:
 	var datasets := {
 		"effects": EFFECTS_PATH,
-		"card_buckets": BUCKETS_PATH,
-		"ai_models": MODELS_PATH,
 		"release_manifest": RELEASE_MANIFEST_PATH,
 	}
 	var loaded_values: Dictionary = {
@@ -45,8 +39,6 @@ func load_all() -> bool:
 	cards = loaded_values["cards"]
 	decks = loaded_values["decks"]
 	effects = loaded_values["effects"]
-	card_buckets = loaded_values["card_buckets"]
-	ai_models = loaded_values["ai_models"]
 	release_manifest = loaded_values["release_manifest"]
 	is_loaded = true
 	loaded.emit()
@@ -59,10 +51,6 @@ func get_card(card_id: String) -> Dictionary:
 
 func get_deck(deck_key: String) -> Dictionary:
 	return Dictionary(decks.get(deck_key, {}))
-
-
-func get_card_bucket(card_id: String) -> int:
-	return int(card_buckets.get(card_id, 0))
 
 
 func _read_json(path: String) -> Dictionary:

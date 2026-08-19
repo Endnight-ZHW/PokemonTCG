@@ -78,18 +78,17 @@ flowchart TD
     Main[main.tscn 应用外壳] --> Title[title_page.tscn]
     Main --> Decks[deck_select_page.tscn]
     Main --> Network[network_lobby_page.tscn]
-    Main --> Battle[battle_screen.tscn]
+    Main --> Battle[battle_table.tscn]
     Main --> Victory[victory_screen.tscn]
     Main --> Dialogs[dialogs 弹窗内容]
     Main --> Panels[ui/panels 查看面板]
     Main --> Controllers[Controllers 控制器节点]
-    Battle --> Table[battle_table.tscn]
-    Table --> Header[battle_header.tscn]
-    Table --> HUD[battle_phase_hud.tscn 132px 悬浮命令轨]
+    Battle --> Header[battle_header.tscn]
+    Battle --> HUD[battle_phase_hud.tscn 132px 悬浮命令轨]
     HUD --> Log[battle_log_panel.tscn 默认收起日志抽屉]
-    Table --> Detail[battle_detail_panel.tscn 左侧固定卡牌预览]
-    Table --> Router[CardInteractionRouter]
-    Table --> Popover[card_action_popover.tscn]
+    Battle --> Detail[battle_detail_panel.tscn 左侧固定卡牌预览]
+    Battle --> Router[CardInteractionRouter]
+    Battle --> Popover[card_action_popover.tscn]
     Battle --> Card[card_view.tscn]
     Battle --> Zone[zone_view.tscn]
     Battle --> Presentation[PresentationDirector]
@@ -106,8 +105,7 @@ flowchart TD
 | 标题字标、八种基本能量、轮换展示卡与三个主入口 | `scenes/title/title_page.tscn` |
 | 牌组选择与 Challenge AI 配置 | `scenes/decks/deck_select_page.tscn` |
 | 网络大厅与 LAN/Relay 选择 | `scenes/network/network_lobby_page.tscn` |
-| 战斗界面兼容门面 | `scenes/battle/battle_screen.tscn` |
-| 牌桌、固定牌位、手牌和表现层 | `scenes/battle/components/battle_table.tscn` |
+| 牌桌、固定牌位、手牌、转场协调器和表现层 | `scenes/battle/components/battle_table.tscn` |
 | 战斗顶部栏、卡牌交互、卡牌预览、系统按钮和日志 | `scenes/battle/components/` |
 | 单张卡牌的显示结构 | `ui/card_view.tscn` |
 | 牌库、弃牌和奖赏区 | `ui/zone_view.tscn` |
@@ -139,7 +137,7 @@ flowchart TD
 标题、牌组、网络、设置、帮助、牌组详情和胜利页使用
 `res://ui/frontend/front_end_theme.tres`。这个 Theme 只挂在前台页面根节点，或由
 `ModalHost` 在打开前台弹窗时临时应用；`res://ui/game_theme.tres` 继续服务战斗界面和
-兼容控件。不要把 `front_end_theme.tres` 设置到 `Main`、`BattleScreen` 或牌桌根节点，
+兼容控件。不要把 `front_end_theme.tres` 设置到 `Main` 或 `BattleTable` 根节点，
 否则会让本次明确隔离的战斗 HUD 继承前台样式。
 
 前台 Theme 使用语义 variation，而不是逐按钮复制覆盖。例如主操作、次操作和危险操作
@@ -231,8 +229,7 @@ landscape，同时要求纵横比至少 1.15；其余为 Dense。Wide / Compact 
 节点是一个功能单元，例如 `Label`、`Button`、`TextureRect`。场景是一棵可保存、
 可复用的节点树。一个场景可以实例化另一个场景：
 
-- `battle_screen.tscn` 是兼容门面，内部实例化 `components/battle_table.tscn`。
-- `battle_table.tscn` 实例化固定的 `CardView`、`ZoneView` 和多个战斗 UI 子组件。
+- `battle_table.tscn` 是战斗页面根场景，实例化固定的 `CardView`、`ZoneView` 和多个战斗 UI 子组件。
 - 动态手牌也实例化 `card_view.tscn`，但数量取决于实时手牌。
 - `main.gd` 根据页面状态实例化标题、选牌、战斗或胜利场景。
 
@@ -387,13 +384,12 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 | 贴卡动作按钮 | `card_action_popover.tscn` | 独立挂在牌桌浮层；不要放回 `CardView` 子节点 |
 | 选中抬升和悬停缩放 | 根节点 `CardView` | Inspector 的 `Card Layout` 导出参数 |
 
-### BattleScreen
+### BattleTable
 
-`scenes/battle/battle_screen.tscn` 现在是兼容门面：它只实例化
-`scenes/battle/components/battle_table.tscn`。规则动作、AI、Choice 和联机同步统一调用
-`BattleScreen.submit_transition(BattleTransitionRequest)`；旧的 `update_view()`、
-`play_presentation()`、`capture_presentation_snapshot()` 只保留给静态页面和工具兼容。日常可视化编辑应打开
-`components/battle_table.tscn` 或其中的子组件。
+`scenes/battle/components/battle_table.tscn` 是战斗页面根场景，并直接持有
+`BattlePresentationCoordinator`。规则动作、AI、Choice 和联机同步统一调用
+`BattleTable.submit_transition(BattleTransitionRequest)`；静态预览和工具可直接调用
+`update_view()`、`play_presentation()` 与 `capture_presentation_snapshot()`。
 
 表现层采用“权威状态立即结算、可见状态按事件提交”的视觉事务：
 
@@ -483,13 +479,13 @@ UI 不得自行放宽目标条件。`CardActionPopover` 使用 200–260px 宽�
 路由必须覆盖 `PLAY_BASIC`、`EVOLVE`、`ATTACH_ENERGY`、`PLAY_TRAINER`、`USE_ABILITY`、
 `USE_STADIUM`、`RETREAT`、`DECLARE_ATTACK` 和 `PROMOTE`；新增卡牌动作时也必须加入动作可达性测试。
 
-兼容边界保持不变：`BattleScreen.update_view(...)` 及 `action_requested(GameAction)`、
+公开边界保持不变：`BattleTable.update_view(...)` 及 `action_requested(GameAction)`、
 `hand_card_selected`、`pokemon_selected`、`card_drop_requested`、`detail_requested` 等对外信号
 继续存在。`CardActionPopover.action_chosen` 和右栏 `phase_action_requested` 最终都转发为
 `action_requested(GameAction)`；规则、AI 和网络层不需要知道动作来自轻点、浮层还是拖放。
 
 效果结算同样优先使用牌桌对象：单选且能唯一映射到场上宝可梦的 `ChoiceRequest` 通过
-`BattleScreen.set_choice_targets(...)` 高亮对应卡牌，轻点后仍提交原 `option_id`。隐藏区卡牌、
+`BattleTable.set_choice_targets(...)` 高亮对应卡牌，轻点后仍提交原 `option_id`。隐藏区卡牌、
 同一宝可梦上无法仅靠卡牌区分的多个附着物，以及多选请求继续使用 `ChoicePanel`；能量分配保留
 专用卡牌面板，`coin_flip` 使用独立硬币翻转表现。撤退动作会要求点选本次支付所丢弃的附着能量卡，
 然后才开放确认按钮，整个过程不修改 `GameAction` schema。
@@ -558,7 +554,7 @@ Main.update_view()    -> 页面重新显示状态
 | 目标 | 改哪里 | 稳定边界 |
 |---|---|---|
 | 调整前台文字、间距、面板外观 | `.tscn`、Inspector、`front_end_theme.tres` | 不改变信号和规则，也不影响战斗 Theme |
-| 调整战斗控件默认外观 | 战斗 `.tscn`、Inspector、`game_theme.tres` | 不把前台 variation 引入 `BattleScreen` |
+| 调整战斗控件默认外观 | 战斗 `.tscn`、Inspector、`game_theme.tres` | 不把前台 variation 引入 `BattleTable` |
 | 调整可配置尺寸或动画速度 | 场景根节点的 `@export` 参数 | 参数可被 Inspector 保存 |
 | 调整运行时布局算法 | 对应 `.gd` 的 `_layout_*`、`_place_*` 函数 | 改完要看多种窗口比例 |
 | 新增用户交互 | 页面 `.tscn` 新增控件，页面 `.gd` 新增或连接 `signal`，`Main` 处理 | 页面只报告意图，不改规则状态 |
@@ -663,7 +659,7 @@ sequenceDiagram
     participant Card as CardView
     participant Router as CardInteractionRouter
     participant Popover as CardActionPopover
-    participant Battle as BattleScreen
+    participant Battle as BattleTable
     participant Main
     participant Engine as GameEngine
     participant Stack as ResolutionStack
@@ -872,7 +868,7 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 - `GameEngine.apply_action()`
 - `GameEngine.apply_choice()`
 - `EffectEngine` 对应效果分支
-- `BattleScreen.update_view()`
+- `BattleTable.update_view()`
 
 运行后查看 Debugger 的 Variables、Stack Trace 和 Errors。
 
@@ -1574,7 +1570,7 @@ Windows 任务栏或启动器中被裁切。不要手工编辑 `.import` 文件�
 实时表现的修改步骤：
 
 1. 打开 `presentation/presentation_director.gd` 查看事件类型到音效、粒子和时长的映射。
-2. 打开 `scenes/battle/battle_screen.gd`，搜索 `_on_card_motion_requested()`。
+2. 打开 `scenes/battle/components/battle_table.gd`，搜索 `_on_card_motion_requested()`。
 3. 调整弧线高度、错峰、旋转或落点粒子时，优先改根节点导出的 Presentation 参数。
 4. 不要在表现动画中修改 `GameState`。规则结果只能来自 `GameEngine.apply_action()` 或 `apply_choice()`。
 

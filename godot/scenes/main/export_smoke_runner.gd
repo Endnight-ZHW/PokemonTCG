@@ -44,7 +44,7 @@ func _run_phase_four(deep_runtime: DeepAIRuntime) -> Dictionary:
 		return _success(
 			(
 				"PHASE4_EXPORT_AI_OK deep=enabled fallback=challenge "
-				+ "compatible_models=%d legacy_models=0 onnx_assets=%d "
+				+ "models=%d onnx_assets=%d "
 				+ "inferred_models=%d scenarios=%d"
 			)
 			% [
@@ -55,7 +55,7 @@ func _run_phase_four(deep_runtime: DeepAIRuntime) -> Dictionary:
 			]
 		)
 	if (
-		not _legacy_onnx_assets_absent(release_decks)
+		not _onnx_assets_absent()
 		or deep_runtime.load_for_deck("fire")
 		or deep_runtime.last_error != "deep_runtime_disabled"
 		or deep_runtime.get_backend() != null
@@ -96,19 +96,15 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 		deep_fallback_ok = (
 			not release_decks.is_empty()
 			and str(release_manifest.get("deep_fallback", "")) == "challenge"
-			and int(release_manifest.get("compatible_model_count", -1))
-			== 1
-			and int(release_manifest.get("legacy_model_count", -1)) == 0
+			and int(release_manifest.get("model_count", -1)) == 1
 			and bool(deep_check.get("passed", false))
 		)
 	else:
 		deep_fallback_ok = (
 			not release_decks.is_empty()
 			and str(release_manifest.get("deep_fallback", "")) == "challenge"
-			and int(release_manifest.get("compatible_model_count", -1)) == 0
-			and int(release_manifest.get("legacy_model_count", -1))
-			== release_decks.size()
-			and _legacy_onnx_assets_absent(release_decks)
+			and int(release_manifest.get("model_count", -1)) == 0
+			and _onnx_assets_absent()
 			and not deep_runtime.runtime_enabled
 			and not deep_runtime.load_for_deck("fire")
 			and deep_runtime.last_error == "deep_runtime_disabled"
@@ -127,13 +123,13 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 			(
 				"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 "
 				+ "licenses=1 ui_resources=1 deep=enabled fallback=challenge "
-				+ "compatible_models=%d legacy_models=0 onnx_assets=%d "
+				+ "models=%d onnx_assets=%d "
 				+ "inferred_models=%d scenarios=%d"
 			)
 			% [
 				str(services.get("app_version", "")),
-				release_decks.size(),
-				release_decks.size(),
+				1,
+				1,
 				int(deep_check.get("inferred_models", 0)),
 				int(deep_check.get("scenarios", 0)),
 			]
@@ -142,9 +138,9 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 		(
 			"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 "
 			+ "licenses=1 ui_resources=1 deep=disabled fallback=challenge "
-			+ "compatible_models=0 legacy_models=%d onnx_assets=0"
+			+ "models=0 onnx_assets=0"
 		)
-		% [str(services.get("app_version", "")), release_decks.size()]
+		% [str(services.get("app_version", ""))]
 	)
 
 
@@ -291,10 +287,7 @@ func _infer_loaded_backend(
 	}
 
 
-func _legacy_onnx_assets_absent(release_decks: Array[String]) -> bool:
-	for deck_key in release_decks:
-		if FileAccess.file_exists("res://data/ai_models/%s.onnx" % deck_key):
-			return false
+func _onnx_assets_absent() -> bool:
 	var directory := DirAccess.open("res://data/ai_models")
 	if directory == null:
 		return true

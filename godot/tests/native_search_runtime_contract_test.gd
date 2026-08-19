@@ -138,7 +138,7 @@ func _initialize() -> void:
 	var kernel: Variant = ClassDB.instantiate("NativeDeepSearch")
 	kernel.vm_set_cards(cards)
 	kernel.simulation_set_decks(decks)
-	var planner := DeepRootISMCTS.new()
+	var planner := InformationSetPUCT.new()
 	planner._native = kernel
 	var result: Dictionary = planner.decide({
 		"kind": "action",

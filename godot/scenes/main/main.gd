@@ -1,6 +1,6 @@
 extends Control
 
-const BATTLE_SCENE := preload("res://scenes/battle/battle_screen.tscn")
+const BATTLE_SCENE := preload("res://scenes/battle/components/battle_table.tscn")
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 const VICTORY_SCENE := preload("res://scenes/end/victory_screen.tscn")
 const TITLE_SCENE := preload("res://scenes/title/title_page.tscn")
@@ -83,10 +83,7 @@ var current_network_page: NetworkLobbyPage
 
 var action_list: VBoxContainer
 var log_label: RichTextLabel
-var detail_image: TextureRect
-var detail_title: Label
-var detail_text: RichTextLabel
-var battle_screen: BattleScreen
+var battle_screen: BattleTable
 
 var modal_layer: Control
 var modal_shade: ColorRect
@@ -1081,7 +1078,7 @@ func _on_startup_presentation_busy_changed(
 func _build_game_screen() -> void:
 	current_screen = SCREEN_GAME
 	_clear_screen()
-	battle_screen = BATTLE_SCENE.instantiate() as BattleScreen
+	battle_screen = BATTLE_SCENE.instantiate() as BattleTable
 	battle_screen.name = "GameScreen"
 	battle_screen.menu_requested.connect(_show_pause_overlay)
 	battle_screen.selection_clear_requested.connect(_on_selection_clear_requested)
@@ -1102,9 +1099,6 @@ func _build_game_screen() -> void:
 	battle_screen.set_local_hand_privacy_hidden(game_mode == MODE_LOCAL)
 	action_list = battle_screen.action_list
 	log_label = battle_screen.log_label
-	detail_image = battle_screen.detail_image
-	detail_title = battle_screen.detail_title
-	detail_text = battle_screen.detail_text
 	if battle_screen.director and audio_director:
 		battle_screen.director.audio_requested.connect(audio_director.play_cue)
 	if audio_director:
@@ -2069,11 +2063,6 @@ func _show_coin_flip_choice(request: ChoiceRequest) -> void:
 		)
 	modal_confirm.text = "继续结算"
 	modal_confirm.pressed.connect(_confirm_choice, CONNECT_ONE_SHOT)
-
-
-func _play_coin_reveal_cue() -> void:
-	if audio_director:
-		audio_director.play_cue("coin_toss")
 
 
 func _on_coin_choice_playback_completed(
@@ -3655,190 +3644,10 @@ func _select_pokemon(player_idx: int, slot: String, card_id: String) -> void:
 			)
 
 
-func _show_card_detail(card_id: String) -> void:
-	if battle_screen:
-		var pokemon: PokemonState
-		if selected_entity_key.begins_with("pokemon:"):
-			var parts := selected_entity_key.split(":")
-			if parts.size() >= 3:
-				pokemon = state.get_player(int(parts[1])).get_pokemon(str(parts[2]))
-		battle_screen.show_card_detail(card_id, pokemon)
-		return
-	if card_id.is_empty():
-		detail_title.text = "空位"
-		detail_text.text = "此位置没有宝可梦。"
-		detail_image.texture = null
-		return
-	var card := catalog.get_card(card_id)
-	detail_title.text = str(card.get("name", card_id))
-	var rows: Array[String] = []
-	rows.append("[color=#9cacc5]%s[/color]" % _card_type_text(card))
-	if int(card.get("hp", 0)) > 0:
-		rows.append("HP %d · 撤退 %d" % [
-			int(card.get("hp", 0)), int(card.get("retreat_cost", 0))])
-	for ability_value in card.get("abilities", []):
-		var ability: Dictionary = ability_value
-		rows.append("[color=#45a6ff]特性 · %s[/color]\n%s" % [
-			ability.get("name", ""), ability.get("text", "")])
-	for attack_value in card.get("attacks", []):
-		var attack: Dictionary = attack_value
-		var damage_label := str(attack.get("damage_text", ""))
-		if damage_label.is_empty() and int(attack.get("damage", 0)) > 0:
-			damage_label = str(attack.get("damage", 0))
-		rows.append("[color=#f4c84a]%s · %s[/color]\n%s" % [
-			attack.get("name", ""),
-			damage_label,
-			attack.get("text", ""),
-		])
-	if not str(card.get("trainer_text", "")).is_empty():
-		rows.append(str(card.get("trainer_text", "")))
-	detail_text.text = "\n\n".join(rows)
-	var image_path := str(card.get("image_path", ""))
-	detail_image.texture = CardTextureCache.get_texture(image_path)
-
-
-func _modal_label(text_value: String, font_size: int = 15, color: Color = Color.WHITE) -> Label:
-	var label := Label.new()
-	label.text = text_value
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", color)
-	label.add_theme_constant_override("outline_size", 0)
-	label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
-	return label
-
-
-func _add_card_grid_section(
-	parent: VBoxContainer,
-	title_text: String,
-	card_ids: Array,
-	is_hidden: bool,
-) -> void:
-	parent.add_child(_modal_label(title_text, 20, DesignTokens.GOLD))
-	var grid := GridContainer.new()
-	grid.columns = 6
-	grid.add_theme_constant_override("h_separation", 8)
-	grid.add_theme_constant_override("v_separation", 8)
-	parent.add_child(grid)
-	if card_ids.is_empty():
-		grid.add_child(_modal_label("无", 14, DesignTokens.TEXT_MUTED))
-		return
-	for value in card_ids:
-		var card_id := str(value)
-		var card_view := CARD_SCENE.instantiate() as CardView
-		card_view.custom_minimum_size = Vector2(82, 116)
-		card_view.configure(card_id, null, is_hidden, -1, -1, "", true)
-		card_view.tooltip_text = (
-			"隐藏卡牌"
-			if is_hidden
-			else str(catalog.get_card(card_id).get("name", card_id))
-		)
-		if not is_hidden and not card_id.is_empty():
-			card_view.activated.connect(func(
-				_selected_id: String,
-				_hand_index: int,
-				_player: int,
-				_slot: String,
-			) -> void:
-				_show_card_inspector({"card_id": card_id, "location": title_text})
-			)
-		grid.add_child(card_view)
-
-
-func _hidden_card_rows(count: int) -> Array[String]:
-	var result: Array[String] = []
-	for _index in range(mini(maxi(0, count), 24)):
-		result.append("")
-	return result
-
-
 func _player_name_for_context(player_idx: int) -> String:
 	if player_idx < 0 or state == null:
 		return ""
 	return state.get_player(player_idx).name
-
-
-func _pokemon_evolution_cards(pokemon: PokemonState) -> Array[String]:
-	var result: Array[String] = []
-	for value in pokemon.evolution_stack_ids:
-		var card_id := str(value)
-		if not card_id.is_empty():
-			result.append(card_id)
-	if not pokemon.card_id.is_empty():
-		result.append(pokemon.card_id)
-	return result
-
-
-func _card_detail_bbcode(card_id: String, pokemon: PokemonState = null) -> String:
-	var card := catalog.get_card(card_id)
-	var rows: Array[String] = []
-	var supertype := str(card.get("supertype", ""))
-	var subtypes: Array = card.get("subtypes", [])
-	rows.append("[color=#9eb0ca]%s%s[/color]" % [
-		supertype,
-		" · %s" % " / ".join(subtypes) if not subtypes.is_empty() else "",
-	])
-	if int(card.get("hp", 0)) > 0:
-		var maximum := int(card.get("hp", 0))
-		var hp_text := "HP %d" % maximum
-		if pokemon:
-			hp_text = "HP %d/%d · 伤害 %d" % [
-				pokemon.current_hp(catalog),
-				maximum,
-				pokemon.damage_counters * 10,
-			]
-		rows.append(hp_text)
-	if not str(card.get("evolves_from", "")).is_empty():
-		rows.append("进化自：%s" % str(card.get("evolves_from", "")))
-	if pokemon:
-		if not pokemon.status_conditions.is_empty():
-			var statuses: Array[String] = []
-			for status in pokemon.status_conditions:
-				statuses.append(_status_name(str(status)))
-			rows.append("特殊状态：" + "、".join(statuses))
-		if not pokemon.energy_card_ids.is_empty():
-			var energy_names: Array[String] = []
-			for energy_id in pokemon.energy_card_ids:
-				energy_names.append(catalog.card_name(energy_id))
-			rows.append("附着能量：%s" % "、".join(energy_names))
-		if not pokemon.attached_tool_id.is_empty():
-			rows.append("宝可梦道具：%s" % catalog.card_name(pokemon.attached_tool_id))
-	for ability_value in card.get("abilities", []):
-		var ability: Dictionary = ability_value
-		rows.append("[color=#62d7ff]特性 · %s[/color]\n%s" % [
-			str(ability.get("name", "")),
-			str(ability.get("text", "")),
-		])
-	for attack_value in card.get("attacks", []):
-		var attack: Dictionary = attack_value
-		var damage_label := str(attack.get("damage_text", ""))
-		if damage_label.is_empty() and int(attack.get("damage", 0)) > 0:
-			damage_label = str(attack.get("damage", 0))
-		rows.append("[color=#f4c84a]%s · %s[/color]\n%s" % [
-			str(attack.get("name", "")),
-			damage_label,
-			str(attack.get("text", "")),
-		])
-	if not str(card.get("trainer_text", "")).is_empty():
-		rows.append(str(card.get("trainer_text", "")))
-	for rule_value in card.get("rules", []):
-		var rule := str(rule_value)
-		if not rule.is_empty():
-			rows.append(rule)
-	var retreat := int(card.get("retreat_cost", 0))
-	if retreat > 0:
-		rows.append("撤退费用：%d" % retreat)
-	return "\n\n".join(rows)
-
-
-func _status_name(status: String) -> String:
-	return {
-		"POISONED": "中毒",
-		"BURNED": "灼伤",
-		"ASLEEP": "睡眠",
-		"PARALYZED": "麻痹",
-		"CONFUSED": "混乱",
-	}.get(status, status)
 
 
 func _action_label(action: GameAction) -> String:
@@ -4006,16 +3815,6 @@ func _choice_count_unit(request: ChoiceRequest) -> String:
 	]:
 		return "个目标"
 	return "张卡牌" if _choice_request_has_card_options(request) else "项"
-
-
-func _refresh_log() -> void:
-	if log_label == null:
-		return
-	var rows: Array[String] = []
-	for index in range(state.action_log.size()):
-		rows.append("• " + state.action_log[index])
-	log_label.text = "\n".join(rows)
-	log_label.scroll_to_line(max(0, rows.size() - 1))
 
 
 func _current_actor() -> int:
@@ -4469,10 +4268,6 @@ func _show_toast(message: String, is_error: bool = false) -> void:
 		_toast_tween = null
 	)
 
-
-func _show_title_from_game() -> void:
-	state = null
-	_show_title()
 
 func _clear_screen() -> void:
 	_startup_choreography_generation += 1
@@ -5045,14 +4840,6 @@ func _free_children_immediate(parent: Node) -> void:
 		child.free()
 
 
-func _button(text_value: String, height: float) -> Button:
-	var result := Button.new()
-	result.text = text_value
-	result.custom_minimum_size.y = height
-	result.focus_mode = Control.FOCUS_NONE
-	return result
-
-
 func _slot_name(slot: String) -> String:
 	if slot == "active":
 		return "战斗区"
@@ -5069,22 +4856,3 @@ func _zone_name(zone: String) -> String:
 		"prizes": "奖赏卡区",
 		"lost_zone": "放逐区",
 	}.get(zone, zone)
-
-
-func _phase_name(phase: String) -> String:
-	return {
-		"SETUP": "准备",
-		"DRAW": "抽牌",
-		"MAIN": "主要阶段",
-		"ATTACK": "攻击结算",
-		"POKEMON_CHECKUP": "宝可梦检查",
-		"GAME_OVER": "对局结束",
-	}.get(phase, phase)
-
-
-func _card_type_text(card: Dictionary) -> String:
-	var subtypes: Array = card.get("subtypes", [])
-	return "%s · %s" % [
-		card.get("supertype", ""),
-		" / ".join(subtypes),
-	]

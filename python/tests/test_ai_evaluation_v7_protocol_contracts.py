@@ -185,12 +185,6 @@ class NativeSimulationFingerprintTests(unittest.TestCase):
             godot_executable = root / "toolchain" / "godot-console.exe"
             orchestration = root / "tools" / "evaluate_godot_ai.ps1"
             workflow = root / ".github" / "workflows" / "verify.yml"
-            checkpoint_inspector = (
-                root
-                / "python"
-                / "scripts"
-                / "inspect_ai_evaluation_checkpoints.py"
-            )
             validator = (
                 root / "python" / "scripts" / "validate_ai_evaluation.py"
             )
@@ -202,7 +196,6 @@ class NativeSimulationFingerprintTests(unittest.TestCase):
                 (godot_executable, b"godot-runtime-v1"),
                 (orchestration, b"# scheduler-v1\n"),
                 (workflow, b"# ci-topology-v1\n"),
-                (checkpoint_inspector, b"# checkpoint-scheduler-v1\n"),
                 (validator, b"# validator-v1\n"),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -227,10 +220,6 @@ class NativeSimulationFingerprintTests(unittest.TestCase):
             self.assertIn("godot/bin/pokemon_ai.gdextension", source_files)
             self.assertIn("tools/evaluate_godot_ai.ps1", source_files)
             self.assertIn(".github/workflows/verify.yml", source_files)
-            self.assertIn(
-                "python/scripts/inspect_ai_evaluation_checkpoints.py",
-                source_files,
-            )
             self.assertIn(
                 "godot/bin/windows/"
                 "libpokemon_ai.windows.template_debug.x86_64.dll",
@@ -278,22 +267,6 @@ class NativeSimulationFingerprintTests(unittest.TestCase):
                 ci_changed["analysis_fingerprint"],
             )
 
-            checkpoint_inspector.write_bytes(b"# checkpoint-scheduler-v2\n")
-            checkpoint_changed = build_provenance(
-                root,
-                [],
-                godot_executable=godot_executable,
-                target_platform="windows",
-            )
-            self.assertNotEqual(
-                ci_changed["simulation_fingerprint"],
-                checkpoint_changed["simulation_fingerprint"],
-            )
-            self.assertEqual(
-                ci_changed["analysis_fingerprint"],
-                checkpoint_changed["analysis_fingerprint"],
-            )
-
             validator.write_bytes(b"# validator-v2\n")
             analysis_changed = build_provenance(
                 root,
@@ -302,19 +275,19 @@ class NativeSimulationFingerprintTests(unittest.TestCase):
                 target_platform="windows",
             )
             self.assertEqual(
-                checkpoint_changed["simulation_fingerprint"],
+                ci_changed["simulation_fingerprint"],
                 analysis_changed["simulation_fingerprint"],
             )
             self.assertNotEqual(
-                checkpoint_changed["analysis_fingerprint"],
+                ci_changed["analysis_fingerprint"],
                 analysis_changed["analysis_fingerprint"],
             )
             self.assertEqual(
-                checkpoint_changed["component_hashes"]["evaluation_tool"],
+                ci_changed["component_hashes"]["evaluation_tool"],
                 analysis_changed["component_hashes"]["evaluation_tool"],
             )
             self.assertNotEqual(
-                checkpoint_changed["component_hashes"]["analysis_tool"],
+                ci_changed["component_hashes"]["analysis_tool"],
                 analysis_changed["component_hashes"]["analysis_tool"],
             )
 
@@ -467,7 +440,7 @@ class DecisionAndDepthContractTests(unittest.TestCase):
             },
         }))
 
-    def test_deep_root_decisions_are_not_misclassified_as_beam_depth(self):
+    def test_information_set_puct_decisions_are_not_misclassified_as_beam_depth(self):
         row = _deep_decision_row()
         modes = {"A": "deep", "B": "challenge"}
         self.assertIsNone(match_decision_contract_error(

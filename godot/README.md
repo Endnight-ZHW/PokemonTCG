@@ -6,7 +6,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 ## 已实现
 
 - 本地双人和 Challenge AI；信息集 AlphaZero v2 尚未产生可晋升模型，Deep 入口停用并回退 Challenge。
-- 10 套预组卡组；Deep v2 使用一个 universal ONNX 和十项牌组路由，旧模型仅作为历史产物保留。
+- 10 套预组卡组；Deep v2 启用时使用一个 universal ONNX 和十项牌组路由，当前发布未捆绑模型。
 - ENet LAN 与 WebSocket Relay Protocol v6 联机；旧 Protocol 5 房间明确拒绝且不提供桥接。
 - 原生 GDScript 规则引擎和 C++ GDExtension ONNX Runtime 推理。
 - 响应式实体牌桌、卡图、动画、音频和移动端画质分档。
@@ -36,7 +36,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 - 主要页面和组件现在都包含完整可编辑场景树；动态手牌和动作按钮仍由实时数据生成。
 - 前台 Theme 位于 `res://ui/frontend/front_end_theme.tres`，只挂到标题、牌组、网络、
   设置、帮助、详情和胜利等前台 surface；战斗与兼容 Theme 仍为 `res://ui/game_theme.tres`。
-  不要把前台 Theme 挂到 `Main` 或 `BattleScreen` 根节点。
+  不要把前台 Theme 挂到 `Main` 或 `BattleTable` 根节点。
 - 前台背景与动效位于 `res://ui/frontend/frontend_backdrop.*` 和 `frontend_motion.gd`；
   所有变体都不加载边角装饰卡牌，胜利页只保留面板内的代表卡。弹窗用
   `ModalSpec.frontend(...)` / `ModalSpec.battle(...)` 隔离尺寸、遮罩和 Theme。

@@ -1,7 +1,6 @@
 import copy
 import json
 import os
-import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -26,7 +25,6 @@ from scripts.ai_evaluation_v7 import (
     summarize_strength,
     task_manifest_id,
 )
-from scripts.compare_ai_evaluation_profiles import compare_profiles, evaluate_gates
 from scripts.build_ai_evaluation_provenance import (
     build_provenance,
     current_analysis_fingerprint,
@@ -37,7 +35,6 @@ from scripts.render_ai_evaluation_report import (
     render_file,
     render_report,
 )
-from scripts.summarize_ai_evaluation_profile import summarize_profile
 from scripts.validate_ai_evaluation import validate_evaluation_gate
 from tests.temp_utils import temp_dir
 
@@ -1626,133 +1623,6 @@ class InterfaceAndProfileTests(unittest.TestCase):
         self.assertIn('"decision_semantic_hash"', source)
         self.assertIn('"completed_unit_ids"', source)
         self.assertIn('"provenance": provenance', source)
-
-    def test_profile_helpers_use_schema_v7_observed_games(self):
-        payload = _nightly_result()
-        summary = summarize_profile(payload)
-        self.assertTrue(summary["enabled"])
-        self.assertEqual(summary["games"], 2800)
-        candidate = copy.deepcopy(payload)
-        candidate["performance_profile"]["segments_ms"]["runner_legal_actions_ms"] = 10.0
-        comparison = compare_profiles(payload, candidate)
-        self.assertTrue(comparison["same_match_results"])
-        self.assertEqual(
-            comparison["segments"]["runner_legal_actions_ms"]["ratio"], 0.5
-        )
-
-    def test_profile_comparison_ignores_timing_and_shard_provenance(self):
-        baseline = _nightly_result()
-        candidate = copy.deepcopy(baseline)
-        baseline["elapsed_ms"] = 1000
-        candidate["elapsed_ms"] = 800
-        for index, row in enumerate(candidate["matches"]):
-            row["elapsed_ms"] += 9000
-            row["average_decision_ms"] = 987.0
-            row["task_index"] = 1000 + index
-            row["task_shard_index"] = 19
-            row["task_shard_count"] = 50
-            row["source_shard_index"] = 9
-            row["evidence_shard_index"] = 49
-            row["evidence_shard_count"] = 50
-            for samples in row["search_depth_samples_by_strategy"].values():
-                for sample in samples:
-                    sample["planner_ms"] *= 0.75
-        comparison = compare_profiles(baseline, candidate)
-        self.assertTrue(comparison["same_match_results"])
-        self.assertTrue(comparison["same_v2_search_traces"])
-        self.assertTrue(comparison["equivalent"])
-        self.assertAlmostEqual(
-            comparison["planner_ms_per_node"]["reduction"], 0.25
-        )
-        self.assertAlmostEqual(comparison["wall_clock_ms"]["reduction"], 0.2)
-        self.assertTrue(
-            evaluate_gates(
-                comparison,
-                require_planner_reduction=0.25,
-                require_wall_reduction=0.20,
-            )["passed"]
-        )
-
-    def test_profile_comparison_fails_closed_on_result_or_trace_change(self):
-        baseline = _nightly_result()
-        changed_result = copy.deepcopy(baseline)
-        changed_result["matches"][0]["winner"] = "A"
-        comparison = compare_profiles(baseline, changed_result)
-        self.assertFalse(comparison["same_match_results"])
-        self.assertFalse(evaluate_gates(comparison)["passed"])
-
-        changed_trace = copy.deepcopy(baseline)
-        changed_trace["matches"][0]["search_depth_samples_by_strategy"]["A"][0][
-            "nodes_expanded"
-        ] += 1
-        comparison = compare_profiles(baseline, changed_trace)
-        self.assertTrue(comparison["same_match_results"])
-        self.assertFalse(comparison["same_v2_search_traces"])
-        self.assertFalse(evaluate_gates(comparison)["passed"])
-
-    def test_profile_performance_gate_rejects_missing_planner_ms(self):
-        baseline = _nightly_result()
-        candidate = copy.deepcopy(baseline)
-        baseline["elapsed_ms"] = 1000
-        candidate["elapsed_ms"] = 700
-        for row in baseline["matches"]:
-            for samples in row["search_depth_samples_by_strategy"].values():
-                for sample in samples:
-                    sample.pop("planner_ms", None)
-        comparison = compare_profiles(baseline, candidate)
-        self.assertTrue(comparison["equivalent"])
-        self.assertFalse(comparison["planner_ms_per_node"]["available"])
-        gate = evaluate_gates(
-            comparison,
-            require_planner_reduction=0.25,
-            require_wall_reduction=0.20,
-        )
-        self.assertFalse(gate["passed"])
-        self.assertIn(
-            "planner_metric_unavailable",
-            [error["code"] for error in gate["errors"]],
-        )
-
-    def test_profile_comparison_cli_enforces_optional_reduction_gates(self):
-        baseline = _nightly_result()
-        candidate = copy.deepcopy(baseline)
-        baseline["elapsed_ms"] = 1000
-        candidate["elapsed_ms"] = 800
-        for row in candidate["matches"]:
-            for samples in row["search_depth_samples_by_strategy"].values():
-                for sample in samples:
-                    sample["planner_ms"] *= 0.75
-        script = (
-            Path(__file__).parents[1]
-            / "scripts"
-            / "compare_ai_evaluation_profiles.py"
-        )
-        with temp_dir() as directory:
-            baseline_path = Path(directory) / "baseline.json"
-            candidate_path = Path(directory) / "candidate.json"
-            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
-            candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(script),
-                    "--baseline",
-                    str(baseline_path),
-                    "--candidate",
-                    str(candidate_path),
-                    "--require-planner-reduction",
-                    "0.25",
-                    "--require-wall-reduction",
-                    "0.20",
-                    "--json",
-                ],
-                capture_output=True,
-                check=False,
-                encoding="utf-8",
-            )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertTrue(json.loads(completed.stdout)["gate"]["passed"])
-
 
 if __name__ == "__main__":
     unittest.main()

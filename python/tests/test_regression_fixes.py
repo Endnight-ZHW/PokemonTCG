@@ -405,21 +405,33 @@ class TestCrushingHammerDiscard(unittest.TestCase):
 
     def test_coin_flip_energy_discard_no_targets(self):
         """When opponent has no energy, the effect should do nothing gracefully."""
-        from engine.effects.special_effects import _handle_coin_flip_energy_discard
+        from engine.commands.dsl_compiler import compile_command_spec
+        from engine.commands.resolution_stack import ResolutionStack
 
         state = _make_state_with_pokemon()
-        # Opponent has no energy on any Pokemon
-        result = _handle_coin_flip_energy_discard(state, {}, 0, "active")
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "flip_coin_then_discard_energy",
+            "args": {},
+            "branches": {},
+        }))
+        coin_rng = ScriptedRandomSource([True])
+        with coin_rng.bind_state(state):
+            result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
-        self.assertIn("对手场上没有能量", result.log_message)
+        self.assertIsNone(result.pending_choice)
+        self.assertEqual(state.get_opponent().discard, [])
 
 
 class TestDiscardRecoveryEffects(unittest.TestCase):
 
     def test_shuffle_from_discard_requires_selection_and_filters_basic_energy(self):
-        from engine.effects.draw_effects import _handle_shuffle_from_discard
+        from engine.commands.dsl_compiler import compile_command_spec
+        from engine.commands.resolution_stack import ResolutionStack
 
         state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
         player = state.p1
         player.deck = [CardRegistry.get("sv1-ener-2")]
         player.discard = [
@@ -429,27 +441,40 @@ class TestDiscardRecoveryEffects(unittest.TestCase):
             CardRegistry.get("svf-potion"),
         ]
 
-        result = _handle_shuffle_from_discard(
-            state,
-            player,
-            0,
-            {"count": 3, "filter": "pokemon_and_energy"},
-        )
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "shuffle_from_discard_to_deck",
+            "args": {"count": 3, "filter": "pokemon_and_energy"},
+            "branches": {},
+        }))
+        result = stack.resolve_all(0, "active")
 
         self.assertTrue(result.success)
-        self.assertIsNotNone(result.pending_action)
-        request = result.pending_action
+        self.assertIsNotNone(result.pending_choice)
+        engine = GameEngine()
+        request = engine.choice_request(state, result.pending_choice)
         self.assertEqual(request.min_select, 1)
         self.assertEqual(request.max_select, 2)
         self.assertTrue(request.can_cancel)
         self.assertCountEqual(
-            [card.api_id for card in request.card_list],
+            [option.ref.card_id for option in request.options],
             ["sv1-104", "sv1-ener-1"],
         )
 
-        empty = request.callback([])
+        empty = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, ()),
+        )
         self.assertFalse(empty.success)
-        resolved = request.callback(list(request.card_list))
+        resolved = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(
+                request.request_id,
+                tuple(option.option_id for option in request.options),
+            ),
+        )
         self.assertTrue(resolved.success)
         self.assertEqual([card.api_id for card in player.discard], ["svi-mirc", "svf-potion"])
         self.assertCountEqual(
@@ -481,7 +506,8 @@ class TestGoingSecondFirstTurnBonuses(unittest.TestCase):
         self.assertFalse(state.is_going_second_first_turn(1))
 
     def test_cresselia_bonus_only_on_going_second_first_turn(self):
-        from engine.effects.energy_effects import _handle_energy_attach
+        from engine.commands.dsl_compiler import compile_command_spec
+        from engine.commands.resolution_stack import ResolutionStack
 
         state = GameState()
         state.phase = TurnPhase.MAIN
@@ -490,48 +516,60 @@ class TestGoingSecondFirstTurnBonuses(unittest.TestCase):
         state.turn_number = 5
         player = state.p2
         player.active = PokemonInPlay(CardRegistry.get("sv1-113"))
+        state.p1.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
         player.deck = [CardRegistry.get("sv1-ener-5")] * 3
 
-        result = _handle_energy_attach(
-            state,
-            player,
-            1,
-            {
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "attach_energy",
+            "args": {
                 "amount": 1,
                 "from_zone": "deck",
                 "filter": "psychic",
                 "to": "any",
                 "going_second_bonus": 3,
             },
-            "active",
-        )
+            "branches": {},
+        }))
+        result = stack.resolve_all(1, "active")
 
         self.assertTrue(result.success)
+        self.assertIsNone(result.pending_choice)
         self.assertEqual(len(player.active.energy_cards), 1)
 
     def test_grass_search_bonus_applies_on_turn_two_for_second_player(self):
-        from engine.effects.search_effects import _handle_conditional_search_extra
+        from engine.commands.dsl_compiler import compile_command_spec
+        from engine.commands.resolution_stack import ResolutionStack
 
         state = GameState()
         state.phase = TurnPhase.MAIN
         state.first_player_idx = 0
         state.active_player_idx = 1
         state.turn_number = 2
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("svg2-zaru"))
         state.p2.deck = [
             CardRegistry.get("svg2-shro"),
             CardRegistry.get("svg2-turt"),
             CardRegistry.get("svg2-tort"),
         ]
 
-        result = _handle_conditional_search_extra(
-            state,
-            1,
-            {"max_count": 3, "default_count": 1, "filter": "grass_pokemon"},
-        )
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "conditional_search",
+            "args": {
+                "max_count": 3,
+                "default_count": 1,
+                "filter": "grass_pokemon",
+            },
+            "branches": {},
+        }))
+        result = stack.resolve_all(1, "active")
 
         self.assertTrue(result.success)
-        self.assertIsNotNone(result.pending_action)
-        self.assertEqual(result.pending_action.max_select, 3)
+        self.assertIsNotNone(result.pending_choice)
+        request = GameEngine().choice_request(state, result.pending_choice)
+        self.assertEqual(request.max_select, 3)
 
 
 # ── 3. SwitchPokemon VM Continuation Semantics ─────────────────────────────

@@ -19,7 +19,7 @@ var _revision := -1
 ## are serialized by this class, so the worker can safely retain a validated
 ## turn plan and immutable catalog caches between atomic actions.
 var _worker := NativeChallengeAI.new()
-var _deep_worker := DeepRootISMCTS.new()
+var _deep_worker := InformationSetPUCT.new()
 
 
 func is_running() -> bool:
@@ -179,7 +179,7 @@ func _decide(
 		unavailable_fallback["deep_fallback"] = true
 		unavailable_fallback["fallback_reason"] = "runtime_unavailable"
 		unavailable_fallback["deep_failure"] = {
-			"planner": DeepRootISMCTS.PLANNER_ID,
+			"planner": InformationSetPUCT.PLANNER_ID,
 			"reason": "runtime_unavailable",
 			"elapsed_ms": 0.0,
 		}
@@ -198,7 +198,7 @@ func _decide(
 		fallback["deep_fallback"] = true
 		fallback["fallback_reason"] = reason
 		fallback["deep_failure"] = {
-			"planner": DeepRootISMCTS.PLANNER_ID,
+			"planner": InformationSetPUCT.PLANNER_ID,
 			"reason": reason,
 			"elapsed_ms": float(deep_result.get("elapsed_ms", 0.0)),
 		}

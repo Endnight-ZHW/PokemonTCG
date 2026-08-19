@@ -30,6 +30,7 @@ const DEFAULT_ENGINE := ENGINE_TURN_BEAM_V2
 const SUPPORTED_ENGINES := [ENGINE_TURN_BEAM_V1, ENGINE_TURN_BEAM_V2]
 
 var _had_error := false
+var _diagnostic_worker := NativeChallengeAI.new()
 var _deep_runtime_cache: Dictionary = {}
 var _deep_unavailable: Dictionary = {}
 var _deep_runtime_manifest_path := DeepAIRuntime.MANIFEST_PATH
@@ -104,7 +105,6 @@ func _parse_args(args: Array[String]) -> Dictionary:
 		"task_manifest_id": "",
 		"execution_profile_id": "",
 		"fail_fast_fatal": false,
-		"evidence_prefix_only": false,
 		"output": "",
 		"output_dir": "",
 		"deep_runtime_manifest": DeepAIRuntime.MANIFEST_PATH,
@@ -217,9 +217,6 @@ func _parse_args(args: Array[String]) -> Dictionary:
 			"--fail-fast-fatal":
 				config["fail_fast_fatal"] = true
 				index += 1
-			"--evidence-prefix-only":
-				config["evidence_prefix_only"] = true
-				index += 1
 			"--output":
 				config["output"] = value
 				index += 2
@@ -313,7 +310,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	else:
 		var loaded_provenance: Variant = _read_json(provenance_path)
 		if loaded_provenance is Dictionary:
-			provenance = loaded_provenance
+			provenance = Dictionary(_normalized_json_value(loaded_provenance))
 		if (
 			int(provenance.get("schema_version", 0)) != SCHEMA_VERSION
 			or str(provenance.get("simulation_fingerprint", "")).is_empty()
@@ -413,7 +410,6 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	var checkpoint_dir := str(config.get("checkpoint_dir", ""))
 	var resume_checkpoints := bool(config.get("resume_checkpoints", false))
 	var fail_fast_fatal := bool(config.get("fail_fast_fatal", false))
-	var evidence_prefix_only := bool(config.get("evidence_prefix_only", false))
 	if (
 		not checkpoint_dir.is_empty()
 		and (
@@ -449,7 +445,6 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 		task_shard_count,
 		evidence_shard_index,
 		evidence_shard_count,
-		evidence_prefix_only,
 	)
 	var completed_task_pairs := 0
 	var completed_games := 0
@@ -473,8 +468,6 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 				task_candidates += 1
 				var evidence_unit_index := (
 					selected_deck_index * seed_blocks + block_index)
-				if evidence_prefix_only and block_index >= 5:
-					continue
 				if not _task_belongs_to_range(task_index, task_start, task_count):
 					continue
 				if not _evaluation_task_belongs_to_shard(
@@ -602,8 +595,6 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 				for block_index in range(seed_block_start, cross_end):
 					var task_index := task_candidates
 					task_candidates += 1
-					if evidence_prefix_only and block_index != 0:
-						continue
 					var evidence_unit_index := _cross_evidence_unit_index(
 						selected_decks.size(),
 						seed_blocks,
@@ -784,7 +775,6 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 			"checkpoint_enabled": not checkpoint_dir.is_empty(),
 			"resume_checkpoints": resume_checkpoints,
 			"fail_fast_fatal": fail_fast_fatal,
-			"evidence_prefix_only": evidence_prefix_only,
 			"task_candidates": task_candidates,
 			"task_pairs_run": task_pairs_run,
 			"max_actions": max_actions,
@@ -858,7 +848,6 @@ func _count_task_pairs(
 	task_shard_count: int,
 	evidence_shard_index: int,
 	evidence_shard_count: int,
-	evidence_prefix_only: bool,
 ) -> int:
 	var run_mirror := matchup_mode in [MATCHUP_MODE_MIRROR, MATCHUP_MODE_BALANCED]
 	var run_cross := matchup_mode in [MATCHUP_MODE_BALANCED, MATCHUP_MODE_MATRIX]
@@ -870,8 +859,6 @@ func _count_task_pairs(
 				var task_index := task_candidates
 				task_candidates += 1
 				var block_index := seed_block_start + _block_offset
-				if evidence_prefix_only and block_index >= 5:
-					continue
 				var evidence_unit_index := deck_index * seed_blocks + block_index
 				if not _task_belongs_to_range(task_index, task_start, task_count):
 					continue
@@ -894,8 +881,6 @@ func _count_task_pairs(
 				for block_index in range(seed_block_start, cross_end):
 					var task_index := task_candidates
 					task_candidates += 1
-					if evidence_prefix_only and block_index != 0:
-						continue
 					var evidence_unit_index := _cross_evidence_unit_index(
 						selected_decks.size(),
 						seed_blocks,
@@ -1694,7 +1679,7 @@ func _play_match(
 			_append_jsonl(distill_output, action_distill_row)
 		var action := GameAction.from_dict(decision["action"])
 		var diagnose_started := _perf_start(performance_profile)
-		var diagnostics: Dictionary = actor_worker.diagnose_decision(
+		var diagnostics: Dictionary = _diagnostic_worker.diagnose_decision(
 			state,
 			actor,
 			action,
@@ -2415,821 +2400,9 @@ func _deep_equal(left: Variant, right: Variant) -> bool:
 	return left == right
 
 
-func _empty_stats() -> Dictionary:
-	return {
-		"games": 0,
-		"wins": 0,
-		"losses": 0,
-		"draws": 0,
-		"completed_games": 0,
-		"clean_games": 0,
-		"clean_wins": 0,
-		"clean_losses": 0,
-		"clean_draws": 0,
-		"score_total": 0.0,
-		"actions": 0,
-		"turns": 0,
-		"decisions": 0,
-		"choices": 0,
-		"decision_ms_total": 0.0,
-		"decision_ms_sample_count": 0,
-		"decision_ms_values": [],
-		"cache_hit_decision_ms_sample_count": 0,
-		"cache_hit_decision_ms_values": [],
-		"ai_turn_ms_sample_count": 0,
-		"ai_turn_ms_values": [],
-		"invalid_actions": 0,
-		"choice_failures": 0,
-		"rule_exceptions": 0,
-		"time_capped_decisions": 0,
-		"dynamic_budget_stop_reasons": {},
-		"deep_fallbacks": 0,
-		"max_actions_exhaustions": 0,
-	}
-
-
-func _merge_count_dict(target: Dictionary, source: Variant) -> void:
-	if not (source is Dictionary):
-		return
-	var source_dict := Dictionary(source)
-	for key in source_dict.keys():
-		var name := str(key)
-		if name.is_empty():
-			continue
-		target[name] = int(target.get(name, 0)) + int(source_dict[key])
-
-
-func _merge_match(stats: Dictionary, row: Dictionary) -> void:
-	stats["games"] = int(stats["games"]) + 1
-	match str(row.get("winner", "draw")):
-		"A":
-			stats["wins"] = int(stats["wins"]) + 1
-		"B":
-			stats["losses"] = int(stats["losses"]) + 1
-		_:
-			stats["draws"] = int(stats["draws"]) + 1
-	if str(row.get("terminal_reason", "")) == "game_over":
-		stats["completed_games"] = int(stats["completed_games"]) + 1
-	if _is_clean_match(row):
-		stats["clean_games"] = int(stats["clean_games"]) + 1
-		match str(row.get("winner", "draw")):
-			"A":
-				stats["clean_wins"] = int(stats["clean_wins"]) + 1
-			"B":
-				stats["clean_losses"] = int(stats["clean_losses"]) + 1
-			_:
-				stats["clean_draws"] = int(stats["clean_draws"]) + 1
-	stats["score_total"] = float(stats["score_total"]) + float(row.get("score", 0.0))
-	stats["actions"] = int(stats["actions"]) + int(row.get("actions", 0))
-	stats["turns"] = int(stats["turns"]) + int(row.get("turns", 0))
-	stats["decisions"] = int(stats["decisions"]) + int(row.get("decisions", 0))
-	stats["choices"] = int(stats["choices"]) + int(row.get("choices", 0))
-	var decision_values: Array = stats["decision_ms_values"]
-	var raw_samples: Variant = row.get("decision_ms_samples", [])
-	var cache_hit_values: Array = stats["cache_hit_decision_ms_values"]
-	var raw_cache_hits: Variant = row.get("turn_plan_cache_hit_samples", [])
-	var samples: Array = Array(raw_samples) if raw_samples is Array else []
-	var cache_hits: Array = Array(raw_cache_hits) if raw_cache_hits is Array else []
-	for sample_index in range(samples.size()):
-		var sample_value: Variant = samples[sample_index]
-		var sample_ms := float(sample_value)
-		if not is_finite(sample_ms) or sample_ms < 0.0:
-			continue
-		stats["decision_ms_total"] = float(stats["decision_ms_total"]) + sample_ms
-		stats["decision_ms_sample_count"] = int(stats["decision_ms_sample_count"]) + 1
-		decision_values.append(sample_ms)
-		if sample_index < cache_hits.size() and bool(cache_hits[sample_index]):
-			stats["cache_hit_decision_ms_sample_count"] = (
-				int(stats["cache_hit_decision_ms_sample_count"]) + 1
-			)
-			cache_hit_values.append(sample_ms)
-	var ai_turn_values: Array = stats["ai_turn_ms_values"]
-	var raw_ai_turn_samples: Variant = row.get("ai_turn_ms_samples", [])
-	for sample_value in Array(raw_ai_turn_samples) if raw_ai_turn_samples is Array else []:
-		var sample_ms := float(sample_value)
-		if not is_finite(sample_ms) or sample_ms < 0.0:
-			continue
-		stats["ai_turn_ms_sample_count"] = int(stats["ai_turn_ms_sample_count"]) + 1
-		ai_turn_values.append(sample_ms)
-	stats["invalid_actions"] = int(stats["invalid_actions"]) + int(row.get("invalid_actions", 0))
-	stats["choice_failures"] = int(stats["choice_failures"]) + int(row.get("choice_failures", 0))
-	stats["rule_exceptions"] = int(stats["rule_exceptions"]) + int(row.get("rule_exceptions", 0))
-	stats["time_capped_decisions"] = int(stats["time_capped_decisions"]) + int(row.get("time_capped_decisions", 0))
-	stats["deep_fallbacks"] = int(stats["deep_fallbacks"]) + int(row.get("deep_fallbacks", 0))
-	_merge_count_dict(stats["dynamic_budget_stop_reasons"], row.get("dynamic_budget_stop_reasons", {}))
-	if bool(row.get("max_actions_exhausted", false)):
-		stats["max_actions_exhaustions"] = int(stats["max_actions_exhaustions"]) + 1
-
-
-func _is_clean_match(row: Dictionary) -> bool:
-	return (
-		str(row.get("terminal_reason", "")) == "game_over"
-		and int(row.get("invalid_actions", 0)) == 0
-		and int(row.get("choice_failures", 0)) == 0
-		and int(row.get("rule_exceptions", 0)) == 0
-		and not bool(row.get("max_actions_exhausted", false))
-	)
-
-
-func _finalize_stats(stats: Dictionary) -> Dictionary:
-	var games: int = max(1, int(stats.get("games", 0)))
-	var decisions_and_choices: int = max(1, int(stats.get("decisions", 0)) + int(stats.get("choices", 0)))
-	var decision_sample_count: int = max(1, int(stats.get("decision_ms_sample_count", 0)))
-	var decisions: int = max(1, int(stats.get("decisions", 0)))
-	var point_rate := (float(stats.get("wins", 0)) + float(stats.get("draws", 0)) * 0.5) / float(games)
-	var clean_games := int(stats.get("clean_games", 0))
-	var clean_point_rate := 0.0
-	if clean_games > 0:
-		clean_point_rate = (
-			float(stats.get("clean_wins", 0))
-			+ float(stats.get("clean_draws", 0)) * 0.5
-		) / float(clean_games)
-	var decision_values: Array = stats.get("decision_ms_values", [])
-	var cache_hit_decision_values: Array = stats.get("cache_hit_decision_ms_values", [])
-	var ai_turn_values: Array = stats.get("ai_turn_ms_values", [])
-	var result := stats.duplicate(true)
-	result["win_rate"] = round(float(stats.get("wins", 0)) / float(games) * 10000.0) / 10000.0
-	result["draw_rate"] = round(float(stats.get("draws", 0)) / float(games) * 10000.0) / 10000.0
-	result["point_rate"] = round(point_rate * 10000.0) / 10000.0
-	result["completion_rate"] = round(float(stats.get("completed_games", 0)) / float(games) * 10000.0) / 10000.0
-	result["max_action_exhaustion_rate"] = round(float(stats.get("max_actions_exhaustions", 0)) / float(games) * 10000.0) / 10000.0
-	result["clean_point_rate"] = round(clean_point_rate * 10000.0) / 10000.0
-	result["average_score"] = round(float(stats.get("score_total", 0.0)) / float(games) * 1000.0) / 1000.0
-	result["average_actions"] = round(float(stats.get("actions", 0)) / float(games) * 1000.0) / 1000.0
-	result["average_turns"] = round(float(stats.get("turns", 0)) / float(games) * 1000.0) / 1000.0
-	result["average_decision_ms"] = round(
-		float(stats.get("decision_ms_total", 0.0)) / float(decision_sample_count) * 1000.0
-	) / 1000.0
-	result["decision_ms_p50"] = _round_to(_percentile(decision_values, 0.50), 3)
-	result["decision_ms_p95"] = _round_to(_percentile(decision_values, 0.95), 3)
-	result["cache_hit_decision_ms_p95"] = _round_to(
-		_percentile(cache_hit_decision_values, 0.95), 3)
-	result["ai_turn_ms_p95"] = _round_to(_percentile(ai_turn_values, 0.95), 3)
-	result["time_capped_decision_rate"] = round(float(stats.get("time_capped_decisions", 0)) / float(decisions) * 10000.0) / 10000.0
-	result["deep_fallback_rate"] = round(float(stats.get("deep_fallbacks", 0)) / float(decisions_and_choices) * 10000.0) / 10000.0
-	var stop_reasons := Dictionary(stats.get("dynamic_budget_stop_reasons", {})).duplicate(true)
-	var dynamic_stops := (
-		int(stop_reasons.get("single_action", 0))
-		+ int(stop_reasons.get("confidence", 0))
-	)
-	result["dynamic_budget_stop_reasons"] = stop_reasons
-	result["dynamic_budget_stops"] = dynamic_stops
-	result["dynamic_budget_stop_rate"] = round(float(dynamic_stops) / float(decisions) * 10000.0) / 10000.0
-	result["elo_delta"] = round(_elo_delta(point_rate) * 1000.0) / 1000.0
-	result.erase("decision_ms_values")
-	result.erase("cache_hit_decision_ms_values")
-	result.erase("ai_turn_ms_values")
-	return result
-
-
-func _elo_delta(point_rate: float) -> float:
-	var clamped := clampf(point_rate, 0.001, 0.999)
-	return 400.0 * log(clamped / (1.0 - clamped)) / log(10.0)
-
-
-func _summarize_matches(matches: Array) -> Dictionary:
-	var stats := _empty_stats()
-	for row in matches:
-		_merge_match(stats, row)
-	return _finalize_stats(stats)
-
-
-func _summarize_performance_by_strategy(matches: Array) -> Dictionary:
-	var values := {
-		"A": {
-			"decision": [],
-			"cache": [],
-			"turn": [],
-		},
-		"B": {
-			"decision": [],
-			"cache": [],
-			"turn": [],
-		},
-	}
-	for raw_row in matches:
-		var row := Dictionary(raw_row)
-		var decisions_by_strategy: Variant = row.get(
-			"decision_ms_samples_by_strategy", null)
-		var cache_hits_by_strategy: Variant = row.get(
-			"turn_plan_cache_hit_samples_by_strategy", null)
-		var turns_by_strategy: Variant = row.get(
-			"ai_turn_ms_samples_by_strategy", null)
-		if not (
-			decisions_by_strategy is Dictionary
-			and cache_hits_by_strategy is Dictionary
-			and turns_by_strategy is Dictionary
-		):
-			return {"available": false}
-		for strategy_label in ["A", "B"]:
-			var raw_decisions: Variant = decisions_by_strategy.get(strategy_label, [])
-			var raw_cache_hits: Variant = cache_hits_by_strategy.get(strategy_label, [])
-			var raw_turns: Variant = turns_by_strategy.get(strategy_label, [])
-			if not (
-				raw_decisions is Array
-				and raw_cache_hits is Array
-				and raw_turns is Array
-				and raw_decisions.size() == raw_cache_hits.size()
-			):
-				return {"available": false}
-			var target: Dictionary = values[strategy_label]
-			var decision_values: Array = target["decision"]
-			var cache_values: Array = target["cache"]
-			var turn_values: Array = target["turn"]
-			for sample_index in range(raw_decisions.size()):
-				var sample_ms := float(raw_decisions[sample_index])
-				if not is_finite(sample_ms) or sample_ms < 0.0:
-					return {"available": false}
-				decision_values.append(sample_ms)
-				if bool(raw_cache_hits[sample_index]):
-					cache_values.append(sample_ms)
-			for raw_sample in raw_turns:
-				var turn_sample_ms := float(raw_sample)
-				if not is_finite(turn_sample_ms) or turn_sample_ms < 0.0:
-					return {"available": false}
-				turn_values.append(turn_sample_ms)
-	var result := {"available": true}
-	for strategy_label in ["A", "B"]:
-		var strategy_values: Dictionary = values[strategy_label]
-		var decision_values: Array = strategy_values["decision"]
-		var cache_values: Array = strategy_values["cache"]
-		var turn_values: Array = strategy_values["turn"]
-		result[strategy_label] = {
-			"decision_ms_sample_count": decision_values.size(),
-			"decision_ms_p95": _round_to(_percentile(decision_values, 0.95), 3),
-			"cache_hit_decision_ms_sample_count": cache_values.size(),
-			"cache_hit_decision_ms_p95": _round_to(_percentile(cache_values, 0.95), 3),
-			"ai_turn_ms_sample_count": turn_values.size(),
-			"ai_turn_ms_p95": _round_to(_percentile(turn_values, 0.95), 3),
-		}
-	return result
-
-
-func _summarize_by_deck(matches: Array) -> Dictionary:
-	var rows := {}
-	var grouped_matches := {}
-	for row in matches:
-		var deck_key := str(row.get("deck", ""))
-		if not rows.has(deck_key):
-			rows[deck_key] = _empty_stats()
-			grouped_matches[deck_key] = []
-		_merge_match(rows[deck_key], row)
-		grouped_matches[deck_key].append(row)
-	for deck_key in rows:
-		rows[deck_key] = _finalize_stats(rows[deck_key])
-		rows[deck_key]["point_rate_ci95"] = _bootstrap_point_rate_ci(
-			grouped_matches[deck_key],
-			BOOTSTRAP_SEED + absi(str(deck_key).hash()) % 100000,
-		)
-	return rows
-
-
-func _summarize_seats(matches: Array[Dictionary]) -> Dictionary:
-	var first := _empty_stats()
-	var second := _empty_stats()
-	var seat_counts := {"a_player_0": 0, "a_player_1": 0}
-	for row in matches:
-		if bool(row.get("strategy_a_first", false)):
-			_merge_match(first, row)
-		else:
-			_merge_match(second, row)
-		if int(row.get("strategy_a_player", 0)) == 0:
-			seat_counts["a_player_0"] = int(seat_counts["a_player_0"]) + 1
-		else:
-			seat_counts["a_player_1"] = int(seat_counts["a_player_1"]) + 1
-	var first_stats := _finalize_stats(first)
-	var second_stats := _finalize_stats(second)
-	return {
-		"strategy_a_first": first_stats,
-		"strategy_a_second": second_stats,
-		"seat_counts": seat_counts,
-		"seat_gap": abs(int(seat_counts["a_player_0"]) - int(seat_counts["a_player_1"])),
-		"first_player_point_rate_gap": round(
-			abs(float(first_stats["point_rate"]) - float(second_stats["point_rate"])) * 10000.0
-		) / 10000.0,
-	}
-
-
-func _match_point(row: Dictionary) -> float:
-	match str(row.get("winner", "draw")):
-		"A":
-			return 1.0
-		"B":
-			return 0.0
-		_:
-			return 0.5
-
-
 func _round_to(value: float, digits: int) -> float:
 	var scale := pow(10.0, float(maxi(0, digits)))
 	return round(value * scale) / scale
-
-
-func _percentile(values_input: Array, percentile: float) -> float:
-	if values_input.is_empty():
-		return 0.0
-	var values: Array = []
-	for value in values_input:
-		values.append(float(value))
-	values.sort()
-	var clamped := clampf(percentile, 0.0, 1.0)
-	var index := int(floor(clamped * float(values.size() - 1)))
-	return float(values[index])
-
-
-func _confidence_interval(values: Array) -> Dictionary:
-	return {
-		"lower": _round_to(_percentile(values, 0.025), 4),
-		"upper": _round_to(_percentile(values, 0.975), 4),
-		"samples": values.size(),
-	}
-
-
-func _group_matches_by_deck(matches: Array) -> Dictionary:
-	var groups := {}
-	for row in matches:
-		var deck_key := str(row.get("deck", ""))
-		if not groups.has(deck_key):
-			groups[deck_key] = []
-		var deck_rows: Array = groups[deck_key]
-		deck_rows.append(row)
-	return groups
-
-
-func _bootstrap_point_rate_ci(matches: Array, seed: int) -> Dictionary:
-	if matches.is_empty():
-		return _confidence_interval([])
-	var groups := _group_matches_by_deck(matches)
-	var deck_keys := groups.keys()
-	deck_keys.sort()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = int(maxi(1, absi(seed)))
-	var values: Array = []
-	for _iteration in range(BOOTSTRAP_ITERATIONS):
-		var points := 0.0
-		var count := 0
-		for deck_key in deck_keys:
-			var rows: Array = groups[deck_key]
-			for _sample_index in range(rows.size()):
-				var row: Dictionary = rows[rng.randi_range(0, rows.size() - 1)]
-				points += _match_point(row)
-				count += 1
-		values.append(points / float(maxi(1, count)))
-	return _confidence_interval(values)
-
-
-func _pair_key(row: Dictionary) -> String:
-	var explicit := str(row.get("pair_key", ""))
-	if not explicit.is_empty():
-		return explicit
-	return "%s:%d:%d" % [
-		str(row.get("deck", "")),
-		int(row.get("seed_block", 0)),
-		int(row.get("seed", 0)),
-	]
-
-
-func _pair_row_from_matches(rows: Array) -> Dictionary:
-	if rows.is_empty():
-		return {}
-	var first: Dictionary = rows[0]
-	var points := 0.0
-	var score := 0.0
-	var clean := true
-	for row_value in rows:
-		var row: Dictionary = row_value
-		points += _match_point(row)
-		score += float(row.get("score", 0.0))
-		clean = clean and _is_clean_match(row)
-	var games := maxi(1, rows.size())
-	var point_rate := points / float(games)
-	return {
-		"deck": str(first.get("deck", "")),
-		"strategy_a_deck": str(first.get("strategy_a_deck", first.get("deck", ""))),
-		"strategy_b_deck": str(first.get("strategy_b_deck", first.get("deck", ""))),
-		"matchup_key": str(first.get("matchup_key", "")),
-		"matchup_kind": str(first.get("matchup_kind", "mirror")),
-		"seed": int(first.get("seed", 0)),
-		"seed_block": int(first.get("seed_block", 0)),
-		"games": games,
-		"complete": rows.size() >= 2,
-		"clean": clean,
-		"point_rate": _round_to(point_rate, 4),
-		"point_delta": _round_to(point_rate - 0.5, 4),
-		"score_delta": _round_to(score / float(games), 3),
-	}
-
-
-func _paired_rows(matches: Array) -> Array[Dictionary]:
-	var groups := {}
-	for row in matches:
-		var key := _pair_key(row)
-		if not groups.has(key):
-			groups[key] = []
-		var rows: Array = groups[key]
-		rows.append(row)
-	var keys := groups.keys()
-	keys.sort()
-	var result: Array[Dictionary] = []
-	for key in keys:
-		var pair_row := _pair_row_from_matches(groups[key])
-		if not pair_row.is_empty():
-			result.append(pair_row)
-	return result
-
-
-func _group_pairs_by_deck(pair_rows: Array) -> Dictionary:
-	var groups := {}
-	for row_value in pair_rows:
-		var row: Dictionary = row_value
-		var deck_key := str(row.get("deck", ""))
-		if not groups.has(deck_key):
-			groups[deck_key] = []
-		var rows: Array = groups[deck_key]
-		rows.append(row)
-	return groups
-
-
-func _group_matches_by_matchup(matches: Array) -> Dictionary:
-	var groups := {}
-	for row_value in matches:
-		var row: Dictionary = row_value
-		var key := str(row.get("matchup_key", ""))
-		if key.is_empty():
-			key = _matchup_key(str(row.get("deck", "")), str(row.get("deck", "")))
-		if not groups.has(key):
-			groups[key] = []
-		var rows: Array = groups[key]
-		rows.append(row)
-	return groups
-
-
-func _group_pairs_by_matchup(pair_rows: Array) -> Dictionary:
-	var groups := {}
-	for row_value in pair_rows:
-		var row: Dictionary = row_value
-		var key := str(row.get("matchup_key", ""))
-		if key.is_empty():
-			key = _matchup_key(str(row.get("deck", "")), str(row.get("deck", "")))
-		if not groups.has(key):
-			groups[key] = []
-		var rows: Array = groups[key]
-		rows.append(row)
-	return groups
-
-
-func _bootstrap_pair_delta_values(pair_rows: Array, seed: int) -> Array:
-	if pair_rows.is_empty():
-		return []
-	var groups := _group_pairs_by_deck(pair_rows)
-	var deck_keys := groups.keys()
-	deck_keys.sort()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = int(maxi(1, absi(seed)))
-	var values: Array = []
-	for _iteration in range(BOOTSTRAP_ITERATIONS):
-		var total := 0.0
-		var count := 0
-		for deck_key in deck_keys:
-			var rows: Array = groups[deck_key]
-			for _sample_index in range(rows.size()):
-				var row: Dictionary = rows[rng.randi_range(0, rows.size() - 1)]
-				total += float(row.get("point_delta", 0.0))
-				count += 1
-		values.append(total / float(maxi(1, count)))
-	return values
-
-
-func _probability_positive(values: Array) -> float:
-	if values.is_empty():
-		return 0.5
-	var positive := 0.0
-	for value in values:
-		var number := float(value)
-		if number > 0.0:
-			positive += 1.0
-		elif is_equal_approx(number, 0.0):
-			positive += 0.5
-	return _round_to(positive / float(values.size()), 4)
-
-
-func _summarize_pair_rows(pair_rows: Array, seed: int) -> Dictionary:
-	var total_delta := 0.0
-	var total_score := 0.0
-	var clean_pairs := 0
-	for row_value in pair_rows:
-		var row: Dictionary = row_value
-		total_delta += float(row.get("point_delta", 0.0))
-		total_score += float(row.get("score_delta", 0.0))
-		if bool(row.get("clean", false)):
-			clean_pairs += 1
-	var pair_count := pair_rows.size()
-	var boot_values := _bootstrap_pair_delta_values(pair_rows, seed)
-	var mean_delta := 0.0
-	var mean_score := 0.0
-	if pair_count > 0:
-		mean_delta = total_delta / float(pair_count)
-		mean_score = total_score / float(pair_count)
-	return {
-		"pairs": pair_rows,
-		"paired_pairs": pair_count,
-		"clean_pairs": clean_pairs,
-		"paired_point_delta": _round_to(mean_delta, 4),
-		"paired_score_delta": _round_to(mean_score, 3),
-		"paired_delta_ci95": _confidence_interval(boot_values),
-		"probability_a_better": _probability_positive(boot_values),
-	}
-
-
-func _summarize_pairs(matches: Array) -> Dictionary:
-	return _summarize_pair_rows(_paired_rows(matches), BOOTSTRAP_SEED + 777)
-
-
-func _apply_paired_summary(target: Dictionary, paired: Dictionary) -> void:
-	for key in [
-		"paired_pairs",
-		"clean_pairs",
-		"paired_point_delta",
-		"paired_score_delta",
-		"paired_delta_ci95",
-		"probability_a_better",
-	]:
-		target[key] = paired.get(key)
-
-
-func _apply_per_deck_paired_summaries(per_deck: Dictionary, matches: Array) -> void:
-	var grouped_pairs := _group_pairs_by_deck(_paired_rows(matches))
-	for deck_key in per_deck.keys():
-		var pair_rows: Array = grouped_pairs.get(deck_key, [])
-		var paired := _summarize_pair_rows(
-			pair_rows,
-			BOOTSTRAP_SEED + 1000 + absi(str(deck_key).hash()) % 100000,
-		)
-		_apply_paired_summary(per_deck[deck_key], paired)
-
-
-func _summarize_by_matchup(matches: Array) -> Dictionary:
-	var result := {}
-	var grouped := _group_matches_by_matchup(matches)
-	var keys := grouped.keys()
-	keys.sort()
-	for key in keys:
-		var rows: Array = grouped[key]
-		var stats := _summarize_matches(rows)
-		stats["point_rate_ci95"] = _bootstrap_point_rate_ci(
-			rows,
-			BOOTSTRAP_SEED + absi(str(key).hash()) % 100000,
-		)
-		result[key] = stats
-	return result
-
-
-func _apply_per_matchup_paired_summaries(per_matchup: Dictionary, matches: Array) -> void:
-	var grouped_pairs := _group_pairs_by_matchup(_paired_rows(matches))
-	for key in per_matchup.keys():
-		var pair_rows: Array = grouped_pairs.get(key, [])
-		var paired := _summarize_pair_rows(
-			pair_rows,
-			BOOTSTRAP_SEED + 2000 + absi(str(key).hash()) % 100000,
-		)
-		_apply_paired_summary(per_matchup[key], paired)
-
-
-func _summarize_matrix(matches: Array) -> Dictionary:
-	var cells := {}
-	for row in matches:
-		var strategy_a_deck := str(row.get("strategy_a_deck", row.get("deck", "")))
-		var strategy_b_deck := str(row.get("strategy_b_deck", row.get("deck", "")))
-		if not cells.has(strategy_a_deck):
-			cells[strategy_a_deck] = {}
-		var deck_row: Dictionary = cells[strategy_a_deck]
-		if not deck_row.has(strategy_b_deck):
-			deck_row[strategy_b_deck] = []
-		var rows: Array = deck_row[strategy_b_deck]
-		rows.append(row)
-	var result := {}
-	var deck_keys := cells.keys()
-	deck_keys.sort()
-	for strategy_a_deck in deck_keys:
-		result[strategy_a_deck] = {}
-		var opponent_keys: Array = Dictionary(cells[strategy_a_deck]).keys()
-		opponent_keys.sort()
-		for strategy_b_deck in opponent_keys:
-			result[strategy_a_deck][strategy_b_deck] = _summarize_matches(
-				cells[strategy_a_deck][strategy_b_deck])
-	return result
-
-
-func _role_crossover_block_key(row: Dictionary) -> String:
-	var explicit := str(row.get("role_crossover_block_key", ""))
-	if not explicit.is_empty():
-		return explicit
-	return _role_crossover_block_key_for_values(
-		str(row.get("strategy_a_deck", row.get("deck", ""))),
-		str(row.get("strategy_b_deck", row.get("deck", ""))),
-		int(row.get("seed_block", 0)),
-		int(row.get("seed", 0)),
-	)
-
-
-func _role_crossover_block_complete(rows: Array) -> bool:
-	if rows.size() != 4:
-		return false
-	var directions := {}
-	var seats_by_direction := {}
-	var seeds := {}
-	var forced_first := {}
-	for row_value in rows:
-		var row: Dictionary = row_value
-		var deck_a := str(row.get("strategy_a_deck", ""))
-		var deck_b := str(row.get("strategy_b_deck", ""))
-		var direction := _matchup_key(deck_a, deck_b)
-		directions[direction] = int(directions.get(direction, 0)) + 1
-		if not seats_by_direction.has(direction):
-			seats_by_direction[direction] = {}
-		var seats: Dictionary = seats_by_direction[direction]
-		seats[int(row.get("seat", -1))] = true
-		seeds[int(row.get("seed", 0))] = true
-		forced_first[int(row.get("forced_first_player", -1))] = true
-	if directions.size() != 2 or seeds.size() != 1 or forced_first.size() != 1:
-		return false
-	for direction in directions:
-		if int(directions[direction]) != 2:
-			return false
-		var seats: Dictionary = seats_by_direction[direction]
-		if not seats.has(0) or not seats.has(1) or seats.size() != 2:
-			return false
-	return true
-
-
-func _role_crossover_scope_summary(rows: Array) -> Dictionary:
-	var blocks := {}
-	var points := 0.0
-	var strategy_roles := {
-		"A": {"first_games": 0, "second_games": 0, "deck_games": {}},
-		"B": {"first_games": 0, "second_games": 0, "deck_games": {}},
-	}
-	for row_value in rows:
-		var row: Dictionary = row_value
-		var block_key := _role_crossover_block_key(row)
-		if not blocks.has(block_key):
-			blocks[block_key] = []
-		var block_rows: Array = blocks[block_key]
-		block_rows.append(row)
-		points += _match_point(row)
-		var deck_a := str(row.get("strategy_a_deck", row.get("deck", "")))
-		var deck_b := str(row.get("strategy_b_deck", row.get("deck", "")))
-		var roles_a: Dictionary = strategy_roles["A"]
-		var roles_b: Dictionary = strategy_roles["B"]
-		var a_deck_games: Dictionary = roles_a["deck_games"]
-		var b_deck_games: Dictionary = roles_b["deck_games"]
-		a_deck_games[deck_a] = int(a_deck_games.get(deck_a, 0)) + 1
-		b_deck_games[deck_b] = int(b_deck_games.get(deck_b, 0)) + 1
-		if bool(row.get("strategy_a_first", false)):
-			roles_a["first_games"] = int(roles_a["first_games"]) + 1
-			roles_b["second_games"] = int(roles_b["second_games"]) + 1
-		else:
-			roles_a["second_games"] = int(roles_a["second_games"]) + 1
-			roles_b["first_games"] = int(roles_b["first_games"]) + 1
-	var complete_blocks := 0
-	var clean_blocks := 0
-	for block_rows_value in blocks.values():
-		var block_rows: Array = block_rows_value
-		if _role_crossover_block_complete(block_rows):
-			complete_blocks += 1
-			var clean := true
-			for row_value in block_rows:
-				clean = clean and _is_clean_match(row_value)
-			if clean:
-				clean_blocks += 1
-	var role_balanced := not rows.is_empty() and complete_blocks == blocks.size()
-	var roles_a: Dictionary = strategy_roles["A"]
-	var roles_b: Dictionary = strategy_roles["B"]
-	role_balanced = (
-		role_balanced
-		and int(roles_a["first_games"]) == int(roles_a["second_games"])
-		and int(roles_b["first_games"]) == int(roles_b["second_games"])
-	)
-	var deck_keys: Array = Dictionary(roles_a["deck_games"]).keys()
-	for deck_key in deck_keys:
-		role_balanced = (
-			role_balanced
-			and int(Dictionary(roles_a["deck_games"]).get(deck_key, 0))
-			== int(Dictionary(roles_b["deck_games"]).get(deck_key, 0))
-		)
-	var point_rate := points / float(maxi(1, rows.size()))
-	return {
-		"games": rows.size(),
-		"blocks": blocks.size(),
-		"complete_blocks": complete_blocks,
-		"clean_blocks": clean_blocks,
-		"role_balanced": role_balanced,
-		"role_crossover_adjusted_point_rate": _round_to(point_rate, 4),
-		"role_crossover_adjusted_point_delta": _round_to(point_rate - 0.5, 4),
-		"strategy_roles": strategy_roles,
-	}
-
-
-func _summarize_role_crossover(matches: Array) -> Dictionary:
-	var cross_rows: Array = []
-	var per_matchup_rows := {}
-	for row_value in matches:
-		var row: Dictionary = row_value
-		if str(row.get("matchup_kind", "")) != "cross":
-			continue
-		cross_rows.append(row)
-		var key := _unordered_matchup_key(
-			str(row.get("strategy_a_deck", row.get("deck", ""))),
-			str(row.get("strategy_b_deck", row.get("deck", ""))),
-		)
-		if not per_matchup_rows.has(key):
-			per_matchup_rows[key] = []
-		var rows: Array = per_matchup_rows[key]
-		rows.append(row)
-	var per_unordered_matchup := {}
-	var keys: Array = per_matchup_rows.keys()
-	keys.sort()
-	for key in keys:
-		per_unordered_matchup[key] = _role_crossover_scope_summary(per_matchup_rows[key])
-	return {
-		"method": "same_seed_four_game_role_crossover_v1",
-		"scope": "cross_matchups_only",
-		"expected_games_per_block": 4,
-		"overall": _role_crossover_scope_summary(cross_rows),
-		"per_unordered_matchup": per_unordered_matchup,
-	}
-
-
-func _empty_diagnostics_summary() -> Dictionary:
-	return {
-		"total": 0,
-		"labels": _empty_diagnostic_counts(),
-		"by_strategy": {
-			"A": {"total": 0, "labels": _empty_diagnostic_counts()},
-			"B": {"total": 0, "labels": _empty_diagnostic_counts()},
-			"delta": {"total": 0, "labels": _empty_diagnostic_counts()},
-		},
-	}
-
-
-func _summarize_decision_diagnostics(matches: Array) -> Dictionary:
-	var labels := _empty_diagnostic_counts()
-	var total := 0
-	var per_deck := {}
-	var per_matchup := {}
-	var by_strategy := {
-		"A": _empty_diagnostic_counts(),
-		"B": _empty_diagnostic_counts(),
-	}
-	for row in matches:
-		var row_counts: Dictionary = row.get("decision_diagnostics", {})
-		var row_by_strategy := Dictionary(row.get("decision_diagnostics_by_strategy", {}))
-		var deck_key := str(row.get("strategy_a_deck", row.get("deck", "")))
-		var matchup_key := str(row.get("matchup_key", ""))
-		if not per_deck.has(deck_key):
-			per_deck[deck_key] = _empty_diagnostic_counts()
-		if not per_matchup.has(matchup_key):
-			per_matchup[matchup_key] = _empty_diagnostic_counts()
-		for label in NativeChallengeAI.diagnostic_labels():
-			var key := str(label)
-			var value := int(row_counts.get(key, 0))
-			labels[key] = int(labels.get(key, 0)) + value
-			per_deck[deck_key][key] = int(per_deck[deck_key].get(key, 0)) + value
-			per_matchup[matchup_key][key] = int(per_matchup[matchup_key].get(key, 0)) + value
-			total += value
-			for strategy_key in ["A", "B"]:
-				var strategy_counts := Dictionary(row_by_strategy.get(strategy_key, {}))
-				by_strategy[strategy_key][key] = (
-					int(by_strategy[strategy_key].get(key, 0))
-					+ int(strategy_counts.get(key, 0))
-				)
-	var by_strategy_summary := {}
-	var delta_labels := _empty_diagnostic_counts()
-	for strategy_key in ["A", "B"]:
-		var strategy_total := 0
-		for label in NativeChallengeAI.diagnostic_labels():
-			strategy_total += int(by_strategy[strategy_key].get(str(label), 0))
-		by_strategy_summary[strategy_key] = {
-			"total": strategy_total,
-			"labels": by_strategy[strategy_key],
-		}
-	var delta_total := 0
-	for label in NativeChallengeAI.diagnostic_labels():
-		var key := str(label)
-		var delta := int(by_strategy["A"].get(key, 0)) - int(by_strategy["B"].get(key, 0))
-		delta_labels[key] = delta
-		delta_total += delta
-	by_strategy_summary["delta"] = {
-		"total": delta_total,
-		"labels": delta_labels,
-	}
-	return {
-		"total": total,
-		"labels": labels,
-		"per_deck": per_deck,
-		"per_matchup": per_matchup,
-		"by_strategy": by_strategy_summary,
-	}
 
 
 func _empty_golden_summary() -> Dictionary:
@@ -3828,16 +3001,16 @@ func _read_json_quiet(path: String) -> Variant:
 	return parsed
 
 
-func _checkpoint_normalized(value: Variant) -> Variant:
+func _normalized_json_value(value: Variant) -> Variant:
 	if value is Dictionary:
 		var result: Dictionary = {}
 		for key in value.keys():
-			result[str(key)] = _checkpoint_normalized(value[key])
+			result[str(key)] = _normalized_json_value(value[key])
 		return result
 	if value is Array:
 		var result: Array = []
 		for item in value:
-			result.append(_checkpoint_normalized(item))
+			result.append(_normalized_json_value(item))
 		return result
 	if value is float and is_equal_approx(value, roundf(value)):
 		return int(roundf(value))
@@ -3845,7 +3018,7 @@ func _checkpoint_normalized(value: Variant) -> Variant:
 
 
 func _checkpoint_matches_sha256(rows: Array) -> String:
-	return _canonical_json(_checkpoint_normalized(rows)).sha256_text()
+	return _canonical_json(_normalized_json_value(rows)).sha256_text()
 
 
 func _checkpoint_record_is_valid(
@@ -4034,14 +3207,6 @@ func _write_evaluation_checkpoint(
 		DirAccess.remove_absolute(temporary_path)
 		return false
 	return true
-
-
-func _count_by(matches: Array[Dictionary], key: String) -> Dictionary:
-	var result := {}
-	for row in matches:
-		var value := str(row.get(key, ""))
-		result[value] = int(result.get(value, 0)) + 1
-	return result
 
 
 func _read_json(path: String) -> Variant:

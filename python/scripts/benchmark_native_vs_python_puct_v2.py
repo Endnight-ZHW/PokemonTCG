@@ -204,11 +204,6 @@ def benchmark(
             "simulations_per_second": simulations / native_median,
         },
         "throughput_speedup": python_median / native_median,
-        "release_baseline_complete": False,
-        "release_baseline_note": (
-            "The retired DeepRootISMCTS historical executable still needs "
-            "an archived same-hardware measurement for the formal release gate."
-        ),
     }
 
 

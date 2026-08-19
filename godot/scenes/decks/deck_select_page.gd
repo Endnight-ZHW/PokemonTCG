@@ -358,14 +358,10 @@ func _deep_model_set_unavailable_reason() -> String:
 	if not bool(release.get("deep_runtime_enabled", false)):
 		return "deep_runtime_disabled"
 	var model_count := int(release.get("model_count", 0))
-	if (
-		model_count != 1
-		or int(release.get("compatible_model_count", -1)) != 1
-		or int(release.get("legacy_model_count", -1)) != 0
-	):
+	if model_count != 1:
 		return "compatible_model_set_incomplete"
 	var schemas: Dictionary = release.get("schemas", {})
-	if int(schemas.get("deep_planner", 0)) != DeepRootISMCTS.SCHEMA_VERSION:
+	if int(schemas.get("deep_planner", 0)) != InformationSetPUCT.SCHEMA_VERSION:
 		return "deep_planner_schema_mismatch"
 	var release_planner: Dictionary = release.get("deep_planner", {})
 	var evidence_sha := str(
@@ -526,7 +522,7 @@ func _refresh_detail() -> void:
 	var energy_type := str(deck.get("energy_type", "Colorless"))
 	detail_accent.color = DesignTokens.type_color(energy_type)
 	detail_meta.text = "%s · %d 张 · 发布牌组" % [
-		_energy_display_name(energy_type),
+		EnergyIconCatalog.type_display_name_for(energy_type),
 		int(deck.get("card_count", 0)),
 	]
 	var counts := _deck_supertype_counts(deck)
@@ -553,7 +549,17 @@ func _add_detail_card(card_id: String) -> void:
 	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	image.texture = _card_texture(str(card.get("image_path", "")))
+	var tree := Engine.get_main_loop() as SceneTree
+	var texture_cache := (
+		tree.root.get_node_or_null("CardTextureCache")
+		if tree and tree.root
+		else null
+	)
+	image.texture = (
+		texture_cache.call("get_texture", str(card.get("image_path", ""))) as Texture2D
+		if texture_cache
+		else null
+	)
 	frame.add_child(image)
 	detail_card_grid.add_child(frame)
 
@@ -724,32 +730,3 @@ func _second_slot_name() -> String:
 			return "Deep AI"
 		_:
 			return "Challenge AI"
-
-
-func _energy_display_name(energy_type: String) -> String:
-	return {
-		"Grass": "草属性",
-		"Fire": "火属性",
-		"Water": "水属性",
-		"Lightning": "雷属性",
-		"Psychic": "超能力",
-		"Fighting": "斗属性",
-		"Darkness": "恶属性",
-		"Metal": "钢属性",
-		"Dragon": "龙属性",
-		"Colorless": "无色",
-	}.get(energy_type, energy_type)
-
-
-func _card_texture(path: String) -> Texture2D:
-	if path.is_empty():
-		return null
-	var tree := Engine.get_main_loop() as SceneTree
-	var cache := (
-		tree.root.get_node_or_null("CardTextureCache")
-		if tree and tree.root
-		else null
-	)
-	if cache and cache.has_method("get_texture"):
-		return cache.call("get_texture", path) as Texture2D
-	return load(path) as Texture2D if ResourceLoader.exists(path) else null

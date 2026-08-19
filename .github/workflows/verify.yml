@@ -46,7 +46,7 @@ jobs:
         shell: pwsh
         run: .\tools\evaluate_godot_ai.ps1 -EvalPreset Smoke -NoProgress -OutputDir .test_tmp\ci-ai-smoke
 
-  legacy-model-contract:
+  release-manifest-contract:
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
@@ -56,7 +56,7 @@ jobs:
         with:
           python-version: '3.11.15'
 
-      - name: Verify legacy model metadata and artifact integrity
+      - name: Verify release manifest and model contract
         shell: pwsh
         working-directory: python
         run: |
@@ -65,7 +65,7 @@ jobs:
 
   nightly-ai:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
-    needs: [fast, legacy-model-contract]
+    needs: [fast, release-manifest-contract]
     runs-on: windows-latest
     timeout-minutes: 180
     steps:

@@ -6,13 +6,6 @@
     "svg2-tort": 86,
     "svi-chim": 92
   },
-  "card_bucket_samples": {
-    "sv1-153": 3857,
-    "sv1-ener-2": 3574,
-    "sv2-grex": 3915,
-    "svg2-tort": 623,
-    "svi-chim": 3624
-  },
   "card_vocab": {
     "format_version": 1,
     "sha256": "b6f3a3faa78dfbf0fb706fdfea26f6b92359dcc3fd937c61849ea359eb0dd0d9",
@@ -1490,7 +1483,6 @@
     "encoder_version": 6,
     "godot_action_version": 4,
     "godot_rules_version": 6,
-    "planner_version": 1,
     "protocol_version": 6,
     "python_action_version": 3,
     "python_rules_version": 5,

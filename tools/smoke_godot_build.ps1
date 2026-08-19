@@ -17,8 +17,7 @@ $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 $lock = Get-ToolchainLock -RepoRoot $repoRoot
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
 Assert-ReleaseDeepFallbackContract -Manifest $release
-$compatibleModelCount = [int]$release.compatible_model_count
-$legacyModelCount = [int]$release.legacy_model_count
+$modelCount = [int]$release.model_count
 $deepState = if ([bool]$release.deep_runtime_enabled) { 'enabled' } else { 'disabled' }
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
@@ -76,11 +75,11 @@ if (
     -not $aiSmokeText.Contains('PHASE4_EXPORT_AI_OK') -or
     -not $aiSmokeText.Contains("deep=$deepState") -or
     -not $aiSmokeText.Contains('fallback=challenge') -or
-    -not $aiSmokeText.Contains("onnx_assets=$compatibleModelCount")
+    -not $aiSmokeText.Contains("onnx_assets=$modelCount")
 ) {
     throw "Exported Windows AI runtime smoke test failed.`n$aiSmokeText"
 }
-Write-Host "WINDOWS_AI_RUNTIME_OK deep=$deepState fallback=challenge onnx_assets=$compatibleModelCount"
+Write-Host "WINDOWS_AI_RUNTIME_OK deep=$deepState fallback=challenge onnx_assets=$modelCount"
 
 $networkSmoke = & $windowsConsole -- --phase5-network-smoke 2>&1
 $networkSmokeText = $networkSmoke -join "`n"
@@ -97,13 +96,12 @@ $releaseSmokeText = $releaseSmoke -join "`n"
 if (
     $LASTEXITCODE -ne 0 -or
     -not $releaseSmokeText.Contains('PHASE6_EXPORT_RELEASE_OK') -or
-    -not $releaseSmokeText.Contains("compatible_models=$compatibleModelCount") -or
-    -not $releaseSmokeText.Contains("legacy_models=$legacyModelCount") -or
-    -not $releaseSmokeText.Contains("onnx_assets=$compatibleModelCount")
+    -not $releaseSmokeText.Contains("models=$modelCount") -or
+    -not $releaseSmokeText.Contains("onnx_assets=$modelCount")
 ) {
     throw "Exported Windows release model smoke test failed.`n$releaseSmokeText"
 }
-Write-Host "WINDOWS_RELEASE_AI_OK compatible_models=$compatibleModelCount legacy_models=$legacyModelCount onnx_assets=$compatibleModelCount"
+Write-Host "WINDOWS_RELEASE_AI_OK models=$modelCount onnx_assets=$modelCount"
 
 $jar = Join-Path $jdkRoot 'bin\jar.exe'
 $apkEntries = & $jar tf $androidApk
@@ -124,15 +122,15 @@ $actualApkModels = @(
         ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) } |
         Sort-Object
 )
-if ($actualApkModels.Count -ne $compatibleModelCount) {
-    throw "Android APK contains $($actualApkModels.Count) models; expected $compatibleModelCount."
+if ($actualApkModels.Count -ne $modelCount) {
+    throw "Android APK contains $($actualApkModels.Count) models; expected $modelCount."
 }
-Write-Host "ANDROID_AI_ASSETS_OK compatible_models=$compatibleModelCount abi=arm64-v8a"
+Write-Host "ANDROID_AI_ASSETS_OK models=$modelCount abi=arm64-v8a"
 
 & (Join-Path $PSScriptRoot 'test_android_runtime.ps1') `
     -ApkPath $androidApk `
     -SmokeApkPath $androidSmokeApk `
-    -ExpectedModels $compatibleModelCount `
+    -ExpectedModels $modelCount `
     -RequireDevice:$RequireAndroidDevice `
     -AllowCleanInstall:$AllowAndroidCleanInstall
 if ($LASTEXITCODE -ne 0) {

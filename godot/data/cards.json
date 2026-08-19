@@ -86,7 +86,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 2946,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -243,7 +242,6 @@
         "text": "追加造成自己弃牌区中超宝可梦的张数×10伤害。"
       }
     ],
-    "card_bucket": 2674,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -377,7 +375,6 @@
         "text": "抛掷3次硬币，造成正面次数×10伤害。"
       }
     ],
-    "card_bucket": 2764,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -541,7 +538,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 3679,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -726,7 +722,6 @@
         "text": "追加造成这只宝可梦身上附有的超能量数量×30点伤害。"
       }
     ],
-    "card_bucket": 1572,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -869,7 +864,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 994,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -1019,7 +1013,6 @@
         "text": "选择这只宝可梦身上附着的3个能量，放于弃牌区。"
       }
     ],
-    "card_bucket": 3762,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -1167,7 +1160,6 @@
         "text": "将这只宝可梦身上附着的所有能量，以任意方式转附于备战宝可梦身上。"
       }
     ],
-    "card_bucket": 3249,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -1337,7 +1329,6 @@
         "text": "如果自己场上有5个以上（包含5个）能量的话，则追加造成90点伤害。"
       }
     ],
-    "card_bucket": 770,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -1508,7 +1499,6 @@
         "text": "若希望，可将这只宝可梦与备战宝可梦互换。"
       }
     ],
-    "card_bucket": 2073,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -1607,7 +1597,6 @@
     "api_id": "sv1-150",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1695,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -1714,7 +1703,6 @@
     "api_id": "sv1-151",
     "artist": "",
     "attacks": [],
-    "card_bucket": 641,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -1831,7 +1819,6 @@
     "api_id": "sv1-152",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1150,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -1940,7 +1927,6 @@
     "api_id": "sv1-153",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3857,
     "compiled_trainer_effects": [
       {
         "args": {},
@@ -2087,7 +2073,6 @@
     "api_id": "sv1-170",
     "artist": "",
     "attacks": [],
-    "card_bucket": 2463,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -2208,7 +2193,6 @@
     "api_id": "sv1-171",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3409,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -2327,7 +2311,6 @@
     "api_id": "sv1-176",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1296,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -2436,7 +2419,6 @@
     "api_id": "sv1-180",
     "artist": "",
     "attacks": [],
-    "card_bucket": 940,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -2547,7 +2529,6 @@
     "api_id": "sv1-189",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1463,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -2658,7 +2639,6 @@
     "api_id": "sv1-201",
     "artist": "",
     "attacks": [],
-    "card_bucket": 2462,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -2767,7 +2747,6 @@
     "api_id": "sv1-202",
     "artist": "",
     "attacks": [],
-    "card_bucket": 693,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -2876,7 +2855,6 @@
     "api_id": "sv1-203",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3354,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -2987,7 +2965,6 @@
     "api_id": "sv1-204",
     "artist": "",
     "attacks": [],
-    "card_bucket": 2004,
     "compiled_trainer_effects": [
       {
         "args": {},
@@ -3126,7 +3103,6 @@
         "text": "在上一个对手的回合，如果因为招式的伤害，而导致自己的宝可梦昏厥的话，则使对手的战斗宝可梦陷入麻痹状态。"
       }
     ],
-    "card_bucket": 1162,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -3225,7 +3201,6 @@
     "api_id": "sv1-ener-1",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1244,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [],
@@ -3319,7 +3294,6 @@
     "api_id": "sv1-ener-2",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3574,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [],
@@ -3413,7 +3387,6 @@
     "api_id": "sv1-ener-3",
     "artist": "",
     "attacks": [],
-    "card_bucket": 862,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [],
@@ -3507,7 +3480,6 @@
     "api_id": "sv1-ener-4",
     "artist": "",
     "attacks": [],
-    "card_bucket": 486,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [],
@@ -3601,7 +3573,6 @@
     "api_id": "sv1-ener-5",
     "artist": "",
     "attacks": [],
-    "card_bucket": 779,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [],
@@ -3695,7 +3666,6 @@
     "api_id": "sv1-ener-6",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1566,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [],
@@ -3789,7 +3759,6 @@
     "api_id": "sv1-ener-7",
     "artist": "",
     "attacks": [],
-    "card_bucket": 879,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [],
@@ -3883,7 +3852,6 @@
     "api_id": "sv1-ener-8",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1704,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [],
@@ -4017,7 +3985,6 @@
         "text": "抛掷1次硬币如果为反面，则这个招式失败。"
       }
     ],
-    "card_bucket": 44,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -4146,7 +4113,6 @@
         "text": "若希望，可将这只宝可梦与备战宝可梦互换。"
       }
     ],
-    "card_bucket": 214,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -4245,7 +4211,6 @@
     "api_id": "sv2-cand",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3920,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -4362,7 +4327,6 @@
     "api_id": "sv2-catch",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1710,
     "compiled_trainer_effects": [
       {
         "args": {},
@@ -4529,7 +4493,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 673,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -4686,7 +4649,6 @@
         "text": "给这只宝可梦也造成30点伤害。"
       }
     ],
-    "card_bucket": 834,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -4847,7 +4809,6 @@
         "text": "如果对手的战斗宝可梦身上有伤害指示物，则追加造成120点伤害。"
       }
     ],
-    "card_bucket": 3915,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -5011,7 +4972,6 @@
         "text": "追加造成自己备战宝可梦数量×20点伤害。"
       }
     ],
-    "card_bucket": 2285,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -5150,7 +5110,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 66,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -5282,7 +5241,6 @@
         "text": "这个招式的伤害，不计算弱点、抗性以及对手战斗宝可梦身上所附加的效果。"
       }
     ],
-    "card_bucket": 2591,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -5440,7 +5398,6 @@
         "text": "将这只宝可梦，以及放于其身上的所有卡牌，放回手牌。"
       }
     ],
-    "card_bucket": 904,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -5539,7 +5496,6 @@
     "api_id": "sv2-young",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3700,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -5652,7 +5608,6 @@
     "api_id": "sv3-134",
     "artist": "",
     "attacks": [],
-    "card_bucket": 605,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -5847,7 +5802,6 @@
         "text": "如果对手的战斗宝可梦身上放置有伤害指示物的话，则追加造成70点伤害。"
       }
     ],
-    "card_bucket": 2085,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -5941,7 +5895,6 @@
     "api_id": "svd-dark-patch",
     "artist": "",
     "attacks": [],
-    "card_bucket": 2177,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -6118,7 +6071,6 @@
         "text": "在下一个自己的回合，这只宝可梦无法使用招式。"
       }
     ],
-    "card_bucket": 2023,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -6299,7 +6251,6 @@
         "text": "追加造成这只宝可梦身上放置的伤害指示物数量×30伤害。"
       }
     ],
-    "card_bucket": 3392,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -6421,7 +6372,6 @@
         "text": "给这只宝可梦也造成10伤害。"
       }
     ],
-    "card_bucket": 2440,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -6517,7 +6467,6 @@
     "api_id": "svd-hard-belt",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1948,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -6710,7 +6659,6 @@
         "text": "如果自己的备战宝可梦身上放置有伤害指示物的话，则追加造成120伤害。"
       }
     ],
-    "card_bucket": 2882,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -6833,7 +6781,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 3344,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -7014,7 +6961,6 @@
         "text": "如果自己没有手牌的话，则追加造成90点伤害。"
       }
     ],
-    "card_bucket": 89,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -7171,7 +7117,6 @@
         "text": "如果对手的战斗宝可梦为进化宝可梦的话，则追加造成50伤害。"
       }
     ],
-    "card_bucket": 3260,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -7265,7 +7210,6 @@
     "api_id": "svf-ensw2",
     "artist": "",
     "attacks": [],
-    "card_bucket": 2209,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -7418,7 +7362,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 2078,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -7589,7 +7532,6 @@
         "text": "如果对手的战斗宝可梦为进化宝可梦的话，则追加造成30点伤害。"
       }
     ],
-    "card_bucket": 2780,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -7693,7 +7635,6 @@
     "api_id": "svf-houb",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3581,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -7856,7 +7797,6 @@
         "text": "给这只宝可梦也造成30点伤害。"
       }
     ],
-    "card_bucket": 894,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -8029,7 +7969,6 @@
         "text": "将附着于这只宝可梦身上的斗能量全部放于弃牌区，追加造成其张数×60点伤害。"
       }
     ],
-    "card_bucket": 2006,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -8159,7 +8098,6 @@
         "text": "选择这只宝可梦身上附着的1个能量，转附于备战宝可梦身上。"
       }
     ],
-    "card_bucket": 616,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -8258,7 +8196,6 @@
     "api_id": "svf-potion",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1840,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -8408,7 +8345,6 @@
         "text": "给这只宝可梦也造成20点伤害。"
       }
     ],
-    "card_bucket": 2836,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -8520,7 +8456,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 790,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -8658,7 +8593,6 @@
         "text": "在下一个对手的回合，这只宝可梦不会受到招式的伤害。在上一个自己的回合，如果自己的宝可梦使用了「岩窟冲撞」的话，则无法使用这个招式。"
       }
     ],
-    "card_bucket": 1283,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -8806,7 +8740,6 @@
         "text": "在下一个对手的回合，这只宝可梦不受到对手宝可梦所使用招式的效果影响。"
       }
     ],
-    "card_bucket": 1765,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -8903,7 +8836,6 @@
     "api_id": "svg-beri",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1301,
     "compiled_trainer_effects": [
       {
         "args": {},
@@ -9067,7 +8999,6 @@
         "text": "选择附着于这只宝可梦身上的1个基本能量，转附于备战宝可梦身上。"
       }
     ],
-    "card_bucket": 1415,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -9232,7 +9163,6 @@
         "text": "这个招式的伤害，会被减少相当于这只宝可梦身上放置的伤害指示物数量×20的数值。"
       }
     ],
-    "card_bucket": 352,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -9345,7 +9275,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 3881,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -9444,7 +9373,6 @@
     "api_id": "svg-chef",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1304,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -9604,7 +9532,6 @@
         "text": "追加造成这只宝可梦身上放置的伤害指示物数量×10伤害。"
       }
     ],
-    "card_bucket": 1614,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -9734,7 +9661,6 @@
         "text": "在这个回合，如果回复了这只宝可梦的HP的话，则追加造成90伤害。"
       }
     ],
-    "card_bucket": 3687,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -9861,7 +9787,6 @@
         "text": "抛掷硬币直到出现反面，造成正面次数×20点伤害。"
       }
     ],
-    "card_bucket": 575,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -10012,7 +9937,6 @@
         "text": "选择自己牌库中任意卡牌最多2张，加入手牌。并重洗牌库。若希望，可将这只宝可梦与备战宝可梦互换。"
       }
     ],
-    "card_bucket": 250,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -10124,7 +10048,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 3912,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -10277,7 +10200,6 @@
         "text": "给对手的1只宝可梦，造成60点伤害。[备战宝可梦不计算弱点、抗性。]"
       }
     ],
-    "card_bucket": 1255,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -10376,7 +10298,6 @@
     "api_id": "svg2-exps",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1324,
     "compiled_trainer_effects": [
       {
         "args": {},
@@ -10481,7 +10402,6 @@
     "api_id": "svg2-gard",
     "artist": "",
     "attacks": [],
-    "card_bucket": 148,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -10641,7 +10561,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 2153,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -10740,7 +10659,6 @@
     "api_id": "svg2-hamm",
     "artist": "",
     "attacks": [],
-    "card_bucket": 757,
     "compiled_trainer_effects": [
       {
         "args": {},
@@ -10845,7 +10763,6 @@
     "api_id": "svg2-lume",
     "artist": "",
     "attacks": [],
-    "card_bucket": 2386,
     "compiled_trainer_effects": [],
     "energy_effects": [
       {
@@ -10980,7 +10897,6 @@
         "text": "回复这只宝可梦「10」HP。"
       }
     ],
-    "card_bucket": 885,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -11134,7 +11050,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 623,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -11259,7 +11174,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 3437,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -11441,7 +11355,6 @@
         "text": "追加造成这只宝可梦身上附有的G能量数量×20点伤害。"
       }
     ],
-    "card_bucket": 722,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -11583,7 +11496,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 258,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -11752,7 +11664,6 @@
         "text": "造成自己手牌张数×20伤害。"
       }
     ],
-    "card_bucket": 224,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -11851,7 +11762,6 @@
     "api_id": "svi-cait",
     "artist": "",
     "attacks": [],
-    "card_bucket": 610,
     "compiled_trainer_effects": [
       {
         "args": {},
@@ -11988,7 +11898,6 @@
         "text": "选择附着于这只宝可梦身上的1个能量，放于弃牌区。"
       }
     ],
-    "card_bucket": 3624,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -12151,7 +12060,6 @@
         "text": "在上一个对手的回合，如果因为招式的伤害而导致自己的宝可梦昏厥的话，则追加造成90伤害。"
       }
     ],
-    "card_bucket": 1904,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -12250,7 +12158,6 @@
     "api_id": "svi-dtur",
     "artist": "",
     "attacks": [],
-    "card_bucket": 927,
     "compiled_trainer_effects": [],
     "energy_effects": [
       {
@@ -12365,7 +12272,6 @@
     "api_id": "svi-enst",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3879,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -12558,7 +12464,6 @@
         "text": "追加这只宝可梦身上附着的火能量数量×20伤害。"
       }
     ],
-    "card_bucket": 2222,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -12657,7 +12562,6 @@
     "api_id": "svi-erec",
     "artist": "",
     "attacks": [],
-    "card_bucket": 613,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -12810,7 +12714,6 @@
         "text": "给这只宝可梦也造成20伤害。"
       }
     ],
-    "card_bucket": 3028,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -12976,7 +12879,6 @@
         "text": "将自己的手牌全部放于弃牌区。如果将5张以上放于弃牌区，则追加造成150点伤害。"
       }
     ],
-    "card_bucket": 2924,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -13104,7 +13006,6 @@
         "text": "给这只宝可梦也造成40伤害。"
       }
     ],
-    "card_bucket": 641,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -13272,7 +13173,6 @@
         "text": "造成自己手牌张数×10点伤害。"
       }
     ],
-    "card_bucket": 313,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -13433,7 +13333,6 @@
         "text": "将附着于这只宝可梦身上的能量全部放于弃牌区。"
       }
     ],
-    "card_bucket": 2069,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -13532,7 +13431,6 @@
     "api_id": "svi-jete",
     "artist": "",
     "attacks": [],
-    "card_bucket": 291,
     "compiled_trainer_effects": [],
     "energy_effects": [
       {
@@ -13713,7 +13611,6 @@
         "text": "从自己牌库上方抽取2张卡牌。"
       }
     ],
-    "card_bucket": 1072,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -13815,7 +13712,6 @@
     "api_id": "svi-mela",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3647,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -13961,7 +13857,6 @@
     "api_id": "svi-mirc",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1954,
     "compiled_trainer_effects": [],
     "energy_effects": [
       {
@@ -14123,7 +14018,6 @@
         "text": "选择附着于这只宝可梦身上的1个能量，放于弃牌区。"
       }
     ],
-    "card_bucket": 3346,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -14222,7 +14116,6 @@
     "api_id": "svi-nemb",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1614,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -14343,7 +14236,6 @@
     "api_id": "svi-popp",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1592,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -14469,7 +14361,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 1275,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -14658,7 +14549,6 @@
         "text": "抛掷1次硬币如果为反面，则这个招式失败。如果为正面，则在下一个对手的回合，这只宝可梦不受到招式的伤害和效果影响。"
       }
     ],
-    "card_bucket": 4092,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -14827,7 +14717,6 @@
         "text": "造成对手战斗宝可梦身上附有的能量数量×30点伤害。"
       }
     ],
-    "card_bucket": 156,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -14952,7 +14841,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 3102,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -15051,7 +14939,6 @@
     "api_id": "svi-trea",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3083,
     "compiled_trainer_effects": [],
     "energy_effects": [
       {
@@ -15220,7 +15107,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 1725,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -15337,7 +15223,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 2265,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -15482,7 +15367,6 @@
         "text": "抛掷1次硬币如果为正面，则使对手的战斗宝可梦陷入麻痹状态。"
       }
     ],
-    "card_bucket": 604,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -15581,7 +15465,6 @@
     "api_id": "svl-ensw",
     "artist": "",
     "attacks": [],
-    "card_bucket": 2854,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -15741,7 +15624,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 3064,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -15883,7 +15765,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 1072,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -16008,7 +15889,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 1906,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -16169,7 +16049,6 @@
         "text": "抛掷1次硬币。如果是反面，则将这只宝可梦身上附着的能量全部放于弃牌区。"
       }
     ],
-    "card_bucket": 2775,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -16336,7 +16215,6 @@
         "text": "给这只宝可梦也造成30点伤害。"
       }
     ],
-    "card_bucket": 989,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -16435,7 +16313,6 @@
     "api_id": "svl-trks",
     "artist": "",
     "attacks": [],
-    "card_bucket": 2218,
     "compiled_trainer_effects": [
       {
         "args": {},
@@ -16540,7 +16417,6 @@
     "api_id": "svl-vitb",
     "artist": "",
     "attacks": [],
-    "card_bucket": 3804,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -16678,7 +16554,6 @@
         "text": "给这只宝可梦也造成20点伤害。"
       }
     ],
-    "card_bucket": 2148,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -16777,7 +16652,6 @@
     "api_id": "svl-zinn",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1731,
     "compiled_trainer_effects": [
       {
         "args": {},
@@ -16924,7 +16798,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 737,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -17065,7 +16938,6 @@
         "text": "抛掷1次硬币如果为正面，则使对手的战斗宝可梦陷入麻痹状态。"
       }
     ],
-    "card_bucket": 76,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -17228,7 +17100,6 @@
         "text": "选择自己最多2只备战宝可梦，各附着1张牌库中的基本能量。并重洗牌库。"
       }
     ],
-    "card_bucket": 1384,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -17409,7 +17280,6 @@
         "text": "追加造成这只宝可梦身上附有的M能量数量×20点伤害。"
       }
     ],
-    "card_bucket": 548,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -17533,7 +17403,6 @@
         "text": "从自己的牌库上方抽取2张卡牌。"
       }
     ],
-    "card_bucket": 744,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -17627,7 +17496,6 @@
     "api_id": "svm-marnie-pride",
     "artist": "",
     "attacks": [],
-    "card_bucket": 1823,
     "compiled_trainer_effects": [
       {
         "args": {
@@ -17807,7 +17675,6 @@
         "text": "给对手的1只备战宝可梦，也造成30伤害。[备战宝可梦不计算弱点、抗性。]"
       }
     ],
-    "card_bucket": 1289,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -17943,7 +17810,6 @@
         "text": "在下一个自己的回合，这只宝可梦无法使用「钢铁之刃」。"
       }
     ],
-    "card_bucket": 2361,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -18086,7 +17952,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 2714,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -18247,7 +18112,6 @@
         "text": ""
       }
     ],
-    "card_bucket": 74,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [
@@ -18418,7 +18282,6 @@
         "text": "在上一个对手的回合，如果自己的宝可梦昏厥的话，则追加造成120点伤害。"
       }
     ],
-    "card_bucket": 714,
     "compiled_trainer_effects": [],
     "energy_effects": [],
     "energy_types": [

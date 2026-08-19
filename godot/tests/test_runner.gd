@@ -217,9 +217,7 @@ func _run_phase_zero_tests() -> void:
 func _run_phase_one_tests() -> void:
 	var cards := _read_json("res://data/cards.json")
 	var decks := _read_json("res://data/decks.json")
-	var buckets := _read_json("res://data/card_buckets.json")
 	var fixture := _read_json("res://tests/fixtures/data_contract.json")
-	var models := _read_json("res://data/ai_models.json")
 
 	_check(cards.size() == 137, "Expected 137 exported cards")
 	_check(decks.size() == 10, "Expected 10 exported decks")
@@ -245,19 +243,6 @@ func _run_phase_one_tests() -> void:
 	)
 	for deck_key in decks:
 		_check(decks[deck_key].get("card_count", 0) == 60, "Deck %s must contain 60 cards" % deck_key)
-	var model_keys := Dictionary(models.get("models", {})).keys()
-	model_keys.sort()
-	_check(
-		model_keys == deck_keys,
-		"Expected Deep AI model manifest rows for all release decks",
-	)
-	_check(models.get("state_numeric_size", 0) == 960, "Deep AI state size mismatch")
-	_check(
-		models.get("state_card_slots", 0)
-		== AIActionEncoder.STATE_CARD_SLOTS,
-		"Deep AI card slot count mismatch",
-	)
-	_check(models.get("action_numeric_size", 0) == 178, "Deep AI action size mismatch")
 	_check_release_effects_have_compiled_ir(cards)
 	_check_card_rules_matrix(cards)
 	_check(
@@ -269,12 +254,6 @@ func _run_phase_one_tests() -> void:
 		and str(cards["svg2-empo"]["attacks"][0].get("damage_text", "")) == "",
 		"Exported attack damage_text labels are incorrect",
 	)
-
-	for card_id in fixture.get("card_bucket_samples", {}):
-		_check(
-			int(buckets.get(card_id, 0)) == int(fixture["card_bucket_samples"][card_id]),
-			"Card bucket mismatch for %s" % card_id,
-		)
 
 	var random_source := PortableRandomSource.new(int(fixture["portable_rng"]["seed"]))
 	for expected in fixture["portable_rng"]["uint32"]:
@@ -2174,7 +2153,7 @@ func _run_phase_three_tests() -> void:
 		"Battle sidebar did not keep only the system action entry",
 	)
 	_check(
-		ui.battle_screen.table.interaction_router.all_card_actions_reachable(),
+		ui.battle_screen.interaction_router.all_card_actions_reachable(),
 		"Setup card actions were not reachable from their hand cards",
 	)
 	var setup_actions: Array[GameAction] = RulesTestHarness.legal_actions(ui.engine, ui.state, 0, false)
@@ -2210,7 +2189,7 @@ func _run_phase_three_tests() -> void:
 		_check(
 			ui.selected_entity_key.is_empty()
 			and not setup_hand_view.selected
-			and not ui.battle_screen.table.action_popover.visible
+			and not ui.battle_screen.action_popover.visible
 			and not setup_detail.visible,
 			"Closing card detail did not clear Main's authoritative selection",
 		)
@@ -2225,7 +2204,7 @@ func _run_phase_three_tests() -> void:
 		_check(
 			ui.selected_entity_key.is_empty()
 			and not setup_hand_view.selected
-			and not ui.battle_screen.table.action_popover.visible
+			and not ui.battle_screen.action_popover.visible
 			and not setup_detail.visible,
 			"Tapping the selected source card again did not close card interaction",
 		)
@@ -2241,7 +2220,7 @@ func _run_phase_three_tests() -> void:
 		)
 		await _wait_for_battle_transition(ui, "setup placement")
 		_check(
-			ui.battle_screen.table.all_card_actions_reachable_from_visible_cards(),
+			ui.battle_screen.all_card_actions_reachable_from_visible_cards(),
 			"Card interaction index did not refresh after a setup action",
 		)
 		var unavailable_hand_view: CardView
@@ -2250,7 +2229,7 @@ func _run_phase_three_tests() -> void:
 			if candidate_view == null or not candidate_view.visible:
 				continue
 			var candidate_key := "hand:%d" % candidate_view.hand_index
-			if ui.battle_screen.table.interaction_router.rows_for_source(
+			if ui.battle_screen.interaction_router.rows_for_source(
 				candidate_key
 			).is_empty():
 				unavailable_hand_view = candidate_view
@@ -2272,8 +2251,8 @@ func _run_phase_three_tests() -> void:
 				ui.selected_entity_key == unavailable_key
 				and unavailable_hand_view.selected
 				and setup_detail.is_showing_card()
-				and ui.battle_screen.table.action_popover.visible
-				and ui.battle_screen.table.action_popover.is_informational_only(),
+				and ui.battle_screen.action_popover.visible
+				and ui.battle_screen.action_popover.is_informational_only(),
 				"A non-actionable card did not enter inspectable selected state",
 			)
 			unavailable_hand_view.activated.emit(
@@ -2286,10 +2265,10 @@ func _run_phase_three_tests() -> void:
 				ui.selected_entity_key.is_empty()
 				and not unavailable_hand_view.selected
 				and not setup_detail.visible
-				and not ui.battle_screen.table.action_popover.visible,
+				and not ui.battle_screen.action_popover.visible,
 				"Tapping a selected non-actionable card did not clear all interaction",
 			)
-		var active_view: CardView = ui.battle_screen.table.get_slot_view(0, "active")
+		var active_view: CardView = ui.battle_screen.get_slot_view(0, "active")
 		if active_view and ui.state.players[0].active:
 			var active_card_id := str(ui.state.players[0].active.card_id)
 			active_view.activated.emit(active_card_id, -1, 0, "active")
@@ -2836,9 +2815,9 @@ func _run_phase_three_tests() -> void:
 	field_choice_ui._show_choice_overlay(field_choice)
 	_check(
 		not field_choice_ui.modal_layer.visible
-		and field_choice_ui.battle_screen.table.choice_target_options.size() == 2
-		and field_choice_ui.battle_screen.table.get_slot_view(0, "active").targetable
-		and field_choice_ui.battle_screen.table.get_slot_view(0, "bench_0").targetable,
+		and field_choice_ui.battle_screen.choice_target_options.size() == 2
+		and field_choice_ui.battle_screen.get_slot_view(0, "active").targetable
+		and field_choice_ui.battle_screen.get_slot_view(0, "bench_0").targetable,
 		"Visible single-target card choice did not route to highlighted field cards",
 	)
 	var unique_attachment_id := "attachment:1:bench_0:energy:0:sv1-ener-4"
@@ -2866,7 +2845,7 @@ func _run_phase_three_tests() -> void:
 	)
 	field_choice_ui._show_choice_overlay(unique_attachment_choice)
 	var opponent_bench_key := CardInteractionRouter.pokemon_key(1, "bench_0")
-	var field_choice_table := field_choice_ui.battle_screen.table as BattleTable
+	var field_choice_table := field_choice_ui.battle_screen as BattleTable
 	var unique_group_value: Variant = field_choice_table.choice_target_options.get(
 		opponent_bench_key,
 		{},
@@ -3545,11 +3524,7 @@ func _run_phase_four_foundation_tests() -> void:
 		_check(
 			runtime.runtime_enabled
 			and runtime.is_available()
-			and int(runtime.release_manifest.get(
-				"compatible_model_count", -1))
-			== int(runtime.release_manifest.get("model_count", -2))
-			and int(runtime.release_manifest.get(
-				"legacy_model_count", -1)) == 0,
+			and int(runtime.release_manifest.get("model_count", -1)) == 1,
 			"Promoted Deep runtime is not complete",
 		)
 	else:
@@ -3561,12 +3536,8 @@ func _run_phase_four_foundation_tests() -> void:
 			"Legacy Deep runtime was not disabled deterministically",
 		)
 		_check(
-			int(runtime.release_manifest.get(
-				"compatible_model_count", -1)) == 0
-			and int(runtime.release_manifest.get("legacy_model_count", -1))
-			== int(runtime.release_manifest.get(
-				"release_decks", []).size()),
-			"Disabled Deep release model counts are invalid",
+			int(runtime.release_manifest.get("model_count", -1)) == 0,
+			"Disabled Deep release model count is invalid",
 		)
 	_check(
 		str(runtime.release_manifest.get("deep_fallback", "")) == "challenge",
@@ -3684,7 +3655,7 @@ func _run_phase_four_foundation_tests() -> void:
 		var deep_request: Dictionary = ai_request.duplicate(true)
 		deep_request["mode"] = "deep"
 		deep_request["match_seed"] = 77
-		var deep_result := DeepRootISMCTS.new().decide(
+		var deep_result := InformationSetPUCT.new().decide(
 			deep_request,
 			func() -> bool: return false,
 			runtime.get_backend(),
@@ -3692,9 +3663,9 @@ func _run_phase_four_foundation_tests() -> void:
 		_check(deep_result.get("success", false), "Deep AI did not return an action")
 		_check(
 			str(deep_result.get("planner", ""))
-			== DeepRootISMCTS.PLANNER_ID
+			== InformationSetPUCT.PLANNER_ID
 			and int(deep_result.get("simulations", -1))
-			>= DeepRootISMCTS.WINDOWS_MIN_SIMULATIONS,
+			>= InformationSetPUCT.WINDOWS_MIN_SIMULATIONS,
 			"Deep AI did not use the production information-set search contract",
 		)
 		_check(
@@ -4162,23 +4133,23 @@ func _run_ai_runtime_v5_tests(
 		and not terminating_coordinator.needs_poll(),
 		"AI coordinator did not reap a task that exited without a result",
 	)
-	_run_deep_root_contract_tests(catalog)
+	_run_information_set_puct_contract_tests(catalog)
 
 
-func _run_deep_root_contract_tests(_catalog: CardCatalog) -> void:
+func _run_information_set_puct_contract_tests(_catalog: CardCatalog) -> void:
 	_check(
-		DeepRootISMCTS.PLANNER_ID == "infoset_puct_v2"
-		and DeepRootISMCTS.SCHEMA_VERSION == 2
-		and is_equal_approx(DeepRootISMCTS.C_PUCT, 1.4)
-		and DeepRootISMCTS.WINDOWS_MIN_SIMULATIONS == 32
-		and DeepRootISMCTS.WINDOWS_TARGET_SIMULATIONS == 128
-		and DeepRootISMCTS.WINDOWS_MAX_SIMULATIONS == 256
-		and DeepRootISMCTS.WINDOWS_LEAF_BATCH_SIZE == 8
-		and DeepRootISMCTS.ANDROID_MIN_SIMULATIONS == 16
-		and DeepRootISMCTS.ANDROID_TARGET_SIMULATIONS == 64
-		and DeepRootISMCTS.ANDROID_MAX_SIMULATIONS == 128
-		and DeepRootISMCTS.ANDROID_LEAF_BATCH_SIZE == 4
-		and DeepRootISMCTS.WATCHDOG_USEC == 2000000,
+		InformationSetPUCT.PLANNER_ID == "infoset_puct_v2"
+		and InformationSetPUCT.SCHEMA_VERSION == 2
+		and is_equal_approx(InformationSetPUCT.C_PUCT, 1.4)
+		and InformationSetPUCT.WINDOWS_MIN_SIMULATIONS == 32
+		and InformationSetPUCT.WINDOWS_TARGET_SIMULATIONS == 128
+		and InformationSetPUCT.WINDOWS_MAX_SIMULATIONS == 256
+		and InformationSetPUCT.WINDOWS_LEAF_BATCH_SIZE == 8
+		and InformationSetPUCT.ANDROID_MIN_SIMULATIONS == 16
+		and InformationSetPUCT.ANDROID_TARGET_SIMULATIONS == 64
+		and InformationSetPUCT.ANDROID_MAX_SIMULATIONS == 128
+		and InformationSetPUCT.ANDROID_LEAF_BATCH_SIZE == 4
+		and InformationSetPUCT.WATCHDOG_USEC == 2000000,
 		"Information-set PUCT constants differ from the release contract",
 	)
 	var state := GameState.new()
@@ -4202,7 +4173,7 @@ func _run_deep_root_contract_tests(_catalog: CardCatalog) -> void:
 		and str(fallback.get("fallback_reason", ""))
 		== "runtime_unavailable"
 		and str(Dictionary(fallback.get("deep_failure", {})).get(
-			"planner", "")) == DeepRootISMCTS.PLANNER_ID,
+			"planner", "")) == InformationSetPUCT.PLANNER_ID,
 		"Deep runtime failure did not produce the structured Challenge fallback",
 	)
 
@@ -6646,7 +6617,7 @@ func _run_phase_five_foundation_tests() -> void:
 		and not resync_view_ui._startup_choreography_running,
 		"Non-initial network state replayed startup choreography",
 	)
-	_check(not resync_view_ui.battle_screen.table._startup_input_blocked,
+	_check(not resync_view_ui.battle_screen._startup_input_blocked,
 		"Non-initial network state left the startup input blocker active")
 	_check(
 		resync_view_ui.battle_screen.header.task_hint_label.text
@@ -7305,7 +7276,7 @@ func _run_visual_upgrade_tests() -> void:
 		"res://scenes/title/title_page.tscn",
 		"res://scenes/decks/deck_select_page.tscn",
 		"res://scenes/network/network_lobby_page.tscn",
-		"res://scenes/battle/battle_screen.tscn",
+		"res://scenes/battle/components/battle_table.tscn",
 		"res://scenes/end/victory_screen.tscn",
 		"res://tools/ui_workbench.tscn",
 	]:
@@ -8042,7 +8013,7 @@ func _run_visual_upgrade_tests() -> void:
 	privacy_ui.state = hidden_authoritative_state
 	privacy_ui.current_view_player = 0
 	privacy_ui._refresh_game()
-	var player_zero_view: GameState = privacy_ui.battle_screen.table.state_ref
+	var player_zero_view: GameState = privacy_ui.battle_screen.state_ref
 	_check(
 		player_zero_view != hidden_authoritative_state
 		and player_zero_view.get_player(0).hand == ["sv1-104", "sv1-107"]
@@ -8065,7 +8036,7 @@ func _run_visual_upgrade_tests() -> void:
 	privacy_ui.current_view_player = 1
 	hidden_authoritative_state.setup_actor_idx = 1
 	privacy_ui._refresh_game()
-	var player_one_view: GameState = privacy_ui.battle_screen.table.state_ref
+	var player_one_view: GameState = privacy_ui.battle_screen.state_ref
 	_check(
 		player_one_view.get_player(1).hand == ["sv1-106", "sv1-108"]
 		and player_one_view.get_player(0).hand.all(
@@ -8079,7 +8050,7 @@ func _run_visual_upgrade_tests() -> void:
 	hidden_authoritative_state.setup_stage = GameState.SETUP_COMPLETE
 	privacy_ui.current_view_player = 0
 	privacy_ui._refresh_game()
-	var revealed_player_view: GameState = privacy_ui.battle_screen.table.state_ref
+	var revealed_player_view: GameState = privacy_ui.battle_screen.state_ref
 	_check(
 		revealed_player_view.get_player(1).active.card_id == "sv1-106"
 		and revealed_player_view.get_player(1).bench[0].card_id == "sv1-108"
@@ -8143,20 +8114,20 @@ func _run_visual_upgrade_tests() -> void:
 		"Battle floating card preview could not be reopened after the inspector",
 	)
 	# Exercise the complete GUI signal chain rather than calling Main directly:
-	# Header -> BattleTable -> BattleScreen -> Main. The header must also stay
+	# Header -> BattleTable -> Main. The header must also stay
 	# above every table-local surface so touch hit testing cannot be intercepted.
-	var battle_root_surface := privacy_ui.battle_screen.table.get_node(
+	var battle_root_surface := privacy_ui.battle_screen.get_node(
 		"BattleRoot"
 	) as Control
-	var battle_body_surface := privacy_ui.battle_screen.table.get_node(
+	var battle_body_surface := privacy_ui.battle_screen.get_node(
 		"BattleRoot/Body"
 	) as Control
-	var battle_action_panel := privacy_ui.battle_screen.table.action_popover.get_node(
+	var battle_action_panel := privacy_ui.battle_screen.action_popover.get_node(
 		"Panel"
 	) as Control
 	_check(
 		privacy_ui.battle_screen.header.z_index
-		> privacy_ui.battle_screen.table.action_popover.z_index
+		> privacy_ui.battle_screen.action_popover.z_index
 		and privacy_ui.battle_screen.header.z_index
 		> privacy_ui.battle_screen.input_blocker.z_index
 		and battle_root_surface.mouse_filter == Control.MOUSE_FILTER_IGNORE
@@ -8165,7 +8136,7 @@ func _run_visual_upgrade_tests() -> void:
 		== Control.MOUSE_FILTER_IGNORE
 		and privacy_ui.battle_screen.board_canvas.mouse_filter
 		== Control.MOUSE_FILTER_IGNORE
-		and privacy_ui.battle_screen.table.action_popover.mouse_filter
+		and privacy_ui.battle_screen.action_popover.mouse_filter
 		== Control.MOUSE_FILTER_IGNORE
 		and battle_action_panel.mouse_filter == Control.MOUSE_FILTER_STOP
 		and privacy_ui.battle_screen.input_blocker.offset_top >= 68.0,
@@ -8282,16 +8253,16 @@ func _run_visual_upgrade_tests() -> void:
 	)
 	director_probe.queue_free()
 
-	var packed := load("res://scenes/battle/battle_screen.tscn") as PackedScene
+	var packed := load("res://scenes/battle/components/battle_table.tscn") as PackedScene
 	_check(packed != null, "Battle screen scene failed to load")
 	if packed:
 		var battle := packed.instantiate()
 		root.add_child(battle)
 		battle.initialize_ui()
-		_prime_card_action_popover(battle.table.action_popover)
-		battle.table.hud._ready()
-		battle.table.set_anchors_preset(Control.PRESET_TOP_LEFT)
-		battle.table.size = Vector2(1280.0, 720.0)
+		_prime_card_action_popover(battle.action_popover)
+		battle.hud._ready()
+		battle.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		battle.size = Vector2(1280.0, 720.0)
 		var state := _battle_state()
 		state.players[0].hand = [
 			"sv1-104", "sv1-ener-5", "sv1-151", "sv1-189",
@@ -8316,7 +8287,7 @@ func _run_visual_upgrade_tests() -> void:
 			rows.append({"action": action, "label": action.action})
 		battle.update_view(state, 0, rows, "", false, "local")
 		battle._layout_board()
-		var runtime_popover_safe_rect: Rect2 = battle.table._safe_popover_rect()
+		var runtime_popover_safe_rect: Rect2 = battle._safe_popover_rect()
 		var runtime_header_rect: Rect2 = battle.header.get_global_rect()
 		_check(
 			runtime_popover_safe_rect.size.y <= 0.0
@@ -8350,17 +8321,17 @@ func _run_visual_upgrade_tests() -> void:
 			"action": subtype_stadium_action,
 			"label": "打出竞技场",
 		}]
-		var original_table_catalog: CardCatalog = battle.table.catalog
-		var original_table_state: GameState = battle.table.state_ref
-		var original_table_rows: Array[Dictionary] = battle.table.action_rows
-		battle.table.catalog = subtype_catalog
-		battle.table.state_ref = subtype_state
-		battle.table.action_rows = subtype_action_rows
+		var original_table_catalog: CardCatalog = battle.catalog
+		var original_table_state: GameState = battle.state_ref
+		var original_table_rows: Array[Dictionary] = battle.action_rows
+		battle.catalog = subtype_catalog
+		battle.state_ref = subtype_state
+		battle.action_rows = subtype_action_rows
 		var subtype_routed_rows: Array[Dictionary] = (
-			battle.table._routed_action_rows()
+			battle._routed_action_rows()
 		)
 		_check(
-			battle.table._trainer_type_for_action(
+			battle._trainer_type_for_action(
 				subtype_stadium_action
 			) == "Stadium"
 			and subtype_routed_rows.size() == 1
@@ -8369,9 +8340,9 @@ func _run_visual_upgrade_tests() -> void:
 			) == ["stadium"],
 			"BattleTable ignored CardCatalog Stadium subtype classification",
 		)
-		battle.table.catalog = original_table_catalog
-		battle.table.state_ref = original_table_state
-		battle.table.action_rows = original_table_rows
+		battle.catalog = original_table_catalog
+		battle.state_ref = original_table_state
+		battle.action_rows = original_table_rows
 		var actionable_stadium_state := state.clone_state()
 		actionable_stadium_state.stadium_card_id = "sv1-180"
 		var actionable_stadium_rows: Array[Dictionary] = [{
@@ -8410,15 +8381,15 @@ func _run_visual_upgrade_tests() -> void:
 		# from an earlier tap. The dragged Energy must therefore expose its own
 		# legal targets instead of inheriting the stale hand-card selection.
 		battle.update_view(state, 0, rows, "hand:0", false, "local")
-		battle.table._on_hand_drag_started(1)
+		battle._on_hand_drag_started(1)
 		_check(
-			battle.table._drag_source_key == "hand:1"
+			battle._drag_source_key == "hand:1"
 			and battle.own_active.targetable
 			and battle.own_active.get_legal_target_hint() == "附能"
 			and battle.own_active.get_allowed_drop_hand_indices().has(1),
 			"Dragging a different hand card reused the previously selected card's targets",
 		)
-		battle.table._on_hand_drag_ended()
+		battle._on_hand_drag_ended()
 		battle.update_view(state, 0, rows, "", false, "local")
 		var single_target_state := state.clone_state()
 		single_target_state.players[0].active = PokemonState.new("sv1-108")
@@ -8445,7 +8416,7 @@ func _run_visual_upgrade_tests() -> void:
 			"local",
 		)
 		_check(
-			not battle.table.action_popover.visible
+			not battle.action_popover.visible
 			and battle.own_bench[0].targetable
 			and battle.own_bench[0].get_legal_target_hint() == "撤退",
 			"A disabled ability row forced an extra popover before a single targeted action",
@@ -8469,10 +8440,10 @@ func _run_visual_upgrade_tests() -> void:
 			false,
 			"local",
 		)
-		var mixed_groups: Array[Dictionary] = battle.table.interaction_router.action_groups_for_source(
+		var mixed_groups: Array[Dictionary] = battle.interaction_router.action_groups_for_source(
 			"pokemon:0:active"
 		)
-		var mixed_popover_rows: Array[Dictionary] = battle.table._popover_rows_for_groups(
+		var mixed_popover_rows: Array[Dictionary] = battle._popover_rows_for_groups(
 			mixed_groups
 		)
 		var retreat_group_is_neutral := false
@@ -8484,12 +8455,12 @@ func _run_visual_upgrade_tests() -> void:
 					and str(mixed_row.get("hint", "")) == "选择备战宝可梦"
 				)
 		_check(
-			battle.table.action_popover.visible and retreat_group_is_neutral,
+			battle.action_popover.visible and retreat_group_is_neutral,
 			"Retreat group exposed a target/payment before the bench was selected",
 		)
-		battle.table._on_popover_action_chosen(single_retreat)
+		battle._on_popover_action_chosen(single_retreat)
 		_check(
-			battle.table._selected_action_group_key == "RETREAT",
+			battle._selected_action_group_key == "RETREAT",
 			"Retreat action group did not enter target-selection mode",
 		)
 		var attack_only_rows: Array[Dictionary] = [{
@@ -8505,15 +8476,15 @@ func _run_visual_upgrade_tests() -> void:
 			"local",
 		)
 		_check(
-			battle.table._selected_action_group_key.is_empty()
-			and battle.table._forced_popover_rows.is_empty()
-			and battle.table.action_popover.visible,
+			battle._selected_action_group_key.is_empty()
+			and battle._forced_popover_rows.is_empty()
+			and battle.action_popover.visible,
 			"A stale selected action group hid the replacement legal action set",
 		)
-		battle.table.action_popover.dismiss()
+		battle.action_popover.dismiss()
 		_check(
-			not battle.table.action_popover.visible
-			and battle.table._current_task_hint() == "再次点击卡牌取消选择",
+			not battle.action_popover.visible
+			and battle._current_task_hint() == "再次点击卡牌取消选择",
 			"Dismissed card actions did not advertise the same-card cancel gesture",
 		)
 		var actionable_same_card_clear := {}
@@ -8539,7 +8510,7 @@ func _run_visual_upgrade_tests() -> void:
 			== "pokemon:0:active"
 			and battle.selected_entity_key.is_empty()
 			and not battle.own_active.selected
-			and not battle.table.action_popover.visible,
+			and not battle.action_popover.visible,
 			"Tapping a selected actionable card did not clear its interaction",
 		)
 		battle.update_view(state, 0, rows, "", false, "local")
@@ -8563,7 +8534,7 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		var preview_board_size: Vector2 = battle.board_canvas.size
 		battle.show_card_detail(state.players[0].active.card_id, state.players[0].active)
-		battle.table._layout_overlay_drawers()
+		battle._layout_overlay_drawers()
 		var preview_board_rect: Rect2 = battle.board_panel.get_global_rect()
 		var preview_detail_rect: Rect2 = floating_detail.get_global_rect()
 		var preview_geometry_ready: bool = (
@@ -8607,20 +8578,20 @@ func _run_visual_upgrade_tests() -> void:
 			floating_detail.position,
 			floating_detail.size * floating_detail.scale,
 		)
-		var preview_opponent_prize_bounds: Rect2 = battle.table._visual_rect_in_control(
+		var preview_opponent_prize_bounds: Rect2 = battle._visual_rect_in_control(
 			preview_opponent_prizes,
 			preview_opponent_prizes.get_stack_visual_max_rect().grow(6.0),
-			battle.table,
+			battle,
 		)
-		var preview_own_prize_bounds: Rect2 = battle.table._visual_rect_in_control(
+		var preview_own_prize_bounds: Rect2 = battle._visual_rect_in_control(
 			preview_own_prizes,
 			preview_own_prizes.get_stack_visual_max_rect().grow(6.0),
-			battle.table,
+			battle,
 		)
-		var preview_stadium_bounds: Rect2 = battle.table._visual_rect_in_control(
+		var preview_stadium_bounds: Rect2 = battle._visual_rect_in_control(
 			preview_stadium,
 			Rect2(Vector2.ZERO, preview_stadium.size).grow(4.0),
-			battle.table,
+			battle,
 		)
 		battle.update_view(
 			state,
@@ -8634,7 +8605,7 @@ func _run_visual_upgrade_tests() -> void:
 			state.players[1].active.card_id,
 			state.players[1].active,
 		)
-		battle.table._layout_overlay_drawers()
+		battle._layout_overlay_drawers()
 		var opponent_preview_local_rect := Rect2(
 			floating_detail.position,
 			floating_detail.size * floating_detail.scale,
@@ -8663,15 +8634,15 @@ func _run_visual_upgrade_tests() -> void:
 		# Constrain the same fixed corridor without changing the scene-tree viewport;
 		# this exercises BattleTable's compact-detail switch deterministically.
 		preview_stadium.position.x = minf(preview_stadium.position.x, 300.0)
-		battle.table._layout_detail_panel()
+		battle._layout_detail_panel()
 		var compact_preview_rect := Rect2(
 			floating_detail.position,
 			floating_detail.size * floating_detail.scale,
 		)
-		var compact_stadium_bounds: Rect2 = battle.table._visual_rect_in_control(
+		var compact_stadium_bounds: Rect2 = battle._visual_rect_in_control(
 			preview_stadium,
 			Rect2(Vector2.ZERO, preview_stadium.size).grow(4.0),
-			battle.table,
+			battle,
 		)
 		_check(
 			not preview_geometry_ready
@@ -8698,7 +8669,7 @@ func _run_visual_upgrade_tests() -> void:
 			"local",
 		)
 		battle.show_card_detail(state.players[0].active.card_id, state.players[0].active)
-		battle.table._layout_overlay_drawers()
+		battle._layout_overlay_drawers()
 		_check(
 			not preview_geometry_ready
 			or preview_detail_local_rect.position.distance_to(
@@ -8759,7 +8730,7 @@ func _run_visual_upgrade_tests() -> void:
 			str(unavailable_same_card_clear.get("key", "")) == "hand:0"
 			and battle.selected_entity_key.is_empty()
 			and not (battle.hand_views[0] as CardView).selected
-			and not battle.table.action_popover.visible
+			and not battle.action_popover.visible
 			and not floating_detail.visible,
 			"Tapping a selected non-actionable hand card did not clear detail and highlight",
 		)
@@ -8778,8 +8749,8 @@ func _run_visual_upgrade_tests() -> void:
 		_check(
 			battle.opponent_active.selected
 			and floating_detail.is_showing_card()
-			and battle.table.action_popover.visible
-			and battle.table.action_popover.is_informational_only()
+			and battle.action_popover.visible
+			and battle.action_popover.is_informational_only()
 			and battle.opponent_active.get_disabled_reason()
 			== "对手的卡牌不能由你操作",
 			"Opponent card did not enter a visible inspect-only selected state",
@@ -8807,7 +8778,7 @@ func _run_visual_upgrade_tests() -> void:
 			== "pokemon:1:active"
 			and battle.selected_entity_key.is_empty()
 			and not battle.opponent_active.selected
-			and not battle.table.action_popover.visible
+			and not battle.action_popover.visible
 			and not floating_detail.visible,
 			"Tapping a selected opponent card did not clear detail and highlight",
 		)
@@ -8820,13 +8791,13 @@ func _run_visual_upgrade_tests() -> void:
 			"local",
 		)
 		battle.show_card_detail(str(state.players[0].hand[0]))
-		battle.table._selected_action_group_key = "stale-group"
-		battle.table._popover_dismissed_source_key = "hand:0"
-		battle.table._forced_popover_rows.clear()
-		battle.table._forced_popover_rows.append({
+		battle._selected_action_group_key = "stale-group"
+		battle._popover_dismissed_source_key = "hand:0"
+		battle._forced_popover_rows.clear()
+		battle._forced_popover_rows.append({
 			"action": GameAction.new("PLAY_TRAINER", {"hand_idx": 0}),
 		})
-		battle.table._forced_popover_source_key = "hand:0"
+		battle._forced_popover_source_key = "hand:0"
 		battle.update_view(
 			changed_hand_state,
 			0,
@@ -8840,9 +8811,9 @@ func _run_visual_upgrade_tests() -> void:
 			and floating_detail.current_card_id == "sv1-151"
 			and floating_detail.detail_title.text
 			== battle.catalog.card_name("sv1-151")
-			and battle.table._selected_action_group_key.is_empty()
-			and battle.table._popover_dismissed_source_key.is_empty()
-			and battle.table._forced_popover_rows.is_empty(),
+			and battle._selected_action_group_key.is_empty()
+			and battle._popover_dismissed_source_key.is_empty()
+			and battle._forced_popover_rows.is_empty(),
 			"Visible hand preview kept the old card after the selected index changed identity",
 		)
 		floating_detail.close_button.pressed.emit()
@@ -9017,16 +8988,16 @@ func _run_visual_upgrade_tests() -> void:
 				and narrow_card.accessibility_description == narrow_card.tooltip_text,
 				"CardView did not expose the complete attached-energy summary",
 			)
-			var card_minimum_before := narrow_card.get_combined_minimum_size()
-			narrow_card.set_actions([{
-				"action": GameAction.new("TEST_ACTION"),
-				"label": "测试动作",
-			}])
+			var card_content_root := narrow_card.get_node(
+				"InteractionRoot/FeedbackRoot/ContentRoot"
+			) as Control
+			var authored_card_content_children := 0
+			for child in card_content_root.get_children():
+				if child.owner == narrow_card:
+					authored_card_content_children += 1
 			_check(
-				narrow_card.action_buttons.get_child_count() == 0
-				and not narrow_card.action_overlay.visible
-				and narrow_card.get_combined_minimum_size() == card_minimum_before,
-				"CardView retained layout-changing internal action controls",
+				authored_card_content_children == 5,
+				"CardView content root contains an unexpected visual child",
 			)
 			var frame_modulate_before := narrow_card.frame.modulate
 			var image_modulate_before := narrow_card.image.modulate
@@ -9177,7 +9148,7 @@ func _run_visual_upgrade_tests() -> void:
 			and (header_task_caption == null or not header_task_caption.visible),
 			"Battle header did not keep one compact continuous information group",
 		)
-		var allowance_row := battle.table.own_allowance_row as HBoxContainer
+		var allowance_row := battle.own_allowance_row as HBoxContainer
 		var allowance_texts: Array[String] = []
 		if allowance_row:
 			for allowance_value in allowance_row.get_children():
@@ -9292,20 +9263,20 @@ func _run_visual_upgrade_tests() -> void:
 		var prize_snapshot_size: Vector2 = prize_snapshot_row.get(
 			"size", Vector2.ZERO
 		)
-		battle.table._presentation_snapshot = prize_fan_snapshot
-		var prize_source_points: Array[Vector2] = battle.table._source_points_for_event(
+		battle._presentation_snapshot = prize_fan_snapshot
+		var prize_source_points: Array[Vector2] = battle._source_points_for_event(
 			prize_endpoint,
 			[],
 			own_prize_zone.count,
 			Vector2.ZERO,
 		)
-		var prize_source_sizes: Array[Vector2] = battle.table._source_sizes_for_event(
+		var prize_source_sizes: Array[Vector2] = battle._source_sizes_for_event(
 			prize_endpoint,
 			[],
 			own_prize_zone.count,
 			Vector2(1.0, 1.0),
 		)
-		var prize_source_bounds: Rect2 = battle.table._visual_rect_in_control(
+		var prize_source_bounds: Rect2 = battle._visual_rect_in_control(
 			own_prize_zone,
 			prize_visible_rect.grow(6.0),
 			battle.effects,
@@ -9325,7 +9296,7 @@ func _run_visual_upgrade_tests() -> void:
 			)
 		_check(
 			prize_snapshot_center.distance_to(
-				battle.table._zone_center("own_prizes")
+				battle._zone_center("own_prizes")
 			) < 0.01
 			and prize_snapshot_size.is_equal_approx(prize_face_size)
 			and prize_sources_inside_fan,
@@ -9335,14 +9306,14 @@ func _run_visual_upgrade_tests() -> void:
 		single_prize_state.players[0].prizes = ["sv1-151"]
 		battle.update_view(single_prize_state, 0, rows, "", false, "local")
 		var single_prize_snapshot: Dictionary = battle.capture_presentation_snapshot()
-		battle.table._presentation_snapshot = single_prize_snapshot
+		battle._presentation_snapshot = single_prize_snapshot
 		var single_prize_row: Dictionary = Dictionary(
 			Dictionary(single_prize_snapshot.get("zones", {})).get("0:prizes", {})
 		)
 		var single_prize_center: Vector2 = single_prize_row.get(
 			"center", Vector2.ZERO
 		)
-		var single_prize_points: Array[Vector2] = battle.table._source_points_for_event(
+		var single_prize_points: Array[Vector2] = battle._source_points_for_event(
 			prize_endpoint,
 			[],
 			1,
@@ -9359,21 +9330,21 @@ func _run_visual_upgrade_tests() -> void:
 		]
 		battle.update_view(incoming_prize_state, 0, rows, "", false, "local")
 		var incoming_prize_zone := battle.zones["own_prizes"] as ZoneView
-		var incoming_prize_center: Vector2 = battle.table._zone_center("own_prizes")
-		var incoming_prize_points: Array[Vector2] = battle.table._target_points_for_event(
+		var incoming_prize_center: Vector2 = battle._zone_center("own_prizes")
+		var incoming_prize_points: Array[Vector2] = battle._target_points_for_event(
 			prize_endpoint,
 			[],
 			1,
 			incoming_prize_center,
 			{},
 		)
-		var incoming_prize_sizes: Array[Vector2] = battle.table._target_sizes_for_event(
+		var incoming_prize_sizes: Array[Vector2] = battle._target_sizes_for_event(
 			prize_endpoint,
 			1,
 			Vector2(1.0, 1.0),
 			{},
 		)
-		var incoming_prize_bounds: Rect2 = battle.table._visual_rect_in_control(
+		var incoming_prize_bounds: Rect2 = battle._visual_rect_in_control(
 			incoming_prize_zone,
 			incoming_prize_zone.get_stack_visual_rect().grow(6.0),
 			battle.effects,
@@ -9388,25 +9359,23 @@ func _run_visual_upgrade_tests() -> void:
 			"Incoming prize animation did not land on the final fan face",
 		)
 		battle.update_view(state, 0, rows, "", false, "local")
-		battle.table._presentation_snapshot = prize_fan_snapshot
+		battle._presentation_snapshot = prize_fan_snapshot
 		var texture_cache: Node = root.get_node("CardTextureCache")
-		var zone_scene := load("res://ui/zone_view.tscn") as PackedScene
-		_check(zone_scene != null, "ZoneView scene failed to load")
-		if zone_scene:
-			var cache_zone := zone_scene.instantiate() as ZoneView
-			texture_cache.call("clear")
-			texture_cache.call("reset_stats")
-			var zone_texture := cache_zone._card_texture("res://assets/cards/card_back.webp")
-			_check(zone_texture != null, "ZoneView could not load the card-back texture")
-			var cache_stats: Dictionary = texture_cache.call("stats")
-			_check(
-				int(cache_stats.get("misses", 0)) >= 1
+		texture_cache.call("clear")
+		texture_cache.call("reset_stats")
+		var zone_texture := texture_cache.call(
+			"get_texture",
+			"res://assets/cards/card_back.webp",
+		) as Texture2D
+		_check(zone_texture != null, "CardTextureCache could not load the card back")
+		var cache_stats: Dictionary = texture_cache.call("stats")
+		_check(
+			int(cache_stats.get("misses", 0)) >= 1
 				and int(cache_stats.get("entries", 0)) >= 1,
-				"ZoneView did not load card art through CardTextureCache: %s"
-				% JSON.stringify(cache_stats),
-			)
-			cache_zone.free()
-			texture_cache.call("clear")
+			"CardTextureCache did not retain loaded card art: %s"
+			% JSON.stringify(cache_stats),
+		)
+		texture_cache.call("clear")
 		_check(battle.phase_advance_button != null,
 			"Battle screen is missing the dedicated system action button")
 		_check(
@@ -9446,13 +9415,13 @@ func _run_visual_upgrade_tests() -> void:
 			"Floating command dock did not reserve its rail and collapsible log drawer",
 		)
 		var rail_action := {}
-		battle.table.hud.phase_action_requested.connect(
+		battle.hud.phase_action_requested.connect(
 			func(action: GameAction) -> void: rail_action["action"] = action.action
 		)
 		var setup_rail_state := state.clone_state()
 		setup_rail_state.phase = "SETUP"
 		setup_rail_state.setup_ready.assign([false, false])
-		battle.table.hud.update_phase(
+		battle.hud.update_phase(
 			setup_rail_state,
 			0,
 			false,
@@ -9469,7 +9438,7 @@ func _run_visual_upgrade_tests() -> void:
 			str(rail_action.get("action", "")) == "SETUP_DONE",
 			"Right-rail system button did not emit its mapped action",
 		)
-		battle.table.hud.update_phase(
+		battle.hud.update_phase(
 			state,
 			0,
 			false,
@@ -9483,7 +9452,7 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		var resolving_state := state.clone_state()
 		resolving_state.phase = "ATTACK"
-		battle.table.hud.update_phase(
+		battle.hud.update_phase(
 			resolving_state, 0, false, "local", []
 		)
 		_check(
@@ -9516,7 +9485,7 @@ func _run_visual_upgrade_tests() -> void:
 			"AI thinking state did not put the system button into waiting state",
 		)
 		_check(
-			not battle.table.action_popover.visible
+			not battle.action_popover.visible
 			and battle.find_child("AllActionsButton", true, false) == null,
 			"AI thinking state exposed card actions through a global action entry",
 		)
@@ -9656,15 +9625,13 @@ func _run_visual_upgrade_tests() -> void:
 		battle.update_view(state, 0, rows, "hand:3", false, "local")
 		var trainer_view: Variant = battle.hand_views[3]
 		battle.show_card_detail(str(state.players[0].hand[3]))
-		battle.table._layout_overlay_drawers()
+		battle._layout_overlay_drawers()
 		_check(
 			trainer_view.is_actionable()
-			and trainer_view.action_buttons.get_child_count() == 0
-			and not trainer_view.action_overlay.visible
-			and battle.table.action_popover.visible
-			and battle.table.action_popover.button_count() > 0
+			and battle.action_popover.visible
+			and battle.action_popover.button_count() > 0
 			and battle.detail_panel.visible
-			and not battle.table.action_popover.panel_global_rect().intersects(
+			and not battle.action_popover.panel_global_rect().intersects(
 				battle.detail_panel.get_global_rect()
 			),
 			"Card action popover or floating preview was missing or overlapping",
@@ -9930,7 +9897,7 @@ func _run_visual_upgrade_tests() -> void:
 		state.players[0].hand = ["sv1-104", "sv1-104"]
 		state.players[0].discard = ["sv1-ener-5"]
 		battle.update_view(state, 0, rows, "", false, "local")
-		battle.table._presentation_snapshot = discard_snapshot
+		battle._presentation_snapshot = discard_snapshot
 		var snapshot_discard_starts: Array[Vector2] = (
 			battle._source_points_for_event(
 				{"player": 0, "zone": "hand"},
@@ -10333,16 +10300,16 @@ func _run_visual_upgrade_tests() -> void:
 			and switched_bench.is_presentation_hidden(),
 			"Switch presentation did not mask both active and bench slots",
 		)
-		var switch_spawned: bool = battle.table._spawn_slot_transition(
+		var switch_spawned: bool = battle._spawn_slot_transition(
 			normalized_switch,
 			0.12,
 		)
 		_check(switch_spawned, "Switch presentation did not handle slot transition")
 		_check(
-			battle.table._active_flyers.size() == 2,
+			battle._active_flyers.size() == 2,
 			"Switch presentation did not create bounded active/bench flyers",
 		)
-		var switch_timing: Dictionary = battle.table._flying_card_timing(
+		var switch_timing: Dictionary = battle._flying_card_timing(
 			1,
 			2,
 			0.12,
@@ -10354,7 +10321,7 @@ func _run_visual_upgrade_tests() -> void:
 			+ float(switch_timing.get("duration", 0.0)) <= 0.12,
 			"Switch flyer timing can outlive its presentation event",
 		)
-		var too_short_timing: Dictionary = battle.table._flying_card_timing(0, 1, 0.05)
+		var too_short_timing: Dictionary = battle._flying_card_timing(0, 1, 0.05)
 		_check(
 			not bool(too_short_timing.get("spawn", true)),
 			"Extremely short presentation events still spawn lingering flyers",
@@ -10367,8 +10334,8 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		battle._clear_transient_visuals()
 		_check(
-			battle.table._active_flyers.is_empty()
-			and battle.table._flyer_tweens.is_empty(),
+			battle._active_flyers.is_empty()
+			and battle._flyer_tweens.is_empty(),
 			"Switch transient cleanup left active flying cards",
 		)
 
@@ -10407,15 +10374,15 @@ func _run_visual_upgrade_tests() -> void:
 		battle.director._playing = director_was_playing
 		battle._clear_transient_visuals()
 		_check(
-			battle.table._presentation_mask_counts.is_empty()
+			battle._presentation_mask_counts.is_empty()
 			and not battle.own_active.is_presentation_hidden()
 			and not (battle.own_bench[0] as CardView).is_presentation_hidden()
 			and not (battle.own_bench[1] as CardView).is_presentation_hidden(),
 			"Continuous staged presentations left stale slot masks",
 		)
-		var cleanup_texture: Texture2D = battle.table._texture_for_card_id("sv1-104")
+		var cleanup_texture: Texture2D = battle._texture_for_card_id("sv1-104")
 		if cleanup_texture:
-			battle.table._spawn_flying_card(
+			battle._spawn_flying_card(
 				cleanup_texture,
 				Vector2(20, 20),
 				Vector2(40, 40),
@@ -10425,8 +10392,8 @@ func _run_visual_upgrade_tests() -> void:
 				0,
 			)
 		var paper_flyer := (
-			battle.table._active_flyers[-1] as Control
-			if not battle.table._active_flyers.is_empty()
+			battle._active_flyers[-1] as Control
+			if not battle._active_flyers.is_empty()
 			else null
 		)
 		var paper_shadow := (
@@ -10461,7 +10428,7 @@ func _run_visual_upgrade_tests() -> void:
 			"Card motion entity did not use a full-face single-card token",
 		)
 		if paper_flyer != null:
-			battle.table._finish_flyer(paper_flyer, Vector2(40, 40), "cards_drawn")
+			battle._finish_flyer(paper_flyer, Vector2(40, 40), "cards_drawn")
 			_check(
 				is_instance_valid(paper_flyer)
 				and paper_flyer.visible
@@ -10469,15 +10436,15 @@ func _run_visual_upgrade_tests() -> void:
 				"Card motion entity disappeared before presentation handoff",
 			)
 		battle._clear_transient_visuals()
-		var shuffle_spawned: bool = battle.table._spawn_shuffle_motion(
+		var shuffle_spawned: bool = battle._spawn_shuffle_motion(
 			{"player": 0, "zone": "deck"},
 			0.78,
 		)
 		var shuffle_cards := 0
 		var shuffle_cards_are_single_face := true
 		var shuffle_cards_replace_physical_pile := true
-		var shuffle_deck := battle.table.zones.get("own_deck") as ZoneView
-		for flyer_value in battle.table._active_flyers:
+		var shuffle_deck := battle.zones.get("own_deck") as ZoneView
+		for flyer_value in battle._active_flyers:
 			var flyer := flyer_value as Control
 			if flyer == null:
 				continue
@@ -10504,8 +10471,8 @@ func _run_visual_upgrade_tests() -> void:
 				)
 		_check(
 			shuffle_spawned
-			and shuffle_cards == battle.table._shuffle_card_count()
-			and battle.table._active_flyers.size() <= battle.table._max_active_flyers()
+			and shuffle_cards == battle._shuffle_card_count()
+			and battle._active_flyers.size() <= battle._max_active_flyers()
 			and shuffle_cards_are_single_face
 			and shuffle_cards_replace_physical_pile
 			and shuffle_deck != null
@@ -10516,10 +10483,10 @@ func _run_visual_upgrade_tests() -> void:
 		_check(
 			shuffle_deck != null
 			and not shuffle_deck.is_stack_presentation_hidden()
-			and battle.table._shuffle_source_masks.is_empty(),
+			and battle._shuffle_source_masks.is_empty(),
 			"Deck shuffle cleanup did not restore the physical pile",
 		)
-		var reveal_spawned: bool = battle.table._spawn_reveal_motion({
+		var reveal_spawned: bool = battle._spawn_reveal_motion({
 			"event_type": "cards_revealed",
 			"actor": 0,
 			"visibility": "public",
@@ -10544,7 +10511,7 @@ func _run_visual_upgrade_tests() -> void:
 				},
 			},
 		}, 1.85)
-		var reveal_showcase: Control = battle.table.reveal_layer._showcase as Control
+		var reveal_showcase: Control = battle.reveal_layer._showcase as Control
 		var reveal_cards: Array = (
 			reveal_showcase.get_meta("reveal_cards", [])
 			if reveal_showcase != null
@@ -10557,7 +10524,7 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		_check(
 			reveal_spawned
-			and battle.table.reveal_layer.is_presenting()
+			and battle.reveal_layer.is_presenting()
 			and reveal_cards.size() == 2
 			and reveal_summary != null
 			and reveal_summary.text == "正在翻牌…"
@@ -10569,14 +10536,14 @@ func _run_visual_upgrade_tests() -> void:
 			"Public reveal layer did not stage every ordered card and summary "
 			+ "(spawned=%s, presenting=%s, cards=%d, summary=%s)" % [
 				reveal_spawned,
-				battle.table.reveal_layer.is_presenting(),
+				battle.reveal_layer.is_presenting(),
 				reveal_cards.size(),
 				reveal_summary.text if reveal_summary != null else "<missing>",
 			],
 		)
 		battle._clear_transient_visuals()
 		_check(
-			not battle.table.reveal_layer.is_presenting(),
+			not battle.reveal_layer.is_presenting(),
 			"Public reveal layer survived transient/resync cleanup",
 		)
 		var stale_cover := Control.new()
@@ -10595,7 +10562,7 @@ func _run_visual_upgrade_tests() -> void:
 			and not (battle.own_bench[0] as CardView).is_presentation_hidden()
 			and not (battle.hand_views[0] as CardView).is_presentation_hidden()
 			and not (battle.zones["own_deck"] as ZoneView).is_presentation_hidden()
-			and battle.table._active_flyers.is_empty()
+			and battle._active_flyers.is_empty()
 			and (
 				not is_instance_valid(stale_cover)
 				or stale_cover.is_queued_for_deletion()
@@ -10611,11 +10578,11 @@ func _run_visual_upgrade_tests() -> void:
 		var freed_cover_event_id := "freed-cover-regression"
 		var freed_cover := Control.new()
 		battle.effects.add_child(freed_cover)
-		battle.table._presentation_covers[freed_cover_event_id] = [freed_cover]
+		battle._presentation_covers[freed_cover_event_id] = [freed_cover]
 		freed_cover.free()
-		battle.table._finish_presentation_covers(freed_cover_event_id)
+		battle._finish_presentation_covers(freed_cover_event_id)
 		_check(
-			not battle.table._presentation_covers.has(freed_cover_event_id),
+			not battle._presentation_covers.has(freed_cover_event_id),
 			"Presentation cover cleanup tried to cast a freed cover",
 		)
 		var freed_flash_overlay := ColorRect.new()
@@ -10657,14 +10624,14 @@ func _run_visual_upgrade_tests() -> void:
 			and not battle_log_panel.visible,
 			"Updating battle-log entries opened the drawer without user intent",
 		)
-		battle.table.action_popover.visible = true
+		battle.action_popover.visible = true
 		battle_hud.set_log_drawer_open(true)
 		_check(
 			battle_hud.is_log_drawer_open()
 			and battle_log_panel.visible
 			and battle_hud.log_toggle_button.button_pressed
 			and battle_hud.log_toggle_button.text == "收起日志"
-			and not battle.table.action_popover.visible
+			and not battle.action_popover.visible
 			and battle.log_label.bbcode_enabled
 			and battle.log_label.autowrap_mode == TextServer.AUTOWRAP_ARBITRARY
 			and battle.log_label.scroll_following
@@ -10693,7 +10660,7 @@ func _run_visual_upgrade_tests() -> void:
 			"Battle-log close button did not collapse the drawer and reset its toggle",
 		)
 		battle_hud.set_log_drawer_open(true)
-		var selection_before_log_outside: String = battle.table.selected_entity_key
+		var selection_before_log_outside: String = battle.selected_entity_key
 		var log_outside_press := InputEventMouseButton.new()
 		log_outside_press.button_index = MOUSE_BUTTON_LEFT
 		log_outside_press.pressed = true
@@ -10701,11 +10668,11 @@ func _run_visual_upgrade_tests() -> void:
 			battle.board_panel.get_global_rect().position
 			+ Vector2(20.0, battle.board_panel.size.y * 0.5)
 		)
-		battle.table._input(log_outside_press)
+		battle._input(log_outside_press)
 		_check(
 			not battle_hud.is_log_drawer_open()
 			and not battle_log_panel.visible
-			and battle.table.selected_entity_key == selection_before_log_outside,
+			and battle.selected_entity_key == selection_before_log_outside,
 			"Clicking outside the battle log did not close only the drawer",
 		)
 

@@ -38,8 +38,6 @@ if (-not [bool]$temporaryReleasePayload.native_ai.production_ready) {
 }
 $temporaryReleasePayload.deep_runtime_enabled = $true
 $temporaryReleasePayload.model_count = 1
-$temporaryReleasePayload.compatible_model_count = 1
-$temporaryReleasePayload.legacy_model_count = 0
 $temporaryDirectory = Split-Path -Parent $temporaryRelease
 New-Item -ItemType Directory -Path $temporaryDirectory -Force | Out-Null
 [IO.File]::WriteAllText(

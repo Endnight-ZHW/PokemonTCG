@@ -575,7 +575,7 @@ func _render_previews() -> void:
 	ui._build_game_screen()
 	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
 	await _settle_rendered(4)
-	var special_stack_card: CardView = ui.battle_screen.table.get_slot_view(0, "active")
+	var special_stack_card: CardView = ui.battle_screen.get_slot_view(0, "active")
 	var special_colorless_badge := _energy_badge_for_group(
 		special_stack_card,
 		"energy:type:Colorless",
@@ -638,10 +638,10 @@ func _render_previews() -> void:
 	await _settle_rendered(4)
 	if (
 		not _energy_count_badge_is_readable(
-			ui.battle_screen.table.get_slot_view(0, "active"), "12"
+			ui.battle_screen.get_slot_view(0, "active"), "12"
 		)
 		or not _energy_count_badge_is_readable(
-			ui.battle_screen.table.get_slot_view(0, "bench_0"), "10"
+			ui.battle_screen.get_slot_view(0, "bench_0"), "10"
 		)
 	):
 		push_error("Standard battle energy count badges are unreadable or clipped")
@@ -654,10 +654,10 @@ func _render_previews() -> void:
 	await _settle_rendered(4)
 	if (
 		not _energy_count_badge_is_readable(
-			ui.battle_screen.table.get_slot_view(0, "active"), "12"
+			ui.battle_screen.get_slot_view(0, "active"), "12"
 		)
 		or not _energy_count_badge_is_readable(
-			ui.battle_screen.table.get_slot_view(0, "bench_0"), "10"
+			ui.battle_screen.get_slot_view(0, "bench_0"), "10"
 		)
 	):
 		push_error("Compact battle energy count badges are unreadable or clipped")
@@ -956,7 +956,7 @@ func _render_previews() -> void:
 		push_error("Battle card became unreachable through transparent layout surfaces")
 		_finish(1)
 		return
-	var preview_action_button := ui.battle_screen.table.action_popover.action_buttons.get_child(
+	var preview_action_button := ui.battle_screen.action_popover.action_buttons.get_child(
 		0
 	) as Button
 	await _move_pointer_to_control(preview_action_button)
@@ -1358,7 +1358,7 @@ func _render_previews() -> void:
 	}], demo.revision + 121, 0, switch_snapshot)
 	await create_timer(0.08).timeout
 	var switch_movers: Array[Control] = []
-	for flyer_value in ui.battle_screen.table._active_flyers:
+	for flyer_value in ui.battle_screen._active_flyers:
 		var flyer := flyer_value as Control
 		if flyer != null and bool(flyer.get_meta("slot_composite_motion", false)):
 			switch_movers.append(flyer)
@@ -1733,11 +1733,11 @@ func _render_previews() -> void:
 		},
 	)
 	ui.show_choice(attachment_choice)
-	ui.battle_screen.table._on_card_activated(
+	ui.battle_screen._on_card_activated(
 		demo.players[0].active.card_id, -1, 0, "active")
 	await _settle_rendered(4)
 	var attachment_source_card: CardView = (
-		ui.battle_screen.table.get_slot_view(0, "active")
+		ui.battle_screen.get_slot_view(0, "active")
 	)
 	if (
 		attachment_source_card == null
@@ -1757,13 +1757,13 @@ func _render_previews() -> void:
 	if not _capture("choice-attachment-selected.png"):
 		_finish(1)
 		return
-	ui.battle_screen.table.attachment_choice_popover.dismiss(false)
+	ui.battle_screen.attachment_choice_popover.dismiss(false)
 	root.size = Vector2i(900, 540)
 	await _settle_rendered(3)
-	ui.battle_screen.table._on_card_activated(
+	ui.battle_screen._on_card_activated(
 		demo.players[0].active.card_id, -1, 0, "active")
 	await _settle_rendered(4)
-	attachment_source_card = ui.battle_screen.table.get_slot_view(0, "active")
+	attachment_source_card = ui.battle_screen.get_slot_view(0, "active")
 	if (
 		attachment_source_card == null
 		or attachment_source_card.interaction_hint.visible
@@ -2146,7 +2146,7 @@ func _update_battle_preview(
 	ai_is_thinking := false,
 	mode := "local",
 ) -> void:
-	# Battle baselines exercise BattleScreen itself; no shell modal is part of
+	# Battle baselines exercise BattleTable itself; no shell modal is part of
 	# these states. Force a completed close so a previous inspector cannot leave
 	# its 86% shade in a later capture on a very fast renderer.
 	if ui.modal_layer:

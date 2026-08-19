@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from engine.ai.dl.release_evidence_v2 import (
     REQUIRED_INPUTS,
@@ -13,6 +14,7 @@ from engine.ai.dl.release_evidence_v2 import (
 )
 from engine.ai.dl.run_store import atomic_write_json, read_json
 from engine.ai.dl.v2_contract import RELEASE_DECKS
+from scripts import promote_alphazero_v2 as promotion
 
 
 def _zeroes(*names: str) -> dict[str, int]:
@@ -74,7 +76,6 @@ def _performance() -> dict:
         "schema": "native_vs_python_infoset_puct_benchmark/1",
         "same_seed_and_simulation_count": True,
         "throughput_speedup": 10.0,
-        "release_baseline_complete": True,
     }
 
 
@@ -179,8 +180,6 @@ class ReleaseEvidenceV2Tests(unittest.TestCase):
                 "deep_planner": {"evidence_sha256": ""},
                 "deep_runtime_enabled": False,
                 "model_count": 0,
-                "compatible_model_count": 0,
-                "legacy_model_count": 10,
                 "native_ai": {"production_ready": False},
                 "deep_model": {"status": "candidate"},
             },
@@ -216,6 +215,172 @@ class ReleaseEvidenceV2Tests(unittest.TestCase):
             "ready": True,
             "blockers": [],
         }
+
+    def _promotion_fixture(self, root: Path):
+        run = root / "run"
+        repo = root / "repo"
+        run.mkdir()
+        evidence = run / "release-evidence.json"
+        evidence.write_bytes(b"verified evidence")
+        evidence_sha256 = promotion._sha256(evidence)
+        atomic_write_json(
+            run / "run.json",
+            {
+                "run_id": "promotion-test",
+                "status": "completed",
+                "promotable": True,
+                "gate": {
+                    "status": "passed",
+                    "evidence_path": evidence.name,
+                    "evidence_sha256": evidence_sha256,
+                },
+            },
+        )
+
+        source = run / "candidate"
+        source.mkdir()
+        checkpoint = source / "universal.pt"
+        sidecar = source / "universal.json"
+        onnx = source / "universal.onnx"
+        runtime = source / "ai_models_runtime.json"
+        checkpoint.write_bytes(b"checkpoint")
+        sidecar.write_text("{}\n", encoding="utf-8")
+        onnx.write_bytes(b"onnx")
+        runtime_payload = {
+            "format_version": 3,
+            "deep_planner": {"evidence_sha256": evidence_sha256},
+        }
+        atomic_write_json(runtime, runtime_payload)
+
+        disabled_release = {
+            "format_version": 4,
+            "deep_runtime_enabled": False,
+            "model_count": 0,
+            "native_ai": {"production_ready": False},
+            "deep_model": {"status": "alphazero_v2_candidate_required"},
+            "deep_planner": {"evidence_sha256": ""},
+        }
+        atomic_write_json(repo / "release_manifest.json", disabled_release)
+        atomic_write_json(
+            repo / "godot" / "data" / "release_manifest.json",
+            disabled_release,
+        )
+        atomic_write_json(
+            repo / "godot" / "data" / "ai_models_runtime.json",
+            {"state": "disabled"},
+        )
+        bundle = (
+            checkpoint,
+            sidecar,
+            onnx,
+            runtime,
+            runtime_payload,
+        )
+        return run, repo, evidence_sha256, bundle
+
+    def test_promotion_atomically_enables_one_universal_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, repo, evidence_sha256, bundle = self._promotion_fixture(
+                Path(directory)
+            )
+            with (
+                patch.object(
+                    promotion,
+                    "validate_release_evidence_file",
+                    return_value={"passed": True, "blockers": []},
+                ),
+                patch.object(
+                    promotion,
+                    "_validate_bundle",
+                    return_value=bundle,
+                ),
+            ):
+                journal = promotion.promote(
+                    run,
+                    evidence_sha256=evidence_sha256,
+                    confirm_run_id="promotion-test",
+                    repo_root=repo,
+                )
+
+            root_release = read_json(repo / "release_manifest.json")
+            godot_release = read_json(
+                repo / "godot" / "data" / "release_manifest.json"
+            )
+            self.assertEqual(journal["state"], "committed")
+            self.assertEqual(root_release, godot_release)
+            self.assertTrue(root_release["deep_runtime_enabled"])
+            self.assertEqual(root_release["model_count"], 1)
+            self.assertEqual(
+                root_release["deep_planner"]["evidence_sha256"],
+                evidence_sha256,
+            )
+            self.assertEqual(
+                (repo / "python" / "data" / "ai_models" / "universal.pt")
+                .read_bytes(),
+                b"checkpoint",
+            )
+            self.assertEqual(read_json(run / "run.json")["status"], "promoted")
+
+    def test_promotion_failure_rolls_back_the_disabled_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, repo, evidence_sha256, bundle = self._promotion_fixture(
+                Path(directory)
+            )
+            failed_target = (
+                repo / "godot" / "data" / "release_manifest.json"
+            ).resolve()
+            real_replace = promotion.os.replace
+
+            def fail_final_manifest(source, target):
+                if Path(target).resolve() == failed_target:
+                    raise OSError("injected final manifest failure")
+                return real_replace(source, target)
+
+            with (
+                patch.object(
+                    promotion,
+                    "validate_release_evidence_file",
+                    return_value={"passed": True, "blockers": []},
+                ),
+                patch.object(
+                    promotion,
+                    "_validate_bundle",
+                    return_value=bundle,
+                ),
+                patch.object(promotion.os, "replace", fail_final_manifest),
+                self.assertRaisesRegex(OSError, "injected final manifest failure"),
+            ):
+                promotion.promote(
+                    run,
+                    evidence_sha256=evidence_sha256,
+                    confirm_run_id="promotion-test",
+                    repo_root=repo,
+                )
+
+            root_release = read_json(repo / "release_manifest.json")
+            godot_release = read_json(
+                repo / "godot" / "data" / "release_manifest.json"
+            )
+            self.assertEqual(root_release, godot_release)
+            self.assertFalse(root_release["deep_runtime_enabled"])
+            self.assertEqual(root_release["model_count"], 0)
+            self.assertEqual(
+                read_json(
+                    repo / "godot" / "data" / "ai_models_runtime.json"
+                ),
+                {"state": "disabled"},
+            )
+            self.assertFalse(
+                (repo / "python" / "data" / "ai_models" / "universal.pt")
+                .exists()
+            )
+            journals = list(
+                (run / "staging" / "promotion_transactions").glob(
+                    "*/journal.json"
+                )
+            )
+            self.assertEqual(len(journals), 1)
+            self.assertEqual(read_json(journals[0])["state"], "rolled_back")
 
     def test_complete_bundle_passes_and_enables_only_staging(self):
         with tempfile.TemporaryDirectory() as directory:

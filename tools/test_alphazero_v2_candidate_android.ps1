@@ -41,8 +41,6 @@ if (
 $temporaryRelease = Join-Path $run 'staging\android_candidate_release_enabled.json'
 $candidateRelease.deep_runtime_enabled = $true
 $candidateRelease.model_count = 1
-$candidateRelease.compatible_model_count = 1
-$candidateRelease.legacy_model_count = 0
 New-Item -ItemType Directory -Force `
     -Path (Split-Path -Parent $temporaryRelease) | Out-Null
 [IO.File]::WriteAllText(

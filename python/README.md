@@ -11,10 +11,6 @@ AlphaZero v2:
 - one universal model routed to all ten release decks;
 - batched CUDA inference for training and CPU ONNX Runtime in clients.
 
-The old `teacher_dagger_rl`, `alpha_zero_rl`, and `hybrid_population_rl`
-trainers have been removed. Their checkpoints and historical evidence remain
-read-only and are not accepted by the v2 loader.
-
 ## Environment
 
 Use the pinned `DL` environment from `environment.yml`. The native search

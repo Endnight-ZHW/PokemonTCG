@@ -140,17 +140,12 @@ edge：chance 节点不调用策略头，掷币结果按 `0.5^N` 标注概率；
 另一个固定同局面、同 seed、同 128 模拟和深度 32 的基准比较 Python 正式规则
 deepcopy PUCT 回退与 C++ 原生 PUCT：当前代码独占复测的中位吞吐分别约 63.85 与
 2,673.44 模拟/秒，提升 41.87 倍，证据位于
-`artifacts/native_vs_python_puct_benchmark_v2.json`。最终发布基线另从 detached
-commit `b0f12b5` 执行已退役的 `DeepRootISMCTS v1`，只应用记录在证据中的
-`pending_promotion_player` 兼容别名；在同一根状态、seed 和 64 次模拟下，历史实现
-中位吞吐为 92.97 模拟/秒，C++ v2 为 2,190.82 模拟/秒，提升 23.57 倍。
-`artifacts/native_vs_retired_deeproot_v2.json` 已标记
-`release_baseline_complete=true`。
+`artifacts/native_vs_python_puct_benchmark_v2.json`。
 
 Windows x86_64 与 Android ARM64 的 debug/release GDExtension 均已用固定
 MSVC/NDK 工具链按最终源码完成编译。Godot 全套规则、VM、原生 golden、动作签名、
 信息集边界、规范事件结构、真实 ONNX 搜索、事务、性能和 UI 契约通过；Python 全套
-802 项测试通过。Windows 原生搜索契约连续完成 256 次动作根和 256 次选择根模拟，
+测试通过。Windows 原生搜索契约连续完成 256 次动作根和 256 次选择根模拟，
 本轮契约记录约 40.99 ms；隔离性能测试的动作查询中位为 319 µs（门槛 353 µs），
 apply 中位为 94 µs（门槛 131 µs）。候选运行验证器还会
 逐套牌执行真实 CPU
@@ -171,8 +166,8 @@ Android 会导出正式、phase6 和 candidate-search 三份 ARM64 APK，并在�
 发布证据分为两层，避免原生模块无法读取外部证据造成门禁死锁：
 `ptcg_ai_core.production_blockers()` 只报告原生技术阻塞，当前原生技术状态已就绪；
 Python 的 fail-closed 证据
-聚合器另行校验每套牌 10,000 次 Python/C++/Godot 三方转换与隐藏信息、已归档旧
-Deep AI 同硬件 10 倍基线、Windows/Android 真实期限与回退，以及 24 小时训练和
+聚合器另行校验每套牌 10,000 次 Python/C++/Godot 三方转换与隐藏信息、
+Python PUCT 同工作量 10 倍性能基线、Windows/Android 真实期限与回退，以及 24 小时训练和
 6,000 局 league。聚合器会复制并校验每个输入的 SHA-256；训练完成只进入
 `pending_evidence`，只有最终证据完整时才把运行目录内的候选清单标记为可晋升，随后
 晋升事务会再次验证所有哈希。训练器写出的暂存清单也固定保持

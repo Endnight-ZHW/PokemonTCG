@@ -39,7 +39,6 @@ var _stack_card_size := Vector2.ZERO
 var actionable := false
 var _allowed_drop_hand_indices: Array[int] = []
 var _drop_highlighted := false
-var _texture_cache: Node
 var _pressed := false
 var _press_msec := 0
 var _press_position := Vector2.ZERO
@@ -439,7 +438,14 @@ func _refresh() -> void:
 	elif not card_id.is_empty():
 		texture_path = str(catalog.get_card(card_id).get("image_path", ""))
 	if texture == null and not texture_path.is_empty():
-		texture = _card_texture(texture_path)
+		var tree := Engine.get_main_loop() as SceneTree
+		var texture_cache := (
+			tree.root.get_node_or_null("CardTextureCache")
+			if tree and tree.root
+			else null
+		)
+		if texture_cache:
+			texture = texture_cache.call("get_texture", texture_path) as Texture2D
 	if texture == null and is_hidden_zone and count > 0:
 		texture = _fallback_card_back_texture()
 	image.texture = texture
@@ -557,13 +563,6 @@ func _drop_data(_at_position: Vector2, data: Variant) -> void:
 	)
 
 
-func _card_texture(path: String) -> Texture2D:
-	var texture_cache := _card_texture_cache()
-	if texture_cache and texture_cache.has_method("get_texture"):
-		return texture_cache.call("get_texture", path) as Texture2D
-	return load(path) as Texture2D
-
-
 static func _fallback_card_back_texture() -> Texture2D:
 	if _fallback_card_back_cache != null:
 		return _fallback_card_back_cache
@@ -581,16 +580,6 @@ static func _fallback_card_back_texture() -> Texture2D:
 	image_value.fill_rect(Rect2i(width / 2 - 4, 8, 8, height - 16), Color("#f5e07c"))
 	_fallback_card_back_cache = ImageTexture.create_from_image(image_value)
 	return _fallback_card_back_cache
-
-
-func _card_texture_cache() -> Node:
-	if _texture_cache and is_instance_valid(_texture_cache):
-		return _texture_cache
-	var tree := Engine.get_main_loop() as SceneTree
-	if tree == null or tree.root == null:
-		return null
-	_texture_cache = tree.root.get_node_or_null("CardTextureCache")
-	return _texture_cache
 
 
 func _set_top_card_alpha(alpha: float) -> void:

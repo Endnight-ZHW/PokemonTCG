@@ -81,7 +81,6 @@ def _release_gate_is_satisfied(metadata: dict[str, Any]) -> bool:
 def is_deep_model_accepted(
     deck_key: str | None,
     model_dir: str = DEFAULT_MODEL_DIR,
-    **_legacy_thresholds: Any,
 ) -> bool:
     if deck_key not in RELEASE_DECKS:
         return False

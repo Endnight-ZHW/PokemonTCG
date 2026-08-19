@@ -36,8 +36,8 @@ function Get-ReleaseManifest {
     $manifest = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
     $decks = @($manifest.release_decks)
     $modelCount = [int]$manifest.model_count
-    if ($decks.Count -eq 0 -or $modelCount -notin @(0, 1, $decks.Count)) {
-        throw 'Release manifest has an invalid universal or legacy model count.'
+    if ($decks.Count -eq 0 -or $modelCount -notin @(0, 1)) {
+        throw 'Release manifest has an invalid universal model count.'
     }
     if (@($decks | Sort-Object -Unique).Count -ne $decks.Count) {
         throw 'Release manifest contains duplicate release deck keys.'
@@ -47,10 +47,7 @@ function Get-ReleaseManifest {
 
 function Assert-ReleaseDeepFallbackContract {
     param([Parameter(Mandatory)] $Manifest)
-    $decks = @($Manifest.release_decks)
     $modelCount = [int]$Manifest.model_count
-    $compatibleModelCount = [int]$Manifest.compatible_model_count
-    $legacyModelCount = [int]$Manifest.legacy_model_count
     if ([string]$Manifest.deep_fallback -ne 'challenge') {
         throw 'Release manifest Deep fallback must be challenge.'
     }
@@ -59,9 +56,7 @@ function Assert-ReleaseDeepFallbackContract {
         $evidence = [string]$planner.evidence_sha256
         if (
             $modelCount -ne 1 -or
-            $compatibleModelCount -ne 1 -or
-            $legacyModelCount -ne 0 -or
-            [int]$Manifest.format_version -ne 3 -or
+            [int]$Manifest.format_version -ne 4 -or
             [int]$Manifest.schemas.deep_planner -ne 2 -or
             [int]$planner.schema_version -ne 2 -or
             [string]$planner.planner_id -ne 'infoset_puct_v2' -or
@@ -73,12 +68,8 @@ function Assert-ReleaseDeepFallbackContract {
             throw 'Enabled Deep release manifest is incomplete or incompatible.'
         }
     }
-    elseif (
-        $compatibleModelCount -ne 0 -or
-        $modelCount -ne 0 -or
-        $legacyModelCount -ne $decks.Count
-    ) {
-        throw 'Disabled Deep release manifest has inconsistent model counts.'
+    elseif ($modelCount -ne 0) {
+        throw 'Disabled Deep release manifest has an inconsistent model count.'
     }
 }
 

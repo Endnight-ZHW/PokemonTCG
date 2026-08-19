@@ -53,7 +53,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-editor_description = "战斗桌面组合组件。承载牌桌、固定牌位、牌区、手牌、系统按钮、日志、贴卡动作浮层和表现层；BattleScreen 作为兼容门面转发到这里。"
+editor_description = "战斗界面根组件。承载牌桌、固定牌位、牌区、手牌、系统按钮、日志、贴卡动作浮层和表现协调器。"
 script = ExtResource("1_battle")
 
 [node name="CameraRig" type="Node" parent="."]
@@ -200,7 +200,7 @@ offset_left = 332.0
 offset_top = 10.0
 offset_right = 588.0
 offset_bottom = 122.0
-editor_description = "对手手牌卡背区。运行时由 BattleScreen 生成隐藏 CardView，只暴露数量。"
+editor_description = "对手手牌卡背区。运行时生成隐藏 CardView，只暴露数量。"
 
 [node name="OpponentHandCountBadge" type="Label" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
 unique_name_in_owner = true

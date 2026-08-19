@@ -96,7 +96,17 @@ func show_card(
 
 	current_card_id = card_id
 	current_context = normalized_context.duplicate(true)
-	detail_image.texture = _card_texture(str(card.get("image_path", "")))
+	var tree := Engine.get_main_loop() as SceneTree
+	var texture_cache := (
+		tree.root.get_node_or_null("CardTextureCache")
+		if tree and tree.root
+		else null
+	)
+	detail_image.texture = (
+		texture_cache.call("get_texture", str(card.get("image_path", ""))) as Texture2D
+		if texture_cache
+		else null
+	)
 	detail_image.tooltip_text = str(card.get("name", card_id))
 	detail_title.text = str(card.get("name", card_id))
 	detail_title.tooltip_text = detail_title.text
@@ -418,17 +428,3 @@ func _localize_energy_type(value: String) -> String:
 
 func _safe_text(value: String) -> String:
 	return value.replace("[", "［").replace("]", "］")
-
-
-func _card_texture(path: String) -> Texture2D:
-	if path.is_empty():
-		return null
-	var tree := Engine.get_main_loop() as SceneTree
-	var texture_cache := (
-		tree.root.get_node_or_null("CardTextureCache")
-		if tree and tree.root
-		else null
-	)
-	if texture_cache and texture_cache.has_method("get_texture"):
-		return texture_cache.call("get_texture", path) as Texture2D
-	return load(path) as Texture2D if ResourceLoader.exists(path, "Texture2D") else null

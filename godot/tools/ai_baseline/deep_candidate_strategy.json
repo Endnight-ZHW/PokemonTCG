@@ -1,9 +1,0 @@
-{
-  "engine": "turn_beam_v2",
-  "id": "deep_root_ismcts_v1_candidate",
-  "internal_evaluation_smoke": false,
-  "label": "Deep candidate",
-  "mode": "deep",
-  "preset": "strongest",
-  "production_runtime": true
-}

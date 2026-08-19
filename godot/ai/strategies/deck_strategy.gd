@@ -604,13 +604,6 @@ func _action_target_slot(action_row: Dictionary) -> String:
 	return str(payload.get("target_slot", payload.get("slot", "")))
 
 
-func _option_slot(option: Dictionary) -> String:
-	var ref: Variant = option.get("ref")
-	if ref is Dictionary:
-		return str(Dictionary(ref).get("slot", ""))
-	return str(option.get("slot", ""))
-
-
 func _choice_energy_card_id(choice_view: Dictionary) -> String:
 	var presentation: Dictionary = {}
 	if choice_view.get("presentation") is Dictionary:
@@ -787,21 +780,6 @@ func _own_damage_total(info: Dictionary) -> int:
 	return result
 
 
-func _opponent_damage_total(info: Dictionary) -> int:
-	var result := 0
-	for row_value in _opponent_board_rows(info):
-		result += _row_damage(row_value)
-	return result
-
-
-func _opponent_damaged_count(info: Dictionary) -> int:
-	var result := 0
-	for row_value in _opponent_board_rows(info):
-		if _row_damage(row_value) > 0:
-			result += 1
-	return result
-
-
 func _opponent_active_damage(info: Dictionary) -> int:
 	return _row_damage(_active_row(info, 1 - _perspective(info)))
 
@@ -871,35 +849,6 @@ func _attack_index(action_row: Dictionary) -> int:
 	var payload := _action_payload(action_row)
 	return int(payload.get(
 		"attack_index", payload.get("attack_idx", action_row.get("attack_index", -1))))
-
-
-func _attack_params(
-	action_row: Dictionary,
-	semantic_catalog: Dictionary = {},
-) -> Dictionary:
-	var card := _semantic_card(semantic_catalog, _action_card_id(action_row))
-	var attack_index := _attack_index(action_row)
-	var attacks_value: Variant = card.get("attacks", [])
-	var attacks: Array = (
-		[attacks_value]
-		if attacks_value is Dictionary
-		else Array(attacks_value) if attacks_value is Array else []
-	)
-	for attack_value in attacks:
-		if attack_value is Dictionary and int(Dictionary(attack_value).get(
-			"index", -1)) == attack_index:
-			return Dictionary(attack_value)
-	return {}
-
-
-func _attack_name(
-	action_row: Dictionary,
-	semantic_catalog: Dictionary = {},
-) -> String:
-	var payload := _action_payload(action_row)
-	var explicit_name := str(payload.get("attack_name", action_row.get("attack_name", "")))
-	return explicit_name if not explicit_name.is_empty() else str(
-		_attack_params(action_row, semantic_catalog).get("name", ""))
 
 
 func _action_card_id(action_row: Dictionary) -> String:

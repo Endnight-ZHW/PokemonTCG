@@ -32,7 +32,17 @@ func configure(
 	card_count_label.text = "· %d 张" % int(deck.get("card_count", 0))
 	tagline_label.text = DeckVisualCatalog.tagline(deck_key)
 	_apply_energy_style(DesignTokens.type_color(energy_type))
-	artwork.texture = _card_texture(str(card.get("image_path", "")))
+	var tree := Engine.get_main_loop() as SceneTree
+	var texture_cache := (
+		tree.root.get_node_or_null("CardTextureCache")
+		if tree and tree.root
+		else null
+	)
+	artwork.texture = (
+		texture_cache.call("get_texture", str(card.get("image_path", ""))) as Texture2D
+		if texture_cache
+		else null
+	)
 	artwork.tooltip_text = str(card.get("name", representative_card_id))
 	tooltip_text = "%s\n%s" % [deck_name_label.text, tagline_label.text]
 	accessibility_name = "牌组：%s，%s，%s" % [
@@ -90,7 +100,7 @@ func set_assignment_state(
 
 
 func _configure_energy_badge(energy_type: String) -> void:
-	var display_name := _energy_display_name(energy_type)
+	var display_name := EnergyIconCatalog.type_display_name_for(energy_type)
 	var icon_texture := EnergyIconCatalog.texture_for(energy_type)
 	energy_label.text = display_name
 	energy_icon.texture = icon_texture
@@ -139,32 +149,3 @@ func _badge_style(
 	style.content_margin_right = margins.z
 	style.content_margin_bottom = margins.w
 	return style
-
-
-func _energy_display_name(energy_type: String) -> String:
-	return {
-		"Grass": "草属性",
-		"Fire": "火属性",
-		"Water": "水属性",
-		"Lightning": "雷属性",
-		"Psychic": "超能力",
-		"Fighting": "斗属性",
-		"Darkness": "恶属性",
-		"Metal": "钢属性",
-		"Dragon": "龙属性",
-		"Colorless": "无色",
-	}.get(energy_type, energy_type)
-
-
-func _card_texture(path: String) -> Texture2D:
-	if path.is_empty():
-		return null
-	var tree := Engine.get_main_loop() as SceneTree
-	var cache := (
-		tree.root.get_node_or_null("CardTextureCache")
-		if tree and tree.root
-		else null
-	)
-	if cache and cache.has_method("get_texture"):
-		return cache.call("get_texture", path) as Texture2D
-	return load(path) as Texture2D if ResourceLoader.exists(path) else null

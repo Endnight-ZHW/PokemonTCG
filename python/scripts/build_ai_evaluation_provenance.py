@@ -57,7 +57,6 @@ def _source_paths(
         repo_root / "godot" / "project.godot",
         repo_root / "godot" / "tools" / "ai_evaluation_runner.gd",
         repo_root / "python" / "scripts" / "build_ai_evaluation_task_manifest.py",
-        repo_root / "python" / "scripts" / "inspect_ai_evaluation_checkpoints.py",
     )
     analysis_fixed = (
         repo_root / "python" / "scripts" / "ai_evaluation_v7.py",
@@ -65,8 +64,6 @@ def _source_paths(
         repo_root / "python" / "scripts" / "validate_ai_evaluation.py",
         repo_root / "python" / "scripts" / "render_ai_evaluation_report.py",
         repo_root / "python" / "scripts" / "build_ai_evaluation_provenance.py",
-        repo_root / "python" / "scripts" / "summarize_ai_evaluation_profile.py",
-        repo_root / "python" / "scripts" / "compare_ai_evaluation_profiles.py",
     )
     simulation_paths.update(path for path in simulation_fixed if path.is_file())
     analysis_paths.update(path for path in analysis_fixed if path.is_file())

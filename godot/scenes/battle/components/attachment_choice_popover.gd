@@ -266,11 +266,6 @@ func _option_label(
 	return "%s · 第%d张" % [energy_name, index + 1] if index >= 0 else energy_name
 
 
-func _option_icon(option: Dictionary) -> Texture2D:
-	var descriptor: AttachmentVisualDescriptor = _attachment_descriptor(option)
-	return descriptor.icon if descriptor != null else null
-
-
 func _attachment_descriptor(option: Dictionary) -> AttachmentVisualDescriptor:
 	var ref: Dictionary = _attachment_ref(option)
 	return ATTACHMENT_VISUALS.resolve(

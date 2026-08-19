@@ -43,7 +43,8 @@ if ($LASTEXITCODE -ne 0 -or $actualPython -ne [string]$lock.python.version) {
     "requests==$($lock.python.requests)" `
     "pillow==$($lock.python.pillow)" `
     "onnx==$($lock.python.onnx)" `
-    "onnxruntime==$($lock.python.onnxruntime)"
+    "onnxruntime==$($lock.python.onnxruntime)" `
+    "pybind11==$($lock.python.pybind11)"
 if ($LASTEXITCODE -ne 0) {
     throw 'Unable to install ONNX build dependencies.'
 }

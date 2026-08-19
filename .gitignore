@@ -66,7 +66,6 @@ artifacts/*
 !artifacts/native_parallel_singleleaf_v2.json
 !artifacts/native_parallel_multileaf_v2.json
 !artifacts/native_vs_python_puct_benchmark_v2.json
-!artifacts/native_vs_retired_deeproot_v2.json
 
 # Godot generated files and local toolchains
 godot/.godot/

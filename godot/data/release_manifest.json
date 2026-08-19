@@ -1,6 +1,5 @@
 {
   "android_version_code": 8,
-  "compatible_model_count": 0,
   "deep_encoder": {
     "candidate_numeric_size": 32,
     "candidate_ref_fields": 4,
@@ -36,9 +35,8 @@
     "value_head_mode": "search_backup"
   },
   "deep_runtime_enabled": false,
-  "format_version": 3,
+  "format_version": 4,
   "godot_version": "4.7.stable",
-  "legacy_model_count": 10,
   "model_count": 0,
   "native_ai": {
     "abi_version": 1,

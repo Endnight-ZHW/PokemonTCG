@@ -22,7 +22,7 @@ func _exit_tree() -> void:
 		# Cancel those table-owned groups before releasing the coordinator's
 		# active handle so EventCompletion/MotionGroup references cannot survive
 		# until ObjectDB shutdown.
-		_table.clear_presentation_for_resync()
+		_table.clear_presentation_visuals_for_resync()
 		_table.set_transition_blocked(false)
 	if not _active.is_empty():
 		var active_handle := _active.get("handle") as PresentationHandle
@@ -112,7 +112,7 @@ func cancel_all(reason: String = "cancelled", replacement: BattleViewModel = nul
 	_generation += 1
 	_cancel_preflight()
 	if _table != null:
-		_table.clear_presentation_for_resync()
+		_table.clear_presentation_visuals_for_resync()
 		_table.clear_pending_drag_immediately(reason)
 	if not _active.is_empty():
 		var active_handle := _active.get("handle") as PresentationHandle

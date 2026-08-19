@@ -1266,14 +1266,6 @@ func _invalidate_action_cache() -> void:
 	_action_group_cache.clear()
 
 
-static func _groups_from_rows(rows: Array) -> Array[LegalActionGroup]:
-	var result: Array[LegalActionGroup] = []
-	for row in rows:
-		if row is Dictionary:
-			result.append(LegalActionGroup.from_dict(row))
-	return result
-
-
 func _deck_validation_error(deck: Array[String]) -> Dictionary:
 	if deck.size() != 60:
 		return {"message": "双方牌组都必须正好包含60张卡。", "code": "invalid_deck_size"}

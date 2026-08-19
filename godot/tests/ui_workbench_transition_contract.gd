@@ -82,7 +82,7 @@ func _run() -> void:
 	_stage = "checkpoint_100"
 	await workbench.capture_presentation_checkpoint(100, "draw")
 	checkpoint = workbench.call("get_presentation_checkpoint")
-	var rendered_state: Variant = workbench.current_battle.table.state_ref
+	var rendered_state: Variant = workbench.current_battle.state_ref
 	var final_view: Variant = checkpoint.get("after_view")
 	var target_state: Variant = final_view.call("state_for_render")
 	_check(int(checkpoint.get("percent", -1)) == 100, "100% checkpoint was not ready")
@@ -101,7 +101,7 @@ func _run() -> void:
 		checkpoint = workbench.call("get_presentation_checkpoint")
 		final_view = checkpoint.get("after_view")
 		target_state = final_view.call("state_for_render")
-		rendered_state = workbench.current_battle.table.state_ref
+		rendered_state = workbench.current_battle.state_ref
 		_check(
 			handle != null
 			and str(handle.get("status")) == "completed"

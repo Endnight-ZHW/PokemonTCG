@@ -91,36 +91,6 @@ class EnergyCountBadgeVisual:
 @export var hover_scale := 1.035
 @export var interaction_duration := 0.12
 
-const ENERGY_LABELS := {
-	"Grass": "G",
-	"Fire": "F",
-	"Water": "W",
-	"Lightning": "L",
-	"Psychic": "P",
-	"Fighting": "F",
-	"Darkness": "D",
-	"Metal": "M",
-	"Dragon": "D",
-	"Colorless": "C",
-	"Rainbow": "R",
-	"Special": "SP",
-}
-
-const ENERGY_DISPLAY_NAMES := {
-	"Grass": "草能量",
-	"Fire": "火能量",
-	"Water": "水能量",
-	"Lightning": "雷能量",
-	"Psychic": "超能能量",
-	"Fighting": "斗能量",
-	"Darkness": "恶能量",
-	"Metal": "钢能量",
-	"Dragon": "龙能量",
-	"Colorless": "无色能量",
-	"Rainbow": "彩虹能量",
-	"Special": "特殊能量",
-}
-
 const MAXIMUM_ENERGY_BADGES := 4
 const MINIMUM_ENERGY_BADGE_SIZE := 16.0
 const DEFAULT_ENERGY_BADGE_SIZE := 24.0
@@ -155,9 +125,6 @@ var catalog: CardCatalog
 @onready var actionable_marker: Panel = %ActionableMarker
 @onready var interaction_hint: Panel = %InteractionHint
 @onready var interaction_hint_label: Label = %InteractionHintLabel
-@onready var action_overlay: PanelContainer = %ActionOverlay
-@onready var action_buttons: VBoxContainer = %ActionButtons
-@onready var action_hint: Label = %ActionHint
 @onready var animation_player: AnimationPlayer = %AnimationPlayer
 
 var _press_msec := 0
@@ -169,8 +136,6 @@ var _hovered := false
 var _base_position := Vector2.ZERO
 var _has_base_position := false
 var _content_signature := ""
-var _pending_action_rows: Array[Dictionary] = []
-var _pending_action_hint := ""
 var _disabled_reason := ""
 var _legal_target_hint := ""
 var _show_inline_target_hint := true
@@ -200,7 +165,6 @@ var damage_badge: Label
 var energy_row: HBoxContainer
 var tool_badge: Label
 var _empty_slot_label_text := ""
-var _texture_cache: Node
 
 
 func set_local_visual_id(value: String) -> void:
@@ -229,7 +193,6 @@ func _ready() -> void:
 	target_glow.visible = targetable
 	_refresh_interaction_visuals()
 	_refresh_state_animation()
-	_disable_legacy_action_overlay()
 
 
 func _notification(what: int) -> void:
@@ -289,15 +252,6 @@ func set_table_depth(value: float, near_side: bool = true) -> void:
 	_resolve_scene_nodes()
 	_apply_depth_visuals()
 	_layout_battle_overlay()
-
-
-func set_actions(rows: Array[Dictionary], target_hint := "") -> void:
-	# Compatibility shim. Card actions now live in the battle-table popover, never
-	# inside CardView: child controls here would change the card's minimum size.
-	_pending_action_rows = rows.duplicate()
-	_pending_action_hint = target_hint
-	_resolve_scene_nodes()
-	_disable_legacy_action_overlay()
 
 
 func configure_target(player: int, target_slot_value: String) -> void:
@@ -905,11 +859,16 @@ func _refresh() -> void:
 	if depth_edge:
 		depth_edge.modulate.a = 1.0
 	_refresh_statuses()
+	var texture_cache := _root_child("CardTextureCache")
 	var frame_color := Color("#15253a")
 	var border_color := DesignTokens.BORDER
 	var current_card := {}
 	if is_hidden_card:
-		image.texture = _card_texture("res://assets/cards/card_back.webp")
+		image.texture = (
+			texture_cache.call("get_texture", "res://assets/cards/card_back.webp") as Texture2D
+			if texture_cache
+			else null
+		)
 		empty_label.visible = false
 		frame_color = Color("#15284e")
 		border_color = DesignTokens.GOLD.darkened(0.3)
@@ -927,7 +886,11 @@ func _refresh() -> void:
 	else:
 		var card := _card_data(card_id)
 		current_card = card
-		image.texture = _card_texture(str(card.get("image_path", "")))
+		image.texture = (
+			texture_cache.call("get_texture", str(card.get("image_path", ""))) as Texture2D
+			if texture_cache
+			else null
+		)
 		empty_label.visible = image.texture == null
 		empty_label.text = str(card.get("name", card_id))
 		var energy_types: Array = card.get("energy_types", [])
@@ -1292,16 +1255,6 @@ func _resolve_scene_nodes() -> void:
 		interaction_hint_label = get_node_or_null(
 			content_path + "InteractionHint/InteractionHintLabel"
 		) as Label
-	if action_overlay == null:
-		action_overlay = get_node_or_null(content_path + "ActionOverlay") as PanelContainer
-	if action_buttons == null:
-		action_buttons = get_node_or_null(
-			content_path + "ActionOverlay/Margin/Content/ActionButtons"
-		) as VBoxContainer
-	if action_hint == null:
-		action_hint = get_node_or_null(
-			content_path + "ActionOverlay/Margin/Content/ActionHint"
-		) as Label
 	if animation_player == null:
 		animation_player = get_node_or_null("AnimationPlayer") as AnimationPlayer
 
@@ -1344,20 +1297,6 @@ func _make_control_branch_input_transparent(node: Node) -> void:
 		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for child in node.get_children():
 		_make_control_branch_input_transparent(child)
-
-
-func _disable_legacy_action_overlay() -> void:
-	if action_buttons:
-		for child in action_buttons.get_children():
-			action_buttons.remove_child(child)
-			child.queue_free()
-		action_buttons.visible = false
-	if action_hint:
-		action_hint.text = ""
-		action_hint.visible = false
-	if action_overlay:
-		action_overlay.visible = false
-		action_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 func _refresh_interaction_visuals() -> void:
@@ -1708,7 +1647,7 @@ func _new_energy_badge(
 	var accessible_name := (
 		display_name
 		if not display_name.is_empty()
-		else str(ENERGY_DISPLAY_NAMES.get(energy_type, energy_type))
+		else ENERGY_ICONS.display_name_for(energy_type)
 	)
 	badge.tooltip_text = "%s x%d" % [accessible_name, count]
 	badge.accessibility_name = badge.tooltip_text
@@ -1911,10 +1850,9 @@ func _refresh_accessibility_summary(energy_groups: Array[Dictionary] = []) -> vo
 			for row in energy_groups:
 				var display_name := str(row.get("display_name", ""))
 				if display_name.is_empty():
-					display_name = str(ENERGY_DISPLAY_NAMES.get(
-						str(row.get("type", "Colorless")),
-						str(row.get("type", "Colorless")),
-					))
+					display_name = ENERGY_ICONS.display_name_for(
+						str(row.get("type", "Colorless"))
+					)
 				energy_parts.append("%s ×%d" % [
 					display_name,
 					int(row.get("visual_count", row.get("count", 1))),
@@ -1951,11 +1889,6 @@ func _attached_energy_groups() -> Array[Dictionary]:
 		if descriptor != null:
 			result.append(descriptor.to_dictionary())
 	return result
-
-
-func _energy_label(energy_type: String, count: int) -> String:
-	var prefix := str(ENERGY_LABELS.get(energy_type, energy_type.left(1).to_upper()))
-	return prefix if count <= 1 else "%s%d" % [prefix, count]
 
 
 func _energy_color(energy_type: String) -> Color:
@@ -2205,74 +2138,6 @@ func _card_data(value: String) -> Dictionary:
 	if catalog:
 		return catalog.get_card(value)
 	return {}
-
-
-func _action_signature(action: GameAction) -> String:
-	if action == null:
-		return ""
-	var parts: Array[String] = [
-		action.action,
-		str(action.actor),
-		str(action.terminal),
-		action.action_id,
-		_entity_signature(action.source),
-		_entity_signature(action.target),
-	]
-	var keys: Array = action.params.keys()
-	keys.sort()
-	for key in keys:
-		parts.append("%s=%s" % [str(key), _value_signature(action.params[key])])
-	return "|".join(parts)
-
-
-func _entity_signature(ref: EntityRef) -> String:
-	if ref == null:
-		return ""
-	return "%s,%d,%s,%s,%d,%s,%s" % [
-		ref.kind,
-		ref.player,
-		ref.zone,
-		ref.slot,
-		ref.index,
-		ref.attachment_type,
-		ref.card_id,
-	]
-
-
-func _value_signature(value: Variant) -> String:
-	if value is Dictionary:
-		var keys: Array = value.keys()
-		keys.sort()
-		var parts: Array[String] = []
-		for key in keys:
-			parts.append("%s:%s" % [str(key), _value_signature(value[key])])
-		return "{" + ",".join(parts) + "}"
-	if value is Array:
-		var parts: Array[String] = []
-		for item in value:
-			parts.append(_value_signature(item))
-		return "[" + ",".join(parts) + "]"
-	return str(value)
-
-
-func _card_texture(path: String) -> Texture2D:
-	if path.is_empty():
-		return null
-	var texture_cache := _card_texture_cache()
-	if texture_cache and texture_cache.has_method("get_texture"):
-		return texture_cache.call("get_texture", path) as Texture2D
-	return (
-		load(path) as Texture2D
-		if ResourceLoader.exists(path)
-		else null
-	)
-
-
-func _card_texture_cache() -> Node:
-	if _texture_cache and is_instance_valid(_texture_cache):
-		return _texture_cache
-	_texture_cache = _root_child("CardTextureCache")
-	return _texture_cache
 
 
 func _reduced_motion_enabled() -> bool:

@@ -809,7 +809,7 @@ func _check_workbench_compact() -> void:
 
 func _check_battle_canvas_resize() -> void:
 	root.size = Vector2i(1600, 900)
-	var battle_scene := load("res://scenes/battle/battle_screen.tscn") as PackedScene
+	var battle_scene := load("res://scenes/battle/components/battle_table.tscn") as PackedScene
 	_check(battle_scene != null, "Battle screen is unavailable for live resize checks")
 	if battle_scene == null:
 		return
@@ -821,7 +821,7 @@ func _check_battle_canvas_resize() -> void:
 	var own_active := battle.own_active as Control
 	_check(
 		canvas != null
-		and canvas.resized.is_connected(Callable(battle.table, "_layout_board")),
+		and canvas.resized.is_connected(Callable(battle, "_layout_board")),
 		"BattleTable must listen to its resolved BoardCanvas size",
 	)
 	battle.show_card_detail("sv1-104")
@@ -844,7 +844,7 @@ func _check_battle_canvas_resize() -> void:
 	var first_center_x := own_active.position.x + own_active.size.x * 0.5
 	root.size = Vector2i(2000, 900)
 	await _settle_layout(5)
-	var metrics: Dictionary = battle.table._board_layout_metrics(
+	var metrics: Dictionary = battle._board_layout_metrics(
 		canvas.size.x,
 		canvas.size.y,
 	)
@@ -860,7 +860,7 @@ func _check_battle_canvas_resize() -> void:
 
 
 func _check_compact_battle_detail_layout() -> void:
-	var battle_scene := load("res://scenes/battle/battle_screen.tscn") as PackedScene
+	var battle_scene := load("res://scenes/battle/components/battle_table.tscn") as PackedScene
 	_check(battle_scene != null,
 		"Battle screen is unavailable for compact detail checks")
 	if battle_scene == null:
@@ -869,7 +869,7 @@ func _check_compact_battle_detail_layout() -> void:
 	host.name = "CompactBattleHost"
 	host.size = Vector2(900, 540)
 	root.add_child(host)
-	var battle := battle_scene.instantiate() as BattleScreen
+	var battle := battle_scene.instantiate() as BattleTable
 	host.add_child(battle)
 	battle.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	battle.initialize_ui()
@@ -2352,11 +2352,11 @@ func _check_battle_theme_isolation() -> void:
 					path, needle,
 				],
 			)
-	var battle_scene := load("res://scenes/battle/battle_screen.tscn") as PackedScene
+	var battle_scene := load("res://scenes/battle/components/battle_table.tscn") as PackedScene
 	_check(battle_scene != null, "Battle screen must remain loadable for theme isolation")
 	if battle_scene:
 		var battle := battle_scene.instantiate() as Control
-		_check(battle.theme == null, "BattleScreen root must continue inheriting the game theme")
+		_check(battle.theme == null, "BattleTable root must continue inheriting the game theme")
 		battle.free()
 
 
