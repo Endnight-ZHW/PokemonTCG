@@ -327,6 +327,8 @@ class ReleaseManifestTests(unittest.TestCase):
             REPO_ROOT / ".github" / "workflows" / "verify.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("CI_PYTHON_VERSION: '3.11.9'", workflow)
+        self.assertEqual(workflow.count("actions/checkout@v7"), 5)
+        self.assertNotIn("actions/checkout@v4", workflow)
         self.assertEqual(workflow.count("actions/setup-python@v7"), 4)
         self.assertEqual(
             workflow.count(
@@ -347,6 +349,11 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertIn("--import", fast)
         self.assertIn("[string]$Python = ''", core)
         self.assertIn("Get-Command $Python", core)
+
+        evaluator = (
+            REPO_ROOT / "tools" / "evaluate_godot_ai.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(evaluator.count("'-X', 'utf8',"), 5)
 
     def test_godot_tool_paths_are_derived_from_the_toolchain_lock(self):
         common = (

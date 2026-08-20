@@ -407,6 +407,7 @@ if (-not $mergeOnly) {
     $taskManifestDescriptor | ConvertTo-Json -Depth 8 |
         Set-Content -LiteralPath $taskManifestPath -Encoding UTF8
     $taskManifestOutput = & $python @(
+        '-X', 'utf8',
         (Join-Path $repoRoot 'python\scripts\build_ai_evaluation_task_manifest.py'),
         '--config', $taskManifestPath,
         '--output', $taskManifestPath
@@ -464,6 +465,7 @@ if (-not $mergeOnly) {
 
 if (-not $mergeOnly) {
     $provenanceArgs = @(
+        '-X', 'utf8',
         (Join-Path $repoRoot 'python\scripts\build_ai_evaluation_provenance.py'),
         '--repo-root', $repoRoot,
         '--godot-executable', $godot,
@@ -962,6 +964,7 @@ function Invoke-AIEvaluationMerge {
         throw 'No AI evaluation shard inputs were provided for merge.'
     }
     $mergeArgs = @(
+        '-X', 'utf8',
         (Join-Path $repoRoot 'python\scripts\merge_ai_evaluation_shards.py'),
         '--output', $OutputPath,
         '--error-output', (Join-Path $OutputDir 'merge_error.json'),
@@ -1408,6 +1411,7 @@ if ($mergeOnly) {
 $validateExit = 0
 if (-not [string]::IsNullOrWhiteSpace($ValidateGate)) {
     $validateArgs = @(
+        '-X', 'utf8',
         (Join-Path $repoRoot 'python\scripts\validate_ai_evaluation.py'),
         '--input', $jsonPath,
         '--output', $validationPath,
@@ -1432,6 +1436,7 @@ if (-not [string]::IsNullOrWhiteSpace($ValidateGate)) {
 
 if (-not $SkipReport) {
     $reportArgs = @(
+        '-X', 'utf8',
         (Join-Path $repoRoot 'python\scripts\render_ai_evaluation_report.py'),
         '--input', $jsonPath,
         '--output', $htmlPath
