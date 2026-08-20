@@ -343,6 +343,8 @@ class ReleaseManifestTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("test_ptcg_core.ps1') -Python $Python", fast)
+        self.assertIn("global_script_class_cache.cfg", fast)
+        self.assertIn("--import", fast)
         self.assertIn("[string]$Python = ''", core)
         self.assertIn("Get-Command $Python", core)
 
