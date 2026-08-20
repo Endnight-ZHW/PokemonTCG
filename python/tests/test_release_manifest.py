@@ -322,6 +322,30 @@ class ReleaseManifestTests(unittest.TestCase):
         expected_cuda_tag = "cu" + str(toolchain["cuda"]).replace(".", "")
         self.assertEqual(rows["torch"].split("+", 1)[1], expected_cuda_tag)
 
+    def test_windows_ci_uses_an_installable_python_and_forwards_it(self):
+        workflow = (
+            REPO_ROOT / ".github" / "workflows" / "verify.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CI_PYTHON_VERSION: '3.11.9'", workflow)
+        self.assertEqual(workflow.count("actions/setup-python@v7"), 4)
+        self.assertEqual(
+            workflow.count(
+                "python-version: ${{ env.CI_PYTHON_VERSION }}"
+            ),
+            4,
+        )
+        self.assertIn('"scons==4.10.1"', workflow)
+
+        fast = (REPO_ROOT / "tools" / "test_fast.ps1").read_text(
+            encoding="utf-8"
+        )
+        core = (REPO_ROOT / "tools" / "test_ptcg_core.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("test_ptcg_core.ps1') -Python $Python", fast)
+        self.assertIn("[string]$Python = ''", core)
+        self.assertIn("Get-Command $Python", core)
+
     def test_godot_tool_paths_are_derived_from_the_toolchain_lock(self):
         common = (
             REPO_ROOT / "tools" / "toolchain_common.ps1"

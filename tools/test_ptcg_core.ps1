@@ -1,9 +1,28 @@
 [CmdletBinding()]
-param([ValidateRange(1, 64)][int]$Jobs = 4)
+param(
+    [ValidateRange(1, 64)][int]$Jobs = 4,
+    [string]$Python = ''
+)
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$python = Join-Path $repoRoot '.tools\python311\python.exe'
+$portablePython = Join-Path $repoRoot '.tools\python311\python.exe'
+if ([string]::IsNullOrWhiteSpace($Python)) {
+    $Python = if (Test-Path -LiteralPath $portablePython) {
+        $portablePython
+    } else {
+        'python'
+    }
+}
+$pythonCommand = if (Test-Path -LiteralPath $Python -PathType Leaf) {
+    (Resolve-Path -LiteralPath $Python).Path
+} else {
+    $resolvedPython = Get-Command $Python -ErrorAction SilentlyContinue
+    if ($null -eq $resolvedPython) {
+        throw "Python command is unavailable: $Python"
+    }
+    $resolvedPython.Source
+}
 $sourceRoot = Join-Path $repoRoot 'godot\native\ptcg_core'
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsPath = if (Test-Path -LiteralPath $vswhere) {
@@ -16,9 +35,6 @@ $vsDevCmd = if ($vsPath) {
 } else {
     ''
 }
-if (-not (Test-Path -LiteralPath $python)) {
-    throw 'Pinned Python/SCons toolchain is missing.'
-}
 if (-not (Test-Path -LiteralPath $vsDevCmd)) {
     throw 'Visual C++ Build Tools are missing.'
 }
@@ -29,7 +45,7 @@ $args = @(
 }
 $command = (
     "`"$vsDevCmd`" -arch=x64 -host_arch=x64 && " +
-    "`"$python`" $($args -join ' ')"
+    "`"$pythonCommand`" $($args -join ' ')"
 )
 & cmd.exe /d /s /c $command
 if ($LASTEXITCODE -ne 0) {

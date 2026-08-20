@@ -55,7 +55,7 @@ All other cutover gates passed:
 - the GDScript and Python rule/VM executors and Pygame UI are physically
   removed; only binding DTOs, descriptors, card compilation and training
   orchestration remain;
-- 347 full Python tests, 160 core-tier Python tests, the dependency-free C++
+- 348 full Python tests, 161 core-tier Python tests, the dependency-free C++
   suite, Godot contracts, ten Challenge games and LAN/Relay games pass;
 - Windows x86_64 and Android arm64 Debug/Release native builds pass; both
   release candidates pass Windows startup and Android APK static runtime

@@ -9,7 +9,7 @@ if ([string]::IsNullOrWhiteSpace($Python)) {
 }
 $env:PYTHONNOUSERSITE = '1'
 
-& (Join-Path $PSScriptRoot 'test_ptcg_core.ps1')
+& (Join-Path $PSScriptRoot 'test_ptcg_core.ps1') -Python $Python
 if ($LASTEXITCODE -ne 0) { throw 'Dependency-free C++ rules core failed.' }
 
 & $Python -B (Join-Path $repoRoot 'python\scripts\card_author.py') lint
