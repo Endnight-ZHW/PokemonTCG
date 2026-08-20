@@ -1,7 +1,6 @@
 """Contracts for the local-only Python debugging and training toolchain."""
 from __future__ import annotations
 
-import inspect
 import json
 from pathlib import Path
 import sys
@@ -11,12 +10,12 @@ PYTHON_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PYTHON_ROOT))
 
 from engine.action_codec import (
-    deserialize_choice_request,
+    deserialize_choice_view,
     deserialize_choice_response,
-    serialize_choice_request,
+    serialize_choice_view,
     serialize_choice_response,
 )
-from engine.actions import ChoiceOption, ChoiceRequest, ChoiceResponse, PokemonRef
+from engine.actions import ChoiceOption, ChoiceView, ChoiceResponse, PokemonRef
 from engine.game_state import GameState
 from engine.snapshot import snapshot_state, snapshot_to_dict
 from relay_server import (
@@ -25,66 +24,50 @@ from relay_server import (
     _parse_control_message,
     _valid_forward_message,
 )
-from ui.screens.deck_select import DECK_OPTIONS_BY_KEY, DeckSelectScreen
-from ui.screens.game_screen import GameScreen
-from ui.screens.title_screen import TitleScreen
 
 
 class PythonToolBoundaryTests(unittest.TestCase):
-    def test_legacy_client_modules_are_physically_absent(self):
-        forbidden_files = (
-            PYTHON_ROOT / "ui" / "screens" / "lobby_screen.py",
-            PYTHON_ROOT / "ui" / "screens" / "game_screen_network.py",
-            PYTHON_ROOT / "tests" / "test_network_v2.py",
-            PYTHON_ROOT / "tests" / "test_multiplayer.py",
+    def test_pygame_client_is_physically_absent(self):
+        self.assertEqual(list((PYTHON_ROOT / "ui").rglob("*.py")), [])
+        self.assertFalse((PYTHON_ROOT / "main.py").exists())
+        requirements = (PYTHON_ROOT / "requirements.txt").read_text(
+            encoding="utf-8"
+        ).lower()
+        self.assertNotIn("pygame", requirements)
+
+    def test_python_rule_executors_are_physically_absent(self):
+        retired = (
+            "action_availability.py",
+            "action_resolver.py",
+            "choice_manager.py",
+            "damage_calculator.py",
+            "effect_runner.py",
+            "pending_continuation.py",
+            "rules_validator.py",
+            "settlement.py",
+            "transaction_manager.py",
+            "turn_manager.py",
         )
-        network_sources = list((PYTHON_ROOT / "network").glob("*.py"))
-        remaining = network_sources + [path for path in forbidden_files if path.exists()]
-        self.assertEqual([str(path) for path in remaining], [])
-
-    def test_pygame_screens_have_no_client_network_parameters(self):
-        for screen_type in (DeckSelectScreen, GameScreen):
-            parameters = inspect.signature(screen_type.__init__).parameters
-            with self.subTest(screen=screen_type.__name__):
-                self.assertNotIn("network_manager", parameters)
-                self.assertNotIn("is_remote", parameters)
-                self.assertNotIn("my_player_idx", parameters)
-                self.assertNotIn("initial_state", parameters)
-
-    def test_local_debug_menu_exposes_all_release_decks(self):
-        decks = TitleScreen.__new__(TitleScreen)._load_available_decks()
-        manifest = json.loads(
-            (PYTHON_ROOT.parent / "release_manifest.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(
-            tuple(decks),
-            tuple(manifest["release_decks"]),
-        )
-        self.assertEqual(set(DECK_OPTIONS_BY_KEY), set(manifest["release_decks"]))
-
-    def test_deck_ui_metadata_follows_available_deck_order(self):
-        screen = DeckSelectScreen.__new__(DeckSelectScreen)
-        available = {"water": [], "fire": []}
-        # Exercise the same key-based mapping used by __init__ without
-        # coupling this boundary test to an initialized Pygame display.
-        screen.deck_keys = list(available)
-        screen.deck_options = [DECK_OPTIONS_BY_KEY[key] for key in screen.deck_keys]
-
-        self.assertIn("甲贺忍蛙", screen.deck_options[0]["name"])
-        self.assertIn("烈焰猴", screen.deck_options[1]["name"])
-
-    def test_ui_runtime_has_no_legacy_client_network_dependencies(self):
-        screen_modules = {
-            sys.modules[screen_type.__module__]
-            for screen_type in (DeckSelectScreen, GameScreen, TitleScreen)
+        for name in retired:
+            with self.subTest(name=name):
+                self.assertFalse((PYTHON_ROOT / "engine" / name).exists())
+        command_files = {
+            path.name
+            for path in (PYTHON_ROOT / "engine" / "commands").glob("*.py")
         }
-        for module in screen_modules:
-            with self.subTest(module=module.__name__):
-                self.assertNotIn("network_manager", module.__dict__)
-                self.assertNotIn("_is_remote", module.__dict__)
-        self.assertFalse(
-            any(name == "network" or name.startswith("network.") for name in sys.modules)
+        self.assertEqual(command_files, {
+            "__init__.py",
+            "descriptors.py",
+            "formula_ast.py",
+            "ir.py",
+            "vm_contract.py",
+        })
+        facade = (PYTHON_ROOT / "engine" / "game_engine.py").read_text(
+            encoding="utf-8"
         )
+        self.assertIn("NativeRulesSession", facade)
+        self.assertNotIn("ActionResolver", facade)
+        self.assertNotIn("VMInterpreter", facade)
 
     def test_config_has_no_legacy_client_network_endpoints(self):
         import config
@@ -129,8 +112,9 @@ class PythonToolBoundaryTests(unittest.TestCase):
                     self.assertFalse(hasattr(owner, field))
 
     def test_choice_codec_round_trip_is_transport_independent(self):
-        request = ChoiceRequest(
+        request = ChoiceView(
             request_id="choice-7",
+            base_revision=4,
             request_type="select_bench",
             player=1,
             prompt="choose",
@@ -143,12 +127,12 @@ class PythonToolBoundaryTests(unittest.TestCase):
             ),
             min_select=1,
             max_select=1,
-            metadata={"revision": 4},
+            presentation={"purpose": "switch"},
         )
         response = ChoiceResponse("choice-7", ("bench:2",))
 
         self.assertEqual(
-            deserialize_choice_request(serialize_choice_request(request)),
+            deserialize_choice_view(serialize_choice_view(request)),
             request,
         )
         self.assertEqual(

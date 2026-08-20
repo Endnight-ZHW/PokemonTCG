@@ -1,8 +1,8 @@
-# PokemonTCG Python engine and Deep AI
+# PokemonTCG Python authoring and Deep AI tools
 
-Python remains the authoritative rules reference and the orchestration layer
-for training. The only executable Deep AI training path is information-set
-AlphaZero v2:
+The authoritative rules runtime is the shared C++ `ptcg_core`. Python retains
+the typed card DSL, import/export tools, native binding and training
+orchestration. The Deep AI training path is information-set AlphaZero v2:
 
 - encoder v7;
 - checkpoint v12;
@@ -38,8 +38,8 @@ conda run -n DL python -B .\python\scripts\train_deep_ai.py verify-cache `
 
 ## Training
 
-Smoke mode permits the slow Python correctness fallback. Release mode requires
-the native ABI for self-play, but training a candidate does not itself enable
+Both smoke and release modes require the native rules ABI for self-play.
+Training a candidate does not itself enable
 Deep or make the run promotable. Native technical readiness and all external
 release evidence are checked later by the finalization gate.
 

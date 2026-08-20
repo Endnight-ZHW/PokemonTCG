@@ -1,8 +1,7 @@
-"""Player state: hand, deck, discard, prizes, bench, active pokemon."""
-import random
+"""Read/query model for a player state projected by ``ptcg_core``."""
 from dataclasses import dataclass, field
 from typing import Optional
-from engine.rules_constants import MAX_BENCH_SIZE, PRIZE_CARDS
+from engine.rules_constants import MAX_BENCH_SIZE
 from engine.enums import StatusType
 from engine.energy_view import EnergyView
 
@@ -22,7 +21,7 @@ class PokemonInPlay:
     all_prevented_next_turn: bool = False  # For prevent_effects / prevent_all effects (blocks additional effects only)
     outgoing_damage_reduction_next_turn: int = 0  # Reduces this Pokemon's next attack damage.
     attack_locked: bool = False  # For attack_lock_basic effect (雪暴马 冻结)
-    attack_locked_names: dict = field(default_factory=dict)  # attack_name → turn_applied (岩窟冲撞 self-lock)
+    attack_locked_names: dict = field(default_factory=dict)  # Instance-scoped named attack locks.
     dazzled: bool = False  # For dazzling_beam (炫目光束): next attack requires coin flip
     modifiers: list[dict] = field(default_factory=list)
     max_hp_modifiers: list[dict] = field(default_factory=list)
@@ -33,34 +32,42 @@ class PokemonInPlay:
 
     @property
     def current_hp(self) -> int:
-        """Remaining HP after tool/ability max-HP modifiers and damage counters."""
-        from engine.effects.pokemon_stat_hooks import current_hp
-
-        return current_hp(self)
-
-    @property
-    def is_knocked_out(self) -> bool:
-        return self.current_hp <= 0
+        """Read-only projection of descriptors authored by ptcg_core."""
+        maximum = max(0, int(getattr(self.card, "hp", 0) or 0))
+        is_basic = "Basic" in set(
+            getattr(self.card, "subtypes", ()) or ()
+        )
+        available = [str(value).lower() for value in self.available_energy]
+        for descriptor in self.modifiers:
+            if not isinstance(descriptor, dict):
+                continue
+            operation = descriptor.get("operation", {})
+            condition = descriptor.get("condition", {})
+            if (
+                descriptor.get("hook") != "MAX_HP"
+                or not isinstance(operation, dict)
+                or operation.get("kind") != "hp_delta"
+                or (condition.get("target_basic", False) and not is_basic)
+            ):
+                continue
+            required_type = str(
+                condition.get("energy_type", "") or ""
+            ).lower()
+            threshold = max(0, int(condition.get("threshold", 0) or 0))
+            if required_type and threshold:
+                matching = sum(
+                    value in {required_type, "rainbow"}
+                    for value in available
+                )
+                if matching < threshold:
+                    continue
+            maximum += int(operation.get("amount", 0) or 0)
+        return max(0, maximum - self.damage_counters * 10)
 
     @property
     def available_energy(self) -> list[str]:
         """All energy types provided by cards in energy_cards (unified list)."""
         return EnergyView.from_pokemon(self).available_types
-
-    def has_special_energy(self, api_id: str) -> bool:
-        """Check if a specific special energy card is attached."""
-        return any(c.api_id == api_id and c.is_special_energy for c in self.energy_cards)
-
-    def can_attack(self) -> bool:
-        """Check if Pokemon can attack (not Asleep/Paralyzed/Attack locked)."""
-        return (StatusType.ASLEEP not in self.status_conditions and
-                StatusType.PARALYZED not in self.status_conditions and
-                not self.attack_locked)
-
-    def can_retreat(self) -> bool:
-        """Check if Pokemon can retreat (not Asleep/Paralyzed)."""
-        return (StatusType.ASLEEP not in self.status_conditions and
-                StatusType.PARALYZED not in self.status_conditions)
 
     def has_enough_energy(self, cost: list[str]) -> bool:
         """Check if attached energy satisfies attack cost.
@@ -68,58 +75,6 @@ class PokemonInPlay:
         Rainbow providers can pay for any type. Provider-specific downgrade
         rules are applied by available_energy."""
         return EnergyView.from_pokemon(self).can_pay(cost)
-
-    def clear_special_conditions_and_attack_effects(self) -> None:
-        """Clear effects removed by evolving or leaving the Active Spot.
-
-        Damage, attached cards, evolution history, and once-per-turn ability
-        use are deliberately preserved.  Promotion from the Bench does not
-        call this method because it is not a move out of the Active Spot.
-        """
-        self.status_conditions.clear()
-        self.damage_prevented_next_turn = False
-        self.all_prevented_next_turn = False
-        self.outgoing_damage_reduction_next_turn = 0
-        self.attack_locked = False
-        self.attack_locked_names.clear()
-        self.dazzled = False
-        # Attack-created modifiers are removed on evolution or when leaving the
-        # Active Spot; persistent card/attachment modifiers remain data-derived.
-        self.modifiers = [
-            row for row in self.modifiers
-            if row.get("duration") in {"persistent", "until_leave_play"}
-        ]
-        self.paralyzed_since_turn = 0
-
-    def consume_modifier_operation(self, operation_kind: str, value: str = "") -> bool:
-        for index, descriptor in enumerate(self.modifiers):
-            operation = descriptor.get("operation", {})
-            if operation.get("kind") != operation_kind:
-                continue
-            current = operation.get("attack_name", operation.get("reason", ""))
-            if value and current not in {value, "__all__"}:
-                continue
-            self.modifiers.pop(index)
-            return True
-        return False
-
-    def expire_modifiers_at_turn(self, turn_number: int) -> None:
-        timed = {
-            "until_end_of_turn",
-            "until_end_of_opponents_next_turn",
-            "until_next_attack",
-        }
-        self.modifiers = [
-            descriptor
-            for descriptor in self.modifiers
-            if not (
-                descriptor.get("duration") in timed
-                and int(descriptor.get("condition", {}).get(
-                    "expires_after_turn", 2**31 - 1
-                )) <= turn_number
-            )
-        ]
-
 
 class PlayerState:
     """All state for a single player."""
@@ -149,141 +104,19 @@ class PlayerState:
         # Broader official condition used by cards which only say that one of
         # your Pokemon was Knocked Out during the opponent's previous turn.
         self.was_ko_last_turn: bool = False
-
-        # Shuffle animation callback
-        self.on_shuffle: callable = None
-        self.random_source = None
+        # Player-scoped named attack restrictions, e.g. Cavern Tackle. Values
+        # are the last turn number on which the restriction remains active.
+        self.attack_locked_names: dict[str, int] = {}
 
     @property
     def hand_count(self) -> int:
-        """Number of cards currently in hand."""
         return len(self.hand)
-
-    # ---- Zone operations ----
-
-    def draw_cards(self, count: int) -> list["Card"]:
-        """Draw `count` cards from top of deck. Returns drawn cards."""
-        drawn = []
-        for _ in range(count):
-            if self.deck:
-                drawn.append(self.deck.pop())
-            else:
-                break  # deck exhausted
-        self.hand.extend(drawn)
-        return drawn
-
-    @property
-    def deck_exhausted(self) -> bool:
-        """Check if deck is empty (player cannot draw and should lose)."""
-        return len(self.deck) == 0
-
-    def shuffle_deck(self):
-        if self.random_source is not None:
-            self.random_source.shuffle(self.deck)
-        else:
-            random.shuffle(self.deck)
-        if self.on_shuffle:
-            self.on_shuffle()
-
-    def discard_from_hand(self, indices: list[int]) -> list["Card"]:
-        """Discard specific cards from hand by index (sorted descending)."""
-        discarded = []
-        for i in sorted(indices, reverse=True):
-            if 0 <= i < len(self.hand):
-                card = self.hand.pop(i)
-                self.discard.append(card)
-                discarded.append(card)
-        return discarded
-
-    def discard_entire_hand(self):
-        """Move all hand cards to discard."""
-        self.discard.extend(self.hand)
-        self.hand.clear()
-
-    def mill_from_deck(self, count: int) -> list["Card"]:
-        """Discard from top of deck."""
-        milled = []
-        for _ in range(count):
-            if self.deck:
-                milled.append(self.deck.pop())
-        self.discard.extend(milled)
-        return milled
-
-    def set_prizes(self, count: int = PRIZE_CARDS):
-        """Take top `count` cards from deck as prize cards."""
-        for _ in range(count):
-            if self.deck:
-                self.prizes.append(self.deck.pop())
-
-    def take_prize(self, prize_idx: int = 0) -> Optional["Card"]:
-        """Take one prize card. Returns card or None."""
-        if self.prizes:
-            card = self.prizes.pop(prize_idx)
-            self.hand.append(card)
-            return card
-        return None
-
-    # ---- Bench/Active operations ----
 
     def bench_has_space(self) -> bool:
         return self.bench.count(None) > 0
 
     def bench_count(self) -> int:
         return sum(1 for s in self.bench if s is not None)
-
-    def find_empty_bench_slot(self) -> int | None:
-        """Return index of first empty bench slot, or None."""
-        for i, slot in enumerate(self.bench):
-            if slot is None:
-                return i
-        return None
-
-    def place_active(self, card: "Card") -> PokemonInPlay:
-        """Place a Basic Pokemon in the Active spot."""
-        pokemon = PokemonInPlay(card=card)
-        self.active = pokemon
-        return pokemon
-
-    def place_bench(self, card: "Card", slot_idx: int = None) -> PokemonInPlay:
-        """Place a Basic Pokemon on the Bench."""
-        if slot_idx is None:
-            slot_idx = self.find_empty_bench_slot()
-        if slot_idx is None or slot_idx < 0 or slot_idx >= MAX_BENCH_SIZE:
-            raise ValueError(f"Invalid bench slot: {slot_idx}")
-        pokemon = PokemonInPlay(card=card)
-        self.bench[slot_idx] = pokemon
-        return pokemon
-
-    def promote_from_bench(self, bench_idx: int):
-        """Move a benched Pokemon to the Active spot."""
-        if self.active is not None:
-            raise ValueError("Active spot already occupied")
-        pokemon = self.bench[bench_idx]
-        if pokemon is None:
-            raise ValueError(f"No Pokemon on bench slot {bench_idx}")
-        self.bench[bench_idx] = None
-        self.active = pokemon
-
-    def switch_active_to_bench(self, bench_idx: int):
-        """Move Active Pokemon to bench, swapping places."""
-        if self.active is None:
-            return
-        old_active = self.active
-        old_bench = self.bench[bench_idx]
-
-        # Special Conditions and effects of attacks end when a Pokemon moves
-        # out of the Active Spot, whether by retreat or by another effect.
-        old_active.clear_special_conditions_and_attack_effects()
-
-        # Swap
-        self.bench[bench_idx] = old_active
-        self.active = old_bench
-
-    def has_any_pokemon_in_play(self) -> bool:
-        """Check if player has any Pokemon (Active or Bench)."""
-        if self.active is not None:
-            return True
-        return any(s is not None for s in self.bench)
 
     def get_all_pokemon(self) -> list[tuple[str, Optional[PokemonInPlay]]]:
         """Get all Pokemon slots as (slot_name, pokemon) pairs."""
@@ -304,97 +137,3 @@ class PlayerState:
             if 0 <= idx < MAX_BENCH_SIZE:
                 return self.bench[idx]
         return None
-
-    # ---- Energy operations ----
-
-    def attach_energy_from_hand(self, hand_idx: int, target_slot: str):
-        """Attach an energy card from hand to a Pokemon."""
-        if not (0 <= hand_idx < len(self.hand)):
-            raise ValueError(f"Invalid hand index: {hand_idx}")
-        card = self.hand[hand_idx]
-        if not card.is_energy:
-            raise ValueError(f"Card is not energy: {card.name}")
-
-        target = self.get_pokemon(target_slot)
-        if target is None:
-            raise ValueError(f"Invalid target: {target_slot}")
-
-        self.hand.pop(hand_idx)
-        target.energy_cards.append(card)
-        self.energy_attached_this_turn = True
-
-    def pay_retreat_cost(
-        self,
-        retreat_cost: int,
-        energy_indices: list[int] | tuple[int, ...] | None = None,
-    ):
-        """Remove energy from active to pay retreat cost."""
-        active = self.active
-        if active is None or retreat_cost <= 0:
-            return
-
-        energy_view = EnergyView.from_pokemon(active)
-
-        if energy_indices is None:
-            chosen: list[int] = []
-            paid = 0
-            for index in range(len(active.energy_cards) - 1, -1, -1):
-                chosen.append(index)
-                paid += energy_view.card_unit_count(index)
-                if paid >= retreat_cost:
-                    break
-        else:
-            chosen = sorted(set(energy_indices), reverse=True)
-
-        for index in sorted(chosen, reverse=True):
-            if not (0 <= index < len(active.energy_cards)):
-                continue
-            card = active.energy_cards.pop(index)
-            self.discard.append(card)
-
-    # ---- Evolution ----
-
-    def evolve_pokemon(self, slot: str, evolution_card: "Card"):
-        """Evolve a Pokemon with the given evolution card."""
-        target = self.get_pokemon(slot)
-        if target is None:
-            raise ValueError(f"Invalid target: {slot}")
-
-        # Apply evolution
-        target.evolution_stack.append(target.card)
-        old_card = target.card
-        target.card = evolution_card
-
-        # Evolution removes Special Conditions and effects of attacks.
-        target.clear_special_conditions_and_attack_effects()
-
-        # Reset evolution flag
-        target.can_evolve_this_turn = False
-        target.used_abilities.clear()
-
-        return old_card
-
-    # ---- Reset for new turn ----
-
-    def reset_turn_flags(self):
-        """Reset once-per-turn flags at start of turn."""
-        self.supporter_played_this_turn = False
-        self.energy_attached_this_turn = False
-        self.retreated_this_turn = False
-        self.stadium_played_this_turn = False
-        self.stadium_used_this_turn = False
-        self.healed_this_turn = False
-
-        # Mark all Pokemon as not placed this turn
-        for _slot, pokemon in self.get_all_pokemon():
-            if pokemon is None:
-                continue
-            pokemon.placed_this_turn = False
-            pokemon.can_evolve_this_turn = True
-            pokemon.used_abilities.clear()
-            pokemon.healed_this_turn = False
-            # These effects protect this Pokemon during the opponent's next
-            # turn. If they were not consumed, they expire when its controller
-            # starts a new turn.
-            pokemon.damage_prevented_next_turn = False
-            pokemon.all_prevented_next_turn = False

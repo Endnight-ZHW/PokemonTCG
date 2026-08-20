@@ -22,18 +22,6 @@ var _worker := NativeChallengeAI.new()
 var _deep_worker := InformationSetPUCT.new()
 
 
-func is_running() -> bool:
-	_mutex.lock()
-	var running := (
-		_active_generation > 0
-		and _task_id != INVALID_TASK_ID
-		and not _task_completed
-		and not _cancel_requested
-	)
-	_mutex.unlock()
-	return running
-
-
 ## A pooled task can outlive its logical request after explicit cancellation.
 ## Main keeps polling until the global pool reports it complete.
 func needs_poll() -> bool:
@@ -129,11 +117,6 @@ func cancel_request() -> void:
 	_active_generation = 0
 	_mutex.unlock()
 	_reap_finished_task()
-
-
-## Compatibility shim. It intentionally no longer waits for a live worker.
-func cancel_and_wait() -> void:
-	cancel_request()
 
 
 ## The authoritative evaluation runner is synchronous, but must exercise the

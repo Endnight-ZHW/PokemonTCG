@@ -6,7 +6,6 @@ signal menu_requested
 @onready var menu_button: Button = %MenuButton
 @onready var turn_label: Label = %TurnLabel
 @onready var task_hint_label: Label = %TaskHint
-@onready var ai_thinking_chip: Label = %AIThinkingChip
 
 var _connected := false
 var _ai_thinking := false
@@ -26,7 +25,6 @@ func _ready() -> void:
 func initialize_ui() -> void:
 	_resolve_nodes()
 	_ensure_connections()
-	_hide_compatibility_nodes()
 
 
 func update_header(
@@ -36,7 +34,6 @@ func update_header(
 	task_hint: String = "",
 ) -> void:
 	_resolve_nodes()
-	_hide_compatibility_nodes()
 	_ai_thinking = ai_thinking
 	if state == null:
 		turn_label.text = "等待对局"
@@ -73,19 +70,13 @@ func set_ai_thinking(
 	_animate: bool = true,
 ) -> void:
 	_ai_thinking = active
-	_hide_compatibility_nodes()
 	set_process(false)
-
-
-func is_ai_thinking_visible() -> bool:
-	return false
 
 
 func _resolve_nodes() -> void:
 	menu_button = get_node("MenuButton") as Button
 	turn_label = get_node("TurnLabel") as Label
 	task_hint_label = get_node("TaskHint") as Label
-	ai_thinking_chip = get_node_or_null("AIThinkingChip") as Label
 
 
 func _ensure_connections() -> void:
@@ -93,14 +84,6 @@ func _ensure_connections() -> void:
 		return
 	_connected = true
 	menu_button.pressed.connect(menu_requested.emit)
-
-
-func _hide_compatibility_nodes() -> void:
-	var battle_title := get_node_or_null("BattleTitle") as CanvasItem
-	if battle_title:
-		battle_title.visible = false
-	if ai_thinking_chip:
-		ai_thinking_chip.visible = false
 
 
 func _phase_name(phase: String) -> String:

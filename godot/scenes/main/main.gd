@@ -35,7 +35,7 @@ const DESIGN_CANVAS_SIZE := Vector2i(1600, 900)
 const MIN_RESPONSIVE_WINDOW_SIZE := Vector2i(640, 360)
 
 var catalog: CardCatalog = CardDatabase.catalog
-var engine := GameEngine.new(catalog)
+var native_rules := NativeRulesSessionAdapter.new(catalog)
 var state: GameState
 var rng := PortableRandomSource.new(1)
 var last_match_seed := 0
@@ -59,7 +59,7 @@ var ai_inference: Variant
 var deep_runtime := DeepAIRuntime.new()
 var network_controller := NetworkMatchController.new(catalog)
 var network_legal_actions: Array[GameAction] = []
-var network_choice_request: ChoiceRequest
+var network_choice_view: ChoiceView
 var network_wait_context: Dictionary = {}
 var network_kind := "lan"
 var network_player_idx := -1
@@ -93,13 +93,14 @@ var modal_body: VBoxContainer
 var modal_scroll: ScrollContainer
 var modal_confirm: Button
 var modal_cancel: Button
-var active_request: ChoiceRequest
+var active_request: ChoiceView
 var active_choice_panel: ChoicePanel
 var ui_initialized := false
 var _modal_generation := 0
 var _modal_back_action := Callable()
 var _modal_close_completion := Callable()
 var _modal_close_completion_generation := -1
+var _modal_closing := false
 var _toast_tween: Tween
 var _toast_generation := 0
 var _deep_start_generation := 0
@@ -316,7 +317,7 @@ func show_settings() -> void:
 	_show_settings()
 
 
-func show_choice(request: ChoiceRequest) -> void:
+func show_choice(request: ChoiceView) -> void:
 	_show_choice_overlay(request)
 
 
@@ -602,7 +603,7 @@ func _apply_network_view(
 		if row is Dictionary:
 			var group := LegalActionGroup.from_dict(row)
 			network_legal_actions.append_array(group.concrete_actions())
-	network_choice_request = (
+	network_choice_view = (
 		ChoiceView.from_dict(view["choice_request"])
 		if view.get("choice_request") is Dictionary
 		else null
@@ -660,13 +661,13 @@ func _continue_after_network_transition() -> void:
 	if state.is_terminal():
 		return
 	if (
-		network_choice_request != null
+		network_choice_view != null
 		and (
 			active_request == null
-			or active_request.request_id != network_choice_request.request_id
+			or active_request.request_id != network_choice_view.request_id
 		)
 	):
-		_show_choice_overlay(network_choice_request)
+		_show_choice_overlay(network_choice_view)
 
 
 func _network_view_is_fresh_match_start() -> bool:
@@ -722,7 +723,7 @@ func _stop_network() -> void:
 	network_controller.close()
 	_network_recovery_phase = ""
 	network_legal_actions.clear()
-	network_choice_request = null
+	network_choice_view = null
 	network_wait_context.clear()
 	network_player_idx = -1
 	_presented_coin_request_ids.clear()
@@ -848,6 +849,10 @@ func start_ai_match_for_test(
 	)
 
 
+func match_journal() -> Dictionary:
+	return native_rules.journal()
+
+
 func _canonical_type_matchups_for_mode(mode: String, requested: bool) -> bool:
 	if mode in [MODE_CHALLENGE, MODE_DEEP]:
 		return false
@@ -864,32 +869,36 @@ func _start_match(
 ) -> bool:
 	_play_click()
 	_stop_ai()
-	state = GameState.new()
-	state.public_deck_keys = [first_key, second_key]
-	state.set_type_matchups_enabled(
-		_canonical_type_matchups_for_mode(game_mode, apply_type_matchups)
-	)
 	var actual_seed := match_seed
 	if actual_seed < 0:
 		actual_seed = PortableRandomSource.fresh_seed()
 	last_match_seed = actual_seed
 	ai_match_generation += 1
 	ai_match_instance_id = "runtime:%d:%d" % [ai_match_generation, actual_seed]
-	rng = PortableRandomSource.new(actual_seed)
 	ai_request_sequence = 0
-	var result := engine.setup_game(
-		state,
-		catalog.expand_deck(first_key),
-		catalog.expand_deck(second_key),
-		rng,
+	native_rules = NativeRulesSessionAdapter.new(catalog)
+	if not native_rules.is_available():
+		_show_toast("原生规则会话不可用。", true)
+		return false
+	var type_matchups := _canonical_type_matchups_for_mode(
+		game_mode, apply_type_matchups)
+	var player_names: Array[String] = ["玩家 1", "玩家 2"]
+	if game_mode != MODE_LOCAL:
+		player_names[1] = "Deep AI" if game_mode == MODE_DEEP else "Challenge AI"
+	var result := native_rules.start_match(
+		first_key,
+		second_key,
+		actual_seed,
 		forced_first,
+		{"apply_type_matchups": type_matchups},
+		player_names,
 	)
+	state = native_rules.state
+	rng = PortableRandomSource.new(native_rules.rng_state)
 	if not result.success:
 		_show_toast(result.message, true)
 		return false
 	if game_mode != MODE_LOCAL:
-		state.players[0].name = "玩家 1"
-		state.players[1].name = "Deep AI" if game_mode == MODE_DEEP else "Challenge AI"
 		if game_mode == MODE_DEEP:
 			if _pending_ai_runtime_unload:
 				# A cancelled native worker may still own the previous backend. Do
@@ -1132,7 +1141,7 @@ func _apply_network_wait_hint() -> void:
 		return
 	if (
 		game_mode != MODE_NETWORK
-		or network_choice_request != null
+		or network_choice_view != null
 		or network_wait_context.is_empty()
 	):
 		battle_screen.header.clear_task_hint()
@@ -1328,6 +1337,30 @@ func _run_presentation_continuation(
 		continuation.call()
 
 
+func _rules_legal_actions(actor: int) -> LegalActionQueryResult:
+	return native_rules.legal_actions(actor)
+
+
+func _rules_pending_choice(viewer: int) -> ChoiceView:
+	return native_rules.pending_choice(viewer)
+
+
+func _rules_apply_action(action: GameAction) -> StepResult:
+	var result := native_rules.apply_action(action.to_dict())
+	state = native_rules.state
+	if state != null:
+		rng.set_state(native_rules.rng_state)
+	return result
+
+
+func _rules_apply_choice(response: ChoiceResponse) -> StepResult:
+	var result := native_rules.apply_choice(response.to_dict())
+	state = native_rules.state
+	if state != null:
+		rng.set_state(native_rules.rng_state)
+	return result
+
+
 func _current_action_rows() -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
 	if state == null:
@@ -1338,7 +1371,7 @@ func _current_action_rows() -> Array[Dictionary]:
 		if actor == network_player_idx:
 			actions = network_legal_actions
 	elif game_mode == MODE_LOCAL or actor == 0:
-		var query := engine.query_legal_action_groups(state, actor)
+		var query := _rules_legal_actions(actor)
 		if query.success:
 			actions = query.concrete_actions()
 	for action in actions:
@@ -1428,11 +1461,11 @@ func _matching_drop_actions(
 	var result: Array[GameAction] = []
 	for row in _current_action_rows():
 		var action: GameAction = row.get("action")
-		if action == null or int(action.params.get("hand_idx", -1)) != hand_index:
+		if action == null or action.hand_index() != hand_index:
 			continue
 		if (
 			target_slot == "stadium"
-			and action.action == "PLAY_TRAINER"
+			and action.kind == "PLAY_TRAINER"
 			and action.actor == target_player
 			and action.actor in [0, 1]
 			and hand_index >= 0
@@ -1444,10 +1477,7 @@ func _matching_drop_actions(
 			):
 				result.append(action)
 			continue
-		var action_slot := str(action.params.get(
-			"target_slot",
-			action.params.get("target", action.params.get("slot", "")),
-		))
+		var action_slot := action.target_slot(action.primary_slot())
 		var action_player := action.actor
 		if action.target:
 			action_player = action.target.player
@@ -1483,7 +1513,7 @@ func _matching_selected_pokemon_target_actions(
 			and action.source.slot == selected_slot
 		)
 		if (
-			action.action == "RETREAT"
+			action.kind == "RETREAT"
 			and selected_player == action.actor
 			and selected_slot == "active"
 		):
@@ -1500,10 +1530,10 @@ func _execute_action(action: GameAction) -> StepResult:
 			battle_screen.clear_pending_drag("submission_locked")
 		_show_toast(locked_message, true)
 		return StepResult.new(false, locked_message)
-	if action.action == "RETREAT":
+	if action.kind == "RETREAT":
 		_show_retreat_confirmation(action)
 		return StepResult.new(true, "等待确认撤退。")
-	if action.action == "END_TURN" and not _remaining_turn_action_labels().is_empty():
+	if action.kind == "END_TURN" and not _remaining_turn_action_labels().is_empty():
 		_show_end_turn_confirmation(action)
 		return StepResult.new(true, "等待确认结束回合。")
 	return _execute_action_now(action)
@@ -1517,7 +1547,7 @@ func _execute_action_now(action: GameAction) -> StepResult:
 		_show_toast(locked_message, true)
 		return StepResult.new(false, locked_message)
 	var drag_context := battle_screen.active_drag_context() if battle_screen else {}
-	var action_hand_index := int(action.params.get("hand_idx", -1))
+	var action_hand_index := action.hand_index()
 	var action_uses_drag := (
 		not drag_context.is_empty()
 		and action_hand_index >= 0
@@ -1557,7 +1587,7 @@ func _execute_action_now(action: GameAction) -> StepResult:
 	var drag_session_id := ""
 	if action_uses_drag and battle_screen:
 		drag_session_id = battle_screen.mark_drag_pending(action.action_id, false)
-	var result := engine.apply_action(state, action, rng)
+	var result := _rules_apply_action(action)
 	if not result.success:
 		_show_toast(result.message, true)
 		if action_uses_drag and battle_screen:
@@ -1937,7 +1967,7 @@ func _after_step(previous_active: int, previous_phase: String) -> void:
 	_refresh_game()
 
 
-func _show_choice_overlay(request: ChoiceRequest) -> void:
+func _show_choice_overlay(request: ChoiceView) -> void:
 	active_request = request
 	active_choice_panel = null
 	selected_choice_ids.clear()
@@ -2033,7 +2063,7 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	_refresh_choice_buttons()
 
 
-func _show_coin_flip_choice(request: ChoiceRequest) -> void:
+func _show_coin_flip_choice(request: ChoiceView) -> void:
 	_open_modal(
 		request.prompt,
 		"继续结算",
@@ -2115,7 +2145,24 @@ func _choice_modal_size(has_preview: bool, compact_empty: bool = false) -> Vecto
 	)
 
 
+func _choice_distribution_energy_card_id(option: Dictionary) -> String:
+	var option_id := str(option.get("option_id", ""))
+	if not option_id.begins_with("energy:"):
+		return ""
+	var index_separator := option_id.find(":", "energy:".length())
+	var target_separator := option_id.find("->", index_separator + 1)
+	if index_separator < 0 or target_separator <= index_separator + 1:
+		return ""
+	return option_id.substr(
+		index_separator + 1,
+		target_separator - index_separator - 1,
+	)
+
+
 func _choice_option_card_id(option: Dictionary) -> String:
+	var distribution_energy := _choice_distribution_energy_card_id(option)
+	if not distribution_energy.is_empty():
+		return distribution_energy
 	var ref_variant: Variant = option.get("ref")
 	if ref_variant is Dictionary:
 		return str(Dictionary(ref_variant).get("card_id", ""))
@@ -2169,6 +2216,17 @@ func _choice_option_caption(option: Dictionary) -> String:
 			attachment_parts.append("第%d张" % (attachment_index + 1))
 		return " · ".join(attachment_parts)
 	var option_id := str(option.get("option_id", ""))
+	if option_id.begins_with("energy:"):
+		var energy_id := _choice_distribution_energy_card_id(option)
+		if not energy_id.is_empty():
+			var energy_name := (
+				catalog.card_name(energy_id)
+				if catalog != null
+				else energy_id
+			)
+			var target_slot := str(ref_data.get("slot", ""))
+			if not target_slot.is_empty():
+				return "%s → %s" % [energy_name, _slot_name(target_slot)]
 	if option_id.begins_with("rare_candy:"):
 		var parts := option_id.split(":")
 		if parts.size() >= 2:
@@ -2188,7 +2246,7 @@ func _choice_option_caption(option: Dictionary) -> String:
 	return label_text
 
 
-func _choice_field_target_options(request: ChoiceRequest) -> Dictionary:
+func _choice_field_target_options(request: ChoiceView) -> Dictionary:
 	var result: Dictionary = {}
 	if request != null and request.request_type == "select_prize":
 		for option_value in request.options:
@@ -2236,7 +2294,7 @@ func _choice_field_target_options(request: ChoiceRequest) -> Dictionary:
 	return result
 
 
-func _choice_attachment_target_groups(request: ChoiceRequest) -> Dictionary:
+func _choice_attachment_target_groups(request: ChoiceView) -> Dictionary:
 	var result: Dictionary = {}
 	if request == null or request.options.is_empty() or state == null:
 		return result
@@ -2287,7 +2345,7 @@ func _choice_attachment_source_label(player_idx: int, slot: String) -> String:
 	return "%s · %s · %s" % [owner_text, _slot_name(slot), pokemon_name]
 
 
-func _choice_field_prompt(request: ChoiceRequest) -> String:
+func _choice_field_prompt(request: ChoiceView) -> String:
 	if request == null:
 		return "请选择目标"
 	if request.request_type not in ["select_energy_target", "distribute_energy"]:
@@ -2324,7 +2382,7 @@ func _on_battle_choice_target_selected(option_id: String) -> void:
 	_confirm_choice()
 
 
-func _choice_energy_cards(request: ChoiceRequest) -> Array[String]:
+func _choice_energy_cards(request: ChoiceView) -> Array[String]:
 	var result: Array[String] = []
 	if request == null or request.request_type not in ["distribute_energy", "select_energy_target"]:
 		return result
@@ -2405,7 +2463,7 @@ func _show_retreat_confirmation(action: GameAction) -> void:
 func _retreat_confirmation_lines(action: GameAction) -> Array[String]:
 	var actor := action.actor if action.actor != null else _current_actor()
 	var player := state.get_player(actor)
-	var bench_idx := int(action.params.get("bench_idx", -1))
+	var bench_idx := action.bench_index()
 	var target_name := "备战宝可梦"
 	if bench_idx >= 0 and bench_idx < player.bench.size() and player.bench[bench_idx]:
 		target_name = catalog.card_name(player.bench[bench_idx].card_id)
@@ -2426,7 +2484,7 @@ func _retreat_energy_names(action: GameAction) -> Array[String]:
 	var active := state.get_player(actor).active
 	if active == null:
 		return result
-	for raw_index in action.params.get("energy_indices", []):
+	for raw_index in action.payload.get("energy_indices", []):
 		var index := int(raw_index)
 		if index >= 0 and index < active.energy_card_ids.size():
 			result.append(catalog.card_name(str(active.energy_card_ids[index])))
@@ -2440,7 +2498,7 @@ func _retreat_energy_suffix(action: GameAction) -> String:
 	return "（丢弃：%s）" % "、".join(names)
 
 
-func _choice_revealed_cards(request: ChoiceRequest) -> Array[String]:
+func _choice_revealed_cards(request: ChoiceView) -> Array[String]:
 	var result: Array[String] = []
 	if request == null:
 		return result
@@ -2456,7 +2514,7 @@ func _choice_revealed_cards(request: ChoiceRequest) -> Array[String]:
 	return result
 
 
-func _choice_option_by_id(request: ChoiceRequest, option_id: String) -> Dictionary:
+func _choice_option_by_id(request: ChoiceView, option_id: String) -> Dictionary:
 	if request == null or option_id.is_empty():
 		return {}
 	for option_value in request.options:
@@ -2466,16 +2524,16 @@ func _choice_option_by_id(request: ChoiceRequest, option_id: String) -> Dictiona
 	return {}
 
 
-func _choice_presentation(request: ChoiceRequest = null) -> Dictionary:
+func _choice_presentation(request: ChoiceView = null) -> Dictionary:
 	# Production UI consumes only ChoiceView v2. A raw authoritative
-	# ChoiceRequest intentionally carries no presentation contract here.
+	# ChoiceView intentionally carries no presentation contract here.
 	var source := request if request != null else active_request
 	if source is ChoiceView:
 		return (source as ChoiceView).presentation.duplicate(true)
 	return {}
 
 
-func _choice_has_cancel_action_checkpoint(request: ChoiceRequest = null) -> bool:
+func _choice_has_cancel_action_checkpoint(request: ChoiceView = null) -> bool:
 	# Player views deliberately omit the private resolution stack. The request
 	# metadata is the authoritative, protocol-safe way to describe whether
 	# cancelling rewinds the enclosing card/action.
@@ -2485,13 +2543,13 @@ func _choice_has_cancel_action_checkpoint(request: ChoiceRequest = null) -> bool
 	return false
 
 
-func _choice_cancel_cta(request: ChoiceRequest) -> String:
+func _choice_cancel_cta(request: ChoiceView) -> String:
 	if request == null or not request.can_cancel:
 		return ""
 	return "取消使用此卡" if _choice_has_cancel_action_checkpoint(request) else "取消"
 
 
-func _choice_confirm_cta(request: ChoiceRequest, selected_count: int) -> String:
+func _choice_confirm_cta(request: ChoiceView, selected_count: int) -> String:
 	if request == null:
 		return "确认选择"
 	if request.max_select == 0:
@@ -2526,11 +2584,11 @@ func _choice_option_category(option: Dictionary) -> String:
 	if catalog.is_pokemon(card_id):
 		return "pokemon"
 	if catalog.is_basic_energy(card_id):
-		return "basic_energy"
+		return "energy"
 	return ""
 
 
-func _choice_selected_category_count(request: ChoiceRequest, category: String) -> int:
+func _choice_selected_category_count(request: ChoiceView, category: String) -> int:
 	var count := 0
 	for selected_id in selected_choice_ids:
 		if _choice_option_category(_choice_option_by_id(request, selected_id)) == category:
@@ -2538,15 +2596,38 @@ func _choice_selected_category_count(request: ChoiceRequest, category: String) -
 	return count
 
 
-func _choice_selected_option_count(option_id: String) -> int:
+func _choice_option_target_key(option: Dictionary) -> String:
+	var ref_value: Variant = option.get("ref")
+	if ref_value is Dictionary:
+		var ref := Dictionary(ref_value)
+		var slot := str(ref.get("slot", ""))
+		if not slot.is_empty():
+			return "%d:%s" % [int(ref.get("player", -1)), slot]
+	return "option:%s" % str(option.get("option_id", ""))
+
+
+func _choice_selected_target_count(
+	request: ChoiceView,
+	target_key: String,
+) -> int:
 	var count := 0
 	for selected_id in selected_choice_ids:
-		if selected_id == option_id:
+		var selected_option := _choice_option_by_id(request, selected_id)
+		if _choice_option_target_key(selected_option) == target_key:
 			count += 1
 	return count
 
 
-func _choice_addition_blocked_reason(request: ChoiceRequest, option_id: String) -> String:
+func _choice_category_label(category: String) -> String:
+	return str({
+		"energy": "基本能量",
+		"item": "物品",
+		"pokemon": "宝可梦",
+		"tool": "宝可梦道具",
+	}.get(category, category))
+
+
+func _choice_addition_blocked_reason(request: ChoiceView, option_id: String) -> String:
 	var option := _choice_option_by_id(request, option_id)
 	if option.is_empty():
 		return "该选择项已失效，请重新选择"
@@ -2562,12 +2643,25 @@ func _choice_addition_blocked_reason(request: ChoiceRequest, option_id: String) 
 
 	var category := _choice_option_category(option)
 	var presentation := _choice_presentation(request)
-	if request.request_type == "arven":
+	var category_limits_value: Variant = presentation.get("category_limits", {})
+	var category_limits := (
+		Dictionary(category_limits_value)
+		if category_limits_value is Dictionary
+		else {}
+	)
+	if category_limits.has(category):
+		var category_limit := maxi(0, int(category_limits.get(category, 0)))
+		if _choice_selected_category_count(request, category) >= category_limit:
+			return "%s最多选择%d张，请先取消一张" % [
+				_choice_category_label(category),
+				category_limit,
+			]
+	elif request.request_type == "arven" and category_limits.is_empty():
 		if category == "item" and _choice_selected_category_count(request, "item") >= 1:
 			return "物品和宝可梦道具各最多选择1张，请先取消已选物品卡"
 		if category == "tool" and _choice_selected_category_count(request, "tool") >= 1:
 			return "物品和宝可梦道具各最多选择1张，请先取消已选宝可梦道具"
-	elif request.request_type == "clara":
+	elif request.request_type == "clara" and category_limits.is_empty():
 		var pokemon_limit := int(presentation.get(
 			"pokemon_count", request.max_select))
 		var energy_limit := int(presentation.get(
@@ -2578,19 +2672,22 @@ func _choice_addition_blocked_reason(request: ChoiceRequest, option_id: String) 
 		):
 			return "宝可梦最多选择%d张，请先取消一张宝可梦" % pokemon_limit
 		if (
-			category == "basic_energy"
-			and _choice_selected_category_count(request, "basic_energy") >= energy_limit
+			category == "energy"
+			and _choice_selected_category_count(request, "energy") >= energy_limit
 		):
 			return "基本能量最多选择%d张，请先取消一张基本能量" % energy_limit
 	elif request.request_type == "distribute_energy":
+		var target_key := _choice_option_target_key(option)
 		if (
 			bool(presentation.get("same_target", false))
 			and not selected_choice_ids.is_empty()
-			and option_id != selected_choice_ids[0]
+			and target_key != _choice_option_target_key(
+				_choice_option_by_id(request, selected_choice_ids[0]),
+			)
 		):
 			return "此效果要求所有能量分配到同一目标"
 		var max_per_target := int(presentation.get("max_per_target", 99))
-		if _choice_selected_option_count(option_id) >= max_per_target:
+		if _choice_selected_target_count(request, target_key) >= max_per_target:
 			return "该目标最多可分配 %d张能量" % max_per_target
 	elif request.request_type == "select_attachment":
 		var same_source := bool(presentation.get("same_source", false))
@@ -2612,7 +2709,7 @@ func _choice_addition_blocked_reason(request: ChoiceRequest, option_id: String) 
 	return ""
 
 
-func _choice_option_disabled_reasons(request: ChoiceRequest) -> Dictionary:
+func _choice_option_disabled_reasons(request: ChoiceView) -> Dictionary:
 	var reasons: Dictionary = {}
 	if request == null:
 		return reasons
@@ -2732,7 +2829,7 @@ func _confirm_choice() -> void:
 
 
 func _submit_confirmed_choice(
-	request: ChoiceRequest,
+	request: ChoiceView,
 	confirmed_ids: Array[String],
 ) -> void:
 	if game_mode == MODE_NETWORK:
@@ -2751,11 +2848,8 @@ func _submit_confirmed_choice(
 		return
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	var result := engine.apply_choice_response(
-		state,
-		ChoiceResponse.new(request.request_id, confirmed_ids),
-		rng,
-	)
+	var result := _rules_apply_choice(
+		ChoiceResponse.new(request.request_id, confirmed_ids))
 	if not result.success:
 		_show_toast(result.message, true)
 		_refresh_game()
@@ -2808,7 +2902,7 @@ func _submit_confirmed_choice(
 	)
 
 
-func _choice_presentation_events(request: ChoiceRequest, events: Array) -> Array:
+func _choice_presentation_events(request: ChoiceView, events: Array) -> Array:
 	if request == null or request.request_type != "coin_flip":
 		return events
 	return _without_coin_flip_events(events)
@@ -2853,7 +2947,7 @@ func _cancel_choice() -> void:
 	_close_modal(_submit_cancelled_choice.bind(request))
 
 
-func _submit_cancelled_choice(request: ChoiceRequest) -> void:
+func _submit_cancelled_choice(request: ChoiceView) -> void:
 	if game_mode == MODE_NETWORK:
 		var cancellation_sent := network_controller.submit_choice(
 			ChoiceResponse.new(request.request_id, [], true)
@@ -2867,11 +2961,8 @@ func _submit_cancelled_choice(request: ChoiceRequest) -> void:
 		return
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	var result := engine.apply_choice_response(
-		state,
-		ChoiceResponse.new(request.request_id, [], true),
-		rng,
-	)
+	var result := _rules_apply_choice(
+		ChoiceResponse.new(request.request_id, [], true))
 	_show_toast(result.message if result.success else result.message, not result.success)
 	if not result.success:
 		_refresh_game()
@@ -2922,17 +3013,17 @@ func _submit_cancelled_choice(request: ChoiceRequest) -> void:
 	)
 
 
-func _step_pending_choice(result: StepResult) -> ChoiceRequest:
+func _step_pending_choice(result: StepResult) -> ChoiceView:
 	if result != null and result.pending_choice != null:
 		return result.pending_choice
 	return _query_any_pending_choice()
 
 
 func _query_any_pending_choice() -> ChoiceView:
-	if state == null or engine == null:
+	if state == null:
 		return null
-	var player_zero := engine.query_pending_choice(state, 0)
-	return player_zero if player_zero != null else engine.query_pending_choice(state, 1)
+	var player_zero := _rules_pending_choice(0)
+	return player_zero if player_zero != null else _rules_pending_choice(1)
 
 
 func _show_pass_overlay(
@@ -3063,7 +3154,7 @@ func _remaining_turn_action_labels() -> Array[String]:
 	var result: Array[String] = []
 	for row in _current_action_rows():
 		var action := row.get("action") as GameAction
-		if action == null or action.action in ["END_TURN", "SETUP_DONE"]:
+		if action == null or action.kind in ["END_TURN", "SETUP_DONE"]:
 			continue
 		var label := str({
 			"PLAY_BASIC": "放置基础宝可梦",
@@ -3075,7 +3166,7 @@ func _remaining_turn_action_labels() -> Array[String]:
 			"RETREAT": "撤退",
 			"DECLARE_ATTACK": "发动攻击",
 			"PROMOTE": "晋升备战宝可梦",
-		}.get(action.action, "执行%s" % action.action))
+		}.get(action.kind, "执行%s" % action.kind))
 		if label not in result:
 			result.append(label)
 	return result
@@ -3089,7 +3180,7 @@ func _retreat_energy_card_ids(action: GameAction) -> Array[String]:
 	var active := state.get_player(actor).active
 	if active == null:
 		return result
-	for raw_index in action.params.get("energy_indices", []):
+	for raw_index in action.payload.get("energy_indices", []):
 		var index := int(raw_index)
 		if index >= 0 and index < active.energy_card_ids.size():
 			result.append(active.energy_card_ids[index])
@@ -3408,6 +3499,7 @@ func _open_modal(
 		)
 	resolved_spec.opaque_shade = opaque_shade or resolved_spec.opaque_shade
 	_modal_generation += 1
+	_modal_closing = false
 	_modal_close_completion = Callable()
 	_modal_close_completion_generation = -1
 	_disconnect_button(modal_confirm)
@@ -3433,6 +3525,7 @@ func _open_modal(
 		resolved_spec.confirm_role,
 	)
 	modal_cancel.text = cancel_text
+	modal_cancel.disabled = false
 	modal_cancel.visible = resolved_spec.cancellable and not cancel_text.is_empty()
 	modal_cancel.theme_type_variation = _modal_button_variation(
 		resolved_spec.surface,
@@ -3473,6 +3566,12 @@ func _modal_button_variation(surface: int, role: int) -> StringName:
 
 
 func _close_modal(completion: Callable = Callable()) -> void:
+	# A close animation is an in-flight transaction. Android back, a second
+	# button signal or a delayed callback must not replace the completion that
+	# submits/cancels the authoritative action.
+	if _modal_closing:
+		return
+	_modal_closing = true
 	_modal_generation += 1
 	var close_generation := _modal_generation
 	_modal_close_completion = completion
@@ -3482,6 +3581,10 @@ func _close_modal(completion: Callable = Callable()) -> void:
 	selected_choice_ids.clear()
 	option_buttons.clear()
 	_modal_back_action = Callable()
+	if modal_confirm:
+		modal_confirm.disabled = true
+	if modal_cancel:
+		modal_cancel.disabled = true
 	if not modal_layer.visible:
 		_finish_modal_close(close_generation)
 		return
@@ -3508,8 +3611,9 @@ func _finish_modal_close_after_delay(generation: int, delay: float) -> void:
 
 
 func _finish_modal_close(generation: int) -> void:
-	if generation != _modal_generation:
+	if generation != _modal_generation or not _modal_closing:
 		return
+	_modal_closing = false
 	modal_layer.visible = false
 	if modal_body:
 		_free_children_immediate(modal_body)
@@ -3651,38 +3755,38 @@ func _player_name_for_context(player_idx: int) -> String:
 
 
 func _action_label(action: GameAction) -> String:
-	match action.action:
+	match action.kind:
 		"PLAY_BASIC":
 			return "上场 · %s → %s" % [
-				_source_card_name(action), _slot_name(str(action.params.get("target", "")))]
+				_source_card_name(action), _slot_name(str(action.target_slot()))]
 		"EVOLVE":
 			return "进化 · %s → %s" % [
-				_source_card_name(action), _slot_name(str(action.params.get("slot", "")))]
+				_source_card_name(action), _slot_name(str(action.primary_slot()))]
 		"ATTACH_ENERGY":
 			return "附能 · %s → %s" % [
-				_source_card_name(action), _slot_name(str(action.params.get("target_slot", "")))]
+				_source_card_name(action), _slot_name(str(action.target_slot()))]
 		"PLAY_TRAINER":
-			var target := str(action.params.get("target_slot", ""))
+			var target := str(action.target_slot())
 			return "使用 · %s%s" % [
 				_source_card_name(action),
 				" → %s" % _slot_name(target) if not target.is_empty() else "",
 			]
 		"USE_ABILITY":
 			return "特性 · %s · %s" % [
-				action.params.get("ability_name", ""),
-				_slot_name(str(action.params.get("slot", ""))),
+				action.ability_name(),
+				_slot_name(str(action.primary_slot())),
 			]
 		"USE_STADIUM":
 			return "发动竞技场"
 		"RETREAT":
 			return "撤退 → 备战区 %d%s" % [
-				int(action.params.get("bench_idx", 0)) + 1,
+				action.bench_index(0) + 1,
 				_retreat_energy_suffix(action),
 			]
 		"DECLARE_ATTACK":
 			var active := state.get_player(action.actor).active
 			var attacks: Array = catalog.get_card(active.card_id).get("attacks", []) if active else []
-			var attack_idx := int(action.params.get("attack_idx", 0))
+			var attack_idx := action.attack_index(0)
 			var attack_name := "招式 %d" % (attack_idx + 1)
 			if attack_idx >= 0 and attack_idx < attacks.size():
 				attack_name = str(attacks[attack_idx].get("name", attack_name))
@@ -3692,22 +3796,32 @@ func _action_label(action: GameAction) -> String:
 		"SETUP_DONE":
 			return "完成准备"
 		"PROMOTE":
-			return "晋升 · 备战区 %d" % (int(action.params.get("bench_idx", 0)) + 1)
+			return "晋升 · 备战区 %d" % (action.bench_index(0) + 1)
 		_:
-			return action.action
+			return action.kind
 
 
 func _source_card_name(action: GameAction) -> String:
 	if action.source:
 		return catalog.card_name(action.source.card_id)
-	var hand_idx := int(action.params.get("hand_idx", -1))
+	var hand_idx := action.hand_index()
 	var player := state.get_player(action.actor)
 	if hand_idx >= 0 and hand_idx < player.hand.size():
 		return catalog.card_name(player.hand[hand_idx])
 	return "卡牌"
 
 
-func _choice_title(request: ChoiceRequest) -> String:
+func _choice_title(request: ChoiceView) -> String:
+	var presentation := _choice_presentation(request)
+	var purpose := str(presentation.get("purpose", ""))
+	if purpose in ["discard_hand_then_draw", "discard_cards", "zinnia"]:
+		return "选择要弃置的手牌"
+	if purpose in ["discard_energy", "discard_energy_attachments", "discard_attachment"]:
+		return "选择要弃置的附着能量"
+	if purpose in ["energy_relocate_attachments", "relocate_energy_attachments"]:
+		return "选择要转附的能量"
+	if purpose in ["energy_relocate_target", "relocate_energy_target"]:
+		return "选择能量转附目标"
 	return {
 		"coin_flip": "硬币结算",
 		"choose_turn_order": "选择先后攻",
@@ -3740,11 +3854,11 @@ func _choice_title(request: ChoiceRequest) -> String:
 		"select_opponent_bench": "选择对手替换上场的宝可梦",
 	}.get(
 		request.request_type,
-		"选择卡牌" if _choice_request_has_card_options(request) else "选择",
+		"选择卡牌" if _choice_view_has_card_options(request) else "选择",
 	)
 
 
-func _choice_metadata_text(request: ChoiceRequest) -> String:
+func _choice_metadata_text(request: ChoiceView) -> String:
 	var presentation := _choice_presentation(request)
 	if request.request_type == "coin_flip":
 		var results: Array = presentation.get("predetermined_flips", [])
@@ -3787,7 +3901,7 @@ func _choice_metadata_text(request: ChoiceRequest) -> String:
 	]
 
 
-func _choice_request_has_card_options(request: ChoiceRequest) -> bool:
+func _choice_view_has_card_options(request: ChoiceView) -> bool:
 	if request == null:
 		return false
 	for option_value in request.options:
@@ -3796,7 +3910,7 @@ func _choice_request_has_card_options(request: ChoiceRequest) -> bool:
 	return false
 
 
-func _choice_count_unit(request: ChoiceRequest) -> String:
+func _choice_count_unit(request: ChoiceView) -> String:
 	if request.request_type == "select_prize":
 		return "张奖赏卡"
 	if request.request_type == "select_attachment":
@@ -3814,7 +3928,7 @@ func _choice_count_unit(request: ChoiceRequest) -> String:
 		"select_opponent_bench",
 	]:
 		return "个目标"
-	return "张卡牌" if _choice_request_has_card_options(request) else "项"
+	return "张卡牌" if _choice_view_has_card_options(request) else "项"
 
 
 func _current_actor() -> int:
@@ -3839,7 +3953,7 @@ func _schedule_ai_action() -> void:
 	if _defer_ai_until_presentation_idle():
 		return
 	_pending_ai_resume_revision = -1
-	var query := engine.query_legal_action_groups(state, 1)
+	var query := _rules_legal_actions(1)
 	if not query.success:
 		_show_toast("AI 合法动作查询失败：%s" % query.code, true)
 		return
@@ -3881,7 +3995,7 @@ func _schedule_ai_action() -> void:
 	_refresh_game()
 
 
-func _schedule_ai_choice(request: ChoiceRequest) -> void:
+func _schedule_ai_choice(request: ChoiceView) -> void:
 	if state == null or game_mode == MODE_LOCAL or ai_thinking:
 		return
 	if _defer_ai_until_presentation_idle():
@@ -3972,7 +4086,7 @@ func _apply_ai_result(result: Dictionary) -> void:
 		_maybe_start_ai()
 		return
 	if not bool(result.get("success", false)):
-		var pending_on_failure := engine.query_pending_choice(state, 1)
+		var pending_on_failure := _rules_pending_choice(1)
 		if pending_on_failure != null and pending_on_failure.player == 1:
 			_apply_ai_fallback_choice(
 				pending_on_failure,
@@ -3993,7 +4107,7 @@ func _apply_ai_result(result: Dictionary) -> void:
 	var origin_action_id := ""
 	var origin_request_id := ""
 	if str(result.get("kind", "")) == "choice":
-		var stack_request := engine.query_pending_choice(state, 1)
+		var stack_request := _rules_pending_choice(1)
 		if stack_request == null:
 			_maybe_start_ai()
 			return
@@ -4001,16 +4115,16 @@ func _apply_ai_result(result: Dictionary) -> void:
 		if response.request_id != stack_request.request_id:
 			_maybe_start_ai()
 			return
-		step = engine.apply_choice_response(state, response, rng)
+		step = _rules_apply_choice(response)
 		origin_request_id = response.request_id
 	else:
 		var action := GameAction.from_dict(result["action"])
 		ai_request_sequence += 1
 		action.action_id = "ai-action:%d:%d" % [state.revision, ai_request_sequence]
 		origin_action_id = action.action_id
-		step = engine.apply_action(state, action, rng)
+		step = _rules_apply_action(action)
 	if not step.success:
-		var pending_after_reject := engine.query_pending_choice(state, 1)
+		var pending_after_reject := _rules_pending_choice(1)
 		if pending_after_reject != null and pending_after_reject.player == 1:
 			_apply_ai_fallback_choice(
 				pending_after_reject,
@@ -4037,7 +4151,7 @@ func _apply_ai_result(result: Dictionary) -> void:
 func _apply_ai_fallback_action(reason: String) -> void:
 	if state == null or current_screen != SCREEN_GAME or _current_actor() != 1:
 		return
-	var query := engine.query_legal_action_groups(state, 1)
+	var query := _rules_legal_actions(1)
 	if not query.success:
 		_show_toast("%s 合法动作查询失败：%s" % [reason, query.code], true)
 		_refresh_game()
@@ -4052,7 +4166,7 @@ func _apply_ai_fallback_action(reason: String) -> void:
 		var previous_phase := state.phase
 		ai_request_sequence += 1
 		action.action_id = "ai-fallback:%d:%d" % [state.revision, ai_request_sequence]
-		var step := engine.apply_action(state, action, rng)
+		var step := _rules_apply_action(action)
 		if not step.success:
 			continue
 		var message := step.message if not step.message.is_empty() else "AI 完成兜底动作。"
@@ -4078,13 +4192,13 @@ func _ordered_ai_fallback_actions(actions: Array[GameAction]) -> Array[GameActio
 		state, 1, actions, ai_deck_key, catalog)
 
 
-func _apply_ai_fallback_choice(request: ChoiceRequest, reason: String) -> void:
+func _apply_ai_fallback_choice(request: ChoiceView, reason: String) -> void:
 	if state == null or current_screen != SCREEN_GAME:
 		return
 	var response := _fallback_choice_response(request)
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	var step := engine.apply_choice_response(state, response, rng)
+	var step := _rules_apply_choice(response)
 	if not step.success:
 		_show_toast("%s AI 兜底选择被规则拒绝：%s" % [reason, step.message], true)
 		_refresh_game()
@@ -4105,7 +4219,7 @@ func _apply_ai_fallback_choice(request: ChoiceRequest, reason: String) -> void:
 	)
 
 
-func _fallback_choice_response(request: ChoiceRequest) -> ChoiceResponse:
+func _fallback_choice_response(request: ChoiceView) -> ChoiceResponse:
 	if request.options.is_empty():
 		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
 	if request.request_type == "select_retreat_payment":
@@ -4774,6 +4888,8 @@ func _notification(what: int) -> void:
 		_apply_safe_area()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		if modal_layer and modal_layer.visible:
+			if _modal_closing:
+				return
 			if active_request:
 				if active_request.can_cancel:
 					_cancel_choice()

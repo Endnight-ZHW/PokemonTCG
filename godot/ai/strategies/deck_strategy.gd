@@ -290,15 +290,22 @@ func choice_mode(info: Dictionary, choice_view: Dictionary) -> String:
 	if request_type == "select_retreat_payment":
 		return "payment"
 	if request_type == "select_attachment":
-		if purpose.begins_with("relocate_energy") or purpose == "trigger_move_basic_energy":
+		if (
+			purpose.begins_with("energy_relocate")
+			or purpose.begins_with("relocate_energy")
+			or purpose == "trigger_move_basic_energy"
+		):
 			return "source"
-		if purpose == "discard_energy":
+		if purpose in ["discard_energy", "discard_energy_attachments"]:
 			var source_player := int(presentation.get("source_player", _perspective(info)))
 			return "payment" if source_player == _perspective(info) else "benefit"
 		return "payment"
 	if request_type == "select_energy_source" or purpose == "energy_relocate_source":
 		return "source"
-	if purpose in ["discard_then_draw", "discard_cards", "houb", "zinnia"]:
+	if purpose in [
+		"discard_then_draw", "discard_hand_then_draw", "discard_cards",
+		"houb", "zinnia",
+	]:
 		return "discard"
 	if purpose in ["hand_bottom_draw", "bottom_deck"]:
 		return "payment"

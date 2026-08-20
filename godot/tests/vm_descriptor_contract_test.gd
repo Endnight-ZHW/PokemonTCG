@@ -32,7 +32,6 @@ func _run_tests() -> void:
 		"generated VM descriptor inventory did not load as 80 ops",
 	)
 
-	var evaluators: Dictionary = {}
 	var typed_cases := 0
 	var required_cases := 0
 	for op_value in ops:
@@ -41,7 +40,6 @@ func _run_tests() -> void:
 		var descriptor_errors := VMContract.validate_command_descriptor(op, descriptor)
 		_check(descriptor_errors.is_empty(),
 			"invalid descriptor for %s: %s" % [op, "; ".join(descriptor_errors)])
-		evaluators[str(descriptor.get("preflight_evaluator", ""))] = true
 		var spec := Dictionary(Dictionary(cases.get(op, {})).get("command_spec", {}))
 		_check(
 			VMContract.validate_command_spec(
@@ -104,60 +102,6 @@ func _run_tests() -> void:
 	_check(typed_cases > 0 and required_cases > 0,
 		"descriptor negative generation did not cover typed/required args")
 
-	var availability := VMAvailability.new(CardCatalog.shared())
-	var registered_evaluators: Dictionary = {}
-	for evaluator_value in availability.preflight_evaluator_names():
-		registered_evaluators[str(evaluator_value)] = true
-	_check(_same_keys(evaluators, registered_evaluators),
-		"descriptor preflight classifications and evaluator registry differ")
-
-	var state := GameState.new()
-	var ordinary := availability.preflight_effects(
-		state,
-		0,
-		[{"op": "deal_damage", "args": {"amount": 10}, "branches": {}}],
-	)
-	_check(
-		bool(ordinary.get("ok", false))
-		and not bool(ordinary.get("legal", true))
-		and str(ordinary.get("error_code", "")).is_empty(),
-		"ordinary target illegality was reported as a VM contract error",
-	)
-	var malformed := availability.preflight_effects(
-		state,
-		0,
-		[{"op": "draw_cards", "args": {"unknown": 1}, "branches": {}}],
-	)
-	_check(
-		not bool(malformed.get("ok", true))
-		and not bool(malformed.get("legal", true))
-		and str(malformed.get("error_code", "")) == "invalid_vm_spec",
-		"malformed VM preflight did not fail closed with invalid_vm_spec",
-	)
-	var unknown := availability.preflight_effects(
-		state,
-		0,
-		[{"op": "__unknown__", "args": {}, "branches": {}}],
-	)
-	_check(
-		not bool(unknown.get("ok", true))
-		and str(unknown.get("error_code", "")) == "invalid_vm_spec",
-		"unknown VM op was treated as an ordinary legal/illegal candidate",
-	)
-	var internal := availability.preflight_effects(
-		state,
-		0,
-		[{
-			"op": "trigger_draw_cards",
-			"args": {"amount": 1, "player": 0, "source": "test"},
-			"branches": {},
-		}],
-	)
-	_check(
-		not bool(internal.get("ok", true))
-		and str(internal.get("error_code", "")) == "internal_vm_op",
-		"internal VM op was exposed through public card preflight",
-	)
 
 
 func _wrong_type(expected: Variant) -> Variant:
@@ -174,15 +118,6 @@ func _wrong_type(expected: Variant) -> Variant:
 		"array":
 			return {}
 	return null
-
-
-func _same_keys(left: Dictionary, right: Dictionary) -> bool:
-	if left.size() != right.size():
-		return false
-	for key_value in left:
-		if not right.has(key_value):
-			return false
-	return true
 
 
 func _read_json(path: String) -> Dictionary:

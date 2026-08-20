@@ -8,10 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from data.card_models import Card
 from engine.commands.formula_ast import evaluate_formula_ast
 from engine.energy_view import EnergyView
-from engine.enums import TurnPhase
-from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
-from engine.rules_validator import can_retreat
 
 
 def _pokemon_card(*, retreat_cost: int = 0) -> Card:
@@ -158,19 +155,6 @@ class EnergyViewTests(unittest.TestCase):
             ),
             2,
         )
-
-    def test_retreat_payment_discards_one_double_turbo_for_two_unit_cost(self):
-        state = GameState()
-        state.phase = TurnPhase.MAIN
-        state.p1.active = PokemonInPlay(_pokemon_card(retreat_cost=2))
-        state.p1.active.energy_cards = [_double_turbo()]
-        state.p1.bench[0] = PokemonInPlay(_pokemon_card())
-
-        self.assertEqual(can_retreat(state, 0, 0, [0]), (True, ""))
-        state.p1.pay_retreat_cost(2, [0])
-        self.assertEqual(state.p1.active.energy_cards, [])
-        self.assertEqual([card.api_id for card in state.p1.discard], ["svi-dtur"])
-
 
 if __name__ == "__main__":
     unittest.main()

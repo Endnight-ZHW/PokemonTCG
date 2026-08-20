@@ -1,8 +1,11 @@
 #include "register_types.hpp"
 
 #include "challenge_ai_math.hpp"
+#include "godot_rules_session.hpp"
+#if defined(PTCG_ENABLE_DEEP_RUNTIME)
 #include "native_deep_search.hpp"
 #include "onnx_inference.hpp"
+#endif
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/godot.hpp>
@@ -14,8 +17,11 @@ void initialize_onnx_ai_module(ModuleInitializationLevel level) {
         return;
     }
     GDREGISTER_CLASS(ChallengeAIMath);
+#if defined(PTCG_ENABLE_DEEP_RUNTIME)
     GDREGISTER_CLASS(OnnxInference);
     GDREGISTER_CLASS(NativeDeepSearch);
+#endif
+    GDREGISTER_CLASS(NativeRulesSession);
 }
 
 void uninitialize_onnx_ai_module(ModuleInitializationLevel level) {

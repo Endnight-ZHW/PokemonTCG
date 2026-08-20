@@ -100,6 +100,29 @@ func _run_protocol_boundaries() -> void:
 			"envelope accepted malformed %s" % row["field"],
 		)
 
+	var welcome_payload := {
+		"player_idx": 1,
+		"rules_version": AppState.RULES_SCHEMA_VERSION,
+		"action_version": AppState.ACTION_SCHEMA_VERSION,
+		"core_fingerprint": str(CardCatalog.shared().card_ir.get(
+			"contract_fingerprint", "")),
+		"rules_profile_id": GameState.RULES_PROFILE_ID,
+		"rules_options": {"apply_type_matchups": false},
+		"resume": false,
+	}
+	_expect(
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.WELCOME, welcome_payload).get("ok", false)),
+		"valid core contract fingerprint was rejected",
+	)
+	var malformed_fingerprint: Dictionary = welcome_payload.duplicate(true)
+	malformed_fingerprint["core_fingerprint"] = "not-a-sha256"
+	_expect(
+		not bool(ProtocolV6.validate_payload(
+			ProtocolV6.WELCOME, malformed_fingerprint).get("ok", false)),
+		"malformed core contract fingerprint was accepted",
+	)
+
 	var session := AuthoritativeSession.new("protocol-contract")
 	var started := session.start_match("fire", "fire", 20260710, 0)
 	_expect(started.success, "same-deck protocol fixture did not start")
@@ -110,6 +133,25 @@ func _run_protocol_boundaries() -> void:
 		bool(ProtocolV6.validate_payload(ProtocolV6.STATE_UPDATE, view).get("ok", false)),
 		"authoritative fixture view is not protocol-valid",
 	)
+	var locked_attack_view: Dictionary = view.duplicate(true)
+	locked_attack_view["state"]["your"]["attack_locked_names"] = {
+		"岩窟冲撞": 5,
+	}
+	_expect(
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE,
+			locked_attack_view,
+		).get("ok", false)),
+		"public player-scoped named attack lock was rejected",
+	)
+	for invalid_locks in [
+		{"": 5},
+		{"岩窟冲撞": -1},
+		{"岩窟冲撞": "5"},
+	]:
+		var invalid_lock_view: Dictionary = view.duplicate(true)
+		invalid_lock_view["state"]["your"]["attack_locked_names"] = invalid_locks
+		_expect_invalid_state(invalid_lock_view, "invalid named attack lock")
 	var hidden_view: Dictionary = view.duplicate(true)
 	hidden_view["state"]["opponent"]["active"] = {"hidden": true}
 	_expect(
@@ -211,8 +253,9 @@ func _run_protocol_boundaries() -> void:
 		"action payload accepted a non-integer hand index",
 	)
 
-	var internal_choice_request := ChoiceRequest.new(
+	var internal_choice_view := ChoiceView.new(
 		"choice:contract",
+		int(view["state"]["revision"]),
 		"select_card",
 		0,
 		"选择",
@@ -234,8 +277,7 @@ func _run_protocol_boundaries() -> void:
 			"source_zone": "deck",
 		},
 	)
-	var choice_request := ChoiceView.from_request(
-		internal_choice_request, int(view["state"]["revision"])).to_dict()
+	var choice_request := internal_choice_view.to_dict()
 	var choice_view: Dictionary = view.duplicate(true)
 	choice_view["choice_request"] = choice_request
 	_expect(
@@ -299,9 +341,9 @@ func _run_protocol_boundaries() -> void:
 	var attachment_ref := EntityRef.new(
 		"attachment", 0, "field", "active", 0, "energy", "sv1-ener-2"
 	).to_dict()
-	var wait_stack := ResolutionStack.new()
-	wait_stack.pending_request = ChoiceRequest.new(
+	var attachment_choice := ChoiceView.new(
 		"choice:attachment-wait",
+		session.state.revision,
 		"select_attachment",
 		0,
 		"选择能量",
@@ -320,8 +362,6 @@ func _run_protocol_boundaries() -> void:
 		false,
 		{
 			"domain": "contract",
-			"revision": session.state.revision,
-			"continuation_frame_id": "frame:attachment-wait",
 			"purpose": "discard_energy",
 			"attachment_refs": [attachment_ref],
 			"card_ids": ["sv1-ener-2"],
@@ -331,10 +371,16 @@ func _run_protocol_boundaries() -> void:
 			"same_target": false,
 			"max_per_target": 1,
 		},
-	)
-	session.state.resolution_stack = wait_stack.to_dict()
-	var chooser_view := session.view_for(0)
-	var waiting_view := session.view_for(1)
+	).to_dict()
+	var chooser_view: Dictionary = view.duplicate(true)
+	chooser_view["choice_request"] = attachment_choice
+	chooser_view["wait_context"] = null
+	var waiting_view: Dictionary = view.duplicate(true)
+	waiting_view["choice_request"] = null
+	waiting_view["wait_context"] = {
+		"waiting_for_player": 0,
+		"choice_kind": "attachment",
+	}
 	_expect(
 		chooser_view.get("choice_request") is Dictionary
 		and chooser_view.get("wait_context") == null,
@@ -357,21 +403,73 @@ func _run_protocol_boundaries() -> void:
 	var malformed_wait_view: Dictionary = waiting_view.duplicate(true)
 	malformed_wait_view["wait_context"]["card_ids"] = ["sv1-ener-2"]
 	_expect_invalid_state(malformed_wait_view, "wait context leaked attachment identities")
-	session.state.resolution_stack = ResolutionStack.new().to_dict()
-
 	var presentation_event := PresentationEvent.normalize({
 		"event_type": "cards_drawn",
 		"actor": 0,
 		"visibility": "owner",
 		"data": {"player": 0, "cards": ["svi-chim"]},
 	}, int(view["state"]["revision"]))
+	var same_id_redraw := PresentationEvent.normalize({
+		"event_type": "cards_drawn",
+		"actor": 0,
+		"amount": 4,
+		"visibility": "owner",
+		"data": {
+			"player": 0,
+			"count": 5,
+			"card_ids": [
+				"sv1-ener-2",
+				"sv1-ener-3",
+				"sv1-ener-4",
+				"sv1-ener-5",
+				"sv1-ener-2",
+			],
+		},
+	}, int(view["state"]["revision"]))
+	_expect(
+		int(same_id_redraw.get("amount", 0)) == 5,
+		"same-id redraw kept the smaller net-diff animation count",
+	)
+	var cross_owner_move := PresentationEvent.normalize({
+		"event_type": "card_moved",
+		"actor": 1,
+		"visibility": "owner",
+		"source": {"player": 0, "zone": "hand", "index": 1},
+		"target": {"player": 0, "zone": "deck", "index": 9},
+		"data": {
+			"player": 0,
+			"card_ids": ["sv1-ener-2"],
+			"count": 1,
+			"source_zone": "hand",
+			"target_zone": "deck",
+		},
+	}, int(view["state"]["revision"]))
+	var physical_owner_event := PresentationEvent.for_player(cross_owner_move, 0)
+	var causal_actor_event := PresentationEvent.for_player(cross_owner_move, 1)
+	_expect(
+		int(Dictionary(cross_owner_move.get("data", {})).get(
+			"visibility_owner", -1)) == 0
+		and Array(Dictionary(physical_owner_event.get("data", {})).get(
+			"card_ids", [])).size() == 1
+		and Array(Dictionary(causal_actor_event.get("data", {})).get(
+			"card_ids", [])).is_empty(),
+		"hidden cross-player movement privacy followed causal actor instead of physical owner",
+	)
 	var presentation_view: Dictionary = view.duplicate(true)
-	presentation_view["presentation_events"] = [presentation_event]
+	presentation_view["presentation_events"] = [presentation_event, cross_owner_move]
 	_expect(
 		bool(ProtocolV6.validate_payload(
 			ProtocolV6.STATE_UPDATE, presentation_view
 		).get("ok", false)),
 		"valid presentation event fixture was rejected",
+	)
+	var malformed_motion_indices: Dictionary = presentation_view.duplicate(true)
+	malformed_motion_indices["presentation_events"][1]["data"][
+		"source_indices"
+	] = ["1"]
+	_expect_invalid_state(
+		malformed_motion_indices,
+		"presentation motion indices accepted a non-integer value",
 	)
 	var reveal_view: Dictionary = view.duplicate(true)
 	reveal_view["presentation_events"] = [PresentationEvent.normalize({
@@ -472,14 +570,20 @@ func _run_direct_knockout_protocol_contract() -> void:
 	direct_state.players[1].active.energy_card_ids = ["svi-mirc"]
 	direct_state.players[1].deck = ["sv1-ener-4"]
 	direct_state.players[1].prizes = ["sv1-ener-5"]
-	session.state = direct_state
-	session.rng = PortableRandomSource.new(2) # First two flips are both heads.
+	_expect(
+		session.native_rules.restore(direct_state.snapshot(), 2),
+		"direct-KO fixture could not load into Native ABI 2",
+	)
+	session.state = session.native_rules.state
+	session.rng = PortableRandomSource.new(
+		session.native_rules.rng_state) # First two flips are both heads.
 
 	var attack_action: GameAction = null
-	for candidate in RulesTestHarness.legal_actions(session.engine, direct_state, 0, true):
+	var legal_query := session.native_rules.legal_actions(0)
+	for candidate in legal_query.concrete_actions():
 		if (
-			candidate.action == "DECLARE_ATTACK"
-			and int(candidate.params.get("attack_idx", -1)) == 0
+			candidate.kind == "DECLARE_ATTACK"
+			and candidate.attack_index() == 0
 		):
 			attack_action = candidate
 			break
@@ -496,7 +600,7 @@ func _run_direct_knockout_protocol_contract() -> void:
 		attack_step.success
 		and coin_request != null
 		and coin_request.request_type == "coin_flip"
-		and coin_request.metadata.get("predetermined_flips", []) == [true, true],
+		and coin_request.presentation.get("predetermined_flips", []) == [true, true],
 		"direct-KO attack did not pause on the fixed double-heads result",
 	)
 	if coin_request == null:
@@ -556,8 +660,8 @@ func _run_direct_knockout_protocol_contract() -> void:
 			% player_idx,
 		)
 	_expect(
-		direct_state.players[1].hand.is_empty()
-		and direct_state.players[1].deck == ["sv1-ener-4"],
+		session.state.players[1].hand.is_empty()
+		and session.state.players[1].deck == ["sv1-ener-4"],
 		"Lucky Energy drew a card after a direct-KO effect",
 	)
 
@@ -602,7 +706,7 @@ func _run_setup_hidden_information_contract() -> void:
 	_expect(choice_value is Dictionary, "coin winner did not receive turn-order choice")
 	if not choice_value is Dictionary:
 		return
-	var request := ChoiceRequest.from_dict(choice_value)
+	var request := ChoiceView.from_dict(choice_value)
 	var turn_order := session.submit_choice(
 		chooser,
 		ChoiceResponse.new(request.request_id, ["turn:first"]).to_dict(),
@@ -895,6 +999,12 @@ func _run_final_setup_publication_contract() -> void:
 	for player_idx in [0, 1]:
 		for _index in range(10):
 			session.state.get_player(player_idx).deck.append("sv1-ener-1")
+	_expect(
+		session.native_rules.restore(session.state.snapshot(), 99117),
+		"final setup fixture could not load into Native ABI 2",
+	)
+	session.state = session.native_rules.state
+	session.rng = PortableRandomSource.new(session.native_rules.rng_state)
 
 	var steps: Array[StepResult] = []
 	for row in [
@@ -1112,7 +1222,7 @@ func _run_submission_correlation_contract() -> void:
 	submitted_action.action_id = "client-action:pending"
 	_expect(client.submit_action(submitted_action), "client action submission failed")
 	_expect(
-		client.awaiting_update
+		not client.pending_submission.is_empty()
 		and client.pending_submission.get("action_id", "") == submitted_action.action_id
 		and int(client.pending_submission.get("base_revision", -1))
 		== session.state.revision
@@ -1125,7 +1235,7 @@ func _run_submission_correlation_contract() -> void:
 		"other-action",
 	))
 	_expect(
-		client.awaiting_update
+		not client.pending_submission.is_empty()
 		and client.pending_submission.get("action_id", "") == submitted_action.action_id,
 		"non-matching state update cleared the pending submission",
 	)
@@ -1136,7 +1246,7 @@ func _run_submission_correlation_contract() -> void:
 	))
 	var same_revision_events := client._drain_events()
 	_expect(
-		client.awaiting_update
+		not client.pending_submission.is_empty()
 		and not client.pending_submission.is_empty()
 		and not _has_origin_event(
 			same_revision_events, "state", submitted_action.action_id
@@ -1154,7 +1264,7 @@ func _run_submission_correlation_contract() -> void:
 	var stale_state_events := client._drain_events()
 	_expect(
 		client.current_revision == base_revision
-		and client.awaiting_update
+		and not client.pending_submission.is_empty()
 		and client.resync_in_progress
 		and _has_event_code(stale_state_events, "stale_state_revision"),
 		"a regressing state revision was accepted or did not trigger resync",
@@ -1176,20 +1286,20 @@ func _run_submission_correlation_contract() -> void:
 		"causally newer matching state did not confirm the submission",
 	)
 
-	var legacy_client := _new_correlation_client(session)
-	legacy_client._begin_pending_submission(
-		"action", "legacy-action", "", session.state.revision
+	var uncorrelated_client := _new_correlation_client(session)
+	uncorrelated_client._begin_pending_submission(
+		"action", "uncorrelated-action", "", session.state.revision
 	)
-	legacy_client._handle_message(_state_envelope(session, 1))
+	uncorrelated_client._handle_message(_state_envelope(session, 1))
 	_expect(
-		legacy_client.awaiting_update,
-		"legacy empty-ID state without revision advance confirmed a submission",
+		not uncorrelated_client.pending_submission.is_empty(),
+		"uncorrelated state without revision advance confirmed a submission",
 	)
 	var advanced_view := session.view_for(1)
 	advanced_view["state"]["revision"] = session.state.revision + 1
 	advanced_view["legal_action_groups"] = []
 	advanced_view["legal_action_error"] = ""
-	legacy_client._handle_message(ProtocolV6.envelope(
+	uncorrelated_client._handle_message(ProtocolV6.envelope(
 		ProtocolV6.STATE_UPDATE,
 		"correlation-contract",
 		0,
@@ -1199,11 +1309,12 @@ func _run_submission_correlation_contract() -> void:
 		"",
 		advanced_view,
 	))
-	var legacy_events := legacy_client._drain_events()
+	var uncorrelated_events := uncorrelated_client._drain_events()
 	_expect(
-		not legacy_client.awaiting_update
-		and _has_origin_event(legacy_events, "state", "legacy-action"),
-		"legacy revision advance did not infer the sole pending action",
+		uncorrelated_client.pending_submission.is_empty()
+		and _has_origin_event(
+			uncorrelated_events, "state", "uncorrelated-action"),
+		"revision advance did not infer the sole pending action",
 	)
 
 	var error_client := _new_correlation_client(session)
@@ -1222,7 +1333,7 @@ func _run_submission_correlation_contract() -> void:
 	))
 	var error_events := error_client._drain_events()
 	_expect(
-		not error_client.awaiting_update
+		error_client.pending_submission.is_empty()
 		and _has_origin_event(
 			error_events, "error", "rejected-client-action"
 		)
@@ -1246,7 +1357,7 @@ func _run_submission_correlation_contract() -> void:
 	))
 	var nonmatching_error_events := nonmatching_error_client._drain_events()
 	_expect(
-		nonmatching_error_client.awaiting_update
+		not nonmatching_error_client.pending_submission.is_empty()
 		and nonmatching_error_client.pending_submission.get("action_id", "")
 		== "still-pending-action"
 		and not _has_matched_pending_event(nonmatching_error_events, "error"),
@@ -1290,7 +1401,7 @@ func _run_submission_correlation_contract() -> void:
 	))
 	var rejected_request_events := rejected_request_client._drain_events()
 	_expect(
-		not rejected_request_client.awaiting_update
+		rejected_request_client.pending_submission.is_empty()
 		and _has_origin_request_event(
 			rejected_request_events, "error", "choice-request:rejected"
 		)
@@ -1312,7 +1423,7 @@ func _run_submission_correlation_contract() -> void:
 	_expect(
 		timeout_client.connected
 		and timeout_client.connection_phase == NetworkMatchController.ConnectionPhase.PLAYING
-		and timeout_client.awaiting_update
+		and not timeout_client.pending_submission.is_empty()
 		and timeout_client.resync_in_progress
 		and _has_origin_event(
 			timeout_events, "pending_timeout", "timed-out-action"
@@ -1349,8 +1460,7 @@ func _run_submission_correlation_contract() -> void:
 	timeout_client._drain_events()
 	timeout_client._handle_message(_state_envelope(session, 2))
 	_expect(
-		not timeout_client.awaiting_update
-		and timeout_client.pending_submission.is_empty()
+		timeout_client.pending_submission.is_empty()
 		and not timeout_client.resync_in_progress
 		and not timeout_client.submission_locked(),
 		"valid resync state did not release a timed-out submission lock",
@@ -1634,7 +1744,7 @@ func _run_modifier_wire_number_contract() -> void:
 		"duration": "until_leave_play",
 		"stacking": "replace_same_source",
 		"conflict_policy": "commutative",
-		"condition": {"expires_after_turn": 2},
+		"condition": {"target_active": true},
 		"operation": {"kind": "damage_delta", "amount": 10},
 	}
 	_expect(
@@ -1704,7 +1814,6 @@ func _prime_controller(controller: NetworkMatchController) -> void:
 		"sent_msec": 1,
 		"timeout_notified": false,
 	}
-	controller.awaiting_update = true
 	controller.resync_in_progress = true
 	controller.connected = true
 	controller.connection_phase = NetworkMatchController.ConnectionPhase.PLAYING
@@ -1724,7 +1833,6 @@ func _controller_is_reset(controller: NetworkMatchController) -> bool:
 		and controller.send_sequence == 0
 		and controller.receive_sequence == 0
 		and controller.current_revision == -1
-		and not controller.awaiting_update
 		and controller.pending_submission.is_empty()
 		and not controller.resync_in_progress
 		and not controller.connected

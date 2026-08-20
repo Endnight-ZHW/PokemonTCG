@@ -67,12 +67,13 @@ GODOT_HASH_PATHS = {
         "godot/native/onnx_ai/src/ptcg_search.cpp"
     ),
     "native_game_source_sha256": (
-        "godot/native/onnx_ai/src/ptcg_game.cpp"
+        "godot/native/ptcg_core/src/ptcg_game.cpp"
     ),
 }
 REQUIRED_GODOT_CONTRACTS = {
     "80-op Python/Godot native VM semantic golden",
     "23-case C++ native game action semantic golden",
+    "Native ABI 2 stateful rules session, privacy, rollback, Snapshot and journal contract",
     "Native/Godot stable action signature contract",
     "Native information-set privacy and tree-key contract",
     "Native ONNX action/choice search and deadline contract",

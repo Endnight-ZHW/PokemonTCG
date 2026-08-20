@@ -315,7 +315,7 @@ func _action_button(row: Dictionary) -> Button:
 	if action == null and row.get("action") is Dictionary:
 		action = GameAction.from_dict(row.get("action"))
 	var button := Button.new()
-	var label := str(row.get("label", action.action if action else "动作"))
+	var label := str(row.get("label", action.kind if action else "动作"))
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(0.0, action_button_height)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL

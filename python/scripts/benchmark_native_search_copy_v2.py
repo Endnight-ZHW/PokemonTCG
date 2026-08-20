@@ -60,7 +60,7 @@ def _fixture(repo_root: Path):
     )
     while _advance_nondecision_phase(formal):
         pass
-    request = DEFAULT_GAME_ENGINE.pending_choice_request(formal)
+    request = DEFAULT_GAME_ENGINE.pending_choice(formal)
     actor = (
         int(request.player)
         if request is not None

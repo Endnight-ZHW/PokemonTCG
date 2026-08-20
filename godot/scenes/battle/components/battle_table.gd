@@ -66,10 +66,15 @@ const CARD_MOTION_EVENT_TYPES: Array[String] = [
 	"prize_taken",
 	"deck_shuffled",
 ]
+const ZERO_CARD_SEMANTIC_MOTION_TYPES: Array[String] = [
+	"cards_revealed",
+	"deck_shuffled",
+	"promoted",
+	"retreat",
+	"switched",
+]
 
 @export_category("Table Layout")
-@export_group("HUD")
-@export var hud_width := 132.0
 @export_group("Table Margins")
 @export var table_side_margin := 22.0
 @export var table_top_margin := 16.0
@@ -1073,12 +1078,7 @@ func resolve_endpoint_center(endpoint: Dictionary) -> Vector2:
 
 
 func _endpoint_attachment_index(endpoint: Dictionary, fallback: int = -1) -> int:
-	# `index` is the canonical endpoint field emitted by the rules layer.  Keep
-	# accepting the presentation-only legacy name while old recordings remain
-	# loadable.
 	var value := int(endpoint.get("index", -1))
-	if value < 0:
-		value = int(endpoint.get("attachment_index", -1))
 	return fallback if value < 0 and fallback >= 0 else value
 
 
@@ -2848,7 +2848,7 @@ func _compact_card_action_row(row: Dictionary) -> Dictionary:
 	var action: GameAction = row.get("action")
 	if action == null:
 		return result
-	match action.action:
+	match action.kind:
 		"PLAY_BASIC":
 			result["label"] = "放置到场上"
 		"EVOLVE":
@@ -2868,7 +2868,7 @@ func _compact_card_action_row(row: Dictionary) -> Dictionary:
 			result.merge(_attack_popover_metadata(action, row), true)
 		"USE_ABILITY":
 			result["label"] = "特性 · %s（可用）" % str(
-				action.params.get("ability_name", "发动特性"),
+				action.ability_name("发动特性"),
 			)
 			result["hint"] = "发动特性"
 		"RETREAT":
@@ -2883,7 +2883,7 @@ func _compact_card_action_row(row: Dictionary) -> Dictionary:
 func _trainer_type_for_action(action: GameAction) -> String:
 	if action == null or state_ref == null:
 		return ""
-	var hand_index := int(action.params.get("hand_idx", -1))
+	var hand_index := action.hand_index()
 	if hand_index < 0 or action.actor not in [0, 1]:
 		return ""
 	var hand := state_ref.get_player(action.actor).hand
@@ -2913,7 +2913,7 @@ func _attack_popover_metadata(action: GameAction, row: Dictionary) -> Dictionary
 	if active == null:
 		return result
 	var attacks: Array = catalog.get_card(active.card_id).get("attacks", [])
-	var attack_index := int(action.params.get("attack_idx", -1))
+	var attack_index := action.attack_index()
 	if attack_index < 0 or attack_index >= attacks.size():
 		return result
 	var attack: Dictionary = attacks[attack_index]
@@ -2942,7 +2942,7 @@ func _attack_popover_metadata(action: GameAction, row: Dictionary) -> Dictionary
 func _retreat_compact_suffix(action: GameAction) -> String:
 	if action == null:
 		return "免费"
-	var indices: Array = action.params.get("energy_indices", [])
+	var indices: Array = action.payload.get("energy_indices", [])
 	if indices.is_empty():
 		return "免费"
 	var names: Array[String] = []
@@ -3050,7 +3050,7 @@ func _routed_action_rows() -> Array[Dictionary]:
 		# Playing a Stadium is a no-target action on the rules layer, but the UI
 		# also accepts the same action when that hand card is dragged onto the
 		# Stadium zone. This metadata never enters GameAction serialization.
-		if action and action.action == "PLAY_TRAINER" and _trainer_type_for_action(action) == "Stadium":
+		if action and action.kind == "PLAY_TRAINER" and _trainer_type_for_action(action) == "Stadium":
 			row["drag_target_keys"] = ["stadium"]
 		result.append(row)
 	return result
@@ -3243,7 +3243,7 @@ func _group_for_action(source_key: String, action: GameAction) -> Dictionary:
 func _target_hint_for_action(action: GameAction) -> String:
 	if action == null:
 		return "选择"
-	match action.action:
+	match action.kind:
 		"PLAY_BASIC":
 			return "放置"
 		"EVOLVE":
@@ -3253,7 +3253,7 @@ func _target_hint_for_action(action: GameAction) -> String:
 		"RETREAT":
 			return "撤退"
 		"PLAY_TRAINER":
-			var hand_index := int(action.params.get("hand_idx", -1))
+			var hand_index := action.hand_index()
 			if state_ref and hand_index >= 0:
 				var hand := state_ref.get_player(action.actor).hand
 				if hand_index < hand.size():
@@ -3342,8 +3342,8 @@ func _disabled_context_rows_for_source(source_key: String) -> Array[Dictionary]:
 		return result
 	var legal_abilities: Dictionary = {}
 	for action in interaction_router.actions_for_source(source_key):
-		if action.action == "USE_ABILITY":
-			legal_abilities[str(action.params.get("ability_name", ""))] = true
+		if action.kind == "USE_ABILITY":
+			legal_abilities[str(action.ability_name())] = true
 	for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
 		var ability: Dictionary = ability_value
 		var ability_name := str(ability.get("name", ""))
@@ -3462,7 +3462,7 @@ func _avoid_controls_for_rows(rows: Array[Dictionary]) -> Array[Control]:
 		var action := row.get("action") as GameAction
 		if action == null:
 			continue
-		if action.action == "DECLARE_ATTACK" and action.actor in [0, 1]:
+		if action.kind == "DECLARE_ATTACK" and action.actor in [0, 1]:
 			var defending_active := get_slot_view(1 - action.actor, "active")
 			if defending_active and not seen.has(defending_active):
 				seen[defending_active] = true
@@ -3937,6 +3937,7 @@ func _ensure_drag_proxy(start: Vector2) -> Control:
 		true,
 	)
 	proxy.set_meta("drag_session_id", _drag_session.session_id)
+	proxy.set_meta("motion_card_id", _drag_session.card_id)
 	proxy.set_meta("card_motion_entity", true)
 	proxy.position = _drag_proxy_position_for_pointer(start, proxy)
 	proxy.rotation_degrees = _drag_session.source_rotation
@@ -4300,7 +4301,11 @@ func _stage_presentation_hud(previous_snapshot: Dictionary) -> void:
 	_presentation_actions_suppressed = true
 	_refresh_header(previous_state)
 	_refresh_field_info(previous_state)
-	_refresh_log(previous_state)
+	# The action log is public, committed state. Keeping the previous revision's
+	# log during a long presentation made the latest player actions look missing
+	# until every animation finished, even though the server had already accepted
+	# them. Other counters remain staged from the previous snapshot.
+	_refresh_log(state_ref if state_ref != null else previous_state)
 	_refresh_actions()
 	_refresh_target_hints()
 	var previous_opponent_hand := previous_state.get_player(1 - view_player).hand.size()
@@ -4321,17 +4326,29 @@ func _apply_event_to_presentation_hud(event: Dictionary) -> void:
 	var amount := _event_amount(event, card_ids)
 	match event_type:
 		"cards_drawn":
-			_hud_move_zone_cards(actor, "deck", actor, "hand", card_ids, amount)
+			_hud_move_endpoint_cards(
+				_event_source_endpoint(event),
+				_event_target_endpoint(event),
+				card_ids,
+				amount,
+			)
 		"prize_taken":
-			_hud_move_zone_cards(actor, "prizes", actor, "hand", card_ids, amount)
+			_hud_move_endpoint_cards(
+				_event_source_endpoint(event),
+				_event_target_endpoint(event),
+				card_ids,
+				amount,
+			)
 		"cards_discarded":
 			var endpoints := _discard_endpoints_for_event(event)
 			_hud_move_endpoint_cards(endpoints.get("source", {}), endpoints.get("target", {}), card_ids, amount)
 		"cards_revealed":
+			var reveal_source := _event_source_endpoint(event)
+			var reveal_player := int(reveal_source.get("player", actor))
 			for row in _reveal_rows(event):
-				var destination := _reveal_destination(row, actor)
+				var destination := _reveal_destination(row, reveal_player)
 				if str(destination.get("zone", "deck")) != "deck":
-					_hud_move_zone_cards(actor, "deck", int(destination.get("player", actor)), str(destination.get("zone", "deck")), [str(row.get("card_id", ""))], 1)
+					_hud_move_zone_cards(reveal_player, "deck", int(destination.get("player", reveal_player)), str(destination.get("zone", "deck")), [str(row.get("card_id", ""))], 1)
 		"pokemon_played", "trainer_played", "stadium_changed", "tool_attached", "energy_attached", "card_moved", "cards_selected":
 			_hud_move_endpoint_cards(_event_source_endpoint(event), _event_target_endpoint(event), card_ids, amount)
 		"turn_end", "checkup":
@@ -4573,6 +4590,8 @@ func _on_presentation_event_started(event: Dictionary) -> void:
 		return
 	if event_type in ["promoted", "retreat", "switched"]:
 		for key in keys:
+			if event_type in ["retreat", "switched"]:
+				_apply_event_to_slot_cover(key, event, "takeoff")
 			# Slot movement claims the staged CardView itself.  Keeping this cover
 			# alive until the motion request means HP, status, energy and tool
 			# overlays travel as one physical stack instead of being rebuilt as
@@ -4611,6 +4630,24 @@ func _apply_event_to_slot_cover(
 		str(event.get("event_type", "")),
 	)
 	var data: Dictionary = event.get("data", {})
+	if event_type in [
+		"confusion_failed",
+		"damage_counters_placed",
+		"damage_dealt",
+		"healed",
+		"status_applied",
+		"status_removed",
+	]:
+		# Feedback mutations belong exclusively to the target stack. The event's
+		# source is retained for camera/attack context, but must never receive the
+		# target's damage counters or status in the staged presentation state.
+		var target := _event_target_endpoint(event)
+		var target_key := "%d:%s" % [
+			int(target.get("player", -1)),
+			str(target.get("slot", "")),
+		]
+		if key != target_key:
+			return
 	var amount := maxi(0, int(event.get("amount", data.get("amount", 0))))
 	match event_type:
 		"damage_dealt", "damage_counters_placed", "confusion_failed":
@@ -4630,6 +4667,18 @@ func _apply_event_to_slot_cover(
 		"status_removed":
 			var removed_status := str(data.get("status", event.get("status", "")))
 			state.status_conditions.erase(removed_status)
+		"retreat", "switched":
+			var source := _event_source_endpoint(event)
+			var source_key := "%d:%s" % [
+				int(source.get("player", -1)),
+				str(source.get("slot", "")),
+			]
+			if key == source_key and str(source.get("slot", "")) == "active":
+				# Leaving the Active Spot removes every Special Condition before the
+				# physical stack arrives on the Bench.  Without staging this mutation,
+				# status badges visibly travelled with a retreated/switched Pokémon and
+				# only vanished at the final state reconciliation.
+				state.status_conditions.clear()
 		"cards_discarded":
 			if phase != "landing":
 				var source := _discard_endpoints_for_event(event).get("source", {}) as Dictionary
@@ -5599,14 +5648,17 @@ func _schedule_hand_transition_for_event(event: Dictionary, duration: float) -> 
 		return
 	var source := _event_source_endpoint(event)
 	var target := _event_target_endpoint(event)
-	var actor := int(event.get("actor", view_player))
-	if actor != view_player:
-		return
 	var card_ids := _event_card_ids(event)
-	var amount := maxi(1, _event_amount(event, card_ids))
+	var amount := _event_amount(event, card_ids)
+	if amount <= 0:
+		return
 	var generation := _presentation_hand_stage_generation
 	var event_id := str(event.get("event_id", ""))
-	if str(target.get("zone", "")) == "hand" and str(source.get("zone", "")) != "hand":
+	if (
+		str(target.get("zone", "")) == "hand"
+		and int(target.get("player", view_player)) == view_player
+		and str(source.get("zone", "")) != "hand"
+	):
 		var insertion_sequence := _begin_hand_transition_sequence(event_id, generation)
 		_run_hand_insertions(
 			amount,
@@ -5615,7 +5667,11 @@ func _schedule_hand_transition_for_event(event: Dictionary, duration: float) -> 
 			event_id,
 			insertion_sequence,
 		)
-	elif str(source.get("zone", "")) == "hand" and str(target.get("zone", "")) != "hand":
+	elif (
+		str(source.get("zone", "")) == "hand"
+		and int(source.get("player", view_player)) == view_player
+		and str(target.get("zone", "")) != "hand"
+	):
 		var removal_sequence := _begin_hand_transition_sequence(event_id, generation)
 		_run_hand_removal(
 			amount,
@@ -6021,15 +6077,16 @@ func _zone_endpoints_for_event(event: Dictionary) -> Array[Dictionary]:
 	var target := _event_target_endpoint(event)
 	match event_type:
 		"cards_drawn":
-			result.append({"player": actor, "zone": "deck"})
+			result.append(source)
 		"cards_revealed":
-			result.append({"player": actor, "zone": "deck"})
+			result.append(source)
+			var reveal_player := int(source.get("player", actor))
 			for row in _reveal_rows(event):
-				var destination := _reveal_destination(row, actor)
+				var destination := _reveal_destination(row, reveal_player)
 				if not destination.is_empty():
 					result.append(destination)
 		"prize_taken":
-			result.append({"player": actor, "zone": "prizes"})
+			result.append(source)
 		"cards_discarded":
 			var discard_endpoints := _discard_endpoints_for_event(event)
 			source = discard_endpoints["source"]
@@ -6049,7 +6106,7 @@ func _zone_endpoints_for_event(event: Dictionary) -> Array[Dictionary]:
 				if not zone_name.is_empty() and zone_name != "hand":
 					result.append(endpoint)
 		"trainer_played":
-			result.append({"player": actor, "zone": "discard"})
+			result.append(target)
 		"stadium_changed":
 			result.append({"player": -1, "zone": "stadium"})
 		"card_moved":
@@ -6149,14 +6206,15 @@ func _apply_presentation_zone_event(event: Dictionary) -> void:
 	match event_type:
 		"cards_drawn":
 			_adjust_presentation_zone(
-				{"player": actor, "zone": "deck"},
+				source,
 				-_event_amount(event, _event_card_ids(event)),
 				[],
 			)
 		"cards_revealed":
-			var reveal_source := {"player": actor, "zone": "deck"}
+			var reveal_source := source
+			var reveal_player := int(reveal_source.get("player", actor))
 			for row in _reveal_rows(event):
-				var destination := _reveal_destination(row, actor)
+				var destination := _reveal_destination(row, reveal_player)
 				if _presentation_zone_key(destination) == _presentation_zone_key(
 					reveal_source,
 				):
@@ -6169,7 +6227,7 @@ func _apply_presentation_zone_event(event: Dictionary) -> void:
 				)
 		"prize_taken":
 			_adjust_presentation_zone(
-				{"player": actor, "zone": "prizes"},
+				source,
 				-_event_amount(event, _event_card_ids(event)),
 				[],
 			)
@@ -6217,7 +6275,7 @@ func _apply_presentation_zone_event(event: Dictionary) -> void:
 				_adjust_presentation_zone(target, selected_amount, selected_ids)
 		"trainer_played":
 			_adjust_presentation_zone(
-				{"player": actor, "zone": "discard"},
+				target,
 				1,
 				_event_card_ids(event),
 			)
@@ -6330,14 +6388,10 @@ func _presentation_targets_for_event(event: Dictionary) -> Array[Control]:
 	var data: Dictionary = event.get("data", {})
 	match event_type:
 		"cards_drawn":
-			source = {"player": actor, "zone": "deck"}
-			target = {"player": actor, "zone": "hand"}
 			if not _is_transient_opening_draw(event):
-				result.append_array(_hand_target_views_for_incoming(event))
+				result.append_array(_target_controls_for_endpoint(target, event))
 		"prize_taken":
-			source = {"player": actor, "zone": "prizes"}
-			target = {"player": actor, "zone": "hand"}
-			result.append_array(_hand_target_views_for_incoming(event))
+			result.append_array(_target_controls_for_endpoint(target, event))
 		"cards_discarded":
 			var discard_endpoints := _discard_endpoints_for_event(event)
 			source = discard_endpoints["source"]
@@ -6520,10 +6574,14 @@ func _hand_target_views_for_incoming(event: Dictionary) -> Array[Control]:
 				cached.append(view)
 		return cached
 	var result: Array[Control] = []
-	var actor := int(event.get("actor", view_player))
+	var target := _event_target_endpoint(event)
 	var card_ids := _event_card_ids(event)
 	var amount := _event_amount(event, card_ids)
-	if actor != view_player or amount <= 0:
+	if (
+		str(target.get("zone", "")) != "hand"
+		or int(target.get("player", view_player)) != view_player
+		or amount <= 0
+	):
 		return result
 	result.append_array(_incoming_hand_targets_for_event(event, false))
 	return result
@@ -6540,17 +6598,17 @@ func _precompute_hand_targets_for_event(event: Dictionary) -> void:
 	if not targets_hand:
 		return
 	var event_id := str(event.get("event_id", ""))
-	var actor := int(event.get("actor", view_player))
 	var card_ids := _event_card_ids(event)
 	var amount := _event_amount(event, card_ids)
 	if event_id.is_empty() or amount <= 0:
 		return
-	if int(target.get("player", actor)) == 1 - view_player:
+	var target_player := int(target.get("player", view_player))
+	if target_player == 1 - view_player:
 		var opponent_targets := _opponent_hand_target_views_for_incoming(event, true)
 		if not opponent_targets.is_empty():
 			_presentation_event_hand_targets[event_id] = opponent_targets
 		return
-	if actor != view_player:
+	if target_player != view_player:
 		return
 	var targets := _incoming_hand_targets_for_event(event, true)
 	if targets.is_empty():
@@ -6588,8 +6646,11 @@ func _incoming_hand_targets_for_event(
 	consume_cursor: bool,
 ) -> Array[Control]:
 	var result: Array[Control] = []
-	var actor := int(event.get("actor", view_player))
-	if actor != view_player:
+	var target := _event_target_endpoint(event)
+	if (
+		str(target.get("zone", "")) != "hand"
+		or int(target.get("player", view_player)) != view_player
+	):
 		return result
 	var card_ids := _event_card_ids(event)
 	var amount := _event_amount(event, card_ids)
@@ -6599,7 +6660,7 @@ func _incoming_hand_targets_for_event(
 	if candidates.is_empty():
 		return result
 	var cursor := clampi(
-		int(_presentation_hand_target_cursor.get(actor, 0)),
+		int(_presentation_hand_target_cursor.get(view_player, 0)),
 		0,
 		candidates.size(),
 	)
@@ -6610,7 +6671,7 @@ func _incoming_hand_targets_for_event(
 	for view in selected:
 		result.append(view)
 	if consume_cursor:
-		_presentation_hand_target_cursor[actor] = cursor + selected.size()
+		_presentation_hand_target_cursor[view_player] = cursor + selected.size()
 	return result
 
 
@@ -7074,6 +7135,7 @@ func _activate_attachment_source_proxies(event: Dictionary) -> void:
 		proxy.set_meta("motion_start", center)
 		proxy.set_meta("attachment_source_event_id", event_id)
 		proxy.set_meta("attachment_badge_proxy", true)
+		proxy.set_meta("motion_card_id", card_id)
 		proxy.set_meta("attachment_source_index", attachment_index)
 		_configure_attachment_badge_marker(proxy, descriptor)
 		effects.add_child(proxy)
@@ -7186,6 +7248,76 @@ func _motion_landing_control(
 	return _zone_view_for_endpoint(target)
 
 
+func _motion_card_id_from_control(control: Control) -> String:
+	if control == null or not is_instance_valid(control):
+		return ""
+	for metadata_key in ["motion_card_id", "snapshot_card_id"]:
+		var metadata_id := str(control.get_meta(metadata_key, ""))
+		if not metadata_id.is_empty():
+			return metadata_id
+	var card_view := control as CardView
+	if (
+		card_view != null
+		and not card_view.is_hidden_card
+		and not card_view.card_id.is_empty()
+	):
+		return card_view.card_id
+	return ""
+
+
+func _infer_visible_motion_card_id(
+	source: Dictionary,
+	target: Dictionary,
+	existing_flyer: Control,
+	landing_view: Control,
+) -> String:
+	# Rules events are authoritative, but a viewer-visible source/landing node is
+	# a safe final defence against compatibility or replay events that omit the
+	# identity. Never infer through a hidden endpoint.
+	if not _endpoint_hidden_from_view(source):
+		var source_id := _motion_card_id_from_control(existing_flyer)
+		if not source_id.is_empty():
+			return source_id
+		var source_slot := str(source.get("slot", ""))
+		if not source_slot.is_empty():
+			var snapshot_row := _snapshot_slot_row(
+				int(source.get("player", view_player)),
+				source_slot,
+			)
+			if not bool(snapshot_row.get("hidden", false)):
+				source_id = str(snapshot_row.get("card_id", ""))
+				if not source_id.is_empty():
+					return source_id
+	if not _endpoint_hidden_from_view(target):
+		var target_id := _motion_card_id_from_control(landing_view)
+		if not target_id.is_empty():
+			return target_id
+		var target_slot := str(target.get("slot", ""))
+		if not target_slot.is_empty():
+			var target_view := get_slot_view(
+				int(target.get("player", view_player)),
+				target_slot,
+			)
+			if (
+				target_view != null
+				and not target_view.is_hidden_card
+				and not target_view.card_id.is_empty()
+			):
+				return target_view.card_id
+	return ""
+
+
+func _set_paper_card_texture(flying: Control, texture: Texture2D) -> void:
+	if flying == null or texture == null or not is_instance_valid(flying):
+		return
+	var image := flying.get_node_or_null("PaperImage") as TextureRect
+	if image == null:
+		return
+	image.texture = texture
+	image.visible = true
+	image.modulate.a = 1.0
+
+
 func _landing_attachment_index_for_event(
 	target: Dictionary,
 	landing_view: Control,
@@ -7275,6 +7407,22 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 	var event_card_id := str(event.get("card_id", data.get("card_id", "")))
 	if card_ids.is_empty() and not event_card_id.is_empty():
 		card_ids = [event_card_id]
+	var has_explicit_card_count := event.has("amount") or data.has("count")
+	var declared_card_count := int(event.get(
+		"amount",
+		data.get("count", card_ids.size()),
+	))
+	if (
+		has_explicit_card_count
+		and declared_card_count <= 0
+		and card_ids.is_empty()
+		and event_card_id.is_empty()
+		and event_type not in ZERO_CARD_SEMANTIC_MOTION_TYPES
+	):
+		# Zero-result searches/shuffles are semantic events, not physical cards.
+		# Creating the old forced single proxy here produced a blank phantom flyer.
+		_finish_event_motion_dispatch(motion_event_id)
+		return
 	var amount := maxi(1, int(event.get(
 		"amount",
 		data.get("count", card_ids.size()),
@@ -7285,15 +7433,27 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 	# quality never drops the thirteenth).
 	var motion_count := maxi(amount, card_ids.size())
 	if event_type == "cards_drawn":
-		source = {"player": actor, "zone": "deck"}
-		target = {"player": actor, "zone": "hand"}
+		var draw_player := int(data.get(
+			"player",
+			target.get("player", source.get("player", actor)),
+		))
+		if str(source.get("zone", "")).is_empty():
+			source = {"player": draw_player, "zone": "deck"}
+		if str(target.get("zone", "")).is_empty():
+			target = {"player": draw_player, "zone": "hand"}
 	elif event_type == "cards_discarded":
 		var discard_endpoints := _discard_endpoints_for_event(event)
 		source = discard_endpoints["source"]
 		target = discard_endpoints["target"]
 	elif event_type == "prize_taken":
-		source = {"player": actor, "zone": "prizes"}
-		target = {"player": actor, "zone": "hand"}
+		var prize_player := int(data.get(
+			"player",
+			target.get("player", source.get("player", actor)),
+		))
+		if str(source.get("zone", "")).is_empty():
+			source = {"player": prize_player, "zone": "prizes"}
+		if str(target.get("zone", "")).is_empty():
+			target = {"player": prize_player, "zone": "hand"}
 	elif event_type == "pokemon_ko":
 		source = {
 			"player": int(data.get("player", actor)),
@@ -7375,6 +7535,7 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		card_ids,
 		motion_count,
 		base_start,
+		event,
 	)
 	var finishes := _target_points_for_event(
 		target,
@@ -7423,6 +7584,19 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 				_dispose_snapshot_hand_source(existing_flyer)
 				existing_flyer = _presentation_drag_proxy
 		var card_id := str(card_ids[index]) if index < card_ids.size() else event_card_id
+		var landing_view := _motion_landing_control(
+			target,
+			event,
+			index,
+			landing_nodes,
+		)
+		if card_id.is_empty():
+			card_id = _infer_visible_motion_card_id(
+				source,
+				target,
+				existing_flyer,
+				landing_view,
+			)
 		var source_hidden := _endpoint_hidden_from_view(source)
 		var target_hidden := _endpoint_hidden_from_view(target)
 		var texture := (
@@ -7470,12 +7644,6 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			_dispose_snapshot_hand_source(existing_flyer)
 			_landing_burst(finish, event_type)
 			continue
-		var landing_view := _motion_landing_control(
-			target,
-			event,
-			index,
-			landing_nodes,
-		)
 		var landing_attachment_type := str(target.get("attachment_type", ""))
 		var landing_attachment_index := _landing_attachment_index_for_event(
 			target,
@@ -7486,6 +7654,14 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		)
 		motion_specs.append({
 			"texture": texture,
+			"card_id": card_id,
+			"texture_authoritative": (
+				source_hidden
+				or (
+					not card_id.is_empty()
+					and not source_is_badge_proxy
+				)
+			),
 			"start": start,
 			"finish": finish,
 			"duration": float(timing.get("duration", 0.0)),
@@ -7624,6 +7800,11 @@ func _spawn_card_motion_spec(
 	var texture := spec.get("texture") as Texture2D
 	if texture == null:
 		return null
+	var existing_flyer := _valid_control(spec.get("existing_flyer"))
+	if existing_flyer != null and bool(spec.get("texture_authoritative", false)):
+		# Reused drag/snapshot entities retain their node tree. Refresh the face at
+		# authority handoff so a stale placeholder cannot survive into flight.
+		_set_paper_card_texture(existing_flyer, texture)
 	var flying := _spawn_flying_card(
 		texture,
 		_vector_or_default(spec.get("start"), Vector2.ZERO),
@@ -7637,7 +7818,7 @@ func _spawn_card_motion_spec(
 		float(spec.get("start_rotation", 0.0)),
 		float(spec.get("finish_rotation", 0.0)),
 		_valid_control(spec.get("landing_view")),
-		_valid_control(spec.get("existing_flyer")),
+		existing_flyer,
 		event_id,
 		str(spec.get("landing_attachment_type", "")),
 		str(spec.get("landing_attachment_card_id", "")),
@@ -7646,6 +7827,10 @@ func _spawn_card_motion_spec(
 		bool(spec.get("stage_opponent_hand_landing", false)),
 		int(spec.get("opponent_hand_stage_count_delta", 0)),
 	)
+	if flying != null:
+		var motion_card_id := str(spec.get("card_id", ""))
+		if not motion_card_id.is_empty():
+			flying.set_meta("motion_card_id", motion_card_id)
 	if flying != null and not batch_key.is_empty():
 		flying.set_meta("motion_batch_ordinal", int(spec.get("ordinal", 0)))
 		flying.set_meta("motion_batch_key", batch_key)
@@ -7966,6 +8151,7 @@ func _source_points_for_event(
 	card_ids: Array,
 	visible_count: int,
 	fallback_start: Vector2,
+	event: Dictionary = {},
 ) -> Array[Vector2]:
 	var player := int(source.get("player", view_player))
 	var zone_name := str(source.get("zone", ""))
@@ -8011,9 +8197,14 @@ func _source_points_for_event(
 		return attachment_result
 	var start := _snapshot_endpoint_center(source, fallback_start)
 	var result: Array[Vector2] = []
+	var data: Dictionary = event.get("data", {})
+	var source_indices: Array = data.get("source_indices", [])
 	for index in range(visible_count):
+		var exact_source := source.duplicate(true)
+		if index < source_indices.size():
+			exact_source["index"] = int(source_indices[index])
 		result.append(start + _zone_motion_offset(
-			source,
+			exact_source,
 			index,
 			visible_count,
 			true,
@@ -8572,6 +8763,13 @@ func _zone_motion_offset(
 			else:
 				var snapshot_row := _snapshot_zone_row(player, "prizes")
 				stack_count = int(snapshot_row.get("count", stack_count))
+			var explicit_source_index := int(endpoint.get("index", -1))
+			if explicit_source_index >= 0:
+				return step * float(clampi(
+					explicit_source_index,
+					0,
+					maxi(0, stack_count - 1),
+				))
 			# With no explicit prize index, remove cards from the visible fan edge.
 			# A one-card pile therefore starts exactly at the physical face center.
 			var source_slot := maxi(0, stack_count - 1 - clamped_index)
@@ -9676,9 +9874,13 @@ func _spawn_shuffle_motion(
 	if texture == null:
 		return false
 	var count := _shuffle_card_count()
+	var source_zone := _zone_view_for_endpoint(endpoint)
+	if source_zone != null:
+		# Shuffle proxies represent physical cards already staged in this exact
+		# pile. An empty or one-card deck must never materialize a cosmetic pack.
+		count = mini(count, maxi(0, source_zone.count))
 	if count <= 0:
 		return false
-	var source_zone := _zone_view_for_endpoint(endpoint)
 	var origin := _snapshot_endpoint_center(endpoint, resolve_endpoint_center(endpoint))
 	var card_size := _snapshot_endpoint_size(
 		endpoint,

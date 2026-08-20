@@ -34,7 +34,7 @@ def native_training_bridge_available() -> bool:
         import ptcg_ai_core  # type: ignore
 
         return (
-            int(ptcg_ai_core.abi_version()) == 1
+            int(ptcg_ai_core.abi_version()) == 2
             and hasattr(ptcg_ai_core, "NativeGameKernel")
             and hasattr(ptcg_ai_core, "NativeSearchJob")
             and hasattr(ptcg_ai_core, "NativeSelfPlayBatch")
@@ -167,7 +167,7 @@ def _player_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
     ]
     while len(bench) < 5:
         bench.append(None)
-    return {
+    payload = {
         "name": str(snapshot.get("name", "")),
         "deck": list(snapshot.get("deck_ids", [])),
         "hand": list(snapshot.get("hand_ids", [])),
@@ -192,6 +192,15 @@ def _player_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
         "vstar_power_used": bool(snapshot.get("vstar_used", False)),
         "was_ko_by_attack": bool(snapshot.get("was_ko_by_attack", False)),
     }
+    attack_locked_names = {
+        str(name): int(expires)
+        for name, expires in dict(
+            snapshot.get("attack_locked_names", {}) or {}
+        ).items()
+    }
+    if attack_locked_names:
+        payload["attack_locked_names"] = attack_locked_names
+    return payload
 
 
 def _knockout_fact(fact: Any) -> dict[str, Any] | None:
@@ -293,7 +302,9 @@ def game_state_to_native_wire(state: Any) -> dict[str, Any]:
             snapshot.get("rules_profile_id", "CN_MAINLAND_3_1_0")
         ),
         "rules_options": _json_value(rules_options),
-        "action_log": [],
+        "action_log": [
+            str(value) for value in snapshot.get("action_log", [])
+        ],
         "mulligan_count": list(snapshot.get("mulligan_count", (0, 0))),
         "extra_draws": list(snapshot.get("extra_draws", (0, 0))),
         "setup_ready": [
@@ -316,7 +327,10 @@ def game_state_to_native_wire(state: Any) -> dict[str, Any]:
         "pending_promotions": list(
             snapshot.get("pending_promotions", [])
         ),
-        "processed_action_ids": [],
+        "processed_action_ids": [
+            str(value)
+            for value in getattr(state, "_native_processed_action_ids", [])
+        ],
         "resolution_stack": _json_value(
             snapshot.get("resolution_stack", {})
         ),
@@ -415,52 +429,58 @@ def _freeze(value: Any) -> Any:
 def _native_action_key(row: dict[str, Any]) -> tuple[Any, ...]:
     kind = str(row.get("kind", ""))
     actor = int(row.get("actor", -1))
-    params = dict(row.get("payload", {}) or {})
-    source = row.get("source")
-    target = row.get("target")
-    if isinstance(source, dict):
-        zone = str(source.get("zone", ""))
-        if zone == "hand":
-            params["hand_idx"] = int(source.get("index", -1))
-        if kind == "USE_ABILITY":
-            if zone == "discard":
-                params["slot"] = "discard"
-                params["discard_idx"] = int(source.get("index", -1))
-                params["card_id"] = str(source.get("card_id", ""))
-            elif str(source.get("kind", "")) == "pokemon":
-                params["slot"] = str(source.get("slot", ""))
-    target_slot = (
-        str(target.get("slot", ""))
-        if isinstance(target, dict)
-        else ""
+    return (
+        kind,
+        actor,
+        _reference_key(row.get("source")),
+        _reference_key(row.get("target")),
+        _freeze(dict(row.get("payload", {}) or {})),
     )
-    if kind == "PLAY_BASIC" and target_slot:
-        params["target"] = target_slot
-    elif kind == "EVOLVE" and target_slot:
-        params["slot"] = target_slot
-    elif kind in {"ATTACH_ENERGY", "PLAY_TRAINER"} and target_slot:
-        params["target_slot"] = target_slot
-    elif kind in {"RETREAT", "PROMOTE"}:
-        if not target_slot.startswith("bench_"):
-            raise NativeBridgeError("invalid_native_bench_target")
-        params["bench_idx"] = int(target_slot.removeprefix("bench_"))
-    elif kind == "DECLARE_ATTACK":
-        attack_index = int(
-            params.pop("attack_index", params.get("attack_idx", -1))
-        )
-        params["attack_idx"] = attack_index
-    return kind, actor, _freeze(params)
 
 
 def _formal_action_key(action: GameAction) -> tuple[Any, ...]:
-    kind = (
-        action.action.name
-        if hasattr(action.action, "name")
-        else str(action.action)
+    from engine.action_codec import serialize_entity_ref
+
+    return (
+        action.kind_name,
+        int(action.actor),
+        _reference_key(serialize_entity_ref(action.source)),
+        _reference_key(serialize_entity_ref(action.target)),
+        _freeze(action.payload),
     )
-    return kind, int(action.actor if action.actor is not None else -1), _freeze(
-        action.params
-    )
+
+
+def _reference_key(value: Any) -> tuple[Any, ...] | None:
+    """Canonicalize compact native and full Action v4 reference shapes."""
+    if not isinstance(value, dict):
+        return None
+    kind = str(value.get("kind", ""))
+    player = int(value.get("player", -1))
+    if kind == "card":
+        return (
+            kind,
+            player,
+            str(value.get("zone", "")),
+            int(value.get("index", -1)),
+            str(value.get("card_id", "")),
+        )
+    if kind in {"pokemon", "slot"}:
+        return (
+            kind,
+            player,
+            str(value.get("slot", "")),
+            str(value.get("card_id", "")),
+        )
+    if kind == "attachment":
+        return (
+            kind,
+            player,
+            str(value.get("slot", "")),
+            str(value.get("attachment_type", "")),
+            int(value.get("index", -1)),
+            str(value.get("card_id", "")),
+        )
+    return _freeze(value)
 
 
 def _formal_choice_key(
@@ -486,7 +506,7 @@ def _native_choice_key(
     )
 
 
-def _native_choice_request(
+def _native_choice_view(
     pending: dict[str, Any],
     candidates: Sequence[SearchCandidate],
     actor: int,
@@ -1335,7 +1355,10 @@ def _public_native_vm_continuation(
                 "same_target",
                 "_resume",
             }
-            or formal.get("purpose") != "relocate_energy_target"
+            or formal.get("purpose") not in {
+                "energy_relocate_target",
+                "relocate_energy_target",
+            }
             or formal.get("player_idx") != actor
             or formal.get("source_player") != actor
             or formal.get("source_zone") != "field"
@@ -1500,7 +1523,10 @@ def _public_native_vm_continuation(
             or metadata.get("max_per_target") != count
             or metadata.get("card_ids") != card_ids
             or metadata.get("card_list_ids") != card_ids
-            or metadata.get("purpose") != "relocate_energy_target"
+            or metadata.get("purpose") not in {
+                "energy_relocate_target",
+                "relocate_energy_target",
+            }
             or metadata.get("source_player") != actor
             or metadata.get("source_zone") != "field"
             or metadata.get("source_slot") != source_slot
@@ -4728,7 +4754,7 @@ class NativeSearchService:
                 if isinstance(stack, dict)
                 else None
             )
-            native_pending = _native_choice_request(
+            native_pending = _native_choice_view(
                 pending,
                 candidates,
                 actor,

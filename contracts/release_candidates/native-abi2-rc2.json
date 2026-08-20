@@ -1,0 +1,31 @@
+{
+  "format": "ptcg_native_rules_release_candidate/1",
+  "id": "native-abi2-rc2-20260819",
+  "built_on": "2026-08-19",
+  "baseline_commit": "e822611a7ecded79df77cb4d52bb52e280cf0964",
+  "working_tree_patch_oid": "cb73ae3aede0bf758d073ae608f7932969e63dc2",
+  "native_abi_version": 2,
+  "standard_gate": "passed",
+  "fast_gate": "passed",
+  "dependency_free_cpp": "passed",
+  "challenge_ai_games": 10,
+  "lan_regression": "passed",
+  "relay_regression": "passed",
+  "differential_mismatches": 0,
+  "windows_build": "passed",
+  "windows_release_smoke": "passed",
+  "android_build": "passed",
+  "android_static_runtime_contract": "passed",
+  "android_device_smoke": "skipped_no_connected_device",
+  "performance": {
+    "report": "artifacts/native_vs_python_puct_benchmark_native_abi2.json",
+    "native_simulations_per_second": 2843.6040011719915,
+    "retained_ratio": 1.0636478553930544,
+    "speedup": 264.7639741741708
+  },
+  "artifacts": {
+    "windows_zip_sha256": "1C0302E6E72C6FE1D3AB51BD7DA22D24EABA520646838E965DF40C5D4DDC8906",
+    "windows_dll_sha256": "E9EC6C573937B96AA6A0427A0DE9E632372504D377340536377C06ABF8D378C0",
+    "android_test_apk_sha256": "73DBD1044211FC4AFC4250F7CA167ECAF8DD4C6EBCE857D584F3101CBC9D9660"
+  }
+}

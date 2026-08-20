@@ -30,6 +30,8 @@ EFFECTS = {'svl-pikaex': {'attacks': {'皮卡拳': {'effects': []},
                                                            'to': 'bench',
                                                            'optional': True}}]},
                           '打雷': {'effects': [{'effect_type': 'damage_counter_self',
-                                              'params': {'amount': 30}}]}}},
+                                              'params': {'amount': 30,
+                                                         'damage_kind': 'self_damage'}}]}}},
  'svl-zera': {'attacks': {'疯狂伏特': {'effects': [{'effect_type': 'damage_counter_self',
-                                                'params': {'amount': 20}}]}}}}
+                                                'params': {'amount': 20,
+                                                           'damage_kind': 'self_damage'}}]}}}}

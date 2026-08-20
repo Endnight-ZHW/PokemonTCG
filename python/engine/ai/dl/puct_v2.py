@@ -13,7 +13,7 @@ import numpy as np
 
 from engine.actions import (
     ChoiceOption,
-    ChoiceRequest,
+    ChoiceView,
     ChoiceResponse,
     GameAction,
 )
@@ -109,7 +109,7 @@ def information_set_key(observation: Observation, actor: int) -> str:
 
 
 def _choice_candidate_from_response(
-    request: ChoiceRequest,
+    request: ChoiceView,
     response: ChoiceResponse,
 ) -> SearchCandidate | None:
     if response.request_id != request.request_id:
@@ -147,7 +147,6 @@ def _choice_candidate_from_response(
         option_id=signature,
         label=" / ".join(option.label for option in selected),
         ref=selected[0].ref if selected else None,
-        value=tuple(selected),
     )
     return SearchCandidate(
         signature=signature,
@@ -158,7 +157,7 @@ def _choice_candidate_from_response(
 
 
 def _choice_responses(
-    request: ChoiceRequest,
+    request: ChoiceView,
     preferred_response: ChoiceResponse | None = None,
 ) -> list[SearchCandidate]:
     options = tuple(request.options)
@@ -177,7 +176,6 @@ def _choice_responses(
                 option_id=signature,
                 label=" / ".join(option.label for option in selected),
                 ref=selected[0].ref if selected else None,
-                value=selected,
             )
             candidates.append(
                 SearchCandidate(
@@ -225,7 +223,7 @@ def _choice_responses(
 
 def _legal_choice_responses(
     state: Any,
-    request: ChoiceRequest,
+    request: ChoiceView,
 ) -> list[SearchCandidate]:
     """Remove structurally valid combinations rejected by rule continuations."""
     seed = int.from_bytes(
@@ -257,12 +255,11 @@ class PythonGameEnvironment:
         return fair_search_clone(state, actor, seed)
 
     def actor(self, state: Any) -> int:
-        request = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+        request = DEFAULT_GAME_ENGINE.pending_choice(state)
         if request is not None:
             return int(request.player)
-        promotion_actor = int(
-            getattr(state, "pending_promotion_player", -1)
-        )
+        promotions = list(getattr(state, "pending_promotions", ()) or ())
+        promotion_actor = int(promotions[0]) if promotions else -1
         if promotion_actor in (0, 1):
             return promotion_actor
         return int(state.active_player_idx)
@@ -277,7 +274,7 @@ class PythonGameEnvironment:
         observation: Observation,
     ) -> str:
         """Include the public decision role/request in the information key."""
-        request = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+        request = DEFAULT_GAME_ENGINE.pending_choice(state)
         if request is None:
             decision = ("action",)
         else:
@@ -313,7 +310,7 @@ class PythonGameEnvironment:
         state: Any,
         actor: int,
     ) -> Sequence[SearchCandidate]:
-        request = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+        request = DEFAULT_GAME_ENGINE.pending_choice(state)
         if request is not None:
             return _legal_choice_responses(state, request)
         actions = DEFAULT_GAME_ENGINE.legal_actions(state, actor)

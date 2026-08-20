@@ -135,10 +135,9 @@ class DeepLearningAI:
         authoritative = list(self.fallback.legal_actions(state, player_idx))
         if not authoritative:
             return GameAction(
-                PlayerAction.END_TURN,
-                {},
-                True,
-                player_idx,
+                kind=PlayerAction.END_TURN,
+                actor=player_idx,
+                base_revision=int(getattr(state, "revision", -1)),
             )
         environment = PythonGameEnvironment()
         search = InformationSetPUCT(
@@ -190,14 +189,9 @@ class DeepLearningAI:
             return self._fallback_action(state, player_idx)
         return action
 
-    def resolve_pending_action(self, state: Any, action_request: Any):
-        # Python's legacy UI consumes AIChoice, while the v2 tree operates on
-        # ChoiceResponse. Keep the authoritative Challenge codec at this UI
-        # boundary; self-play and Godot runtime search choices natively.
-        return self.fallback.resolve_pending_action(state, action_request)
-
-    def apply_choice(self, state: Any, action_request: Any, choice: Any = None):
-        return self.fallback.apply_choice(state, action_request, choice)
+    def resolve_pending_action(self, state: Any, choice_view: Any):
+        """Return a public ChoiceResponse for a ChoiceView v2 request."""
+        return self.fallback.resolve_pending_action(state, choice_view)
 
     def legal_actions(self, state: Any, player_idx: int):
         return self.fallback.legal_actions(state, player_idx)
@@ -215,7 +209,11 @@ class DeepLearningAI:
     def _fallback_action(self, state: Any, player_idx: int) -> GameAction:
         if self.config.fallback_enabled:
             return self.fallback.choose_action(state, player_idx)
-        return GameAction(PlayerAction.END_TURN, {}, True, player_idx)
+        return GameAction(
+            kind=PlayerAction.END_TURN,
+            actor=player_idx,
+            base_revision=int(getattr(state, "revision", -1)),
+        )
 
     def _executes_on_clone(
         self,

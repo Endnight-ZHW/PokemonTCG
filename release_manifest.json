@@ -39,10 +39,26 @@
   "godot_version": "4.7.stable",
   "model_count": 0,
   "native_ai": {
-    "abi_version": 1,
+    "abi_version": 2,
     "production_ready": false,
     "python_binding": "ptcg_ai_core",
-    "shared_core": "ptcg_ai_core"
+    "shared_core": "ptcg_core"
+  },
+  "native_rules": {
+    "action_schema_version": 4,
+    "card_ir_content_fingerprint": "70b41b8eac2aa884ba519571be263e78415a06de993fb0ef215d7d0319a1ca93",
+    "card_ir_contract_fingerprint": "80ec2ee0282430c43674d2ab0191aeb338e60f2ba02b614bc64af2950897e96e",
+    "choice_view_schema_version": 2,
+    "core_fingerprint": "80ec2ee0282430c43674d2ab0191aeb338e60f2ba02b614bc64af2950897e96e",
+    "default_runtime": "ptcg_core",
+    "journal_format_version": 1,
+    "migration_phase": "native_only",
+    "native_abi_version": 2,
+    "protocol_version": 6,
+    "snapshot_schema_version": 3,
+    "static_library": "ptcg_core",
+    "vm_descriptor_digest": "d990e5514e1dcd1278b03a8bc5a3d8b74503d707a92801904ba494d579b299b2",
+    "vm_ir_version": 3
   },
   "onnx": {
     "opset": 17,
@@ -76,7 +92,7 @@
     "godot_rules": 6,
     "planner": 2,
     "protocol": 6,
-    "python_actions": 3,
+    "python_actions": 4,
     "python_rules": 5,
     "rng": 2,
     "snapshot": 3,

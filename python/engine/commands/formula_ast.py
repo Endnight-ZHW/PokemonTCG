@@ -1,19 +1,16 @@
 """Structured damage formula evaluator for VM command specs."""
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import Any
 from engine.energy_view import EnergyView
 
-if TYPE_CHECKING:
-    from engine.commands.base import ResolutionContext
 
-
-def evaluate_formula_ast(node: Any, ctx: ResolutionContext) -> int:
+def evaluate_formula_ast(node: Any, ctx: Any) -> int:
     """Evaluate a small arithmetic AST against a resolution context."""
     return max(0, int(_eval(node, ctx)))
 
 
-def _eval(node: Any, ctx: ResolutionContext) -> int:
+def _eval(node: Any, ctx: Any) -> int:
     if isinstance(node, bool):
         return int(node)
     if isinstance(node, (int, float)):
@@ -80,7 +77,7 @@ def _binary_children(node: dict[str, Any]) -> tuple[Any, Any]:
     return children[0], children[1]
 
 
-def _eval_variable(op: str, ctx: ResolutionContext, node: dict[str, Any]) -> int:
+def _eval_variable(op: str, ctx: Any, node: dict[str, Any]) -> int:
     if op == "hand_size":
         return len(_player(ctx, node.get("player", "self")).hand)
     if op == "bench_count":
@@ -104,7 +101,7 @@ def _eval_variable(op: str, ctx: ResolutionContext, node: dict[str, Any]) -> int
     raise ValueError(f"Unknown formula AST op: {op!r}")
 
 
-def condition_applies(condition: str, ctx: ResolutionContext) -> bool:
+def condition_applies(condition: str, ctx: Any) -> bool:
     condition = str(condition or "")
     if condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
         return ctx.state.had_knockout_last_opponent_turn(
@@ -126,11 +123,11 @@ def condition_applies(condition: str, ctx: ResolutionContext) -> bool:
     return False
 
 
-def _player(ctx: ResolutionContext, key: Any):
+def _player(ctx: Any, key: Any):
     return ctx.opponent if str(key or "self") == "opponent" else ctx.player
 
 
-def _pokemon_target(ctx: ResolutionContext, target: Any):
+def _pokemon_target(ctx: Any, target: Any):
     target_key = str(target or "self")
     if target_key in {"opponent", "opponent_active"}:
         return ctx.opponent.active
@@ -139,7 +136,7 @@ def _pokemon_target(ctx: ResolutionContext, target: Any):
     return None
 
 
-def _energy_count(ctx: ResolutionContext, node: dict[str, Any]) -> int:
+def _energy_count(ctx: Any, node: dict[str, Any]) -> int:
     scope = str(node.get("scope", node.get("target", "self")) or "self")
     energy_type = str(node.get("energy_type", node.get("filter", "any")) or "any").lower()
     pokemons = []

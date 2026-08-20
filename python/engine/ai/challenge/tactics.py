@@ -43,18 +43,18 @@ class ExpertTacticsMixin:
         return score
 
     def _expert_terminal_action_value(self, state, player_idx: int, action) -> float:
-        if action.action == PlayerAction.DECLARE_ATTACK:
-            attack_idx = action.params.get("attack_idx")
+        if action.kind == PlayerAction.DECLARE_ATTACK:
+            attack_idx = action.attack_index()
             if isinstance(attack_idx, int):
                 damage = self._estimated_attack_damage(state, player_idx, attack_idx)
                 opponent = state.get_player(1 - player_idx)
                 if opponent.active and damage >= opponent.active.current_hp:
                     return 520.0 + opponent.active.card.prize_value * 180.0
                 return damage * 0.9
-        if action.action == PlayerAction.END_TURN:
+        if action.kind == PlayerAction.END_TURN:
             return -120.0
-        if action.action == PlayerAction.RETREAT:
-            bench_idx = action.params.get("bench_idx")
+        if action.kind == PlayerAction.RETREAT:
+            bench_idx = action.bench_index()
             if isinstance(bench_idx, int):
                 player = state.get_player(player_idx)
                 if 0 <= bench_idx < len(player.bench):

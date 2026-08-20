@@ -5,6 +5,7 @@ Godot, AI, and export checks share one rule contract.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, is_dataclass, fields
 from typing import Any, Iterable
 
@@ -322,7 +323,7 @@ def compile_effects_to_payload(effect_defs: Iterable[Any]) -> list[dict[str, Any
 def collect_effect_types(value: Any) -> set[str]:
     """Return all nested effect_type strings from raw card effect data."""
     found: set[str] = set()
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         effect_type = value.get("effect_type")
         if isinstance(effect_type, str) and effect_type:
             found.add(effect_type)
@@ -350,7 +351,7 @@ def _effect_parts(effect_def: Any) -> tuple[str, dict[str, Any]]:
     if hasattr(effect_def, "effect_type"):
         effect_type = str(getattr(effect_def, "effect_type", "") or "")
         params = dict(getattr(effect_def, "params", {}) or {})
-    elif isinstance(effect_def, dict):
+    elif isinstance(effect_def, Mapping):
         effect_type = str(effect_def.get("effect_type", "") or "")
         params = dict(effect_def.get("params", {}) or {})
     else:
@@ -379,7 +380,7 @@ def _json_safe(value: Any) -> Any:
             item.name: _json_safe(getattr(value, item.name))
             for item in fields(value)
         }
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]

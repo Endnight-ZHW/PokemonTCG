@@ -33,12 +33,14 @@ class CardRegistry:
         logger.info("%s cards loaded.", len(cls._cards))
 
     @classmethod
-    def _build_card(cls, raw: dict, card_id: str, effects_lookup: dict = None) -> Card:
+    def _build_card(cls, raw: dict, card_id: str) -> Card:
         """Convert raw template data + effects to a Card object."""
-        if effects_lookup is None:
-            from card_data.card_effects import CARD_EFFECTS
-            effects_lookup = CARD_EFFECTS
-        effects_data = effects_lookup.get(card_id, {})
+        from card_data.effects import CARD_EFFECT_SPECS
+
+        effect_spec = CARD_EFFECT_SPECS.get(card_id)
+        effects_data = (
+            effect_spec.to_authoring_dict() if effect_spec is not None else {}
+        )
 
         def _make_effects(eff_list: list) -> list[EffectDef]:
             """Convert raw effect dicts to EffectDef objects."""
@@ -216,6 +218,6 @@ class CardRegistry:
 # OFFLINE CARD TEMPLATES - Real Pokemon TCG card data
 # ============================================================
 # Card IDs are from pokemontcg.io API v2 format (e.g., 'sv1-26').
-# All card effects are in card_data/card_effects.py matching the attack/ability names.
+# Card effects are normalized by card_data.effects into typed authoring specs.
 
 from card_data.templates import OFFLINE_CARD_TEMPLATES

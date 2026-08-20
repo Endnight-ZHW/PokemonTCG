@@ -9,7 +9,7 @@ EFFECTS = {'sv1-104': {'attacks': {'啃咬': {'effects': []}, '幽魂射击': {'
                                     'effects': [{'effect_type': 'energy_attach',
                                                  'params': {'amount': 1,
                                                             'from_zone': 'hand',
-                                                            'filter': 'psychic',
+                                                            'filter': 'basic_psychic',
                                                             'to': 'bench'}},
                                                 {'effect_type': 'draw',
                                                  'params': {'amount': 2, 'player': 'self'}}]}},

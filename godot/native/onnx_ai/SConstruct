@@ -14,34 +14,96 @@ def _consume_path_argument(name, default):
 godot_cpp_dir = _consume_path_argument("godot_cpp_dir", "godot-cpp")
 ort_root = _consume_path_argument("ort_root", "onnxruntime")
 project_root = _consume_path_argument("project_root", "../..")
+deep_runtime = ARGUMENTS.pop("deep_runtime", "true").lower() in (
+    "1", "true", "yes", "on"
+)
 
 env = SConscript(os.path.join(godot_cpp_dir, "SConstruct"))
+core_source_root = os.path.abspath(os.path.join("..", "ptcg_core", "src"))
 env.Append(CPPPATH=[
     "src",
-    os.path.join(ort_root, "windows-x64", "include"),
+    core_source_root,
 ])
 
-if env["platform"] == "windows":
+if deep_runtime:
     env.Append(
-        LIBPATH=[os.path.join(ort_root, "windows-x64", "lib")],
-        LIBS=["onnxruntime"],
-        CXXFLAGS=["/EHsc"],
-    )
-elif env["platform"] == "android":
-    env.Append(
-        LIBPATH=[os.path.join(ort_root, "android", "jni", "arm64-v8a")],
-        LIBS=["onnxruntime"],
-        CXXFLAGS=["-fexceptions"],
-        LINKFLAGS=["-Wl,-rpath,$ORIGIN"],
+        CPPPATH=[os.path.join(ort_root, "windows-x64", "include")],
+        CPPDEFINES=["PTCG_ENABLE_DEEP_RUNTIME=1"],
     )
 
-sources = Glob("src/*.cpp")
+if env["platform"] == "windows":
+    env.Append(CXXFLAGS=["/EHsc"])
+    if deep_runtime:
+        env.Append(
+            LIBPATH=[os.path.join(ort_root, "windows-x64", "lib")],
+            LIBS=["onnxruntime"],
+        )
+elif env["platform"] == "android":
+    env.Append(CXXFLAGS=["-fexceptions"])
+    if deep_runtime:
+        env.Append(
+            LIBPATH=[os.path.join(ort_root, "android", "jni", "arm64-v8a")],
+            LIBS=["onnxruntime"],
+            LINKFLAGS=["-Wl,-rpath,$ORIGIN"],
+        )
+
+core_source_names = (
+    "ptcg_random.cpp",
+    "ptcg_rules.cpp",
+    "ptcg_game.cpp",
+    "ptcg_rules_session.cpp",
+)
+core_sources = [
+    os.path.join(core_source_root, name) for name in core_source_names
+]
+core_objects = [
+    env.Object(
+        os.path.join("build", "ptcg_core", os.path.splitext(name)[0]),
+        source,
+    )[0]
+    for name, source in zip(core_source_names, core_sources)
+]
+binding_source_names = [
+    "challenge_ai_math.cpp",
+    "godot_rules_session.cpp",
+    "ptcg_godot_value.cpp",
+    "register_types.cpp",
+]
+if deep_runtime:
+    binding_source_names.extend([
+        "native_deep_search.cpp",
+        "onnx_inference.cpp",
+        "ptcg_ai_core.cpp",
+        "ptcg_determinizer.cpp",
+        "ptcg_encoder.cpp",
+        "ptcg_infoset.cpp",
+        "ptcg_search.cpp",
+    ])
+binding_sources = [os.path.join("src", name) for name in binding_source_names]
+binding_objects = [
+    env.SharedObject(
+        os.path.join("build", "bindings", os.path.splitext(name)[0]),
+        source,
+    )[0]
+    for name, source in zip(binding_source_names, binding_sources)
+]
+core_output = os.path.join(
+    "..",
+    "ptcg_core",
+    "lib",
+    "ptcg_core_{}_{}_{}".format(
+        env["platform"], env["target"], env["arch"]
+    ),
+)
+core_library = env.StaticLibrary(core_output, source=core_objects)
+env.NoCache(core_library)
+env.Append(LIBS=[core_library])
 output = os.path.join(
     project_root,
     "bin",
     env["platform"],
     "libpokemon_ai{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
 )
-library = env.SharedLibrary(output, source=sources)
+library = env.SharedLibrary(output, source=binding_objects)
 env.NoCache(library)
-Default(library)
+Default([core_library, library])

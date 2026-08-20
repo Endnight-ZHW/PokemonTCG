@@ -379,11 +379,12 @@ func _check_checkpoint_identity_sets() -> void:
 
 func _check_decision_semantic_hash_contract() -> void:
 	var ai: Variant = CHALLENGE_AI.new()
-	var action := GameAction.new(
+	var action := GameAction.create(
 		"ATTACH_ENERGY",
-		{"hand_idx": 0, "target_slot": "active"},
-		false,
+		{},
 		0,
+		EntityRef.new("card", 0, "hand", "", 0, "", "fixture-energy"),
+		EntityRef.new("pokemon", 0, "", "active", -1, "", "fixture-active"),
 	)
 	var planner_result := {
 		"turn_plan": [{
@@ -490,7 +491,7 @@ func _check_decision_semantic_hash_contract() -> void:
 			action, "turn_beam_v2", changed_belief, trajectory_hash)) != baseline,
 		"Decision semantic hash ignored belief seeds",
 	)
-	var different_action := GameAction.new("END_TURN", {}, true, 0)
+	var different_action := GameAction.create("END_TURN", {}, 0)
 	_check(
 		str(ai._traditional_decision_semantic_hash(
 			different_action,

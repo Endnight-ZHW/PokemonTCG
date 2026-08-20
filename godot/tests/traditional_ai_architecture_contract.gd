@@ -45,6 +45,7 @@ func _initialize() -> void:
 	_check_no_progress_action_cycle_guard(catalog)
 	_check_target_variant_candidate_coverage()
 	_check_retreat_tempo_evaluation(catalog)
+	_check_redundant_same_pokemon_retreat(catalog, engine)
 	_check_mandatory_knockout(registry, catalog, engine)
 	_check_repeatable_ability_turn_guard(catalog)
 	_check_planner_contract(state, information_set, registry, catalog, engine)
@@ -354,11 +355,8 @@ func _check_search_hot_path_contract(
 ) -> void:
 	var engine := GameEngine.new(catalog)
 	var ephemeral := engine.query_legal_action_groups_ephemeral(state, 0)
-	_check(
-		ephemeral.success
-		and engine._action_group_cache.is_empty(),
-		"Ephemeral legal-action query populated the shared engine cache",
-	)
+	_check(ephemeral.success,
+		"Native ephemeral legal-action query failed")
 	var cached := engine.query_legal_action_groups(state, 0)
 	_check(
 		cached.success
@@ -904,7 +902,6 @@ func _check_search_action_apply_equivalence(catalog: CardCatalog) -> void:
 		"svl-pikaex", "svl-flaa2", "svl-thun", "sv1-ener-4",
 	]
 	var trainer_engine := GameEngine.new(catalog)
-	trainer_engine.begin_search_decision()
 	var trainer_action: GameAction = null
 	var trainer_query := trainer_engine.query_legal_action_groups_ephemeral(
 		trainer_state, 0)
@@ -971,15 +968,15 @@ func _check_search_action_apply_equivalence(catalog: CardCatalog) -> void:
 		"Search-only action apply lost Trainer Choice cancellation rollback",
 	)
 
-	# A caller cannot claim that an arbitrary same-revision action was returned
-	# by the legal query. The engine-issued proof binds the exact queried wire.
+	# A same-revision action that was not returned by the native legal query must
+	# still fail closed. The binding facade canonicalizes against ptcg_core before
+	# submitting the action; there is no GDScript preflight-proof cache anymore.
 	var setup_state := _planner_state()
 	setup_state.phase = "SETUP"
 	setup_state.setup_stage = GameState.SETUP_INITIAL_PLACEMENT
 	setup_state.setup_actor_idx = 0
 	setup_state.setup_ready = [false, false]
 	var proof_engine := GameEngine.new(catalog)
-	proof_engine.begin_search_decision()
 	var setup_query := proof_engine.query_legal_action_groups_ephemeral(
 		setup_state, 0)
 	var forged_end := GameAction.create(
@@ -991,7 +988,6 @@ func _check_search_action_apply_equivalence(catalog: CardCatalog) -> void:
 		"forged-setup-end-turn",
 		setup_state.revision,
 	)
-	var setup_proof_count := proof_engine._search_preflight_proof_count
 	var forged_result := proof_engine.apply_search_action_ephemeral(
 		setup_state,
 		forged_end,
@@ -1001,11 +997,9 @@ func _check_search_action_apply_equivalence(catalog: CardCatalog) -> void:
 	_check(
 		setup_query.success
 		and forged_end.terminal
-		and setup_proof_count > 0
-		and proof_engine._search_preflight_proof_count == setup_proof_count
 		and forged_step != null
 		and not forged_step.success,
-		"Forged same-revision SETUP END_TURN bypassed search preflight proof",
+		"Forged same-revision SETUP END_TURN bypassed native legality",
 	)
 	var malformed_choice_state := _planner_state()
 	malformed_choice_state.resolution_stack["pending_request"] = {
@@ -1041,36 +1035,24 @@ func _search_apply_paths_match(
 	var normal_rng := PortableRandomSource.new(seed)
 	var search_rng := PortableRandomSource.new(seed)
 	var normal_step := engine.apply_action(normal_state, action, normal_rng)
-	var cache_query := engine.query_legal_action_groups(source_state, action.actor)
-	var cache_size_before := engine._action_group_cache.size()
-	engine.begin_search_decision()
-	var proof_query: LegalActionQueryResult = null
+	var normal_query := engine.query_legal_action_groups(source_state, action.actor)
+	var ephemeral_query: LegalActionQueryResult = null
 	if use_query_proof:
-		proof_query = engine.query_legal_action_groups_ephemeral(
+		ephemeral_query = engine.query_legal_action_groups_ephemeral(
 			source_state, action.actor)
-	var proof_count_before := engine._search_preflight_proof_count
 	var search_applied := engine.apply_search_action_ephemeral(
 		source_state, action, search_rng)
 	var search_state: GameState = search_applied.get("state")
 	var search_step: StepResult = search_applied.get("step")
-	var cache_preserved := (
-		not cache_query.success
-		or (
-			cache_size_before > 0
-			and engine._action_group_cache.size() == cache_size_before
-		)
-	)
 	return {
 		"equal": (
-			cache_preserved
+			normal_query.success
 			and (
 				not use_query_proof
 				or (
-					proof_query != null
-					and proof_query.success
-					and proof_count_before > 0
-					and engine._search_preflight_proof_count
-						== proof_count_before - 1
+					ephemeral_query != null
+					and ephemeral_query.success
+					and ephemeral_query.to_dict() == normal_query.to_dict()
 				)
 			)
 			and _steps_and_states_match(
@@ -1099,7 +1081,6 @@ func _steps_and_states_match(
 		and search_step != null
 		and normal_step.to_dict() == search_step.to_dict()
 		and normal_state.snapshot() == search_state.snapshot()
-		and normal_state.event_stream._events == search_state.event_stream._events
 		and normal_rng.get_state() == search_rng.get_state()
 	)
 
@@ -1971,11 +1952,60 @@ func _check_trusted_dynamic_scoring(catalog: CardCatalog) -> void:
 		"choice:deoxys-distribution", distribution_state.revision,
 		"distribute_energy", 0, "", distribution_options,
 		3, 3, true, false,
-		{"purpose": "relocate_energy_target",
+		{"purpose": "energy_relocate_target",
 		 "card_ids": [psychic_energy_id, psychic_energy_id, psychic_energy_id],
 		 "attachment_refs": distribution_refs,
 		 "source_player": 0, "source_slot": "active", "same_source": true,
 		 "same_target": false, "max_per_target": 3},
+	)
+	var relocation_attachment_request := ChoiceView.new(
+		"choice:canonical-relocation-source", distribution_state.revision,
+		"select_attachment", 0, "", [{
+			"option_id": "attachment:0:active:energy:0:%s" % psychic_energy_id,
+			"ref": distribution_refs[0],
+		}], 1, 1, false, false,
+		{"purpose": "energy_relocate_attachments", "source_player": 0},
+	)
+	var discard_hand_request := ChoiceView.new(
+		"choice:canonical-discard-hand", distribution_state.revision,
+		"search_move", 0, "", [distribution_options[0]],
+		1, 1, false, false,
+		{"purpose": "discard_hand_then_draw"},
+	)
+	var searched_switch_request := ChoiceView.new(
+		"choice:canonical-search-switch", distribution_state.revision,
+		"select_bench", 0, "", [distribution_options[0]],
+		1, 1, false, false,
+		{"purpose": "search_any_switch_bench"},
+	)
+	var choice_mode_strategy := AIStrategyRegistry.new().strategy_for("psychic")
+	var no_switch_state := GameState.new()
+	no_switch_state.public_deck_keys = ["psychic", "steel"]
+	no_switch_state.players[0].active = PokemonState.new("sv1-112")
+	var search_switch_confirmation := ChoiceView.new(
+		"choice:canonical-search-switch-confirm", no_switch_state.revision,
+		"confirm", 0, "", [
+			{"option_id": "confirm:yes"}, {"option_id": "confirm:no"},
+		], 1, 1, false, false,
+		{"purpose": "search_any_switch_confirm"},
+	)
+	_check(
+		worker._choice_score_mode(
+			relocation_attachment_request,
+			relocation_attachment_request.presentation) == "energy_source"
+		and worker._choice_score_mode(
+			discard_hand_request, discard_hand_request.presentation) == "discard"
+		and worker._choice_score_mode(
+			searched_switch_request,
+			searched_switch_request.presentation) == "self_switch"
+		and choice_mode_strategy.choice_mode(
+			{}, relocation_attachment_request.to_dict()) == "source"
+		and choice_mode_strategy.choice_mode(
+			{}, discard_hand_request.to_dict()) == "discard"
+		and not worker._confirm_choice(
+			no_switch_state, search_switch_confirmation,
+			search_switch_confirmation.presentation, "psychic", catalog),
+		"Canonical native Choice purposes were interpreted with legacy/inverted semantics",
 	)
 	var distribution_snapshot := distribution_state.snapshot()
 	var distribution_info := AIInformationSet.capture(
@@ -2015,7 +2045,7 @@ func _check_trusted_dynamic_scoring(catalog: CardCatalog) -> void:
 		"choice:deoxys-split", split_state.revision,
 		"distribute_energy", 0, "", distribution_options,
 		2, 2, true, false,
-		{"purpose": "relocate_energy_target",
+		{"purpose": "energy_relocate_target",
 		 "card_ids": [psychic_energy_id, psychic_energy_id],
 		 "attachment_refs": split_refs,
 		 "source_player": 0, "source_slot": "active", "same_source": true,
@@ -2103,8 +2133,10 @@ func _check_trusted_dynamic_scoring(catalog: CardCatalog) -> void:
 	var promoted_combo_value := worker._development_action_value(
 		promoted_combo_state,
 		0,
-		GameAction.new("USE_ABILITY", {
-			"slot": "active", "ability_name": starmie_ability_name}),
+		GameAction.create(
+			"USE_ABILITY", {"ability_name": starmie_ability_name}, 0,
+			EntityRef.new(
+				"pokemon", 0, "", "active", -1, "", "sv2-starm")),
 		"water",
 		catalog,
 	)
@@ -2621,6 +2653,66 @@ func _check_retreat_tempo_evaluation(catalog: CardCatalog) -> void:
 			AIPositionEvaluator.RETREAT_TEMPO_COST
 			* AIPositionEvaluator.SCORE_SCALE),
 		"Position evaluator did not charge the deterministic retreat tempo cost",
+	)
+
+
+func _check_redundant_same_pokemon_retreat(
+	catalog: CardCatalog,
+	engine: GameEngine,
+) -> void:
+	var state := GameState.new()
+	state.setup_stage = GameState.SETUP_COMPLETE
+	state.phase = "MAIN"
+	state.turn_number = 3
+	state.first_player_idx = 1
+	state.active_player_idx = 0
+	state.public_deck_keys = ["fire", "grass"]
+	state.set_type_matchups_enabled(false)
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].active.energy_card_ids = ["sv1-ener-2"]
+	state.players[0].bench[0] = PokemonState.new("svi-chim")
+	state.players[0].bench[0].placed_this_turn = false
+	state.players[1].active = PokemonState.new("svi-gree")
+	state.players[1].active.placed_this_turn = false
+	for _index in range(10):
+		state.players[0].deck.append("sv1-ener-2")
+		state.players[1].deck.append("sv1-ener-1")
+	for _index in range(6):
+		state.players[0].prizes.append("sv1-ener-2")
+		state.players[1].prizes.append("sv1-ener-1")
+	var snapshot := state.snapshot()
+	var query := engine.query_legal_action_groups(state, 0)
+	var actions := query.concrete_actions() if query.success else []
+	var retreat: GameAction = null
+	for action in actions:
+		if action.kind == "RETREAT" and action.bench_index() == 0:
+			retreat = action
+			break
+	var worker := NativeChallengeAI.new()
+	var replacement: GameAction = null
+	if retreat != null:
+		replacement = worker._validated_or_fallback_action(
+			state,
+			0,
+			retreat,
+			actions,
+			"fire",
+			catalog,
+			engine,
+			TEST_SEED + 404,
+		)
+	_check(
+		query.success
+		and retreat != null
+		and worker._redundant_same_pokemon_retreat(
+			state, 0, 0, "fire", catalog)
+		and not worker._retreat_has_good_target(
+			state, 0, 0, "fire", catalog)
+		and replacement != null
+		and replacement.kind != "RETREAT"
+		and state.snapshot() == snapshot,
+		"AI accepted a resource-wasting retreat between equivalent copies",
 	)
 
 
@@ -3384,7 +3476,7 @@ func _check_mandatory_knockout(
 			imminent_draw_info,
 			imminent_draw_state,
 			0,
-			catalog,
+			engine,
 			CardSemanticCatalog.new(catalog),
 		)
 	)
@@ -3834,7 +3926,7 @@ func _check_mandatory_knockout(
 	_check(
 		latios_low_query.success
 		and latios_low_ko != null
-		and int(latios_low_ko.params.get("attack_idx", -1)) == 0,
+		and latios_low_ko.attack_index() == 0,
 		"Immediate-KO tactics spent three Energy on Latios overkill",
 	)
 	latios_state.players[1].active.damage_counters = 1
@@ -3848,7 +3940,7 @@ func _check_mandatory_knockout(
 	_check(
 		latios_high_query.success
 		and latios_high_ko != null
-		and int(latios_high_ko.params.get("attack_idx", -1)) == 1,
+		and latios_high_ko.attack_index() == 1,
 		"Immediate-KO tactics refused Latios's necessary 180-damage attack",
 	)
 	var latios_high_info := AIInformationSet.capture(
@@ -3871,7 +3963,7 @@ func _check_mandatory_knockout(
 		and str(latios_low_budget_result.get("reason", "")) in [
 			"immediate_knockout", "immediate_match_win"]
 		and latios_low_budget_action != null
-		and int(latios_low_budget_action.params.get("attack_idx", -1)) == 1,
+		and latios_low_budget_action.attack_index() == 1,
 		"One-node tactical replan missed a deterministic KO in the second attack slot: %s"
 		% JSON.stringify(latios_low_budget_result),
 	)
@@ -3911,7 +4003,7 @@ func _check_mandatory_knockout(
 	_check(
 		glastrier_query.success
 		and glastrier_ko != null
-		and int(glastrier_ko.params.get("attack_idx", -1)) == 0,
+		and glastrier_ko.attack_index() == 0,
 		"Immediate-KO tactics chose Glastrier self-damage over an exact knockout",
 	)
 
@@ -3954,7 +4046,10 @@ func _check_mandatory_knockout(
 	var lucario_productive := worker._best_productive_attack_candidate(
 		lucario_state,
 		0,
-		[GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0)],
+		[GameAction.create(
+			"DECLARE_ATTACK", {"attack_index": 0}, 0,
+			EntityRef.new(
+				"pokemon", 0, "", "active", -1, "", "svf-luca"))],
 		"fighting",
 		catalog,
 	)
@@ -3998,11 +4093,15 @@ func _check_repeatable_ability_turn_guard(catalog: CardCatalog) -> void:
 	state.players[0].active = PokemonState.new("svm-bronzong")
 	state.players[0].active.placed_this_turn = false
 	state.action_log = [
-		"青铜钟使用特性金属转移。",
+		"玩家1 使用了特性「金属转移」。",
 		"—— 玩家1的第9回合 ——",
 	]
-	for _index in range(NativeChallengeAI.MAX_REPEATABLE_ABILITY_USES_PER_TURN):
-		state.action_log.append("青铜钟使用特性金属转移。")
+	for index in range(NativeChallengeAI.MAX_REPEATABLE_ABILITY_USES_PER_TURN):
+		state.action_log.append(
+			"玩家1 使用了特性「金属转移」。"
+			if index % 2 == 0
+			else "青铜钟使用特性金属转移。"
+		)
 	var ability := GameAction.create(
 		"USE_ABILITY",
 		{"ability_name": "金属转移"},
@@ -4250,7 +4349,7 @@ func _check_planner_contract(
 		"A legal planner-error fallback could bypass fixed-depth evidence",
 	)
 	var invalid_supplied: Array[GameAction] = [
-		GameAction.new("END_TURN", {}, true, 1),
+		GameAction.create("END_TURN", {}, 1),
 	]
 	var rejected := TraditionalTurnPlanner.plan_action(
 		request,

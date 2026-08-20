@@ -1428,8 +1428,9 @@ func _render_previews() -> void:
 	ui._refresh_game()
 	await process_frame
 
-	var choice := ChoiceRequest.new(
+	var choice := ChoiceView.new(
 		"preview-choice",
+		demo.revision,
 		"search",
 		0,
 		"选择一张要加入手牌的卡牌",
@@ -1444,7 +1445,6 @@ func _render_previews() -> void:
 					"index": 0,
 					"card_id": "sv1-104",
 				},
-				"value": {"index": 0, "card_id": "sv1-104"},
 			},
 			{
 				"option_id": "card:deck:1:sv1-151",
@@ -1456,7 +1456,6 @@ func _render_previews() -> void:
 					"index": 1,
 					"card_id": "sv1-151",
 				},
-				"value": {"index": 1, "card_id": "sv1-151"},
 			},
 			{
 				"option_id": "card:deck:2:svf-potion",
@@ -1468,7 +1467,6 @@ func _render_previews() -> void:
 					"index": 2,
 					"card_id": "svf-potion",
 				},
-				"value": {"index": 2, "card_id": "svf-potion"},
 			},
 		],
 		1,
@@ -1550,10 +1548,10 @@ func _render_previews() -> void:
 				"index": index,
 				"card_id": card_id,
 			},
-			"value": {"index": index, "card_id": card_id},
 		})
-	var multi_choice := ChoiceRequest.new(
+	var multi_choice := ChoiceView.new(
 		"preview-multi-choice",
+		demo.revision,
 		"search",
 		0,
 		"从这些卡牌中选择两至三张加入手牌。",
@@ -1579,14 +1577,15 @@ func _render_previews() -> void:
 	ui._close_modal()
 	await _wait_until_hidden(ui.modal_layer)
 
-	var confirm_revealed_choice := ChoiceRequest.new(
+	var confirm_revealed_choice := ChoiceView.new(
 		"preview-confirm-revealed",
+		demo.revision,
 		"confirm",
 		0,
 		"要将查看到的卡牌加入手牌吗？",
 		[
-			{"option_id": "confirm:yes", "label": "是，加入手牌", "value": true},
-			{"option_id": "confirm:no", "label": "否，放入弃牌", "value": false},
+			{"option_id": "confirm:yes", "label": "是，加入手牌"},
+			{"option_id": "confirm:no", "label": "否，放入弃牌"},
 		],
 		1,
 		1,
@@ -1606,8 +1605,9 @@ func _render_previews() -> void:
 	ui._close_modal()
 	await _wait_until_hidden(ui.modal_layer)
 
-	var empty_choice := ChoiceRequest.new(
+	var empty_choice := ChoiceView.new(
 		"preview-empty-choice",
+		demo.revision,
 		"resolve_empty",
 		0,
 		"没有找到符合条件的卡牌。",
@@ -1623,8 +1623,9 @@ func _render_previews() -> void:
 	ui._close_modal()
 	await _wait_until_hidden(ui.modal_layer)
 
-	var energy_choice := ChoiceRequest.new(
+	var energy_choice := ChoiceView.new(
 		"preview-energy-choice",
+		demo.revision,
 		"distribute_energy",
 		0,
 		"为每张能量选择附着目标。",
@@ -1632,12 +1633,14 @@ func _render_previews() -> void:
 			{
 				"option_id": "pokemon:0:active:svi-hrot",
 				"label": "加热洛托姆",
-				"value": {"slot": "active", "card_id": "svi-hrot"},
+				"ref": EntityRef.new(
+					"pokemon", 0, "", "active", -1, "", "svi-hrot").to_dict(),
 			},
 			{
 				"option_id": "pokemon:0:bench_0:svi-chim",
 				"label": "小火焰猴",
-				"value": {"slot": "bench_0", "card_id": "svi-chim"},
+				"ref": EntityRef.new(
+					"pokemon", 0, "", "bench_0", -1, "", "svi-chim").to_dict(),
 			},
 		],
 		2,
@@ -1709,10 +1712,10 @@ func _render_previews() -> void:
 			"option_id": option_id,
 			"label": "己方 战斗区 · %s" % ui.catalog.card_name(energy_id),
 			"ref": attachment_ref,
-			"value": attachment_ref.duplicate(true),
 		})
-	var attachment_choice := ChoiceRequest.new(
+	var attachment_choice := ChoiceView.new(
 		"preview-attachment-choice",
+		demo.revision,
 		"select_attachment",
 		0,
 		"从己方战斗宝可梦选择至多两张能量。",

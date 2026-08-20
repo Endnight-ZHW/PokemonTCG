@@ -24,6 +24,7 @@ $release = Get-ReleaseManifest -RepoRoot $repoRoot
 Assert-ReleaseDeepFallbackContract -Manifest $release
 $releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
 $modelCount = [int]$release.model_count
+$deepEnabled = [bool]$release.deep_runtime_enabled
 $deepState = if ([bool]$release.deep_runtime_enabled) { 'enabled' } else { 'disabled' }
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
@@ -269,11 +270,14 @@ if (
 ) {
     throw 'Android runtime payload does not contain exactly universal.onnx.'
 }
-foreach ($requiredRuntimeInput in @(
+$requiredRuntimeInputs = @(
     'assets/data/ai_models_runtime.json',
-    'assets/data/release_manifest.json',
-    'lib/arm64-v8a/libonnxruntime.so'
-)) {
+    'assets/data/release_manifest.json'
+)
+if ($deepEnabled) {
+    $requiredRuntimeInputs += 'lib/arm64-v8a/libonnxruntime.so'
+}
+foreach ($requiredRuntimeInput in $requiredRuntimeInputs) {
     if ($requiredRuntimeInput -notin $releaseKeys) {
         throw "Android runtime payload is missing $requiredRuntimeInput."
     }
@@ -290,7 +294,10 @@ if ($nativeModelLibraries.Count -ne 1) {
 $sourcePayloads = [ordered]@{
     'assets/data/ai_models_runtime.json' = Join-Path $repoRoot 'godot\data\ai_models_runtime.json'
     'assets/data/release_manifest.json' = Join-Path $repoRoot 'godot\data\release_manifest.json'
-    'lib/arm64-v8a/libonnxruntime.so' = Join-Path $repoRoot 'godot\bin\android\libonnxruntime.so'
+}
+if ($deepEnabled) {
+    $sourcePayloads['lib/arm64-v8a/libonnxruntime.so'] = `
+        Join-Path $repoRoot 'godot\bin\android\libonnxruntime.so'
 }
 foreach ($modelEntry in $modelFiles) {
     $modelKey = [IO.Path]::GetFileNameWithoutExtension($modelEntry)

@@ -68,7 +68,7 @@ def main() -> int:
                 break
             actor = environment.actor(state)
             formal_candidates = list(environment.candidates(state, actor))
-            request = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+            request = DEFAULT_GAME_ENGINE.pending_choice(state)
             trajectory_seed = (task.seed + decision * 65537) & 0xFFFFFFFF
 
             if (game_index, decision) in targets:

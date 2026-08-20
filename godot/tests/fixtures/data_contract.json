@@ -109,7 +109,9 @@
     },
     "aura_damage_reduction": {
       "args": {
-        "reduction": 20
+        "before_weakness": true,
+        "reduction": 20,
+        "requires_active": true
       },
       "branches": {},
       "op": "register_aura_damage_reduction"
@@ -266,7 +268,8 @@
     },
     "damage_counter_self": {
       "args": {
-        "amount": 20
+        "amount": 20,
+        "damage_kind": "self_damage"
       },
       "branches": {},
       "op": "place_damage_counters"
@@ -907,7 +910,9 @@
     "aura_damage_reduction": {
       "effect_type": "aura_damage_reduction",
       "params": {
-        "reduction": 20
+        "before_weakness": true,
+        "reduction": 20,
+        "requires_active": true
       }
     },
     "bench_damage": {
@@ -1040,7 +1045,8 @@
     "damage_counter_self": {
       "effect_type": "damage_counter_self",
       "params": {
-        "amount": 20
+        "amount": 20,
+        "damage_kind": "self_damage"
       }
     },
     "damage_per_discard_psychic": {
@@ -1484,7 +1490,7 @@
     "godot_action_version": 4,
     "godot_rules_version": 6,
     "protocol_version": 6,
-    "python_action_version": 3,
+    "python_action_version": 4,
     "python_rules_version": 5,
     "rng_version": 2
   },

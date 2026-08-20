@@ -7,8 +7,14 @@ from typing import Any
 from engine.enums import PlayerAction
 
 
-ACTION_SCHEMA_VERSION = 3
+ACTION_SCHEMA_VERSION = 4
 RULES_SCHEMA_VERSION = 5
+
+_TERMINAL_ACTION_KINDS = frozenset({
+    "DECLARE_ATTACK",
+    "END_TURN",
+    "SETUP_DONE",
+})
 
 
 @dataclass(frozen=True)
@@ -87,12 +93,12 @@ class ChoiceOption:
     option_id: str
     label: str
     ref: EntityRef | None = None
-    value: Any = field(default=None, compare=False, repr=False)
 
 
 @dataclass
-class ChoiceRequest:
+class ChoiceView:
     request_id: str
+    base_revision: int
     request_type: str
     player: int
     prompt: str
@@ -101,8 +107,8 @@ class ChoiceRequest:
     max_select: int = 1
     allow_duplicates: bool = False
     can_cancel: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
-    legacy_request: Any = field(default=None, compare=False, repr=False)
+    presentation: dict[str, Any] = field(default_factory=dict)
+    schema_version: int = 2
 
 
 @dataclass(frozen=True)
@@ -114,43 +120,89 @@ class ChoiceResponse:
 
 @dataclass(frozen=True)
 class GameAction:
-    """A stable action contract.
+    """Strict Action v4 DTO used by Python tooling and native bindings."""
 
-    The first three fields intentionally match the old ``AIAction`` constructor
-    so existing callers can migrate without a flag day.
-    """
-
-    action: PlayerAction | str
-    params: dict[str, Any] = field(default_factory=dict)
-    terminal: bool = False
-    actor: int | None = None
+    kind: PlayerAction | str
+    payload: dict[str, Any] = field(default_factory=dict)
+    actor: int = -1
     source: EntityRef | None = None
     target: EntityRef | None = None
     action_id: str = ""
+    base_revision: int = -1
+    schema_version: int = ACTION_SCHEMA_VERSION
+
+    @property
+    def kind_name(self) -> str:
+        return (
+            self.kind.name
+            if isinstance(self.kind, PlayerAction)
+            else str(self.kind)
+        )
+
+    @property
+    def terminal(self) -> bool:
+        return self.kind_name in _TERMINAL_ACTION_KINDS
 
     def with_actor(self, actor: int) -> "GameAction":
         return GameAction(
-            self.action,
-            dict(self.params),
-            self.terminal,
-            actor,
-            self.source,
-            self.target,
-            self.action_id,
+            kind=self.kind,
+            payload=dict(self.payload),
+            actor=actor,
+            source=self.source,
+            target=self.target,
+            action_id=self.action_id,
+            base_revision=self.base_revision,
+            schema_version=self.schema_version,
         )
 
     @property
     def signature(self) -> tuple:
-        action_name = self.action.name if isinstance(self.action, PlayerAction) else str(self.action)
-        return action_name, _freeze(self.params)
+        return (
+            self.kind_name,
+            _freeze(self.payload),
+            _freeze(self.source),
+            _freeze(self.target),
+        )
+
+    def hand_index(self, default: int = -1) -> int:
+        if isinstance(self.source, CardRef) and self.source.zone == "hand":
+            return int(self.source.index)
+        return default
+
+    def source_slot(self, default: str = "") -> str:
+        if isinstance(self.source, (PokemonRef, SlotRef, AttachmentRef)):
+            return str(self.source.slot)
+        return default
+
+    def target_slot(self, default: str = "") -> str:
+        if isinstance(self.target, (PokemonRef, SlotRef, AttachmentRef)):
+            return str(self.target.slot)
+        return default
+
+    def primary_slot(self, default: str = "") -> str:
+        source = self.source_slot()
+        return source if source else self.target_slot(default)
+
+    def bench_index(self, default: int = -1) -> int:
+        slot = self.target_slot()
+        if slot.startswith("bench_") and slot[6:].isdigit():
+            return int(slot[6:])
+        return default
+
+    def attack_index(self, default: int = -1) -> int:
+        value = self.payload.get("attack_index", default)
+        return int(value) if type(value) is int else default
+
+    def ability_name(self, default: str = "") -> str:
+        value = self.payload.get("ability_name", default)
+        return str(value) if isinstance(value, str) else default
 
 
 @dataclass
 class StepResult:
     success: bool
     message: str = ""
-    action_result: Any = None
-    pending_choice: ChoiceRequest | None = None
+    pending_choice: ChoiceView | None = None
     events: tuple[dict[str, Any], ...] = ()
     winner: int | None = None
     terminal: bool = False
@@ -158,6 +210,11 @@ class StepResult:
 
 
 def _freeze(value: Any):
+    if isinstance(value, (CardRef, PokemonRef, SlotRef, AttachmentRef)):
+        return tuple(
+            (field_name, _freeze(getattr(value, field_name)))
+            for field_name in value.__dataclass_fields__
+        )
     if isinstance(value, dict):
         return tuple(sorted((str(key), _freeze(item)) for key, item in value.items()))
     if isinstance(value, (list, tuple)):

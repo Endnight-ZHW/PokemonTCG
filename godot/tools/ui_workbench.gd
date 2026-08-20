@@ -17,6 +17,7 @@ const DECK_DETAIL_PANEL_SCENE := preload("res://ui/panels/deck_detail_panel.tscn
 const FRONTEND_THEME := preload("res://ui/frontend/front_end_theme.tres")
 
 var catalog := CardCatalog.new()
+var rules_adapter: NativeRulesSessionAdapter
 var current_battle: BattleTable
 var sample_state: GameState
 var event_sequence := 0
@@ -173,6 +174,178 @@ func get_presentation_checkpoint() -> Dictionary:
 		"after_view": presentation_after_view,
 		"request": presentation_request,
 	}
+
+
+func load_native_scenario(
+	snapshot: Dictionary,
+	p_rng_state: int,
+	viewer: int = 0,
+	render: bool = true,
+) -> Dictionary:
+	## Developer-only Snapshot 3 entry point. The Workbench never mutates the
+	## restored state; all subsequent rule steps remain inside ptcg_core.
+	rules_adapter = NativeRulesSessionAdapter.new(catalog)
+	if not rules_adapter.restore(snapshot, p_rng_state):
+		return {"success": false, "error_code": "scenario_restore_failed"}
+	if render:
+		_render_native_state(viewer)
+	return {
+		"success": true,
+		"error_code": "",
+		"revision": rules_adapter.state.revision,
+		"state_hash": rules_adapter.state_hash(),
+	}
+
+
+func replay_match_journal(
+	journal: Dictionary,
+	deck_keys: Array[String] = ["fire", "water"],
+	viewer: int = 0,
+	render: bool = true,
+) -> Dictionary:
+	## Deterministically replays MatchJournal v1 and reports the first divergent
+	## revision/hash. Full journals stay local to this developer tool.
+	if (
+		str(journal.get("schema", "")) != "ptcg_match_journal/1"
+		or int(journal.get("format_version", 0)) != 1
+		or int(journal.get("native_abi_version", 0)) != 2
+		or deck_keys.size() != 2
+		or not catalog.decks.has(deck_keys[0])
+		or not catalog.decks.has(deck_keys[1])
+	):
+		return {"success": false, "error_code": "journal_contract_invalid"}
+	var native_session: Variant = ClassDB.instantiate("NativeRulesSession")
+	if native_session == null:
+		return {"success": false, "error_code": "native_rules_unavailable"}
+	var created: Dictionary = native_session.create(
+		catalog.native_rules_catalog(),
+		[
+			catalog.expand_deck(deck_keys[0]),
+			catalog.expand_deck(deck_keys[1]),
+		],
+		Dictionary(journal.get("match_config", {})),
+		int(journal.get("initial_seed", 0)),
+	)
+	if not bool(created.get("success", false)):
+		return {
+			"success": false,
+			"error_code": str(created.get("error_code", "journal_create_failed")),
+			"mismatch_index": 0,
+		}
+	var expected_entries: Array = journal.get("entries", [])
+	var actual_journal: Dictionary = native_session.journal()
+	for field in [
+		"catalog_fingerprint", "content_fingerprint", "contract_fingerprint",
+		"vm_descriptor_digest",
+	]:
+		if journal.get(field) != actual_journal.get(field):
+			return {
+				"success": false,
+				"error_code": "journal_%s_mismatch" % field,
+				"mismatch_index": 0,
+			}
+	if expected_entries.is_empty():
+		return {"success": false, "error_code": "journal_create_missing"}
+	var mismatch := _journal_entry_mismatch(
+		Dictionary(expected_entries[0]),
+		Dictionary(native_session.journal().get("entries", [])[0]),
+	)
+	if not mismatch.is_empty():
+		return {
+			"success": false,
+			"error_code": mismatch,
+			"mismatch_index": 0,
+		}
+	for index in range(1, expected_entries.size()):
+		var expected := Dictionary(expected_entries[index])
+		var input := Dictionary(expected.get("input", {}))
+		var step: Dictionary
+		match str(expected.get("kind", "")):
+			"action":
+				step = native_session.apply_action(input)
+			"choice":
+				step = native_session.apply_choice(input)
+			"command":
+				if str(input.get("command", "")) != "surrender":
+					return {
+						"success": false,
+						"error_code": "journal_command_unsupported",
+						"mismatch_index": index,
+					}
+				step = native_session.surrender(int(input.get("actor", -1)))
+			_:
+				return {
+					"success": false,
+					"error_code": "journal_kind_unsupported",
+					"mismatch_index": index,
+				}
+		if not bool(step.get("success", false)):
+			return {
+				"success": false,
+				"error_code": str(step.get("error_code", "journal_step_failed")),
+				"mismatch_index": index,
+			}
+		var actual_entries: Array = native_session.journal().get("entries", [])
+		mismatch = _journal_entry_mismatch(
+			expected,
+			Dictionary(actual_entries[-1]),
+		)
+		if not mismatch.is_empty():
+			return {
+				"success": false,
+				"error_code": mismatch,
+				"mismatch_index": index,
+				"expected": expected,
+				"actual": actual_entries[-1],
+			}
+	rules_adapter = NativeRulesSessionAdapter.new(catalog)
+	rules_adapter.native = native_session
+	rules_adapter.rng_state = native_session.rng_state()
+	rules_adapter.state = GameState.from_snapshot(native_session.snapshot())
+	if rules_adapter.state == null:
+		return {"success": false, "error_code": "journal_final_state_invalid"}
+	if render:
+		_render_native_state(viewer)
+	return {
+		"success": true,
+		"error_code": "",
+		"mismatch_index": -1,
+		"revision": rules_adapter.state.revision,
+		"state_hash": rules_adapter.state_hash(),
+	}
+
+
+static func _journal_entry_mismatch(
+	expected: Dictionary,
+	actual: Dictionary,
+) -> String:
+	for field in [
+		"index", "kind", "revision_before", "revision_after",
+		"input", "state_hash", "event_hash", "rng_state",
+	]:
+		if expected.get(field) != actual.get(field):
+			return "journal_%s_mismatch" % field
+	return ""
+
+
+func _render_native_state(viewer: int) -> void:
+	if current_battle == null or not is_instance_valid(current_battle):
+		show_preview("battle")
+	if current_battle == null or rules_adapter == null or rules_adapter.state == null:
+		return
+	sample_state = rules_adapter.state.clone_state()
+	preview_caption.text = "Native ABI 2 · revision %d · %s" % [
+		sample_state.revision,
+		rules_adapter.state_hash(),
+	]
+	current_battle.update_view(
+		sample_state,
+		viewer,
+		[],
+		"",
+		false,
+		"native_workbench",
+	)
 
 
 func _bind_toolbar() -> void:
@@ -391,15 +564,23 @@ func _presentation_event(kind: String) -> Dictionary:
 		"visibility": "public",
 	}
 	match kind:
-		"draw":
+		"draw", "draw_sparse", "cross_owner_draw":
 			base.merge({
 				"event_type": "cards_drawn",
-				"card_id": "sv1-151",
 				"source": {"player": 0, "zone": "deck"},
 				"target": {"player": 0, "zone": "hand"},
 				"amount": 1,
-				"data": {"player": 0, "count": 1, "card_ids": ["sv1-151"]},
+				"data": {"player": 0, "count": 1},
 			})
+			if kind in ["draw", "cross_owner_draw"]:
+				base["card_id"] = "sv1-151"
+				base["data"]["card_ids"] = ["sv1-151"]
+			if kind == "cross_owner_draw":
+				# The effect's causal actor differs from the owner of the hidden
+				# movement, as it does for each side of Judge.
+				base["actor"] = 1
+				base["visibility"] = "owner"
+				base["data"]["visibility_owner"] = 0
 		"attach_energy":
 			base.merge({
 				"event_type": "energy_attached",
@@ -448,6 +629,20 @@ func _presentation_event(kind: String) -> Dictionary:
 					"card_ids": ["sv2-keldeo"],
 				},
 			})
+		"retreat_identical":
+			base.merge({
+				"event_type": "retreat",
+				"source": {"player": 0, "slot": "bench_0"},
+				"target": {"player": 0, "slot": "active"},
+				"data": {
+					"actor": 0,
+					"player": 0,
+					"slot": "bench_0",
+					"bench_idx": 0,
+					"outgoing_card_id": "svi-chim",
+					"incoming_card_id": "svi-chim",
+				},
+			})
 		_:
 			base.merge({
 				"event_type": "damage_dealt",
@@ -464,14 +659,20 @@ func _build_presentation_fixture(kind: String) -> Dictionary:
 	var before := UIPreviewStateFactory.battle_state(20260623 + event_sequence)
 	before.revision = event_sequence * 2
 	match kind:
-		"draw":
+		"draw", "draw_sparse", "cross_owner_draw":
 			before.players[0].deck[-1] = "sv1-151"
 		"evolve":
 			before.players[0].hand.insert(0, "svi-infr")
+		"retreat_identical":
+			before.players[0].active = PokemonState.new("svi-chim")
+			before.players[0].active.placed_this_turn = false
+			before.players[0].bench[0] = PokemonState.new("svi-chim")
+			before.players[0].bench[0].placed_this_turn = false
 	var after := before.clone_state()
 	match kind:
-		"draw":
-			after.players[0].draw_cards(1)
+		"draw", "draw_sparse", "cross_owner_draw":
+			if not after.players[0].deck.is_empty():
+				after.players[0].hand.append(after.players[0].deck.pop_back())
 			after.log_action("预览玩家抽到了 妙蛙种子。")
 		"attach_energy":
 			var energy_id: String = after.players[0].hand.pop_at(0)
@@ -487,8 +688,24 @@ func _build_presentation_fixture(kind: String) -> Dictionary:
 		"attack":
 			after.log_action("预览玩家使用了 高温冲撞。")
 		"ko":
-			after.discard_pokemon(1, "active")
+			var knocked_out := after.players[1].active
+			if knocked_out != null:
+				after.players[1].discard.append(knocked_out.card_id)
+				after.players[1].discard.append_array(
+					knocked_out.evolution_stack_ids)
+				if not knocked_out.attached_tool_id.is_empty():
+					after.players[1].discard.append(
+						knocked_out.attached_tool_id)
+				after.players[1].discard.append_array(
+					knocked_out.energy_card_ids)
+				after.players[1].active = null
 			after.log_action("预览对手的战斗宝可梦气绝了。")
+		"retreat_identical":
+			var outgoing := after.players[0].active
+			after.players[0].active = after.players[0].bench[0]
+			after.players[0].bench[0] = outgoing
+			after.players[0].retreated_this_turn = true
+			after.log_action("预览玩家在两张同名宝可梦之间完成了撤退。")
 		_:
 			after.players[1].active.damage_counters += 9
 			after.log_action("预览对手的战斗宝可梦受到了 90 点伤害。")
@@ -588,6 +805,7 @@ func _presentation_label(kind: String) -> String:
 		"attack": "攻击蓄力",
 		"damage": "伤害",
 		"ko": "击倒",
+		"retreat_identical": "同名宝可梦撤退",
 	}.get(kind, kind)
 
 

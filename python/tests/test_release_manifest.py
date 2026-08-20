@@ -68,7 +68,7 @@ class ReleaseManifestTests(unittest.TestCase):
             "godot_rules": 6,
             "godot_actions": 4,
             "python_rules": 5,
-            "python_actions": 3,
+            "python_actions": 4,
             "snapshot": 3,
             "encoder": 7,
             "checkpoint": 12,
@@ -124,6 +124,31 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(schemas["python_actions"], ACTION_SCHEMA_VERSION)
         self.assertEqual(schemas["snapshot"], SNAPSHOT_SCHEMA_VERSION)
         self.assertEqual(schemas["vm_ir"], VM_IR_VERSION)
+        card_ir = json.loads(
+            (REPO_ROOT / "godot" / "data" / "card_ir_v3.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        native_rules = self.manifest["native_rules"]
+        self.assertEqual(self.manifest["native_ai"]["abi_version"], 2)
+        self.assertEqual(native_rules["native_abi_version"], 2)
+        self.assertEqual(native_rules["vm_ir_version"], VM_IR_VERSION)
+        self.assertEqual(
+            native_rules["card_ir_content_fingerprint"],
+            card_ir["content_fingerprint"],
+        )
+        self.assertEqual(
+            native_rules["card_ir_contract_fingerprint"],
+            card_ir["contract_fingerprint"],
+        )
+        self.assertEqual(
+            native_rules["core_fingerprint"],
+            card_ir["contract_fingerprint"],
+        )
+        self.assertEqual(
+            native_rules["vm_descriptor_digest"],
+            card_ir["descriptor_digest"],
+        )
         app_state = (REPO_ROOT / "godot" / "autoload" / "app_state.gd").read_text(
             encoding="utf-8"
         )

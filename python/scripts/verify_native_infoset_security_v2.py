@@ -28,7 +28,7 @@ if str(PYTHON_ROOT) not in sys.path:
 
 import ptcg_ai_core
 
-from engine.action_codec import serialize_choice_request
+from engine.action_codec import serialize_choice_view
 from engine.ai.dl.alphazero_v2 import (
     GameTask,
     _advance_nondecision_phase,
@@ -39,7 +39,7 @@ from engine.ai.dl.native_bridge_v2 import (
     HIDDEN_PRIZE,
     _formal_action_key,
     _native_action_key,
-    _native_choice_request,
+    _native_choice_view,
     game_state_to_native_wire,
     mask_native_snapshot,
 )
@@ -478,7 +478,7 @@ def audit(
             reordered, order_changed = _order_variant(wire, actor)
             variants.append(("order", reordered, order_changed))
 
-            request = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+            request = DEFAULT_GAME_ENGINE.pending_choice(state)
             native_pending: dict[str, Any] | None = None
             baseline_candidates: list[dict[str, Any]]
             baseline_tensors: dict[str, np.ndarray]
@@ -577,8 +577,8 @@ def audit(
                 choice_states_by_deck[deck_key] += 1
                 request_types[str(request.request_type)] += 1
                 try:
-                    native_pending = _native_choice_request(
-                        serialize_choice_request(request),
+                    native_pending = _native_choice_view(
+                        serialize_choice_view(request),
                         formal_candidates,
                         actor,
                     )

@@ -18,15 +18,15 @@
       ],
       "DECLARE_ATTACK": [
         "basic_attach_attack",
-        "pending_attack_choice_continuation",
-        "pending_attack_choice_cancel",
+        "conditional_damage_heal_attack",
+        "conditional_status_attack",
         "confused_attack_tails",
-        "ko_then_promote",
         "damage_then_self_heal_attack",
         "formula_damage_attack",
+        "ko_then_promote",
+        "pending_attack_choice_cancel",
+        "pending_attack_choice_continuation",
         "prevent_damage_and_lock_attack",
-        "conditional_status_attack",
-        "conditional_damage_heal_attack",
         "prevent_effects_attack",
         "search_energy_attack"
       ],
@@ -40,11 +40,11 @@
         "basic_attach_attack"
       ],
       "PLAY_TRAINER": [
-        "supporter_draw",
-        "tool_attachment",
         "heal_supporter",
+        "potion_heal_choice",
         "shuffle_draw_supporter",
-        "potion_heal_choice"
+        "supporter_draw",
+        "tool_attachment"
       ],
       "RETREAT": [
         "double_turbo_retreat"
@@ -1326,7 +1326,7 @@
     "transaction_step_count": 32
   },
   "vm_descriptor_contract": {
-    "descriptor_digest": "73c834d4fc44cb495293aa0a3a54530cc8f8314a5cbbd2675f3524dc2d55afe0",
+    "descriptor_digest": "d990e5514e1dcd1278b03a8bc5a3d8b74503d707a92801904ba494d579b299b2",
     "descriptor_ops": [
       "apply_attack_lock_basic",
       "apply_dazzling_beam",

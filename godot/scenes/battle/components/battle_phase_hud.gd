@@ -60,12 +60,12 @@ func update_phase(
 		)
 	elif state.phase == "SETUP":
 		label = "完成准备"
-		if phase_action and phase_action.action == "SETUP_DONE":
+		if phase_action and phase_action.kind == "SETUP_DONE":
 			enabled = true
 			tooltip = "确认当前初始场面并完成准备"
 		else:
 			tooltip = "请先放置战斗宝可梦"
-	elif phase_action and phase_action.action == "END_TURN":
+	elif phase_action and phase_action.kind == "END_TURN":
 		label = "结束回合"
 		enabled = true
 		tooltip = "结束当前玩家的回合"
@@ -90,13 +90,13 @@ func _find_system_action(action_source: Variant) -> GameAction:
 				action = row_value as GameAction
 			elif row_value is Dictionary:
 				action = (row_value as Dictionary).get("action") as GameAction
-			if action and action.action in ["SETUP_DONE", "END_TURN"]:
+			if action and action.kind in ["SETUP_DONE", "END_TURN"]:
 				return action
 	return null
 
 
 func _as_system_action(action: GameAction) -> GameAction:
-	if action and action.action in ["SETUP_DONE", "END_TURN"]:
+	if action and action.kind in ["SETUP_DONE", "END_TURN"]:
 		return action
 	return null
 

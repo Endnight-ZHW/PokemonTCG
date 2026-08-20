@@ -26,17 +26,11 @@ const LEGACY_LOCAL_HARD_MSEC := 60
 const LEGACY_EXHAUSTED_SOFT_MSEC := 50
 const LEGACY_HARD_DEADLINE_MSEC := 1100
 const LEGACY_REPLAN_LEDGER_LIMIT := 16
-## Compatibility constants for old settings and saved evaluator configs. They
-## are no longer consumed by the production planner.
+## Evaluator-facing Deep defaults. The production traditional planner uses the
+## fixed-work constants above.
 const DEEP_DEFAULT_SIMULATIONS := 192
-const DEEP_FALLBACK_SIMULATIONS := 192
 const DEEP_DEFAULT_SECONDS := 0.85
 const DEEP_DEFAULT_DEPTH := GAMEPLAY_DEFAULT_DEPTH
-const GAMEPLAY_DEFAULT_SIMULATIONS := 192
-const GAMEPLAY_DEFAULT_SECONDS := 0.85
-const GAMEPLAY_LOW_SIMULATIONS := 1
-const GAMEPLAY_LOW_SECONDS := 0.12
-const GAMEPLAY_LOW_DEPTH := 1
 ## The turn planner reasons over at most six atomic actions.  A repeatable
 ## ability may otherwise be selected again after every local replan and bounce
 ## resources forever, so carry the same bound across the authoritative turn.
@@ -1261,19 +1255,35 @@ func _repeatable_ability_uses_this_turn(
 		if source_pokemon != null:
 			source_card_id = source_pokemon.card_id
 	var card_name := catalog.card_name(source_card_id)
-	var exact_log_entry := "%s使用特性%s。" % [card_name, ability_name]
-	var generic_suffix := "使用特性%s。" % ability_name
 	var count := 0
 	for index in range(state.action_log.size() - 1, -1, -1):
 		var entry := str(state.action_log[index])
 		if entry.begins_with("—— "):
 			break
-		if (
-			(not card_name.is_empty() and entry == exact_log_entry)
-			or (card_name.is_empty() and entry.ends_with(generic_suffix))
-		):
+		if _action_log_records_ability_use(
+			state, action.actor, entry, card_name, ability_name):
 			count += 1
 	return count
+
+
+func _action_log_records_ability_use(
+	state: GameState,
+	actor: int,
+	entry: String,
+	card_name: String,
+	ability_name: String,
+) -> bool:
+	if state == null or actor not in [0, 1] or ability_name.is_empty():
+		return false
+	# Native ABI 2 writes the player-scoped canonical action line. Keep the
+	# pre-cutover card-scoped spelling readable so restored Snapshot 3 states do
+	# not lose the repeatable-ability guard halfway through a turn.
+	var player_name := str(state.get_player(actor).name)
+	if entry == "%s 使用了特性「%s」。" % [player_name, ability_name]:
+		return true
+	if not card_name.is_empty():
+		return entry == "%s使用特性%s。" % [card_name, ability_name]
+	return entry.ends_with("使用特性%s。" % ability_name)
 
 
 func _intent_with_precondition(
@@ -2119,7 +2129,7 @@ func _ordered_energy_distribution_response(
 		return null
 
 	var purpose := str(presentation.get("purpose", ""))
-	var is_relocation := purpose.begins_with("relocate_energy")
+	var is_relocation := _is_energy_relocation_purpose(purpose)
 	var minimum := maxi(0, request.min_select)
 	if is_relocation and minimum != maximum:
 		# The relocation continuation requires one target for every public
@@ -2642,7 +2652,7 @@ func _semantic_lookahead_choice(
 ) -> ChoiceResponse:
 	if request.options.size() > SEMANTIC_CHOICE_LOOKAHEAD_MAX_OPTIONS:
 		return null
-	if not _choice_request_matches_pending(state, request):
+	if not _choice_view_matches_pending(state, request):
 		return null
 	var ranked: Array[int] = []
 	for index in range(request.options.size()):
@@ -2719,7 +2729,7 @@ func _semantic_choice_option_weight(mode: String) -> float:
 	return 0.08
 
 
-func _choice_request_matches_pending(state: GameState, request: ChoiceView) -> bool:
+func _choice_view_matches_pending(state: GameState, request: ChoiceView) -> bool:
 	if request == null or request.player not in [0, 1]:
 		return false
 	return request.base_revision == state.revision
@@ -2741,18 +2751,21 @@ func _choice_max_count(request: ChoiceView) -> int:
 func _choice_score_mode(request: ChoiceView, presentation: Dictionary) -> String:
 	var purpose := str(presentation.get("purpose", ""))
 	if request.request_type == "select_attachment":
-		if purpose == "discard_energy":
+		if purpose in ["discard_energy", "discard_energy_attachments"]:
 			return (
 				"energy_source"
 				if int(presentation.get("source_player", request.player)) == request.player
 				else "target"
 			)
 		return (
-			"energy"
-			if purpose.begins_with("relocate_energy")
+			"energy_source"
+			if _is_energy_relocation_purpose(purpose)
 			else "discard"
 		)
-	if purpose in ["discard_then_draw", "discard_cards", "hand_bottom_draw", "houb", "zinnia"]:
+	if purpose in [
+		"discard_then_draw", "discard_hand_then_draw", "discard_cards",
+		"hand_bottom_draw", "houb", "zinnia",
+	]:
 		return "discard"
 	if request.request_type == "select_energy_source" or purpose == "energy_relocate_source":
 		return "energy_source"
@@ -2762,11 +2775,21 @@ func _choice_score_mode(request: ChoiceView, presentation: Dictionary) -> String
 		return "heal"
 	if request.request_type in ["select_opponent_bench", "bench_damage_target", "damage_target", "place_counters_self_discard"]:
 		return "target"
-	if request.request_type == "select_bench" and purpose == "switch":
+	if (
+		request.request_type == "select_bench"
+		and purpose in ["switch", "search_any_switch_bench"]
+	):
 		return "self_switch"
 	if purpose in ["discard", "discard_cost", "bottom_deck"]:
 		return "discard"
 	return "search"
+
+
+func _is_energy_relocation_purpose(purpose: String) -> bool:
+	return (
+		purpose.begins_with("energy_relocate")
+		or purpose.begins_with("relocate_energy")
+	)
 
 
 func _is_arven_choice(request: ChoiceView, presentation: Dictionary) -> bool:
@@ -2861,9 +2884,16 @@ func _psychic_arven_opening_switch_option(
 	)
 	if not can_pay_attack:
 		return -1
-	if RulesValidator.new(catalog).can_start_retreat(
-		state, request.player, cresselia_bench_index).is_empty():
-		return -1
+	var retreat_query := GameEngine.new(catalog).query_legal_action_groups(
+		state, request.player)
+	if retreat_query.success:
+		for legal_action in retreat_query.concrete_actions():
+			if (
+				legal_action.kind == "RETREAT"
+				and legal_action.bench_index()
+					== cresselia_bench_index
+			):
+				return -1
 	for index in range(request.options.size()):
 		if _choice_option_card_id(request.options[index], catalog) == "sv1-150":
 			return index
@@ -2941,11 +2971,14 @@ func _option_score(
 		elif mode == "heal":
 			score += pokemon.damage_counters * 30.0
 		elif mode == "energy":
+			var option_energy_id := _choice_option_energy_card_id(option, catalog)
+			if option_energy_id.is_empty():
+				option_energy_id = _choice_energy_card_id(presentation, catalog)
 			score += _energy_choice_target_value(
 				state,
 				target_player,
 				slot,
-				_choice_energy_card_id(presentation, catalog),
+				option_energy_id,
 				deck_key,
 				catalog,
 			)
@@ -3020,6 +3053,24 @@ func _choice_energy_card_id(presentation: Dictionary, catalog: CardCatalog) -> S
 	if catalog.is_energy(card_id):
 		return card_id
 	return ""
+
+
+func _choice_option_energy_card_id(
+	option: Dictionary,
+	catalog: CardCatalog,
+) -> String:
+	var option_id := str(option.get("option_id", ""))
+	if not option_id.begins_with("energy:"):
+		return ""
+	var index_separator := option_id.find(":", "energy:".length())
+	var target_separator := option_id.find("->", index_separator + 1)
+	if index_separator < 0 or target_separator <= index_separator + 1:
+		return ""
+	var card_id := option_id.substr(
+		index_separator + 1,
+		target_separator - index_separator - 1,
+	)
+	return card_id if catalog.is_energy(card_id) else ""
 
 
 func _card_keep_value(
@@ -3971,7 +4022,7 @@ func _confirm_choice(
 		if top_card_id.is_empty() and not state.get_player(request.player).deck.is_empty():
 			top_card_id = state.get_player(request.player).deck[-1]
 		return _should_keep_top_deck_card(state, request.player, top_card_id, deck_key, catalog)
-	if purpose == "confirm_switch":
+	if purpose in ["confirm_switch", "search_any_switch_confirm"]:
 		var chooser := int(presentation.get("source_player", request.player))
 		var target_player := int(presentation.get("target_player", request.player))
 		if target_player == chooser:
@@ -4022,7 +4073,7 @@ func _validated_or_fallback_action(
 ) -> GameAction:
 	if (
 		preferred != null
-		and preferred.action == "DECLARE_ATTACK"
+		and preferred.kind == "DECLARE_ATTACK"
 		and _action_immediately_loses_match(
 			state, actor, preferred, deck_key, catalog, engine, seed + 3)
 	):
@@ -4051,7 +4102,7 @@ func _validated_or_fallback_action(
 			return escape
 	if (
 		preferred != null
-		and preferred.action == "ATTACH_ENERGY"
+		and preferred.kind == "ATTACH_ENERGY"
 		and _switching_energy_regresses_current_attack(
 			state, actor, preferred, deck_key, catalog, engine, seed + 7)
 	):
@@ -4081,7 +4132,7 @@ func _validated_or_fallback_action(
 			state, actor, ko_attack, preferred, actions,
 			deck_key, catalog, engine, seed + 1000, profile, engine_id)
 
-	if preferred.action == "DECLARE_ATTACK":
+	if preferred.kind == "DECLARE_ATTACK":
 		if (
 			_attack_draw_pressure_is_unsafe(state, actor, preferred, catalog)
 			or _attack_feeds_dangerous_retaliation(state, actor, preferred, catalog)
@@ -4122,8 +4173,10 @@ func _validated_or_fallback_action(
 		if follow_up_end_turn != null:
 			return follow_up_end_turn
 
-	if preferred.action == "RETREAT":
-		var retreat_idx := int(preferred.params.get("bench_idx", -1))
+	if preferred.kind == "RETREAT":
+		var retreat_idx := preferred.bench_index()
+		var redundant_same_pokemon := _redundant_same_pokemon_retreat(
+			state, actor, retreat_idx, deck_key, catalog)
 		if not _retreat_has_good_target(state, actor, retreat_idx, deck_key, catalog):
 			var retained_attack := _best_productive_attack(
 				state, actor, actions, deck_key, catalog, engine, seed + 18, profile)
@@ -4139,21 +4192,26 @@ func _validated_or_fallback_action(
 			if safe_end_turn != null and _action_executes_successfully(
 				state, actor, safe_end_turn, deck_key, catalog, engine, seed + 20, profile):
 				return safe_end_turn
+			# A same-card retreat with no status, HP, readiness or position gain is
+			# strictly dominated: it only consumes the retreat and its payment. Do
+			# not fall through and re-accept it merely because it is rules-legal.
+			if redundant_same_pokemon and safe_end_turn != null:
+				return safe_end_turn
 
-	if preferred.action in ["RETREAT", "END_TURN"]:
+	if preferred.kind in ["RETREAT", "END_TURN"]:
 		var development := _best_productive_nonterminal_action(
 			state, actor, actions, deck_key, catalog, engine, seed + 19, preferred, profile)
 		if development != null:
 			return development
 
-	if preferred.action == "PLAY_TRAINER" and _is_major_hand_refresh_action(state, actor, preferred, catalog):
+	if preferred.kind == "PLAY_TRAINER" and _is_major_hand_refresh_action(state, actor, preferred, catalog):
 		var before_refresh := _best_productive_nonterminal_action(
 			state, actor, actions, deck_key, catalog, engine, seed + 23, preferred, profile)
 		if before_refresh != null:
 			return before_refresh
 
 	if (
-		preferred.action == "PLAY_TRAINER"
+		preferred.kind == "PLAY_TRAINER"
 		and _action_first_choice_cancelled(
 			state, actor, preferred, deck_key, catalog, engine, seed + 24)
 	):
@@ -4179,7 +4237,7 @@ func _validated_or_fallback_action(
 			return cancelled_end
 
 	if (
-		preferred.action in ["PLAY_TRAINER", "USE_ABILITY", "USE_STADIUM"]
+		preferred.kind in ["PLAY_TRAINER", "USE_ABILITY", "USE_STADIUM"]
 		and _development_action_value(state, actor, preferred, deck_key, catalog) <= 0.0
 	):
 		var active_attack := _best_productive_attack(
@@ -4203,7 +4261,7 @@ func _validated_or_fallback_action(
 			state, actor, active_end, deck_key, catalog, engine, seed + 28, profile):
 			return active_end
 
-	if preferred.action == "END_TURN":
+	if preferred.kind == "END_TURN":
 		# Do not use the estimate-only fast candidate here: END_TURN is often a
 		# deliberate escape from a deterministic self-KO/reactive-thorns loss.
 		# The trusted helper below executes the action and applies the same
@@ -4248,7 +4306,7 @@ func _replacement_with_pre_attack_validation(
 ) -> GameAction:
 	if (
 		replacement == null
-		or replacement.action != "DECLARE_ATTACK"
+		or replacement.kind != "DECLARE_ATTACK"
 		or engine_id == LEGACY_EVALUATION_ENGINE_ID
 	):
 		return replacement
@@ -4329,7 +4387,7 @@ func diagnose_decision(
 	):
 		result["missed_immediate_ko"] = 1
 
-	if selected.action == "END_TURN":
+	if selected.kind == "END_TURN":
 		var productive_attack := _best_productive_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 103)
 		if productive_attack != null:
@@ -4339,7 +4397,7 @@ func diagnose_decision(
 		if productive_development != null:
 			result["ended_with_productive_development"] = 1
 
-	if selected.action == "DECLARE_ATTACK":
+	if selected.kind == "DECLARE_ATTACK":
 		var pre_attack := _best_pre_attack_development_action(
 			state, actor, selected, actions, deck_key, catalog, engine, seed + 109)
 		if pre_attack != null:
@@ -4349,13 +4407,13 @@ func diagnose_decision(
 		if _attack_feeds_dangerous_retaliation(state, actor, selected, catalog):
 			result["unsafe_retaliation_attack"] = 1
 
-	if selected.action == "RETREAT":
-		var retreat_idx := int(selected.params.get("bench_idx", -1))
+	if selected.kind == "RETREAT":
+		var retreat_idx := selected.bench_index()
 		if not _retreat_has_good_target(state, actor, retreat_idx, deck_key, catalog):
 			result["retreat_without_good_target"] = 1
 
 	if (
-		selected.action == "PLAY_TRAINER"
+		selected.kind == "PLAY_TRAINER"
 		and _action_first_choice_cancelled(
 			state, actor, selected, deck_key, catalog, engine, seed + 113)
 	):
@@ -4370,9 +4428,9 @@ func _diagnostic_same_action(left: GameAction, right: GameAction) -> bool:
 	if left == null or right == null:
 		return false
 	return (
-		left.action == right.action
+		left.kind == right.kind
 		and left.actor == right.actor
-		and left.params == right.params
+		and left.payload == right.payload
 		and (
 			(left.source == null and right.source == null)
 			or (
@@ -4401,13 +4459,12 @@ func _selected_attack_takes_active_ko(
 	engine: GameEngine,
 	seed: int,
 ) -> bool:
-	if selected == null or selected.action != "DECLARE_ATTACK":
+	if selected == null or selected.kind != "DECLARE_ATTACK":
 		return false
 	var source_card_id := selected.source.card_id if selected.source != null else ""
 	if source_card_id.is_empty() and state.get_player(actor).active != null:
 		source_card_id = state.get_player(actor).active.card_id
-	var attack_index := int(selected.params.get(
-		"attack_idx", selected.params.get("attack_index", -1)))
+	var attack_index := selected.attack_index()
 	if bool(CardSemanticCatalog.new(catalog).attack_semantics(
 		source_card_id, attack_index).get("has_random_effect", false)):
 		return false
@@ -4424,7 +4481,7 @@ func _deterministic_attack_takes_prize(
 	engine: GameEngine,
 	seed: int,
 ) -> bool:
-	if state == null or action == null or action.action != "DECLARE_ATTACK":
+	if state == null or action == null or action.kind != "DECLARE_ATTACK":
 		return false
 	var opponent := state.get_player(1 - actor)
 	if opponent.active == null:
@@ -4463,7 +4520,7 @@ func _best_immediate_ko_attack(
 	var best_value := -INF
 	var semantic_catalog := CardSemanticCatalog.new(catalog)
 	for action in actions:
-		if action.action != "DECLARE_ATTACK":
+		if action.kind != "DECLARE_ATTACK":
 			continue
 		var source_card_id := (
 			action.source.card_id
@@ -4475,8 +4532,7 @@ func _best_immediate_ko_attack(
 			and state.get_player(actor).active != null
 		):
 			source_card_id = state.get_player(actor).active.card_id
-		var attack_index := int(action.params.get(
-			"attack_idx", action.params.get("attack_index", -1)))
+		var attack_index := action.attack_index()
 		# Diagnostics must not inspect the authoritative hidden deck top and call
 		# a favourable reveal a provable missed KO.  Stochastic attacks are
 		# evaluated by the seeded belief planner, not this certainty label.
@@ -4506,7 +4562,7 @@ func _best_immediate_ko_attack(
 			deck_key,
 			catalog,
 			engine,
-			seed + int(action.params.get("attack_idx", 0)) * 7919,
+			seed + action.attack_index(0) * 7919,
 		):
 			best = action
 			best_value = value
@@ -4522,10 +4578,10 @@ func _should_override_with_ko(
 ) -> bool:
 	if preferred == null:
 		return true
-	if preferred.action != "DECLARE_ATTACK":
+	if preferred.kind != "DECLARE_ATTACK":
 		return true
 	var preferred_damage := _estimated_attack_damage(
-		state, actor, int(preferred.params.get("attack_idx", -1)), catalog)
+		state, actor, preferred.attack_index(), catalog)
 	var opponent := state.get_player(1 - actor)
 	if opponent.active != null and preferred_damage < opponent.active.current_hp(catalog):
 		return true
@@ -4540,13 +4596,13 @@ func _immediate_ko_attack_value(
 	action: GameAction,
 	catalog: CardCatalog,
 ) -> float:
-	if action == null or action.action != "DECLARE_ATTACK":
+	if action == null or action.kind != "DECLARE_ATTACK":
 		return -INF
 	var opponent := state.get_player(1 - actor)
 	if opponent.active == null:
 		return -INF
 	var damage := _estimated_attack_damage(
-		state, actor, int(action.params.get("attack_idx", -1)), catalog)
+		state, actor, action.attack_index(), catalog)
 	var target_hp := opponent.active.current_hp(catalog)
 	if damage < target_hp:
 		return -INF
@@ -4566,11 +4622,11 @@ func _attack_self_resource_cost(
 	action: GameAction,
 	catalog: CardCatalog,
 ) -> float:
-	if action == null or action.action != "DECLARE_ATTACK":
+	if action == null or action.kind != "DECLARE_ATTACK":
 		return 0.0
-	var source_slot := str(action.params.get("source_slot", "active"))
+	var source_slot := str(action.source_slot("active"))
 	var effects := _attack_effects(
-		state, actor, int(action.params.get("attack_idx", -1)), catalog)
+		state, actor, action.attack_index(), catalog)
 	return (
 		_expected_self_energy_discard_cost(
 			state, actor, effects, source_slot, catalog)
@@ -4591,11 +4647,11 @@ func _best_pre_attack_development_action(
 	profile: Dictionary = {},
 	additional_excluded: GameAction = null,
 ) -> GameAction:
-	if attack_action.action != "DECLARE_ATTACK":
+	if attack_action.kind != "DECLARE_ATTACK":
 		return null
 	var opponent := state.get_player(1 - actor)
 	var damage := _estimated_attack_damage(
-		state, actor, int(attack_action.params.get("attack_idx", -1)), catalog)
+		state, actor, attack_action.attack_index(), catalog)
 	if opponent.active != null and damage >= opponent.active.current_hp(catalog):
 		return null
 	var monotonic_development := _best_monotonic_pre_attack_development_action(
@@ -4645,7 +4701,7 @@ func _best_monotonic_pre_attack_development_action(
 		):
 			continue
 		var card_id := _action_card_id(state, actor, action)
-		if action.action == "PLAY_BASIC":
+		if action.kind == "PLAY_BASIC":
 			if (
 				action.target == null
 				or not action.target.slot.begins_with("bench_")
@@ -4657,7 +4713,7 @@ func _best_monotonic_pre_attack_development_action(
 				)
 			):
 				continue
-		elif action.action == "EVOLVE":
+		elif action.kind == "EVOLVE":
 			if (
 				action.target == null
 				or not action.target.slot.begins_with("bench_")
@@ -4692,7 +4748,7 @@ func _best_monotonic_pre_attack_development_action(
 			_development_action_value(state, actor, action, deck_key, catalog)
 			+ _action_score(state, actor, action, deck_key, catalog, profile) * 0.08
 		)
-		if action.action == "EVOLVE":
+		if action.kind == "EVOLVE":
 			value += 35.0
 		if value > best_value:
 			best = action
@@ -4728,7 +4784,7 @@ func _best_productive_nonterminal_action(
 		if (
 			action == excluded
 			or action == additional_excluded
-			or not productive_types.has(action.action)
+			or not productive_types.has(action.kind)
 		):
 			continue
 		if _should_avoid_repeating_ability(state, actor, action, catalog):
@@ -4737,7 +4793,7 @@ func _best_productive_nonterminal_action(
 		if development_value <= 0.0:
 			continue
 		if (
-			action.action == "PLAY_TRAINER"
+			action.kind == "PLAY_TRAINER"
 			and _action_first_choice_cancelled(
 				state, actor, action, deck_key, catalog, engine, seed + action_index * 3917)
 		):
@@ -4754,16 +4810,16 @@ func _best_productive_nonterminal_action(
 				state, actor, action, deck_key, catalog, seed))
 			/ float(AIPositionEvaluator.SCORE_SCALE) * 0.04
 		)
-		if action.action == "PLAY_BASIC" and state.get_player(actor).bench_count() < 2:
+		if action.kind == "PLAY_BASIC" and state.get_player(actor).bench_count() < 2:
 			value += 45.0
-		if action.action == "EVOLVE":
+		if action.kind == "EVOLVE":
 			value += 35.0
-		elif action.action == "ATTACH_ENERGY":
+		elif action.kind == "ATTACH_ENERGY":
 			value += 30.0
 		var semantic_pre_attack_development := (
 			_semantic_v2_enabled()
 			and excluded != null
-			and excluded.action == "DECLARE_ATTACK"
+			and excluded.kind == "DECLARE_ATTACK"
 			and development_value >= 55.0
 			and delta >= -20.0
 		)
@@ -4788,7 +4844,7 @@ func _best_productive_attack(
 	var best: GameAction = null
 	var best_value := -INF
 	for action in actions:
-		if action.action != "DECLARE_ATTACK":
+		if action.kind != "DECLARE_ATTACK":
 			continue
 		if (
 			_attack_draw_pressure_is_unsafe(state, actor, action, catalog)
@@ -4799,7 +4855,7 @@ func _best_productive_attack(
 				state, actor, action, deck_key, catalog, engine, seed + 104729)
 		):
 			continue
-		var attack_idx := int(action.params.get("attack_idx", -1))
+		var attack_idx := action.attack_index()
 		var damage := _estimated_attack_damage(state, actor, attack_idx, catalog)
 		var effects := _attack_effects(state, actor, attack_idx, catalog)
 		var value := damage * 1.2 + _effects_tactical_value(
@@ -4837,7 +4893,7 @@ func _best_productive_attack_candidate(
 	var best: GameAction = null
 	var best_value := -INF
 	for action in actions:
-		if action.action != "DECLARE_ATTACK":
+		if action.kind != "DECLARE_ATTACK":
 			continue
 		if (
 			_attack_draw_pressure_is_unsafe(state, actor, action, catalog)
@@ -4846,7 +4902,7 @@ func _best_productive_attack_candidate(
 				state, actor, action, deck_key, catalog)
 		):
 			continue
-		var attack_idx := int(action.params.get("attack_idx", -1))
+		var attack_idx := action.attack_index()
 		var damage := _estimated_attack_damage(state, actor, attack_idx, catalog)
 		var effects := _attack_effects(state, actor, attack_idx, catalog)
 		var value := damage * 1.2 + _effects_tactical_value(
@@ -4873,7 +4929,7 @@ func _best_damaging_attack(
 	var best: GameAction = null
 	var best_value := -INF
 	for action in actions:
-		if action.action != "DECLARE_ATTACK":
+		if action.kind != "DECLARE_ATTACK":
 			continue
 		if (
 			_attack_draw_pressure_is_unsafe(state, actor, action, catalog)
@@ -4884,7 +4940,7 @@ func _best_damaging_attack(
 				state, actor, action, deck_key, catalog, engine, seed + 130363)
 		):
 			continue
-		var attack_idx := int(action.params.get("attack_idx", -1))
+		var attack_idx := action.attack_index()
 		var damage := _estimated_attack_damage(state, actor, attack_idx, catalog)
 		var effect_value := _effects_tactical_value(
 			state, actor, _attack_effects(state, actor, attack_idx, catalog), "active", catalog, deck_key)
@@ -5004,10 +5060,10 @@ func _action_score(
 	var player := state.get_player(actor)
 	var card_id := _action_card_id(state, actor, action)
 	var score := _card_priority(card_id, deck_key, catalog)
-	match action.action:
+	match action.kind:
 		"PLAY_BASIC":
 			score += 180.0
-			if str(action.params.get("target", "")) == "active":
+			if str(action.target_slot()) == "active":
 				score += 200.0
 				if deck_key == "water":
 					if card_id == "sv2-tatsu" and actor != state.first_player_idx:
@@ -5029,7 +5085,7 @@ func _action_score(
 			if AIDeckProfiles.contains(deck_key, "setup", card_id):
 				score += 160.0
 			elif (
-				str(action.params.get("target", "")) != "active"
+				str(action.target_slot()) != "active"
 				and AIDeckProfiles.contains(deck_key, "bench", card_id)
 			):
 				score += 70.0
@@ -5041,7 +5097,7 @@ func _action_score(
 			score += _development_action_value(state, actor, action, deck_key, catalog) * 0.7
 		"ATTACH_ENERGY":
 			score += 220.0
-			if str(action.params.get("target_slot", "")) == "active":
+			if str(action.target_slot()) == "active":
 				score += 40.0
 			score += _development_action_value(state, actor, action, deck_key, catalog) * 0.8
 		"PLAY_TRAINER":
@@ -5064,11 +5120,15 @@ func _action_score(
 				score -= 650.0
 		"RETREAT":
 			score += 70.0
-			var bench_idx := int(action.params.get("bench_idx", -1))
+			var bench_idx := action.bench_index()
 			if bench_idx >= 0 and bench_idx < player.bench.size():
 				var target: PokemonState = player.bench[bench_idx]
 				if target != null and player.active != null:
-					if _retreat_has_good_target(state, actor, bench_idx, deck_key, catalog):
+					if _redundant_same_pokemon_retreat(
+						state, actor, bench_idx, deck_key, catalog):
+						score -= 1800.0
+					elif _retreat_has_good_target(
+						state, actor, bench_idx, deck_key, catalog):
 						score += 180.0
 					else:
 						score -= 420.0
@@ -5077,7 +5137,7 @@ func _action_score(
 						- _best_pokemon_damage(player.active, catalog)
 					) * 1.3
 		"PROMOTE":
-			var promote_idx := int(action.params.get("bench_idx", -1))
+			var promote_idx := action.bench_index()
 			if promote_idx >= 0 and promote_idx < player.bench.size():
 				var pokemon: PokemonState = player.bench[promote_idx]
 				score += _promotion_value_for_state(state, actor, pokemon, deck_key, catalog)
@@ -5085,7 +5145,7 @@ func _action_score(
 			score += 360.0
 			if player.active:
 				var attacks: Array = catalog.get_card(player.active.card_id).get("attacks", [])
-				var attack_idx := int(action.params.get("attack_idx", -1))
+				var attack_idx := action.attack_index()
 				if attack_idx >= 0 and attack_idx < attacks.size():
 					var damage := _estimated_attack_damage(state, actor, attack_idx, catalog)
 					var effects: Array = attacks[attack_idx].get("effects", [])
@@ -5110,13 +5170,13 @@ func _action_score(
 func _action_card_id(state: GameState, actor: int, action: GameAction) -> String:
 	if action.source != null and not action.source.card_id.is_empty():
 		return action.source.card_id
-	var hand_idx: Variant = action.params.get("hand_idx")
+	var hand_idx: Variant = action.hand_index()
 	if hand_idx is int or hand_idx is float:
 		var player := state.get_player(actor)
 		var index := int(hand_idx)
 		if index >= 0 and index < player.hand.size():
 			return str(player.hand[index])
-	if action.action in ["DECLARE_ATTACK", "USE_ABILITY"] and state.get_player(actor).active != null:
+	if action.kind in ["DECLARE_ATTACK", "USE_ABILITY"] and state.get_player(actor).active != null:
 		return state.get_player(actor).active.card_id
 	return ""
 
@@ -5130,9 +5190,9 @@ func _development_action_value(
 ) -> float:
 	var player := state.get_player(actor)
 	var card_id := _action_card_id(state, actor, action)
-	match action.action:
+	match action.kind:
 		"ATTACH_ENERGY":
-			var target_slot := str(action.params.get("target_slot", ""))
+			var target_slot := str(action.target_slot())
 			var target := player.get_pokemon(target_slot)
 			if target == null or card_id.is_empty():
 				return 0.0
@@ -5200,7 +5260,7 @@ func _development_action_value(
 						attach_value -= 520.0
 			return attach_value
 		"EVOLVE":
-			var evolve_slot := str(action.params.get("slot", ""))
+			var evolve_slot := str(action.primary_slot())
 			var evolve_target := player.get_pokemon(evolve_slot)
 			if evolve_target == null or card_id.is_empty():
 				return 0.0
@@ -5225,7 +5285,7 @@ func _development_action_value(
 			if AIDeckProfiles.contains(deck_key, "setup", card_id):
 				basic_value += 80.0
 			if (
-				str(action.params.get("target", "")) != "active"
+				str(action.target_slot()) != "active"
 				and AIDeckProfiles.contains(deck_key, "bench", card_id)
 			):
 				basic_value += 70.0
@@ -5240,11 +5300,11 @@ func _development_action_value(
 				trainer_value += 45.0
 			return trainer_value
 		"USE_ABILITY":
-			var slot := str(action.params.get("slot", "active"))
+			var slot := str(action.primary_slot("active"))
 			var pokemon := player.get_pokemon(slot)
 			if pokemon == null:
 				return 0.0
-			var ability_name := str(action.params.get("ability_name", ""))
+			var ability_name := str(action.ability_name())
 			for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
 				var ability: Dictionary = ability_value
 				if str(ability.get("name", "")) == ability_name:
@@ -5556,7 +5616,7 @@ func _effects_tactical_value(
 					value += 85.0
 			"energy_relocate":
 				value += _energy_relocate_value(state, actor, params, catalog)
-			"heal", "heal_all", "potion_heal", "conditional_damage_heal", "damage_and_self_heal":
+			"heal", "heal_all", "potion_heal", "damage_and_self_heal":
 				value += _healing_value(state, actor)
 			"switch_self":
 				value += 65.0 if player.bench_count() > 0 else -80.0
@@ -5617,7 +5677,7 @@ func _semantic_effects_tactical_value(
 				value += _semantic_energy_accel_value(state, actor, profile_key, catalog)
 			"energy_relocate":
 				value += _energy_relocate_value(state, actor, params, catalog)
-			"heal", "heal_all", "potion_heal", "conditional_damage_heal", "damage_and_self_heal":
+			"heal", "heal_all", "potion_heal", "damage_and_self_heal":
 				value += _semantic_healing_value(state, actor, catalog)
 			"switch_self":
 				value += _semantic_switch_self_value(state, actor, profile_key, catalog)
@@ -6199,7 +6259,7 @@ func _is_major_hand_refresh_action(
 	action: GameAction,
 	catalog: CardCatalog,
 ) -> bool:
-	if action.action != "PLAY_TRAINER":
+	if action.kind != "PLAY_TRAINER":
 		return false
 	var card_id := _action_card_id(state, actor, action)
 	for effect in _flatten_effects(catalog.get_card(card_id).get("trainer_effects", [])):
@@ -6609,7 +6669,17 @@ func _modified_attack_damage(
 	for energy_id in attacker.energy_card_ids:
 		damage += _energy_damage_delta(catalog.get_card(energy_id), "attached_attacker")
 	damage += attacker.modifier_operation_sum("damage_delta")
-	if not attacker.attached_tool_id.is_empty():
+	var tool_boost_is_materialized := false
+	for descriptor in attacker.modifier_descriptors("MODIFY_DAMAGE"):
+		var operation: Dictionary = descriptor.get("operation", {})
+		if (
+			str(descriptor.get("scope", "")) == "attached_attacker"
+			and str(operation.get("kind", "")) == "damage_delta"
+			and int(operation.get("amount", 0)) > 0
+		):
+			tool_boost_is_materialized = true
+			break
+	if not attacker.attached_tool_id.is_empty() and not tool_boost_is_materialized:
 		for effect_value in catalog.get_card(attacker.attached_tool_id).get("trainer_effects", []):
 			var effect: Dictionary = effect_value
 			if str(effect.get("effect_type", "")) != "tool":
@@ -6622,6 +6692,24 @@ func _modified_attack_damage(
 				and state.get_player(actor).prizes.size() > state.get_player(1 - actor).prizes.size()
 			):
 				damage += 30
+	if damage <= 0:
+		return 0
+	if not ignore_defender_damage_effects:
+		for ability_value in catalog.get_card(defender.card_id).get("abilities", []):
+			var ability: Dictionary = ability_value
+			for effect_value in ability.get("effects", []):
+				var effect: Dictionary = effect_value
+				if str(effect.get("effect_type", "")) != "aura_damage_reduction":
+					continue
+				var params: Dictionary = effect.get("params", {})
+				if not bool(params.get("before_weakness", false)):
+					continue
+				if (
+					bool(params.get("requires_attached_energy", false))
+					and defender.energy_card_ids.is_empty()
+				):
+					continue
+				damage -= int(params.get("reduction", 20))
 	if damage <= 0:
 		return 0
 
@@ -6657,6 +6745,8 @@ func _modified_attack_damage(
 				var effect: Dictionary = effect_value
 				if str(effect.get("effect_type", "")) == "aura_damage_reduction":
 					var params: Dictionary = effect.get("params", {})
+					if bool(params.get("before_weakness", false)):
+						continue
 					if (
 						bool(params.get("requires_attached_energy", false))
 						and defender.energy_card_ids.is_empty()
@@ -6688,11 +6778,11 @@ func _attack_draw_pressure_is_unsafe(
 	action: GameAction,
 	catalog: CardCatalog,
 ) -> bool:
-	if action.action != "DECLARE_ATTACK":
+	if action.kind != "DECLARE_ATTACK":
 		return false
 	var draw_amount := 0
 	for effect in _flatten_effects(_attack_effects(
-		state, actor, int(action.params.get("attack_idx", -1)), catalog)):
+		state, actor, action.attack_index(), catalog)):
 		if str(effect.get("effect_type", "")) in ["draw", "draw_until", "draw_until_more"]:
 			draw_amount += int(effect.get("params", {}).get("amount", 2))
 	return draw_amount > 0 and state.get_player(actor).deck.size() <= draw_amount
@@ -6708,7 +6798,7 @@ func _attack_squanders_only_fire_energy(
 	if (
 		deck_key != "fire"
 		or action == null
-		or action.action != "DECLARE_ATTACK"
+		or action.kind != "DECLARE_ATTACK"
 		or state.get_player(actor).active == null
 	):
 		return false
@@ -6725,8 +6815,7 @@ func _attack_squanders_only_fire_energy(
 		or _helpful_hand_energy_count(state, actor, catalog) > 0
 	):
 		return false
-	var attack_index := int(action.params.get(
-		"attack_idx", action.params.get("attack_index", -1)))
+	var attack_index := action.attack_index()
 	var has_self_discard := false
 	for effect_value in _flatten_effects(
 		_attack_effects(state, actor, attack_index, catalog)):
@@ -6760,7 +6849,7 @@ func _switching_energy_regresses_current_attack(
 	if (
 		state == null
 		or action == null
-		or action.action != "ATTACH_ENERGY"
+		or action.kind != "ATTACH_ENERGY"
 		or action.target == null
 		or not action.target.slot.begins_with("bench_")
 	):
@@ -6835,14 +6924,14 @@ func _attack_feeds_dangerous_retaliation(
 	action: GameAction,
 	catalog: CardCatalog,
 ) -> bool:
-	if action.action != "DECLARE_ATTACK":
+	if action.kind != "DECLARE_ATTACK":
 		return false
 	var player := state.get_player(actor)
 	var opponent := state.get_player(1 - actor)
 	if player.active == null or opponent.active == null:
 		return false
 	var damage := _estimated_attack_damage(
-		state, actor, int(action.params.get("attack_idx", -1)), catalog)
+		state, actor, action.attack_index(), catalog)
 	if damage <= 0 or damage >= opponent.active.current_hp(catalog):
 		return false
 	var has_retaliation_scaler := false
@@ -6935,9 +7024,18 @@ func _retreat_has_good_target(
 	var target: PokemonState = player.bench[bench_idx]
 	if target == null:
 		return false
+	if _redundant_same_pokemon_retreat(
+		state, actor, bench_idx, deck_key, catalog):
+		return false
 	var opponent := state.get_player(1 - actor)
 	var target_ready_damage := _best_ready_pokemon_damage(state, actor, target, catalog)
-	if opponent.active != null and target_ready_damage >= opponent.active.current_hp(catalog):
+	var active_ready_damage := _best_ready_pokemon_damage(
+		state, actor, player.active, catalog)
+	if (
+		opponent.active != null
+		and target_ready_damage >= opponent.active.current_hp(catalog)
+		and active_ready_damage < opponent.active.current_hp(catalog)
+	):
 		return true
 	var opponent_damage := _best_available_damage(state, 1 - actor, catalog)
 	var active_survives := opponent_damage < player.active.current_hp(catalog)
@@ -6965,6 +7063,51 @@ func _retreat_has_good_target(
 	):
 		return target_value > active_value - 20.0
 	return target_value > active_value + 25.0
+
+
+func _redundant_same_pokemon_retreat(
+	state: GameState,
+	actor: int,
+	bench_idx: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> bool:
+	if state == null or actor not in [0, 1]:
+		return false
+	var player := state.get_player(actor)
+	if (
+		player.active == null
+		or bench_idx < 0
+		or bench_idx >= player.bench.size()
+	):
+		return false
+	var active: PokemonState = player.active
+	var target: PokemonState = player.bench[bench_idx]
+	if target == null or target.card_id != active.card_id:
+		return false
+	# Moving to the Bench clears Special Conditions and temporary attack effects.
+	# Those are legitimate reasons to switch between otherwise identical cards.
+	if not active.status_conditions.is_empty() or active.paralyzed_since_turn > 0:
+		return false
+	for descriptor_value in active.modifiers:
+		var descriptor: Dictionary = descriptor_value
+		if str(descriptor.get("duration", "")) not in [
+			"persistent", "until_leave_play",
+		]:
+			return false
+	if target.current_hp(catalog) > active.current_hp(catalog):
+		return false
+	var active_ready_damage := _best_ready_pokemon_damage(
+		state, actor, active, catalog)
+	var target_ready_damage := _best_ready_pokemon_damage(
+		state, actor, target, catalog)
+	if target_ready_damage > active_ready_damage:
+		return false
+	var active_value := _promotion_value_for_state(
+		state, actor, active, deck_key, catalog)
+	var target_value := _promotion_value_for_state(
+		state, actor, target, deck_key, catalog)
+	return target_value <= active_value + 0.001
 
 
 func _promotion_value_for_state(
@@ -7069,13 +7212,12 @@ func _action_immediately_loses_match(
 	# A single determinization must not turn a hidden/coin-dependent attack into
 	# a hard veto.  The guard is reserved for publicly deterministic outcomes
 	# such as reactive thorns, self-KO and final-Prize resolution.
-	if action.action == "DECLARE_ATTACK":
+	if action.kind == "DECLARE_ATTACK":
 		var source_card_id := (
 			action.source.card_id if action.source != null else "")
 		if source_card_id.is_empty() and state.get_player(actor).active != null:
 			source_card_id = state.get_player(actor).active.card_id
-		var attack_index := int(action.params.get(
-			"attack_idx", action.params.get("attack_index", -1)))
+		var attack_index := action.attack_index()
 		if bool(CardSemanticCatalog.new(catalog).attack_semantics(
 			source_card_id, attack_index).get("has_random_effect", false)):
 			return false
@@ -7108,7 +7250,7 @@ func _best_immediate_loss_escape_action(
 		if (
 			action == null
 			or action == excluded
-			or action.action in ["DECLARE_ATTACK", "END_TURN"]
+			or action.kind in ["DECLARE_ATTACK", "END_TURN"]
 		):
 			continue
 		var sim_score := _simulated_action_score(
@@ -7125,11 +7267,11 @@ func _best_immediate_loss_escape_action(
 			continue
 		var value := sim_score + _development_action_value(
 			state, actor, action, deck_key, catalog)
-		if action.action == "EVOLVE":
+		if action.kind == "EVOLVE":
 			value += 80.0
-		elif action.action == "RETREAT":
+		elif action.kind == "RETREAT":
 			value += 60.0
-		elif action.action == "PLAY_BASIC":
+		elif action.kind == "PLAY_BASIC":
 			value += 40.0
 		if (
 			value > best_value
@@ -7621,16 +7763,23 @@ func _should_avoid_repeating_ability(
 	action: GameAction,
 	catalog: CardCatalog,
 ) -> bool:
-	if action.action != "USE_ABILITY" or state.action_log.is_empty():
+	if action.kind != "USE_ABILITY" or state.action_log.is_empty():
 		return false
-	var ability_name := str(action.params.get("ability_name", ""))
+	var ability_name := str(action.ability_name())
 	if ability_name.is_empty():
 		return false
 	if not _ability_is_repeatable(state, actor, action, ability_name, catalog):
 		return false
+	var source_card_id := action.source.card_id if action.source != null else ""
+	if source_card_id.is_empty() and action.source != null:
+		var source_pokemon := state.get_player(actor).get_pokemon(action.source.slot)
+		if source_pokemon != null:
+			source_card_id = source_pokemon.card_id
+	var card_name := catalog.card_name(source_card_id)
 	var start_index: int = max(0, state.action_log.size() - 6)
 	for index in range(start_index, state.action_log.size()):
-		if ability_name in str(state.action_log[index]):
+		if _action_log_records_ability_use(
+			state, actor, str(state.action_log[index]), card_name, ability_name):
 			return true
 	return false
 
@@ -7642,7 +7791,7 @@ func _ability_is_repeatable(
 	ability_name: String,
 	catalog: CardCatalog,
 ) -> bool:
-	var slot := str(action.params.get("slot", "active"))
+	var slot := str(action.primary_slot("active"))
 	var pokemon := state.get_player(actor).get_pokemon(slot)
 	if pokemon == null:
 		return false
@@ -7667,7 +7816,7 @@ func _healing_value(state: GameState, actor: int) -> float:
 
 func _find_action(actions: Array[GameAction], action_name: String) -> GameAction:
 	for action in actions:
-		if action.action == action_name:
+		if action.kind == action_name:
 			return action
 	return null
 

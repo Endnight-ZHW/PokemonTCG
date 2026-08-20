@@ -18,35 +18,11 @@ var stadium_used_this_turn := false
 var healed_this_turn := false
 var vstar_power_used := false
 var was_ko_by_attack := false
+var attack_locked_names: Dictionary = {}
 
 
 func _init(p_name: String = "玩家") -> void:
 	name = p_name
-
-
-func draw_cards(count: int) -> Array[String]:
-	var drawn: Array[String] = []
-	for _index in range(count):
-		if deck.is_empty():
-			break
-		drawn.append(deck.pop_back())
-	hand.append_array(drawn)
-	return drawn
-
-
-func set_prizes(count: int = 6) -> void:
-	for _index in range(count):
-		if deck.is_empty():
-			break
-		prizes.append(deck.pop_back())
-
-
-func take_prize(index: int = 0) -> String:
-	if prizes.is_empty() or index < 0 or index >= prizes.size():
-		return ""
-	var card_id: String = prizes.pop_at(index)
-	hand.append(card_id)
-	return card_id
 
 
 func bench_count() -> int:
@@ -55,13 +31,6 @@ func bench_count() -> int:
 		if pokemon is PokemonState:
 			count += 1
 	return count
-
-
-func find_empty_bench_slot() -> int:
-	for index in range(bench.size()):
-		if bench[index] == null:
-			return index
-	return -1
 
 
 func get_pokemon(slot: String) -> PokemonState:
@@ -81,89 +50,11 @@ func get_all_pokemon() -> Array[Dictionary]:
 	return result
 
 
-func place_active(card_id: String) -> PokemonState:
-	active = PokemonState.new(card_id)
-	return active
-
-
-func place_bench(card_id: String, index: int = -1) -> PokemonState:
-	if index < 0:
-		index = find_empty_bench_slot()
-	if index < 0 or index >= MAX_BENCH_SIZE or bench[index] != null:
-		return null
-	var pokemon := PokemonState.new(card_id)
-	bench[index] = pokemon
-	return pokemon
-
-
-func promote_from_bench(index: int) -> bool:
-	if active != null or index < 0 or index >= bench.size() or bench[index] == null:
-		return false
-	active = bench[index]
-	bench[index] = null
-	return true
-
-
-func switch_active_to_bench(index: int) -> bool:
-	if active == null or index < 0 or index >= bench.size() or bench[index] == null:
-		return false
-	active.clear_special_conditions_and_attack_effects()
-	var previous_active := active
-	active = bench[index]
-	bench[index] = previous_active
-	return true
-
-
-func has_any_pokemon_in_play() -> bool:
-	return active != null or bench_count() > 0
-
-
-func discard_from_hand(indices: Array[int]) -> Array[String]:
-	var sorted_indices := indices.duplicate()
-	sorted_indices.sort()
-	sorted_indices.reverse()
-	var discarded: Array[String] = []
-	for index in sorted_indices:
-		if index >= 0 and index < hand.size():
-			var card_id: String = hand.pop_at(index)
-			discard.append(card_id)
-			discarded.append(card_id)
-	return discarded
-
-
-func discard_entire_hand() -> int:
-	var count := hand.size()
-	discard.append_array(hand)
-	hand.clear()
-	return count
-
-
-func reset_turn_flags() -> void:
-	supporter_played_this_turn = false
-	energy_attached_this_turn = false
-	retreated_this_turn = false
-	stadium_played_this_turn = false
-	stadium_used_this_turn = false
-	healed_this_turn = false
-	_reset_pokemon_turn_flags(active)
-	for pokemon_value in bench:
-		_reset_pokemon_turn_flags(pokemon_value)
-
-
-static func _reset_pokemon_turn_flags(pokemon: PokemonState) -> void:
-	if pokemon == null:
-		return
-	pokemon.placed_this_turn = false
-	pokemon.can_evolve_this_turn = true
-	pokemon.used_abilities.clear()
-	pokemon.healed_this_turn = false
-
-
 func to_dict() -> Dictionary:
 	var bench_payload: Array = []
 	for pokemon in bench:
 		bench_payload.append(pokemon.to_dict() if pokemon is PokemonState else null)
-	return {
+	var payload := {
 		"name": name,
 		"deck": deck.duplicate(),
 		"hand": hand.duplicate(),
@@ -180,6 +71,9 @@ func to_dict() -> Dictionary:
 		"vstar_power_used": vstar_power_used,
 		"was_ko_by_attack": was_ko_by_attack,
 	}
+	if not attack_locked_names.is_empty():
+		payload["attack_locked_names"] = attack_locked_names.duplicate(true)
+	return payload
 
 
 func clone_state() -> PlayerState:
@@ -203,6 +97,7 @@ func clone_state() -> PlayerState:
 	result.healed_this_turn = healed_this_turn
 	result.vstar_power_used = vstar_power_used
 	result.was_ko_by_attack = was_ko_by_attack
+	result.attack_locked_names = attack_locked_names.duplicate(true)
 	return result
 
 
@@ -228,4 +123,7 @@ static func from_dict(data: Dictionary) -> PlayerState:
 	result.healed_this_turn = bool(data.get("healed_this_turn", false))
 	result.vstar_power_used = bool(data.get("vstar_power_used", false))
 	result.was_ko_by_attack = bool(data.get("was_ko_by_attack", false))
+	result.attack_locked_names = Dictionary(
+		data.get("attack_locked_names", {})
+	).duplicate(true)
 	return result

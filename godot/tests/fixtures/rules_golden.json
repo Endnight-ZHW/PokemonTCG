@@ -325,7 +325,7 @@
       "trace": [
         {
           "event_types": [
-            "damage_dealt",
+            "damage_counters_placed",
             "cards_drawn"
           ],
           "expected": {
@@ -8951,8 +8951,19 @@
           "can_cancel": true,
           "max_select": 2,
           "metadata": {
+            "card_ids": [
+              "sv1-ener-8",
+              "sv1-ener-8"
+            ],
             "continuation_kind": "energy_attach_distribution",
-            "finish_attack_actor": 0
+            "domain": "distribute_energy",
+            "energy_type": "basic_energy",
+            "finish_attack_actor": 0,
+            "max_per_target": 1,
+            "purpose": "energy_attach_distribution",
+            "same_target": false,
+            "source_player": 0,
+            "source_zone": "deck"
           },
           "min_select": 0,
           "options": [
@@ -9195,8 +9206,19 @@
             ],
             "max_select": 2,
             "metadata": {
+              "card_ids": [
+                "sv1-ener-8",
+                "sv1-ener-8"
+              ],
               "continuation_kind": "energy_attach_distribution",
-              "finish_attack_actor": 0
+              "domain": "distribute_energy",
+              "energy_type": "basic_energy",
+              "finish_attack_actor": 0,
+              "max_per_target": 1,
+              "purpose": "energy_attach_distribution",
+              "same_target": false,
+              "source_player": 0,
+              "source_zone": "deck"
             },
             "min_select": 0,
             "options": [
@@ -9990,8 +10012,19 @@
           "can_cancel": true,
           "max_select": 2,
           "metadata": {
+            "card_ids": [
+              "sv1-ener-8",
+              "sv1-ener-8"
+            ],
             "continuation_kind": "energy_attach_distribution",
-            "finish_attack_actor": 0
+            "domain": "distribute_energy",
+            "energy_type": "basic_energy",
+            "finish_attack_actor": 0,
+            "max_per_target": 1,
+            "purpose": "energy_attach_distribution",
+            "same_target": false,
+            "source_player": 0,
+            "source_zone": "deck"
           },
           "min_select": 0,
           "options": [
@@ -10234,8 +10267,19 @@
             ],
             "max_select": 2,
             "metadata": {
+              "card_ids": [
+                "sv1-ener-8",
+                "sv1-ener-8"
+              ],
               "continuation_kind": "energy_attach_distribution",
-              "finish_attack_actor": 0
+              "domain": "distribute_energy",
+              "energy_type": "basic_energy",
+              "finish_attack_actor": 0,
+              "max_per_target": 1,
+              "purpose": "energy_attach_distribution",
+              "same_target": false,
+              "source_player": 0,
+              "source_zone": "deck"
             },
             "min_select": 0,
             "options": [
@@ -11467,35 +11511,15 @@
                     "slot": "active"
                   },
                   "stacking": "replace_same_source"
-                },
-                {
-                  "condition": {
-                    "expires_after_turn": 5
-                  },
-                  "conflict_policy": "commutative",
-                  "controller": 0,
-                  "duration": "until_end_of_opponents_next_turn",
-                  "hook": "CAN_ATTACK",
-                  "layer": "permission",
-                  "operation": {
-                    "attack_name": "岩窟冲撞",
-                    "kind": "attack_lock"
-                  },
-                  "priority": 0,
-                  "scope": "self",
-                  "source_ref": {
-                    "card_id": "svf-terr",
-                    "kind": "pokemon",
-                    "player": 0,
-                    "slot": "active"
-                  },
-                  "stacking": "replace_same_source"
                 }
               ],
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
               "used_abilities": []
+            },
+            "attack_locked_names": {
+              "岩窟冲撞": 5
             },
             "bench": [
               null,
@@ -11841,35 +11865,15 @@
                         "slot": "active"
                       },
                       "stacking": "replace_same_source"
-                    },
-                    {
-                      "condition": {
-                        "expires_after_turn": 5
-                      },
-                      "conflict_policy": "commutative",
-                      "controller": 0,
-                      "duration": "until_end_of_opponents_next_turn",
-                      "hook": "CAN_ATTACK",
-                      "layer": "permission",
-                      "operation": {
-                        "attack_name": "岩窟冲撞",
-                        "kind": "attack_lock"
-                      },
-                      "priority": 0,
-                      "scope": "self",
-                      "source_ref": {
-                        "card_id": "svf-terr",
-                        "kind": "pokemon",
-                        "player": 0,
-                        "slot": "active"
-                      },
-                      "stacking": "replace_same_source"
                     }
                   ],
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
                   "used_abilities": []
+                },
+                "attack_locked_names": {
+                  "岩窟冲撞": 5
                 },
                 "bench": [
                   null,
@@ -14488,7 +14492,9 @@
               "healed_this_turn": false,
               "modifiers": [
                 {
-                  "condition": {},
+                  "condition": {
+                    "target_active": true
+                  },
                   "conflict_policy": "commutative",
                   "controller": 0,
                   "duration": "until_leave_play",
@@ -14826,7 +14832,9 @@
                   "healed_this_turn": false,
                   "modifiers": [
                     {
-                      "condition": {},
+                      "condition": {
+                        "target_active": true
+                      },
                       "conflict_policy": "commutative",
                       "controller": 0,
                       "duration": "until_leave_play",

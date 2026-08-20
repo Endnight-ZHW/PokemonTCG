@@ -98,6 +98,7 @@ static func run() -> Array[String]:
 			"overlapping hand cards no longer have a deterministic parent Z order",
 		)
 	_check_hand_centering(failures)
+	_check_prize_hit_order(failures)
 	var opponent_hand := BattleTableLayout.opponent_hand_plan(
 		5, 360.0, Vector2(70.0, 98.0), 26.0, 6.0
 	)
@@ -121,6 +122,30 @@ static func run() -> Array[String]:
 		"field guide rectangle union changed",
 	)
 	return failures
+
+
+static func _check_prize_hit_order(failures: Array[String]) -> void:
+	var zone := ZoneView.new()
+	zone.count = 6
+	zone.stack_visual_mode = "prizes"
+	zone.stack_visual_max_count = 6
+	zone._stack_card_size = Vector2(100.0, 140.0)
+	_expect(
+		failures,
+		zone._prize_index_at_point(Vector2(50.0, 70.0)) == 0,
+		"prize fan selected a covered card underneath the top face",
+	)
+	_expect(
+		failures,
+		zone._prize_index_at_point(Vector2(105.0, 70.0)) == 1,
+		"first exposed prize strip did not select its visible card",
+	)
+	_expect(
+		failures,
+		zone._prize_index_at_point(Vector2(122.0, 70.0)) == 2,
+		"second exposed prize strip did not select its visible card",
+	)
+	zone.free()
 
 
 static func _check_hand_centering(failures: Array[String]) -> void:

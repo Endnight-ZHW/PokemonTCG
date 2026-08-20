@@ -18,6 +18,7 @@ $release = Get-ReleaseManifest -RepoRoot $repoRoot
 Assert-ReleaseDeepFallbackContract -Manifest $release
 $version = [string]$release.version
 $modelCount = [int]$release.model_count
+$deepEnabled = [bool]$release.deep_runtime_enabled
 $zipPath = Join-Path $distRoot "PokemonTCG-Windows-x86_64-$version.zip"
 $apkPath = Join-Path $distRoot "PokemonTCG-Android-arm64-$version-test.apk"
 $smokeApkPath = Join-Path $projectRoot 'dist\release\android\PokemonTCG-smoke.apk'
@@ -61,17 +62,22 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
 try {
     $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
-    foreach ($suffix in @(
+    $requiredZipSuffixes = @(
         '/PokemonTCG.exe',
         '/PokemonTCG.pck',
         '/libpokemon_ai.windows.template_release.x86_64.dll',
-        '/onnxruntime.dll',
         '/RELEASE_NOTES.md',
         '/RELEASE_MANIFEST.json',
-        '/BUILD_INFO.json',
-        '/ONNXRUNTIME_LICENSE.txt',
-        '/THIRD_PARTY_NOTICES.txt'
-    )) {
+        '/BUILD_INFO.json'
+    )
+    if ($deepEnabled) {
+        $requiredZipSuffixes += @(
+            '/onnxruntime.dll',
+            '/ONNXRUNTIME_LICENSE.txt',
+            '/THIRD_PARTY_NOTICES.txt'
+        )
+    }
+    foreach ($suffix in $requiredZipSuffixes) {
         if (-not ($entries | Where-Object { $_.EndsWith($suffix) })) {
             throw "Windows ZIP is missing $suffix"
         }
@@ -127,10 +133,13 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Android release APK signature verification failed.'
 }
 $apkEntries = & $jar tf $apkPath
-foreach ($nativeEntry in @(
-    'lib/arm64-v8a/libpokemon_ai.android.template_release.arm64.so',
-    'lib/arm64-v8a/libonnxruntime.so'
-)) {
+$requiredNativeEntries = @(
+    'lib/arm64-v8a/libpokemon_ai.android.template_release.arm64.so'
+)
+if ($deepEnabled) {
+    $requiredNativeEntries += 'lib/arm64-v8a/libonnxruntime.so'
+}
+foreach ($nativeEntry in $requiredNativeEntries) {
     if ($nativeEntry -notin $apkEntries) {
         throw "Android release APK is missing $nativeEntry."
     }
@@ -167,8 +176,10 @@ $releaseTargets = @{
     'libpokemon_ai.windows.template_release.x86_64.dll' = (
         Join-Path $windowsRoot 'libpokemon_ai.windows.template_release.x86_64.dll'
     )
-    'onnxruntime.dll' = (Join-Path $windowsRoot 'onnxruntime.dll')
     ([IO.Path]::GetFileName($apkPath)) = $apkPath
+}
+if ($deepEnabled) {
+    $releaseTargets['onnxruntime.dll'] = Join-Path $windowsRoot 'onnxruntime.dll'
 }
 $expectedManifestFiles = @($releaseTargets.Keys)
 $actualManifestFiles = @($manifest | ForEach-Object { [string]$_.file })

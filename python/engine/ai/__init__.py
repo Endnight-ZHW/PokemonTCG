@@ -5,7 +5,6 @@ from typing import Any
 
 from engine.ai.challenge_ai import (
     AIAction,
-    AIChoice,
     AIConfig,
     ChallengeAI,
     create_challenge_ai,
@@ -55,7 +54,6 @@ __all__ = [
     "AI_KIND_CHALLENGE",
     "AI_KIND_DEEP_LEARNING",
     "AIAction",
-    "AIChoice",
     "AIConfig",
     "ChallengeAI",
     "DeepLearningAI",

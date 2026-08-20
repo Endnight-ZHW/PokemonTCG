@@ -20,11 +20,11 @@ func _init(p_card_id: String = "") -> void:
 
 
 func current_hp(catalog: CardCatalog) -> int:
-	return VMPokemonStatHooks.current_hp(self, catalog)
+	return NativeRulesProjection.pokemon_current_hp(self, catalog)
 
 
-func is_knocked_out(catalog: CardCatalog) -> bool:
-	return current_hp(catalog) <= 0
+func max_hp(catalog: CardCatalog) -> int:
+	return NativeRulesProjection.pokemon_max_hp(self, catalog)
 
 
 func available_energy(catalog: CardCatalog) -> Array[String]:
@@ -98,15 +98,6 @@ func has_modifier_operation(operation_kind: String, string_value: String = "") -
 	return false
 
 
-func modifier_operation_max(operation_kind: String, key: String = "amount") -> int:
-	var result := 0
-	for descriptor in modifier_descriptors():
-		var operation: Dictionary = descriptor.get("operation", {})
-		if str(operation.get("kind", "")) == operation_kind:
-			result = maxi(result, int(operation.get(key, 0)))
-	return result
-
-
 func modifier_operation_sum(operation_kind: String, key: String = "amount") -> int:
 	var result := 0
 	for descriptor in modifier_descriptors():
@@ -114,34 +105,6 @@ func modifier_operation_sum(operation_kind: String, key: String = "amount") -> i
 		if str(operation.get("kind", "")) == operation_kind:
 			result += int(operation.get(key, 0))
 	return result
-
-
-func remove_modifiers_with_duration(durations: Array[String]) -> void:
-	var kept: Array[Dictionary] = []
-	for descriptor in modifiers:
-		if str(descriptor.get("duration", "")) not in durations:
-			kept.append(descriptor)
-	modifiers = kept
-
-
-func consume_modifier_operation(operation_kind: String, string_value: String = "") -> bool:
-	for index in range(modifiers.size()):
-		var descriptor: Dictionary = modifiers[index]
-		if not VMModifierDescriptorRegistry.shared().validation_error(descriptor).is_empty():
-			continue
-		var operation: Dictionary = descriptor.get("operation", {})
-		if str(operation.get("kind", "")) != operation_kind:
-			continue
-		if (
-			not string_value.is_empty()
-			and str(operation.get("attack_name", operation.get("reason", ""))) not in [
-				string_value, "__all__",
-			]
-		):
-			continue
-		modifiers.remove_at(index)
-		return true
-	return false
 
 
 func prevents_damage() -> bool:
@@ -158,48 +121,6 @@ func attack_is_locked(attack_name: String = "") -> bool:
 
 func has_attack_gate(reason: String) -> bool:
 	return has_modifier_operation("attack_gate_coin", reason)
-
-
-func expire_modifiers_at_turn(turn_number: int) -> void:
-	var kept: Array[Dictionary] = []
-	for descriptor in modifiers:
-		var condition: Dictionary = descriptor.get("condition", {})
-		if (
-			str(descriptor.get("duration", "")) in [
-				"until_end_of_turn", "until_end_of_opponents_next_turn", "until_next_attack",
-			]
-			and int(condition.get("expires_after_turn", 2147483647)) <= turn_number
-		):
-			continue
-		kept.append(descriptor)
-	modifiers = kept
-
-
-func clear_attack_effect_modifiers() -> void:
-	var kept: Array[Dictionary] = []
-	for descriptor in modifiers:
-		var operation_kind := str(Dictionary(
-			descriptor.get("operation", {})).get("kind", ""))
-		if (
-			str(descriptor.get("duration", "")) not in ["persistent", "until_leave_play"]
-			and operation_kind in [
-			"prevent_damage", "prevent_effects", "damage_delta", "attack_lock",
-			"attack_gate_coin",
-			]
-		):
-			continue
-		kept.append(descriptor)
-	modifiers = kept
-
-
-func clear_special_conditions_and_attack_effects() -> void:
-	# Evolving or moving an Active Pokemon to the Bench removes Special
-	# Conditions and effects of attacks on that Pokemon. Card attachments,
-	# damage, the evolution stack and persistent card modifiers remain.
-	status_conditions.clear()
-	paralyzed_since_turn = 0
-	clear_attack_effect_modifiers()
-	remove_modifiers_with_duration(["until_switch_or_evolve"])
 
 
 func to_dict() -> Dictionary:

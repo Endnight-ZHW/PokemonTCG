@@ -5,12 +5,10 @@ signal load_failed(message: String)
 
 const CARDS_PATH := "res://data/cards.json"
 const DECKS_PATH := "res://data/decks.json"
-const EFFECTS_PATH := "res://data/effects.json"
 const RELEASE_MANIFEST_PATH := "res://data/release_manifest.json"
 
 var cards: Dictionary = {}
 var decks: Dictionary = {}
-var effects: Dictionary = {}
 var release_manifest: Dictionary = {}
 var is_loaded := false
 var catalog: CardCatalog = CardCatalog.shared()
@@ -21,10 +19,7 @@ func _ready() -> void:
 
 
 func load_all() -> bool:
-	var datasets := {
-		"effects": EFFECTS_PATH,
-		"release_manifest": RELEASE_MANIFEST_PATH,
-	}
+	var datasets := {"release_manifest": RELEASE_MANIFEST_PATH}
 	var loaded_values: Dictionary = {
 		"cards": catalog.cards,
 		"decks": catalog.decks,
@@ -38,7 +33,6 @@ func load_all() -> bool:
 
 	cards = loaded_values["cards"]
 	decks = loaded_values["decks"]
-	effects = loaded_values["effects"]
 	release_manifest = loaded_values["release_manifest"]
 	is_loaded = true
 	loaded.emit()

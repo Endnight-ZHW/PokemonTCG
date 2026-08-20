@@ -232,6 +232,10 @@ static func _category_key(option: Dictionary, catalog: CardCatalog) -> String:
 		return "pokemon"
 	if catalog.is_basic_energy(card_id) or catalog.is_energy(card_id):
 		return "energy"
+	if catalog.is_item(card_id):
+		return "item"
+	if catalog.is_tool(card_id):
+		return "tool"
 	if catalog.is_trainer(card_id):
 		return "trainer"
 	return ""

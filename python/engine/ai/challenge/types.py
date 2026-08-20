@@ -1,8 +1,7 @@
 """Public data types used by ChallengeAI."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 from engine.actions import GameAction as AIAction
 from engine.ai.profiles import DEFAULT_POLICY_PATH, DeckAIProfile
@@ -34,15 +33,3 @@ class AIConfig:
     # runtime decisions always use the shared information-set planner.
     use_unified_planner: bool = True
     planner_max_depth: int = 16
-
-
-@dataclass
-class AIChoice:
-    selected_cards: list[Any] = field(default_factory=list)
-    selected_bench_slot: int | None = None
-    selected_bench_targets: list[int] = field(default_factory=list)
-    coin_results: list[bool] = field(default_factory=list)
-    confirmed: bool = True
-    assignments: list[tuple[int, str]] = field(default_factory=list)
-    option_ids: list[str] = field(default_factory=list)
-    cancelled: bool = False

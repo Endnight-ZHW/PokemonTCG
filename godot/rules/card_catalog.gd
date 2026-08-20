@@ -3,15 +3,18 @@ extends RefCounted
 
 const CARDS_PATH := "res://data/cards.json"
 const DECKS_PATH := "res://data/decks.json"
+const CARD_IR_PATH := "res://data/card_ir_v3.json"
 
 static var _shared_cards: Dictionary = {}
 static var _shared_decks: Dictionary = {}
+static var _shared_card_ir: Dictionary = {}
 static var _shared_loaded := false
 static var _shared_load_count := 0
 static var _shared_repository: CardCatalog
 
 var cards: Dictionary = {}
 var decks: Dictionary = {}
+var card_ir: Dictionary = {}
 var _read_only_repository := false
 var _expanded_deck_cache: Dictionary = {}
 var _card_supertype_cache: Dictionary = {}
@@ -25,23 +28,26 @@ func _init(isolated: bool = false, read_only: bool = false) -> void:
 	if isolated:
 		cards = _shared_cards.duplicate(true)
 		decks = _shared_decks.duplicate(true)
+		card_ir = _shared_card_ir.duplicate(true)
 	else:
-		# Legacy constructors retain one parsed data set. Tests that inject synthetic
-		# cards should request an isolated catalog explicitly.
+		# Normal callers share one parsed data set. Tests that inject synthetic cards
+		# request an isolated catalog explicitly.
 		cards = _shared_cards
 		decks = _shared_decks
+		card_ir = _shared_card_ir
 	if read_only:
 		if not isolated:
 			cards = cards.duplicate(true)
 			decks = decks.duplicate(true)
+			card_ir = card_ir.duplicate(true)
 		_prepare_read_only_repository()
 
 
 static func shared() -> CardCatalog:
 	"""Return the one deeply read-only catalog used by release runtime paths."""
 	if _shared_repository == null:
-		# Keep the legacy constructor compatible for tests that mutate synthetic
-		# fixtures. The runtime repository owns one isolated, immutable snapshot.
+		# The runtime repository owns one isolated, immutable snapshot; mutable
+		# synthetic fixtures use an explicitly isolated catalog.
 		_shared_repository = CardCatalog.new(true, true)
 	return _shared_repository
 
@@ -51,12 +57,33 @@ func is_read_only_repository() -> bool:
 		_read_only_repository
 		and cards.is_read_only()
 		and decks.is_read_only()
+		and card_ir.is_read_only()
 		and _expanded_deck_cache.is_read_only()
 		and _card_supertype_cache.is_read_only()
 		and _card_subtypes_cache.is_read_only()
 		and _provides_energy_cache.is_read_only()
 		and _prize_value_cache.is_read_only()
 	)
+
+
+func native_rules_catalog() -> Dictionary:
+	## Release matches consume the source-mapped Card IR v3 envelope. Isolated
+	## synthetic test catalogs may provide raw cards without release IR.
+	var ir_cards: Variant = card_ir.get("cards")
+	if (
+		str(card_ir.get("format", "")) == "ptcg_card_ir/3"
+		and int(card_ir.get("vm_ir_version", 0)) == 3
+		and ir_cards is Dictionary
+		and Dictionary(ir_cards).size() == cards.size()
+	):
+		var same_ids := true
+		for card_id_value in cards:
+			if not Dictionary(ir_cards).has(str(card_id_value)):
+				same_ids = false
+				break
+		if same_ids:
+			return {"cards": cards, "card_ir": card_ir}
+	return cards
 
 
 func get_card(card_id: String) -> Dictionary:
@@ -235,6 +262,7 @@ func _prepare_read_only_repository() -> void:
 	for value in [
 		cards,
 		decks,
+		card_ir,
 		_expanded_deck_cache,
 		_card_supertype_cache,
 		_card_subtypes_cache,
@@ -263,6 +291,7 @@ static func _ensure_shared_data() -> void:
 		return
 	_shared_cards = _read_json(CARDS_PATH)
 	_shared_decks = _read_json(DECKS_PATH)
+	_shared_card_ir = _read_json(CARD_IR_PATH)
 	_shared_loaded = true
 	_shared_load_count += 1
 

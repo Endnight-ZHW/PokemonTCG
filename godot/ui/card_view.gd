@@ -1903,16 +1903,8 @@ func _pokemon_max_hp(card: Dictionary, pokemon_value: PokemonState) -> int:
 	var maximum := maxi(1, int(card.get("hp", 1)))
 	if pokemon_value == null or catalog == null:
 		return maximum
-	if not pokemon_value.attached_tool_id.is_empty():
-		for effect in catalog.get_card(
-			pokemon_value.attached_tool_id
-		).get("trainer_effects", []):
-			if (
-				effect.get("params", {}).get("effect", "") == "hp_boost_basic"
-				and catalog.is_basic_pokemon(pokemon_value.card_id)
-			):
-				maximum += 50
-	return maximum
+	var native_maximum := pokemon_value.max_hp(catalog)
+	return native_maximum if native_maximum > 0 else maximum
 
 
 func _layout_battle_overlay() -> void:

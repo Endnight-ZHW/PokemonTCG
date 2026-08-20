@@ -252,7 +252,7 @@ func _native_search_probe(backend: Variant) -> Dictionary:
 		actions.append(action.to_dict())
 		expected_signatures.append(
 			AIPositionEvaluator.action_signature(action))
-		if action.action == "PLAY_TRAINER" and trainer_action == null:
+		if action.kind == "PLAY_TRAINER" and trainer_action == null:
 			trainer_action = action
 	if actions.is_empty() or trainer_action == null:
 		failure["error"] = "forced_trainer_missing"
@@ -262,8 +262,8 @@ func _native_search_probe(backend: Variant) -> Dictionary:
 	if kernel == null:
 		failure["error"] = "native_search_extension_unavailable"
 		return failure
-	kernel.call("vm_set_cards", cards)
-	kernel.call("simulation_set_decks", decks)
+	kernel.call("set_catalog", cards)
+	kernel.call("set_decks", decks)
 	var planner := InformationSetPUCT.new()
 	planner._native = kernel
 	var runtime_state := _mask_runtime_state(state, 0)

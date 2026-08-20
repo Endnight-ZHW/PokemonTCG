@@ -1,6 +1,6 @@
 #include "ptcg_determinizer.hpp"
 
-#include "ptcg_ai_core.hpp"
+#include "ptcg_random.hpp"
 #include "ptcg_infoset.hpp"
 
 #include <algorithm>

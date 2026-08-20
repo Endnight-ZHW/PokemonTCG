@@ -51,6 +51,26 @@ OP_LEGACY_ALIASES.update({
     "shuffle_then_draw_cards": "shuffle_draw",
 })
 
+FULL_DAMAGE_EFFECT_TYPES = frozenset({
+    "damage_per_self_damage",
+    "damage_per_self_energy",
+    "damage_per_self_energy_type",
+    "damage_plus_bench",
+    "damage_per_hand_size",
+    "damage_per_energy",
+    "damage_per_evolved",
+    "damage_self_penalty",
+    "damage_per_discard_psychic",
+    "conditional_damage_heal",
+    "damage_and_self_heal",
+    "discard_fighting_energy_damage",
+    "discard_hand_conditional_bonus",
+    "coin_flip_triple",
+    "coin_flip_until_tails",
+    "mill_and_damage_per_energy",
+    "attack_damage_formula",
+})
+
 
 def is_effect_like(value: Any) -> bool:
     if isinstance(value, dict):
@@ -125,6 +145,15 @@ def effect_feature_names(effect: Any) -> tuple[str, ...]:
                 names.append("damage_formula")
                 names.append("damage")
     return tuple(dict.fromkeys(names))
+
+
+def effect_replaces_base_damage(effect: Any) -> bool:
+    """AI metadata query; actual attack settlement remains in ptcg_core."""
+    alias = effect_type(effect)
+    if alias in FULL_DAMAGE_EFFECT_TYPES:
+        return True
+    op = _compiled_op(effect)
+    return op == "deal_damage" and "formula_ast" in effect_params(effect)
 
 
 def formula_ast_feature_names(formula_ast: Any) -> tuple[str, ...]:

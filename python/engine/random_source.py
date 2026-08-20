@@ -22,6 +22,22 @@ class RandomSource:
 
     def __init__(self, seed: int | None = None):
         self._random = random.Random(seed)
+        # The authoritative core consumes xorshift32.  Retain a separate,
+        # serializable native stream while Python-side policy sampling keeps
+        # its historical MT19937 behavior.
+        native_seed = (
+            int(seed)
+            if seed is not None
+            else self._random.getrandbits(32)
+        ) & 0xFFFFFFFF
+        self._ptcg_native_state = native_seed or 0x6D2B79F5
+
+    def get_native_state(self) -> int:
+        return int(self._ptcg_native_state) & 0xFFFFFFFF
+
+    def set_native_state(self, state: int) -> None:
+        value = int(state) & 0xFFFFFFFF
+        self._ptcg_native_state = value or 0x6D2B79F5
 
     def random(self) -> float:
         return self._random.random()
@@ -179,6 +195,12 @@ class PortableRandomSourceV1(RandomSource):
 
     def set_state(self, state) -> None:
         self.setstate(state)
+
+    def get_native_state(self) -> int:
+        return self.get_state()
+
+    def set_native_state(self, state: int) -> None:
+        self.set_state(state)
 
     @contextmanager
     def bind_global(self):

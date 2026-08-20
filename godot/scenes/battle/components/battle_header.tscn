@@ -109,11 +109,6 @@ layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2
 
-[node name="BattleTitle" type="Label" parent="."]
-visible = false
-layout_mode = 2
-text = "Pokémon TCG"
-
 [node name="TurnLabel" type="Label" parent="."]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(292, 44)
@@ -146,18 +141,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2
 
-[node name="TaskCaption" type="Label" parent="."]
-visible = false
-layout_mode = 2
-text = "当前任务"
-
 [node name="RightInset" type="Control" parent="."]
 custom_minimum_size = Vector2(108, 0)
 layout_mode = 2
 mouse_filter = 2
-
-[node name="AIThinkingChip" type="Label" parent="."]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-text = "AI 思考中"

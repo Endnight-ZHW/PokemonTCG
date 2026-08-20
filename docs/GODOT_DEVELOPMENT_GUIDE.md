@@ -6,7 +6,8 @@
 
 > 项目使用 Godot 4.7。Godot 4 已经移除 VisualScript，因此复杂规则不会变成
 > “拖节点编程”。本项目的分工是：场景树编辑结构，Inspector 编辑参数，
-> AnimationPlayer 编辑固定时间轴，信号连接用户意图，GDScript 实现可测试的规则。
+> AnimationPlayer 编辑固定时间轴，信号连接用户意图，GDScript 负责 UI、绑定和表现。
+> 权威规则只在共享 C++ `ptcg_core` 中执行；Godot 不再实现卡牌效果或结算规则。
 
 ## 1. 第一次打开工程
 
@@ -92,9 +93,10 @@ flowchart TD
     Battle --> Card[card_view.tscn]
     Battle --> Zone[zone_view.tscn]
     Battle --> Presentation[PresentationDirector]
-    Main --> Engine[GameEngine]
-    Engine --> Effects[EffectEngine]
-    Engine --> Stack[ResolutionStack]
+    Main --> Adapter[NativeRulesSessionAdapter]
+    Adapter --> Extension[NativeRulesSession / GDExtension]
+    Extension --> Core[C++ ptcg_core]
+    Core --> Views[PlayerStateView / ChoiceView / PresentationEvent]
 ```
 
 最常编辑的文件：
@@ -242,7 +244,7 @@ landscape，同时要求纵横比至少 1.15；其余为 Dense。Wide / Compact 
 - 想改“用户点击后通知谁”：看同名 `.gd` 的 `signal` 和 `_ensure_connections()`。
 - 想改“前台按钮、面板的默认风格”：打开 `res://ui/frontend/front_end_theme.tres`。
 - 想改“战斗与兼容控件的默认风格”：打开 `res://ui/game_theme.tres`。
-- 想改“实时规则结果”：不要从场景开始，先看 `GameEngine`、`EffectEngine` 和 Python 权威数据。
+- 想改“实时规则结果”：不要从场景开始；先看 Python 卡牌 DSL/IR 描述与 C++ `ptcg_core`，Godot 只适配会话和显示结果。
 
 ### Container 与锚点
 
@@ -358,8 +360,8 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 `CardInteractionRouter` 查询来源动作；需要确认或存在多个动作时，在牌桌根浮层显示
 `CardActionPopover`。浮层固定在来源卡牌正上方并与卡牌水平居中；顶部安全区不足时才切换到
 卡牌下方。这样浮层不会进入卡牌的最小尺寸计算，也不会挤压牌桌或手牌。
-`CardView.set_actions(...)` 仅为旧调用保留兼容，内部动作容器始终隐藏，新代码应使用
-`set_interaction_state(...)` 注入可操作、合法目标和禁用原因等只读表现状态。
+使用 `set_interaction_state(...)` 注入可操作、合法目标和禁用原因等只读表现状态；
+`CardView` 不保存或执行规则动作。
 
 卡牌输入约定：
 
@@ -433,7 +435,7 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 - 手牌尺寸、最小重叠间距和扇形角度。
 
 命令轨的正式宽度固定为 `BattlePhaseHud.RAIL_WIDTH = 132.0`，日志抽屉宽度为 360px。
-`BattleTable.hud_width` 仅为旧场景和 Inspector 的兼容导出值；不要只改它来调整新版命令轨。
+命令轨宽度由 `BattlePhaseHud.RAIL_WIDTH` 和布局安全宽度共同决定。
 确需改变轨道宽度时，应同步 `BattlePhaseHud` 常量、`BattleTableLayout` 的保留安全宽度、布局契约
 和全部战斗截图。
 
@@ -484,7 +486,7 @@ UI 不得自行放宽目标条件。`CardActionPopover` 使用 200–260px 宽�
 继续存在。`CardActionPopover.action_chosen` 和右栏 `phase_action_requested` 最终都转发为
 `action_requested(GameAction)`；规则、AI 和网络层不需要知道动作来自轻点、浮层还是拖放。
 
-效果结算同样优先使用牌桌对象：单选且能唯一映射到场上宝可梦的 `ChoiceRequest` 通过
+效果结算同样优先使用牌桌对象：单选且能唯一映射到场上宝可梦的 `ChoiceView` 通过
 `BattleTable.set_choice_targets(...)` 高亮对应卡牌，轻点后仍提交原 `option_id`。隐藏区卡牌、
 同一宝可梦上无法仅靠卡牌区分的多个附着物，以及多选请求继续使用 `ChoicePanel`；能量分配保留
 专用卡牌面板，`coin_flip` 使用独立硬币翻转表现。撤退动作会要求点选本次支付所丢弃的附着能量卡，
@@ -496,7 +498,6 @@ UI 不得自行放宽目标条件。`CardActionPopover` 使用 200–260px 宽�
 
 | 导出参数 | 影响 |
 |---|---|
-| `hud_width` | 兼容导出值；新版 132px 命令轨由 `BattlePhaseHud.RAIL_WIDTH` 和布局安全宽度共同定义 |
 | `table_side_margin` / `table_top_margin` / `table_bottom_margin` | 牌桌边缘安全距离 |
 | `hand_bottom_padding` | 手牌与底部边缘的额外距离 |
 | `active_card_size` | 双方战斗宝可梦大小 |
@@ -558,7 +559,8 @@ Main.update_view()    -> 页面重新显示状态
 | 调整可配置尺寸或动画速度 | 场景根节点的 `@export` 参数 | 参数可被 Inspector 保存 |
 | 调整运行时布局算法 | 对应 `.gd` 的 `_layout_*`、`_place_*` 函数 | 改完要看多种窗口比例 |
 | 新增用户交互 | 页面 `.tscn` 新增控件，页面 `.gd` 新增或连接 `signal`，`Main` 处理 | 页面只报告意图，不改规则状态 |
-| 新增规则动作或卡牌效果 | Python 权威数据、Godot `GameEngine` / `EffectEngine`、测试 | UI 不能伪造伤害、抽牌或随机数 |
+| 新增组合卡牌效果 | Python 类型化卡牌 DSL、场景测试、生成的 Card IR v3 | 不修改 GDScript/C++ 规则代码 |
+| 新增通用规则原语 | VM 描述符、一个 C++ handler、语言无关 golden | 绑定层不复制语义 |
 | 新增联网行为 | `NetworkMatchController` 和协议层 | 客户端只提交动作/选择，不提交完整状态 |
 
 本项目稳定接口的使用边界：
@@ -566,7 +568,7 @@ Main.update_view()    -> 页面重新显示状态
 - 页面输入使用 `configure(...)`。
 - 页面输出使用 `signal`。
 - 用户动作使用 `GameAction` 表达。
-- 对局状态只通过 `GameEngine.apply_action()` 或 `GameEngine.apply_choice()` 修改。
+- 对局状态只通过 `NativeRulesSessionAdapter.apply_action()` 或 `apply_choice()` 修改；Challenge AI 的 `GameEngine` 仅是同一原生会话的 DTO 门面。
 - 可视化动画只消费 `PresentationEvent` 和表现事件，不得直接修改 `GameState`。
 
 牌组页仍用 `configure(catalog, mode)` 输入数据，并用
@@ -579,8 +581,8 @@ page.selected_deck_key(0)
 page.select_deck(1, "water")
 ```
 
-玩家索引为 0 或 1，`select_deck(...)` 返回是否成功；两个槽位允许选择同一套牌。不要读取
-隐藏的 `DeckOneOption` / `DeckTwoOption` 兼容节点，它们只用于迁移旧调用方。
+玩家索引为 0 或 1，`select_deck(...)` 返回是否成功；两个槽位允许选择同一套牌。选择状态只
+通过这些公开接口读写，场景中不存在额外的隐藏 `OptionButton` 状态源。
 
 ## 7. AnimationPlayer 与 Tween
 
@@ -661,8 +663,8 @@ sequenceDiagram
     participant Popover as CardActionPopover
     participant Battle as BattleTable
     participant Main
-    participant Engine as GameEngine
-    participant Stack as ResolutionStack
+    participant Adapter as NativeRulesSessionAdapter
+    participant Core as C++ ptcg_core
     participant Coordinator as BattlePresentationCoordinator
     participant Present as PresentationDirector
 
@@ -676,9 +678,11 @@ sequenceDiagram
     Player->>Popover: 选择动作
     Popover-->>Battle: action_chosen(GameAction)
     Battle-->>Main: action_requested(GameAction)
-    Main->>Engine: apply_action(state, action, rng)
-    Engine->>Stack: 推入效果帧/选择请求
-    Engine-->>Main: StepResult + events
+    Main->>Adapter: apply_action(Action V4)
+    Adapter->>Core: Native ABI 2
+    Core->>Core: 校验、事务、RNG、VM、结算栈
+    Core-->>Adapter: StepResult + PlayerStateView + events
+    Adapter-->>Main: 只读 DTO/视图
     Main->>Battle: submit_transition(target_view, events, revision)
     Battle->>Coordinator: 排队独立 from/target 批次
     Coordinator->>Battle: staging 后提交可见目标视图
@@ -700,26 +704,26 @@ sequenceDiagram
 
 - `GameAction`：玩家要做什么以及来源、目标。
 - `StepResult`：动作是否成功、提示、待处理选择和表现事件。
-- `ChoiceRequest` / `ChoiceResponse`：复杂效果中的显式选择。
-- `GameState`：完整规则状态。
-- `ResolutionStack`：可序列化的效果与继续执行帧。
+- `ChoiceView` / `ChoiceResponse`：复杂效果中的公开选择合同。
+- `GameState`：Godot 只读 DTO 投影；完整权威状态由 C++ 会话持有。
+- `Snapshot 3`：包含可序列化结算栈、continuation、revision、RNG 和幂等记录。
 - `CardInteractionRouter`：只读索引合法动作、来源卡、目标卡位和拖放匹配。
 - `CardActionPopover`：显示来源卡的可执行动作，不保存或推导规则状态。
 
-`GameEngine.apply_action()` 会先保存 `state.snapshot()`。动作失败时恢复快照，因此
-UI 不能在调用规则前自行移动卡牌或扣除资源。
+`ptcg_core` 会在动作/选择事务内保存快照，失败或取消时原子恢复；UI 不能在提交前
+自行移动卡牌、扣除资源或推进 revision。
 
-## 9. EffectEngine 与嵌套选择
+## 9. 原生规则会话与嵌套选择
 
-卡牌效果由 `EffectEngine` 根据 `effect_type` 分派。典型流程：
+卡牌效果由 Card IR v3 的通用 VM 指令驱动，唯一执行器位于 C++ `ptcg_core`。典型流程：
 
-1. 训练家卡或招式把效果帧推入 `ResolutionStack`。
-2. `EffectEngine` 处理栈顶效果。
-3. 如果需要玩家选择，生成 `ChoiceRequest` 并暂停。
+1. Godot 提交完整 Action V4；核心核对 schema、revision、actor、来源、目标和合法动作。
+2. 核心在事务内执行 VM 与结算栈，并独占 RNG。
+3. 如果需要玩家选择，生成可序列化 ChoiceView v2 与 continuation 并暂停。
 4. UI 按对象路由：唯一场上目标直接高亮卡牌；隐藏区、歧义目标和多选显示
    `choice_panel.tscn`；能量分配与硬币分别使用专用卡牌面板和硬币动画。
-5. `GameEngine.apply_choice()` 验证 request ID 和选项。
-6. 结算栈继续执行，直到为空或出现下一次选择。
+5. `NativeRulesSessionAdapter.apply_choice()` 把 ChoiceResponse 原样交给核心验证 request ID、revision 和选项。
+6. 核心继续结算，直到栈为空、出现下一次选择或对局结束。
 
 结算栈必须可序列化，因为它用于：
 
@@ -728,8 +732,8 @@ UI 不能在调用规则前自行移动卡牌或扣除资源。
 - 嵌套选择。
 - AI 模拟。
 
-新增效果时不要保存 Callable、匿名回调或节点引用。应保存字符串操作名、实体引用和
-普通 Dictionary/Array 数据。
+Card IR、Snapshot 和 journal 中不得保存 Callable、匿名回调或节点引用，只能保存描述符操作名、
+实体引用和有界对象/数组。C++ 源码不得按发布卡牌 ID 分派规则。
 
 ### 中国大陆规则配置的关键时序
 
@@ -753,7 +757,7 @@ UI 不能在调用规则前自行移动卡牌或扣除资源。
 
 ### 隐藏信息
 
-`StateSerializer.for_player()` 负责玩家视角：
+`NativeRulesSession.view_for(viewer)` 负责玩家视角：
 
 - 自己的手牌身份可见。
 - 对手手牌只显示数量。
@@ -788,8 +792,8 @@ Main -> GameEngine.apply_action/apply_choice()
 ```mermaid
 flowchart LR
     Guest[挑战者 UI] -->|GameAction / ChoiceResponse| Host[房主]
-    Host --> Engine[GameEngine]
-    Engine --> Serializer[StateSerializer.for_player]
+    Host --> Session[NativeRulesSession]
+    Session --> Serializer[ptcg_core view_for]
     Serializer -->|玩家 1 视角| HostUI[房主 UI]
     Serializer -->|玩家 2 视角| Guest
 ```
@@ -826,14 +830,15 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 
 ## 11. 新增卡牌或效果
 
-`godot/data/*.json` 是生成文件，不要直接修改。权威数据仍在 Python 工程。
+`godot/data/*.json` 是生成文件，不要直接修改。卡牌作者源位于 Python 类型化 DSL，
+所有效果编译为 Card IR v3；Python 和 GDScript 都不执行规则。
 
 推荐流程：
 
-1. 在 Python 数据与规则中加入卡牌或效果。
-2. 为 Python 行为补测试。
-3. 如有新 `effect_type`，在 Godot `EffectEngine` 增加相同语义。
-4. 更新规则黄金 fixture。
+1. 在 Python 卡牌 DSL 中加入卡牌规格；纯组合卡只改这一份规格。
+2. 增加一份语言无关场景测试，覆盖合法、非法与选择链。
+3. 运行 `card lint/test/status`；已有 VM 原语应直接组合，不添加语言分支。
+4. 只有确实缺少通用原语时，才更新一份描述符、一个 C++ handler 和对应 golden。
 5. 导出 Godot 数据：
 
 ```powershell
@@ -846,7 +851,7 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 .\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
 ```
 
-7. 运行 Godot、AI 和网络回归。
+7. 运行 C++、Godot、AI 和网络回归。纯组合卡不得修改 C++、GDScript 或 Python 规则执行代码。
 
 新效果至少测试：
 
@@ -865,9 +870,10 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 在脚本编辑器行号左侧点击设置断点。推荐断点：
 
 - `Main._execute_action()`
-- `GameEngine.apply_action()`
-- `GameEngine.apply_choice()`
-- `EffectEngine` 对应效果分支
+- `NativeRulesSessionAdapter.apply_action()` / `apply_choice()`
+- `godot_rules_session.cpp` 的绑定边界
+- `ptcg_rules_session.cpp` 的 Action/Choice 事务入口
+- 对应的通用 C++ VM handler（仅调试新原语时）
 - `BattleTable.update_view()`
 
 运行后查看 Debugger 的 Variables、Stack Trace 和 Errors。
@@ -1288,7 +1294,7 @@ APK 构建成功不等于 Android 发布完成。至少按 `docs/ANDROID_TEST_CH
 6. 给 TitlePage 底栏增加一个只发信号的辅助按钮，同时保持三个主入口不变。
 7. 在 Workbench 中加入一个新的样例表现事件。
 8. 跟踪一次 `GameAction` 到 `StepResult`。
-9. 阅读一个简单 EffectEngine 分支并补测试。
+9. 用 Workbench 回放一份 MatchJournal，并阅读对应的通用 C++ VM handler/golden。
 10. 在不改规则的前提下，为一个表现事件增加动画。
 
 每完成一步都运行 `test_godot.ps1`。这种节奏略显谨慎，但它能让你大胆试验，而不必
@@ -1378,7 +1384,7 @@ Godot UI 修改先判断节点属于哪一种布局：
 
 1. 打开 `res://scenes/battle/components/battle_table.tscn`。
 2. 选择根节点 `BattleTable`。
-3. 确认右侧命令轨保持 `BattlePhaseHud.RAIL_WIDTH = 132.0`；`hud_width` 是兼容导出值，
+3. 确认右侧命令轨保持 `BattlePhaseHud.RAIL_WIDTH = 132.0`；
    不能单独改变新版命令轨。确需改宽度时同步修改命令轨常量、布局安全宽度和布局契约。
 4. 在 `Table Layout / Table Margins` 中调整牌桌安全边距和手牌底部预留。
 5. 在 `Table Layout / Board Cards` 中调整 `active_card_size`、`bench_card_size`、`zone_size` 和 `bench_spacing`。
@@ -1669,14 +1675,14 @@ page.beginner_tip_requested.connect(_show_help)
 ## 19. 操作配方：新增卡牌、卡组和卡图
 
 Godot 的 `data/*.json` 是生成物。新手最容易犯的错是直接改 `godot/data/cards.json`；
-这样下一次导出会被覆盖，也不会同步 Python 对照测试。正确路径如下。
+这样下一次导出会被覆盖，也不会同步 Card IR 合同与场景测试。正确路径如下。
 
 ### 新增或修改卡牌
 
 1. 在 `python/card_data/templates/` 中找到对应属性或训练家模板文件，加入卡牌基础数据。
-2. 在 `python/card_data/effects/` 中加入或修改效果定义。
-3. 如果出现新的 `effect_type`，在 Godot 的 `rules/effect_engine.gd` 添加同语义分支。
-4. 在 Python 测试中覆盖新规则，至少验证合法动作、非法目标和选择链。
+2. 使用 `python/card_data/authoring_dsl.py` 暴露的类型化规格组合已有效果/VM 原语。
+3. 增加语言无关场景测试，至少验证合法动作、非法目标、隐藏信息和选择链。
+4. 运行作者工具：`card_author.py lint`、目标卡 `test` 与 `status --json`。
 5. 运行导出：
 
 ```powershell
@@ -1689,9 +1695,10 @@ Godot 的 `data/*.json` 是生成物。新手最容易犯的错是直接改 `god
 .\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
 ```
 
-7. 运行 Godot 测试：
+7. 运行 C++ 与 Godot 测试：
 
 ```powershell
+.\tools\test_ptcg_core.ps1
 .\tools\test_godot.ps1
 ```
 
@@ -1749,7 +1756,7 @@ MY_FIRE_DECK = [
 | `%HelpButton` 为 null | 场景节点改名或不再 unique | 恢复节点名，或同步脚本中的 `%NodeName` |
 | 弃牌区点击没有反应 | `ZoneView.inspect_context` 为空 | 检查 `BattleTable._refresh_field()` 是否传入 context |
 | 牌库/奖赏显示了真实卡 | context 中传入了 `card_ids` | 对隐藏区传空数组，只传 count |
-| 选择面板确认按钮灰掉 | 选择数量不在 min/max 范围 | 检查 `ChoiceRequest.min_select/max_select` 和 `selected_choice_ids` |
+| 选择面板确认按钮灰掉 | 选择数量不在 min/max 范围 | 检查 `ChoiceView.min_select/max_select` 和 `selected_choice_ids` |
 | 分配能量提交错误 | option ID 被 UI 重写 | UI 只能重复已有 option ID，不要生成新 ID |
 | 动画在减少动画模式仍播放 | 没检查 `AppSettings.reduced_motion` | 跳过 Tween 或使用 reduced speed |
 | 导出后卡组没出现 | 没加入 `export_godot_data.py` 的 `DECKS` | 同步 `deck_definitions.py` 和导出脚本 |
@@ -1762,7 +1769,7 @@ MY_FIRE_DECK = [
 - 先在 `res://tools/ui_workbench.tscn` 找到对应页面，确认要改的是哪个场景或组件。
 - 看节点的 `editor_description`。标注“不要删除”的节点可以调样式和尺寸，但不要删、改名或取消唯一节点。
 - 搜索脚本引用。改节点名之前用 `rg "%NodeName|NodeName" godot` 确认有没有 `%Name` 或路径依赖。
-- 判断修改类型：纯视觉改 `.tscn` / Theme；交互改 signal；规则改引擎和测试；联网改协议控制器。
+- 判断修改类型：纯视觉改 `.tscn` / Theme；交互改 signal；组合卡改 DSL/场景测试；新规则原语改 C++/golden；联网改协议控制器。
 
 改的时候：
 

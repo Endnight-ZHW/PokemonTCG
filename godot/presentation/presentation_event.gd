@@ -84,7 +84,7 @@ static func normalize(
 		and data.get("cards", []) is Array
 		and not data.has("card_ids")
 	):
-		data["card_ids"] = Array(data["cards"]).duplicate()
+		data["card_ids"] = Array(data.get("cards", [])).duplicate()
 	if event_type == "cards_discarded" and not data.has("card_ids"):
 		var discarded_card_id := str(data.get(
 			"card_id",
@@ -97,7 +97,21 @@ static func normalize(
 		if data.get(field, []) is Array:
 			card_count = max(card_count, Array(data.get(field, [])).size())
 	var amount := _normalized_amount(raw_event, data, event_type)
-	if amount <= 0 and card_count > 0:
+	if event_type in [
+		"card_moved",
+		"cards_discarded",
+		"cards_drawn",
+		"cards_selected",
+		"prize_taken",
+	]:
+		# Explicit card rows describe physical movements. A legacy event may
+		# carry a smaller net-diff amount when an identical card left and re-entered
+		# the same zone in one resolution; never let that collapse a flyer.
+		amount = maxi(
+			amount,
+			maxi(card_count, int(data.get("count", 0))),
+		)
+	elif amount <= 0 and card_count > 0:
 		amount = card_count
 	var result := {
 		"event_id": str(raw_event.get(
@@ -121,6 +135,12 @@ static func normalize(
 		"data": data,
 	}
 	_apply_endpoint_defaults(result, raw_event, data)
+	var visibility := str(result.get("visibility", PUBLIC))
+	if visibility in [OWNER, PRIVATE] and not data.has("visibility_owner"):
+		var visibility_owner := _visibility_owner(result, data)
+		if visibility_owner in [0, 1]:
+			data["visibility_owner"] = visibility_owner
+			result["data"] = data
 	return result
 
 
@@ -208,10 +228,7 @@ static func _is_matching_turn_draw(
 static func for_player(event: Dictionary, player_idx: int) -> Dictionary:
 	var result := event.duplicate(true)
 	var data := _dictionary_or_empty(result.get("data", {}))
-	var owner := int(result.get(
-		"actor",
-		data.get("player", -1),
-	))
+	var owner := _visibility_owner(result, data)
 	var visibility := str(result.get("visibility", PUBLIC))
 	if visibility == PRIVATE and owner != player_idx:
 		return {}
@@ -420,12 +437,29 @@ static func _endpoint(
 
 static func _canonical_endpoint(endpoint: Dictionary) -> Dictionary:
 	var result := endpoint.duplicate(true)
-	var index := int(result.get("index", -1))
-	if index < 0 and result.has("attachment_index"):
-		index = int(result.get("attachment_index", -1))
-	result["index"] = index
-	result.erase("attachment_index")
+	result["index"] = int(result.get("index", -1))
 	return result
+
+
+static func _visibility_owner(event: Dictionary, data: Dictionary) -> int:
+	# `actor` is the player who caused an event, not necessarily the owner of
+	# cards moving through a hidden zone. Judge, opponent discard effects and
+	# future cross-player effects must therefore derive privacy from the physical
+	# endpoint/player contract before falling back to the causal actor.
+	for value in [
+		event.get("visibility_owner", null),
+		data.get("visibility_owner", null),
+		data.get("owner", null),
+		data.get("player", null),
+	]:
+		if value is int and int(value) in [0, 1]:
+			return int(value)
+	for endpoint_name in ["source", "target"]:
+		var endpoint := _dictionary_or_empty(event.get(endpoint_name, {}))
+		var endpoint_player: Variant = endpoint.get("player", null)
+		if endpoint_player is int and int(endpoint_player) in [0, 1]:
+			return int(endpoint_player)
+	return int(event.get("actor", -1))
 
 
 static func _normalized_amount(

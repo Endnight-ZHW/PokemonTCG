@@ -629,11 +629,7 @@ class ActionStateEncoder:
         observation: Observation,
         action: GameAction,
     ) -> EncodedAction:
-        action_name = (
-            action.action.name
-            if isinstance(action.action, PlayerAction)
-            else str(action.action)
-        )
+        action_name = action.kind_name
         if action_name not in ACTION_TYPES:
             raise ValueError(f"unknown_action_type:{action_name}")
         numeric: list[float] = []
@@ -643,33 +639,23 @@ class ActionStateEncoder:
             _bool(action.actor in (None, observation.perspective)),
         ])
 
-        params = dict(action.params or {})
+        params = dict(action.payload or {})
         source = _ref_dict(action.source)
         target = _ref_dict(action.target)
         slot_name = (
             target.get("slot")
-            or params.get("target_slot")
-            or params.get("target")
-            or params.get("slot")
         )
         numeric.extend(
             _one_hot(TARGET_SLOTS.index(slot_name), len(TARGET_SLOTS))
             if slot_name in TARGET_SLOTS else [0.0] * len(TARGET_SLOTS)
         )
-        hand_idx = params.get("hand_idx")
-        if hand_idx is None and source.get("zone") == "hand":
-            hand_idx = source.get("index")
-        attack_idx = params.get("attack_index", params.get("attack_idx"))
-        bench_idx = params.get("bench_idx")
-        if bench_idx is None and isinstance(slot_name, str) and slot_name.startswith("bench_"):
+        hand_idx = source.get("index") if source.get("zone") == "hand" else None
+        attack_idx = params.get("attack_index")
+        bench_idx = None
+        if isinstance(slot_name, str) and slot_name.startswith("bench_"):
             suffix = slot_name.removeprefix("bench_")
             bench_idx = int(suffix) if suffix.isdigit() else None
-        energy_indices = list(params.get("energy_indices", []) or [])
-        if not energy_indices:
-            for value in params.get("attachments", params.get("payment", [])) or []:
-                attachment = _ref_dict(value)
-                if type(attachment.get("index")) is int:
-                    energy_indices.append(attachment["index"])
+        energy_indices: list[int] = []
         numeric.extend([
             _norm(hand_idx + 1 if type(hand_idx) is int else 0, 12.0),
             _norm(attack_idx + 1 if type(attack_idx) is int else 0, 4.0),

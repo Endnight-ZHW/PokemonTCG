@@ -139,7 +139,7 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 			var controller := host if player_idx == 0 else client
 			if choice_data is Dictionary:
 				if controller.submit_choice(_automatic_choice(
-					ChoiceRequest.from_dict(choice_data)
+					ChoiceView.from_dict(choice_data)
 				)):
 					choices += 1
 					submitted = true
@@ -158,7 +158,7 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 				var action := _automatic_action(candidates)
 				if controller.submit_action(action):
 					actions += 1
-					action_counts[action.action] = int(action_counts.get(action.action, 0)) + 1
+					action_counts[action.kind] = int(action_counts.get(action.kind, 0)) + 1
 					submitted = true
 					last_revision = revision
 					break
@@ -187,10 +187,11 @@ func _capture_event(
 				ProtocolV6.STATE_UPDATE, view
 			)
 			if not bool(protocol_validation.get("ok", false)):
-				return {"error": "received a state outside the protocol v6 contract: %s groups=%s events=%s" % [
+				return {"error": "received a state outside the protocol v6 contract: %s groups=%s events=%s pokemon=%s" % [
 					JSON.stringify(protocol_validation),
 					JSON.stringify(view.get("legal_action_groups", [])),
 					JSON.stringify(view.get("presentation_events", [])),
+					JSON.stringify(_invalid_pokemon_diagnostics(view)),
 				]}
 			var state_payload: Dictionary = view.get("state", {})
 			var own: Dictionary = state_payload.get("your", {})
@@ -221,6 +222,38 @@ func _capture_event(
 	return {}
 
 
+func _invalid_pokemon_diagnostics(view: Dictionary) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var state_payload: Dictionary = view.get("state", {})
+	for side in ["your", "opponent"]:
+		var player: Dictionary = state_payload.get(side, {})
+		var rows: Array = [{"slot": "active", "pokemon": player.get("active")}]
+		var bench: Array = player.get("bench", [])
+		for index in range(bench.size()):
+			rows.append({"slot": "bench_%d" % index, "pokemon": bench[index]})
+		for row_value in rows:
+			var row: Dictionary = row_value
+			var pokemon_value: Variant = row.get("pokemon")
+			if pokemon_value == null or pokemon_value == {"hidden": true}:
+				continue
+			if ProtocolV6._validate_pokemon(pokemon_value):
+				continue
+			var modifier_errors: Array[Dictionary] = []
+			if pokemon_value is Dictionary:
+				for modifier_value in Dictionary(pokemon_value).get("modifiers", []):
+					modifier_errors.append({
+						"error": PokemonState.modifier_wire_validation_error(modifier_value),
+						"value": modifier_value,
+					})
+			result.append({
+				"side": side,
+				"slot": str(row.get("slot", "")),
+				"modifier_errors": modifier_errors,
+				"value": pokemon_value,
+			})
+	return result
+
+
 func _automatic_action(actions: Array[GameAction]) -> GameAction:
 	var priority := [
 		"PROMOTE", "PLAY_BASIC", "EVOLVE", "ATTACH_ENERGY", "DECLARE_ATTACK",
@@ -229,7 +262,7 @@ func _automatic_action(actions: Array[GameAction]) -> GameAction:
 	]
 	for action_name in priority:
 		for action in actions:
-			if action.action == action_name:
+			if action.kind == action_name:
 				return action
 	return actions[0]
 
@@ -253,7 +286,7 @@ func _board_contract_diagnostic(host: NetworkMatchController) -> String:
 	return JSON.stringify(board)
 
 
-func _automatic_choice(request: ChoiceRequest) -> ChoiceResponse:
+func _automatic_choice(request: ChoiceView) -> ChoiceResponse:
 	if request.options.is_empty():
 		return ChoiceResponse.new(request.request_id, [])
 	var count := mini(

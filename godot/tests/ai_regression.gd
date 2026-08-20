@@ -15,6 +15,14 @@ func _initialize() -> void:
 		return
 	var deck_keys: Array[String] = []
 	deck_keys.assign(release_decks_result["value"])
+	var requested_deck := ""
+	for argument in OS.get_cmdline_user_args():
+		if str(argument).begins_with("--ai-deck="):
+			requested_deck = str(argument).trim_prefix("--ai-deck=")
+	if not requested_deck.is_empty() and requested_deck not in deck_keys:
+		push_error("Unknown AI regression deck filter: %s" % requested_deck)
+		quit(1)
+		return
 	var catalog := CardCatalog.new()
 	var engine := GameEngine.new(catalog)
 	var worker := NativeChallengeAI.new()
@@ -38,6 +46,8 @@ func _initialize() -> void:
 	for mode in ["challenge"]:
 		for index in range(deck_keys.size()):
 			var deck_key := str(deck_keys[index])
+			if not requested_deck.is_empty() and deck_key != requested_deck:
+				continue
 			var opponent_key := str(deck_keys[(index + 1) % deck_keys.size()])
 			var game_started := Time.get_ticks_msec()
 			var summary := _play_game(
@@ -52,6 +62,7 @@ func _initialize() -> void:
 			)
 			summary["elapsed_ms"] = Time.get_ticks_msec() - game_started
 			summaries.append(summary)
+			print("AI_REGRESSION_GAME ", JSON.stringify(summary))
 			if not bool(summary.get("success", false)):
 				failures.append("%s %s: %s" % [
 					mode, deck_key, summary.get("error", "unknown")])
@@ -114,8 +125,9 @@ func _budget_contract_failures(
 	var main_state := GameState.new()
 	main_state.phase = "MAIN"
 	var main_actions: Array[GameAction] = []
-	main_actions.append(GameAction.new("END_TURN", {}, true, 0))
-	main_actions.append(GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0))
+	main_actions.append(GameAction.create("END_TURN", {}, 0))
+	main_actions.append(GameAction.create(
+		"DECLARE_ATTACK", {"attack_index": 0}, 0))
 	var main_budget := NativeChallengeAI.gameplay_action_budget(main_state, main_actions)
 	if str(main_budget.get("engine", "")) != NativeChallengeAI.TRADITIONAL_ENGINE_ID:
 		errors.append("gameplay must use turn_beam_v2")
@@ -128,8 +140,8 @@ func _budget_contract_failures(
 	var setup_state := GameState.new()
 	setup_state.phase = "SETUP"
 	var setup_actions: Array[GameAction] = []
-	setup_actions.append(GameAction.new("PLAY_BASIC", {}, false, 0))
-	setup_actions.append(GameAction.new("SETUP_DONE", {}, true, 0))
+	setup_actions.append(GameAction.create("PLAY_BASIC", {}, 0))
+	setup_actions.append(GameAction.create("SETUP_DONE", {}, 0))
 	var setup_budget := NativeChallengeAI.gameplay_action_budget(setup_state, setup_actions)
 	if setup_budget != main_budget:
 		errors.append("mandatory phases must not silently select a weaker profile")
@@ -159,7 +171,8 @@ func _budget_contract_failures(
 				"budget contract setup choice failed: %s" % setup_choice.message)
 			return errors
 	var actor := _actor(state)
-	var legal := RulesTestHarness.legal_actions(engine, state, actor, true)
+	var budget_query := engine.query_legal_action_groups(state, actor)
+	var legal := budget_query.concrete_actions() if budget_query.success else []
 	if legal.is_empty():
 		var budget_pending := engine.query_pending_choice(state, 0)
 		if budget_pending == null:
@@ -388,15 +401,24 @@ func _new_choice_policy_contract_failures(
 
 	# The production worker accepts only the public v2 envelope. A legacy
 	# authoritative request and any option-level private payload must fail closed.
-	var legacy_request := ChoiceRequest.new(
-		"legacy-choice", "select", 0, "legacy", [{"option_id": "a", "label": "a"}])
+	var legacy_request := {
+		"request_id": "legacy-choice",
+		"request_type": "select",
+		"player": 0,
+		"prompt": "legacy",
+		"options": [{"option_id": "a", "label": "a"}],
+		"min_select": 1,
+		"max_select": 1,
+		"allow_duplicates": false,
+		"can_cancel": false,
+	}
 	var legacy_result := worker.decide({
 		"kind": "choice",
 		"state": state.snapshot(),
-		"choice": legacy_request.to_dict(),
+		"choice": legacy_request,
 		"actor": 0,
 		"revision": state.revision,
-		"request_id": legacy_request.request_id,
+		"request_id": str(legacy_request["request_id"]),
 		"mode": "challenge",
 		"deck_key": "fire",
 		"seed": 20260718,
@@ -405,7 +427,7 @@ func _new_choice_policy_contract_failures(
 		bool(legacy_result.get("success", false))
 		or str(legacy_result.get("error", "")) != "invalid_choice_view"
 	):
-		errors.append("Challenge AI accepted a legacy authoritative ChoiceRequest")
+		errors.append("Challenge AI accepted an unversioned choice envelope")
 	var private_payload := same_target_request.to_dict()
 	private_payload["options"][0]["value"] = {"slot": "bench_0"}
 	var private_result := worker.decide({
@@ -469,6 +491,8 @@ func _play_game(
 	var actions_taken := 0
 	var decisions := 0
 	var choices := 0
+	var recent_actions: Array[Dictionary] = []
+	var match_instance_id := "ai-regression:%s:%d" % [mode, game_seed]
 	while not state.is_terminal() and actions_taken < 1200:
 		var pending := engine.query_pending_choice(state, 0)
 		if pending == null:
@@ -484,6 +508,7 @@ func _play_game(
 					"revision": state.revision,
 					"request_id": "choice:%d" % actions_taken,
 					"mode": mode,
+					"match_instance_id": match_instance_id,
 					"deck_key": deck_key,
 					"seed": game_seed + actions_taken * 31,
 					"internal_evaluation_smoke": true,
@@ -518,7 +543,8 @@ func _play_game(
 			continue
 
 		var actor := _actor(state)
-		var legal := RulesTestHarness.legal_actions(engine, state, actor, true)
+		var legal_query := engine.query_legal_action_groups(state, actor)
+		var legal := legal_query.concrete_actions() if legal_query.success else []
 		if legal.is_empty():
 			return {
 				"success": false,
@@ -536,6 +562,7 @@ func _play_game(
 				"revision": state.revision,
 				"request_id": "action:%d" % actions_taken,
 				"mode": mode,
+				"match_instance_id": match_instance_id,
 				"deck_key": deck_key,
 				"seed": game_seed + actions_taken * 7919,
 				"internal_evaluation_smoke": true,
@@ -554,6 +581,17 @@ func _play_game(
 		else:
 			action = _automatic_action(legal, state, catalog)
 		action.action_id = "regression:%d:%d" % [state.revision, actions_taken]
+		recent_actions.append({
+			"turn": state.turn_number,
+			"phase": state.phase,
+			"actor": actor,
+			"kind": action.kind,
+			"source": action.source.to_dict() if action.source else null,
+			"target": action.target.to_dict() if action.target else null,
+			"payload": action.payload.duplicate(true),
+		})
+		if recent_actions.size() > 40:
+			recent_actions.pop_front()
 		var step := _apply_test_action(engine, state, action, rng)
 		if not step.success:
 			return {
@@ -577,7 +615,12 @@ func _play_game(
 		"decisions": decisions,
 		"choices": choices,
 		"turns": state.turn_number,
-		"error": "" if state.is_terminal() else "action guard exceeded",
+		"error": (
+			""
+			if state.is_terminal()
+			else "action guard exceeded recent=%s" % JSON.stringify(
+				recent_actions)
+		),
 	}
 
 
@@ -602,7 +645,7 @@ func _automatic_action(
 	var repeatable_fallback: GameAction
 	for action_name in priority:
 		for action in actions:
-			if action.action != action_name:
+			if action.kind != action_name:
 				continue
 			if _is_repeatable_ability_action(state, catalog, action):
 				if repeatable_fallback == null:
@@ -617,15 +660,15 @@ func _is_repeatable_ability_action(
 	catalog: CardCatalog,
 	action: GameAction,
 ) -> bool:
-	if action.action != "USE_ABILITY":
+	if action.kind != "USE_ABILITY":
 		return false
 	var actor := action.actor if action.actor >= 0 else state.active_player_idx
 	if actor not in [0, 1]:
 		return false
-	var pokemon := state.get_player(actor).get_pokemon(str(action.params.get("slot", "")))
+	var pokemon := state.get_player(actor).get_pokemon(str(action.primary_slot()))
 	if pokemon == null:
 		return false
-	var ability_name := str(action.params.get("ability_name", ""))
+	var ability_name := str(action.ability_name())
 	for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
 		var ability: Dictionary = ability_value
 		if str(ability.get("name", "")) == ability_name:
@@ -663,45 +706,16 @@ func _automatic_choice(
 	var count := maxi(request.min_select, request.max_select)
 	if not request.allow_duplicates:
 		count = mini(request.options.size(), count)
-	var selected: Array[String] = []
-	if request.allow_duplicates:
-		var max_per_target := int(request.presentation.get("max_per_target", 99))
-		if bool(request.presentation.get("same_target", false)):
-			for _index in range(mini(count, max_per_target)):
-				selected.append(str(request.options[0]["option_id"]))
-			return ChoiceResponse.new(request.request_id, selected)
-		var per_target: Dictionary = {}
-		for index in range(request.options.size()):
-			if selected.size() >= count:
-				break
-			var option: Dictionary = request.options[index]
-			var target_key := _automatic_choice_target_key(option)
-			if (
-				not target_key.is_empty()
-				and int(per_target.get(target_key, 0)) >= max_per_target
-			):
-				continue
-			if not target_key.is_empty():
-				per_target[target_key] = int(per_target.get(target_key, 0)) + 1
-			selected.append(str(option["option_id"]))
-		while selected.size() < count:
-			selected.append(str(request.options[0]["option_id"]))
-	else:
-		for index in range(count):
-			selected.append(str(request.options[index]["option_id"]))
+	var ranked: Array[int] = []
+	for index in range(request.options.size()):
+		ranked.append(index)
+	var selected := AIChoiceSelector.select_ranked_option_ids(
+		request,
+		ranked,
+		count,
+		catalog,
+	)
 	return ChoiceResponse.new(request.request_id, selected)
-
-
-func _automatic_choice_target_key(option: Dictionary) -> String:
-	var ref_variant: Variant = option.get("ref", {})
-	if ref_variant is Dictionary:
-		var slot := str(Dictionary(ref_variant).get("slot", ""))
-		if not slot.is_empty():
-			return slot
-	var parts := str(option.get("option_id", "")).split(":")
-	if parts.size() >= 3:
-		return str(parts[2])
-	return ""
 
 
 func _apply_test_action(
@@ -710,8 +724,4 @@ func _apply_test_action(
 	action: GameAction,
 	rng: PortableRandomSource,
 ) -> StepResult:
-	var strict_action := action
-	if action != null and action.is_legacy_constructed():
-		var actor := state.active_player_idx if action.actor < 0 else action.actor
-		strict_action = engine._canonicalize_action(state, action, actor)
-	return engine.apply_action(state, strict_action, rng)
+	return engine.apply_action(state, action, rng)

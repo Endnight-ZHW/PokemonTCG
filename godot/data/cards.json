@@ -425,7 +425,7 @@
           {
             "args": {
               "amount": 1,
-              "filter": "psychic",
+              "filter": "basic_psychic",
               "from_zone": "hand",
               "to": "bench"
             },
@@ -446,7 +446,7 @@
             "effect_type": "energy_attach",
             "params": {
               "amount": 1,
-              "filter": "psychic",
+              "filter": "basic_psychic",
               "from_zone": "hand",
               "to": "bench"
             }
@@ -668,7 +668,7 @@
           }
         ],
         "name": "循环抽取",
-        "text": "将自己的1张手牌放于弃牌区。然后，从自己牌库上方抽取3张卡牌。"
+        "text": "将自己的1张手牌放于弃牌区。若这样做，则从自己牌库上方抽取3张卡牌。"
       },
       {
         "compiled_effects": [
@@ -4623,7 +4623,8 @@
         "compiled_effects": [
           {
             "args": {
-              "amount": 30
+              "amount": 30,
+              "damage_kind": "self_damage"
             },
             "branches": {},
             "op": "place_damage_counters"
@@ -4641,7 +4642,8 @@
           {
             "effect_type": "damage_counter_self",
             "params": {
-              "amount": 30
+              "amount": 30,
+              "damage_kind": "self_damage"
             }
           }
         ],
@@ -5344,7 +5346,7 @@
           {
             "args": {
               "amount": 2,
-              "filter": "water",
+              "filter": "basic_water",
               "from_zone": "deck",
               "min_select": 0,
               "to": "self_basic"
@@ -5364,7 +5366,7 @@
             "effect_type": "energy_attach",
             "params": {
               "amount": 2,
-              "filter": "water",
+              "filter": "basic_water",
               "from_zone": "deck",
               "min_select": 0,
               "to": "self_basic"
@@ -5899,7 +5901,7 @@
       {
         "args": {
           "amount": 1,
-          "energy_type": "Darkness",
+          "energy_type": "basic_darkness",
           "target": "bench",
           "target_pokemon_type": "Darkness"
         },
@@ -5938,7 +5940,7 @@
         "effect_type": "attach_from_discard",
         "params": {
           "amount": 1,
-          "energy_type": "Darkness",
+          "energy_type": "basic_darkness",
           "target": "bench",
           "target_pokemon_type": "Darkness"
         }
@@ -6348,7 +6350,8 @@
         "compiled_effects": [
           {
             "args": {
-              "amount": 10
+              "amount": 10,
+              "damage_kind": "self_damage"
             },
             "branches": {},
             "op": "place_damage_counters"
@@ -6364,7 +6367,8 @@
           {
             "effect_type": "damage_counter_self",
             "params": {
-              "amount": 10
+              "amount": 10,
+              "damage_kind": "self_damage"
             }
           }
         ],
@@ -7772,7 +7776,8 @@
         "compiled_effects": [
           {
             "args": {
-              "amount": 30
+              "amount": 30,
+              "damage_kind": "self_damage"
             },
             "branches": {},
             "op": "place_damage_counters"
@@ -7789,7 +7794,8 @@
           {
             "effect_type": "damage_counter_self",
             "params": {
-              "amount": 30
+              "amount": 30,
+              "damage_kind": "self_damage"
             }
           }
         ],
@@ -8320,7 +8326,8 @@
         "compiled_effects": [
           {
             "args": {
-              "amount": 20
+              "amount": 20,
+              "damage_kind": "self_damage"
             },
             "branches": {},
             "op": "place_damage_counters"
@@ -8337,7 +8344,8 @@
           {
             "effect_type": "damage_counter_self",
             "params": {
-              "amount": 20
+              "amount": 20,
+              "damage_kind": "self_damage"
             }
           }
         ],
@@ -8563,7 +8571,8 @@
           },
           {
             "args": {
-              "attack_name": "岩窟冲撞"
+              "attack_name": "岩窟冲撞",
+              "scope": "player"
             },
             "branches": {},
             "op": "apply_self_attack_lock"
@@ -8585,7 +8594,8 @@
           {
             "effect_type": "self_attack_lock",
             "params": {
-              "attack_name": "岩窟冲撞"
+              "attack_name": "岩窟冲撞",
+              "scope": "player"
             }
           }
         ],
@@ -12001,7 +12011,7 @@
           {
             "args": {
               "amount": 2,
-              "energy_type": "fire",
+              "energy_type": "basic_fire",
               "min_select": 0,
               "target": "self_or_bench"
             },
@@ -12020,7 +12030,7 @@
             "effect_type": "attach_from_discard",
             "params": {
               "amount": 2,
-              "energy_type": "fire",
+              "energy_type": "basic_fire",
               "min_select": 0,
               "target": "self_or_bench"
             }
@@ -12334,7 +12344,9 @@
         "compiled_effects": [
           {
             "args": {
-              "reduction": 20
+              "before_weakness": true,
+              "reduction": 20,
+              "requires_active": true
             },
             "branches": {},
             "op": "register_aura_damage_reduction"
@@ -12344,7 +12356,9 @@
           {
             "effect_type": "aura_damage_reduction",
             "params": {
-              "reduction": 20
+              "before_weakness": true,
+              "reduction": 20,
+              "requires_active": true
             }
           }
         ],
@@ -12688,7 +12702,8 @@
         "compiled_effects": [
           {
             "args": {
-              "amount": 20
+              "amount": 20,
+              "damage_kind": "self_damage"
             },
             "branches": {},
             "op": "place_damage_counters"
@@ -12706,7 +12721,8 @@
           {
             "effect_type": "damage_counter_self",
             "params": {
-              "amount": 20
+              "amount": 20,
+              "damage_kind": "self_damage"
             }
           }
         ],
@@ -12981,7 +12997,8 @@
         "compiled_effects": [
           {
             "args": {
-              "amount": 40
+              "amount": 40,
+              "damage_kind": "self_damage"
             },
             "branches": {},
             "op": "place_damage_counters"
@@ -12998,7 +13015,8 @@
           {
             "effect_type": "damage_counter_self",
             "params": {
-              "amount": 40
+              "amount": 40,
+              "damage_kind": "self_damage"
             }
           }
         ],
@@ -13722,7 +13740,7 @@
             {
               "args": {
                 "amount": 1,
-                "energy_type": "fire",
+                "energy_type": "basic_fire",
                 "target": "self_or_bench"
               },
               "branches": {},
@@ -13759,7 +13777,7 @@
     "retreat_cost": 0,
     "rules": [
       "这张卡牌，只有在上一个对手的回合，自己的宝可梦昏厥时才可使用。",
-      "选择自己弃牌区中的1张「基本火能量」，附着于自己的宝可梦身上。然后，从牌库上方抽取卡牌，直到自己的手牌变为6张为止。"
+      "选择自己弃牌区中的1张「基本火能量」，附着于自己的宝可梦身上。若这样做，则从牌库上方抽取卡牌，直到自己的手牌变为6张为止。"
     ],
     "set_id": "",
     "set_name": "",
@@ -13778,7 +13796,7 @@
               "effect_type": "attach_from_discard",
               "params": {
                 "amount": 1,
-                "energy_type": "fire",
+                "energy_type": "basic_fire",
                 "target": "self_or_bench"
               }
             },
@@ -15092,7 +15110,7 @@
           }
         ],
         "name": "循环抽取",
-        "text": "将自己的1张手牌放于弃牌区。然后，从自己牌库上方抽取2张卡牌。"
+        "text": "将自己的1张手牌放于弃牌区。若这样做，则从自己牌库上方抽取2张卡牌。"
       },
       {
         "compiled_effects": [],
@@ -16189,7 +16207,8 @@
         "compiled_effects": [
           {
             "args": {
-              "amount": 30
+              "amount": 30,
+              "damage_kind": "self_damage"
             },
             "branches": {},
             "op": "place_damage_counters"
@@ -16207,7 +16226,8 @@
           {
             "effect_type": "damage_counter_self",
             "params": {
-              "amount": 30
+              "amount": 30,
+              "damage_kind": "self_damage"
             }
           }
         ],
@@ -16529,7 +16549,8 @@
         "compiled_effects": [
           {
             "args": {
-              "amount": 20
+              "amount": 20,
+              "damage_kind": "self_damage"
             },
             "branches": {},
             "op": "place_damage_counters"
@@ -16546,7 +16567,8 @@
           {
             "effect_type": "damage_counter_self",
             "params": {
-              "amount": 20
+              "amount": 20,
+              "damage_kind": "self_damage"
             }
           }
         ],
@@ -17784,7 +17806,8 @@
         "compiled_effects": [
           {
             "args": {
-              "attack_name": "钢铁之刃"
+              "attack_name": "钢铁之刃",
+              "scope": "self"
             },
             "branches": {},
             "op": "apply_self_attack_lock"
@@ -17802,7 +17825,8 @@
           {
             "effect_type": "self_attack_lock",
             "params": {
-              "attack_name": "钢铁之刃"
+              "attack_name": "钢铁之刃",
+              "scope": "self"
             }
           }
         ],

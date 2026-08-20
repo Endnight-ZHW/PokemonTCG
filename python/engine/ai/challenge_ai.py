@@ -9,22 +9,36 @@ from __future__ import annotations
 import random
 import time
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any
 
+from engine.action_codec import serialize_entity_ref
+from engine.actions import (
+    AttachmentRef,
+    CardRef,
+    ChoiceOption,
+    ChoiceResponse,
+    ChoiceView,
+    PokemonRef,
+    SlotRef,
+    StepResult,
+    resolve_pokemon_ref,
+)
 from engine.enums import PlayerAction, StatusType, TurnPhase
-from engine.game_state import ActionRequest, ActionResult, GameState
+from engine.game_state import GameState
 from engine.ai.challenge.choices import ExpertChoiceMixin
 from engine.ai.challenge.fow import ChallengeAIFogMixin
-from engine.ai.challenge.layers import ActionEnumerator, ChoicePolicy, Evaluator, Simulator
+from engine.ai.challenge.layers import ActionEnumerator, Evaluator, Simulator
 from engine.ai.challenge.sequencing import ExpertSequencingMixin
 from engine.ai.challenge.tactics import ExpertTacticsMixin
-from engine.ai.challenge.types import AIAction, AIChoice, AIConfig
+from engine.ai.challenge.types import AIAction, AIConfig
 from engine.ai.effect_features import (
     as_effect_list,
     effect_branch,
     effect_branches,
     effect_feature_names,
     effect_params,
+    effect_replaces_base_damage as _effect_replaces_base_damage,
     effect_type,
     iter_effects_recursive,
 )
@@ -38,23 +52,42 @@ from engine.effects.runtime_effects import (
     attack_runtime_effects,
     trainer_runtime_effects,
 )
-from engine.effect_runner import effect_replaces_base_damage as _effect_replaces_base_damage
 from engine.energy_view import EnergyView
-from engine.rules_validator import (
-    can_attach_energy,
-    can_declare_attack,
-    can_evolve,
-    can_play_item,
-    can_play_stadium,
-    can_play_supporter,
-    can_play_tool,
-    can_retreat,
-    can_use_ability,
-)
 from utils.logger import get_logger
 
 _logger = get_logger(__name__)
-from engine.turn_manager import TurnManager
+
+
+def _native_legal_actions(state: GameState, actor: int):
+    from engine.game_engine import DEFAULT_GAME_ENGINE
+
+    return DEFAULT_GAME_ENGINE.legal_actions(
+        state, actor, validate_effects=False
+    )
+
+
+def _native_can_declare_attack(
+    state: GameState,
+    actor: int,
+    attack_idx: int,
+) -> bool:
+    return any(
+        action.kind == PlayerAction.DECLARE_ATTACK
+        and int(action.attack_index()) == int(attack_idx)
+        for action in _native_legal_actions(state, actor)
+    )
+
+
+def _native_can_retreat(
+    state: GameState,
+    actor: int,
+    bench_idx: int,
+) -> bool:
+    return any(
+        action.kind == PlayerAction.RETREAT
+        and int(action.bench_index()) == int(bench_idx)
+        for action in _native_legal_actions(state, actor)
+    )
 
 
 class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, ChallengeAIFogMixin):
@@ -75,7 +108,6 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         self.enumerator = ActionEnumerator(self)
         self.simulator = Simulator(self)
         self.evaluator = Evaluator(self)
-        self.choice_policy = ChoicePolicy(self)
         self.planner = None
 
     # ------------------------------------------------------------------
@@ -88,11 +120,19 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             self._record_decision_trace(state, player_idx, selected)
             return selected
         if state.phase == TurnPhase.ATTACK:
-            selected = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+            selected = AIAction(
+                kind=PlayerAction.END_TURN,
+                actor=player_idx,
+                base_revision=state.revision,
+            )
             self._record_decision_trace(state, player_idx, selected)
             return selected
         if state.phase != TurnPhase.MAIN:
-            selected = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+            selected = AIAction(
+                kind=PlayerAction.END_TURN,
+                actor=player_idx,
+                base_revision=state.revision,
+            )
             self._record_decision_trace(state, player_idx, selected)
             return selected
 
@@ -115,7 +155,11 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
         root_actions = self.legal_actions(state, player_idx)
         if not root_actions:
-            return AIAction(PlayerAction.END_TURN, {}, terminal=True, actor=player_idx)
+            return AIAction(
+                kind=PlayerAction.END_TURN,
+                actor=player_idx,
+                base_revision=state.revision,
+            )
         backend = HeuristicBackend(
             priority=self._quick_action_priority,
             evaluator=self.evaluate_state,
@@ -168,19 +212,19 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         ko_attack = self._best_immediate_ko_attack(state, player_idx, fallback_actions)
         if ko_attack is not None and self._should_override_with_ko_attack(state, player_idx, preferred, ko_attack):
             return ko_attack
-        if preferred.action == PlayerAction.DECLARE_ATTACK:
+        if preferred.kind == PlayerAction.DECLARE_ATTACK:
             if self._attack_draw_pressure_is_unsafe(state, player_idx, preferred):
                 productive_action = self._best_productive_nonterminal_action(state, player_idx, fallback_actions)
                 if productive_action is not None:
                     return productive_action
-                end_turn = next((a for a in fallback_actions if a.action == PlayerAction.END_TURN), None)
+                end_turn = next((a for a in fallback_actions if a.kind == PlayerAction.END_TURN), None)
                 if end_turn is not None:
                     return end_turn
             if self._attack_feeds_dangerous_retaliation(state, player_idx, preferred):
                 productive_action = self._best_productive_nonterminal_action(state, player_idx, fallback_actions)
                 if productive_action is not None:
                     return productive_action
-                end_turn = next((a for a in fallback_actions if a.action == PlayerAction.END_TURN), None)
+                end_turn = next((a for a in fallback_actions if a.kind == PlayerAction.END_TURN), None)
                 if end_turn is not None:
                     return end_turn
             development_action = self._best_pre_attack_development_action(
@@ -188,19 +232,19 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             )
             if development_action is not None:
                 return development_action
-        if preferred.action in {PlayerAction.RETREAT, PlayerAction.END_TURN}:
+        if preferred.kind in {PlayerAction.RETREAT, PlayerAction.END_TURN}:
             development_action = self._best_pre_terminal_development_action(
                 state, player_idx, preferred, fallback_actions
             )
             if development_action is not None:
                 return development_action
-        if preferred.action == PlayerAction.PLAY_TRAINER:
+        if preferred.kind == PlayerAction.PLAY_TRAINER:
             development_action = self._best_pre_major_draw_development_action(
                 state, player_idx, preferred, fallback_actions
             )
             if development_action is not None:
                 return development_action
-        if preferred.action == PlayerAction.END_TURN:
+        if preferred.kind == PlayerAction.END_TURN:
             productive_attack = self._best_productive_attack(state, player_idx, fallback_actions)
             if productive_attack is not None:
                 return productive_attack
@@ -215,7 +259,11 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         for action in fallback_actions:
             if self._action_executes_successfully(state, player_idx, action):
                 return action
-        return AIAction(PlayerAction.END_TURN, {}, terminal=True)
+        return AIAction(
+            kind=PlayerAction.END_TURN,
+            actor=player_idx,
+            base_revision=state.revision,
+        )
 
     def _best_immediate_ko_attack(
         self, state: GameState, player_idx: int, actions: list[AIAction]
@@ -227,9 +275,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             return None
         candidates: list[tuple[float, AIAction]] = []
         for action in actions:
-            if action.action != PlayerAction.DECLARE_ATTACK:
+            if action.kind != PlayerAction.DECLARE_ATTACK:
                 continue
-            attack_idx = action.params.get("attack_idx")
+            attack_idx = action.attack_index()
             if not isinstance(attack_idx, int):
                 continue
             damage = self._estimated_attack_damage(state, player_idx, attack_idx)
@@ -253,9 +301,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             return None
         candidates: list[tuple[float, AIAction]] = []
         for action in actions:
-            if action.action != PlayerAction.DECLARE_ATTACK:
+            if action.kind != PlayerAction.DECLARE_ATTACK:
                 continue
-            attack_idx = action.params.get("attack_idx")
+            attack_idx = action.attack_index()
             if not isinstance(attack_idx, int) or not (0 <= attack_idx < len(player.active.card.attacks)):
                 continue
             attack = player.active.card.attacks[attack_idx]
@@ -291,9 +339,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         base_score = self.evaluate_state(state, player_idx)
         candidates: list[tuple[float, AIAction]] = []
         for action in actions:
-            if action.action != PlayerAction.DECLARE_ATTACK:
+            if action.kind != PlayerAction.DECLARE_ATTACK:
                 continue
-            attack_idx = action.params.get("attack_idx")
+            attack_idx = action.attack_index()
             if not isinstance(attack_idx, int) or not (0 <= attack_idx < len(player.active.card.attacks)):
                 continue
             damage = self._estimated_attack_damage(state, player_idx, attack_idx)
@@ -333,7 +381,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             PlayerAction.PLAY_BASIC,
         }
         for action in actions:
-            if action.action not in productive_types:
+            if action.kind not in productive_types:
                 continue
             sim_score = self._simulated_action_score(state, player_idx, action)
             if sim_score is None:
@@ -351,13 +399,13 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
     def _attack_feeds_dangerous_retaliation(
         self, state: GameState, player_idx: int, attack_action: AIAction
     ) -> bool:
-        if attack_action.action != PlayerAction.DECLARE_ATTACK:
+        if attack_action.kind != PlayerAction.DECLARE_ATTACK:
             return False
         player = state.get_player(player_idx)
         opponent = state.get_player(1 - player_idx)
         if player.active is None or opponent.active is None:
             return False
-        attack_idx = attack_action.params.get("attack_idx")
+        attack_idx = attack_action.attack_index()
         if not isinstance(attack_idx, int):
             return False
         damage = self._estimated_attack_damage(state, player_idx, attack_idx)
@@ -422,7 +470,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         for action in actions:
             if action == preferred_trainer:
                 continue
-            if action.action not in {
+            if action.kind not in {
                 PlayerAction.ATTACH_ENERGY,
                 PlayerAction.EVOLVE,
                 PlayerAction.USE_ABILITY,
@@ -443,10 +491,10 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
     def _is_major_hand_refresh_action(
         self, state: GameState, player_idx: int, action: AIAction
     ) -> bool:
-        if action.action != PlayerAction.PLAY_TRAINER:
+        if action.kind != PlayerAction.PLAY_TRAINER:
             return False
         player = state.get_player(player_idx)
-        hand_idx = action.params.get("hand_idx")
+        hand_idx = action.hand_index()
         if not isinstance(hand_idx, int) or not (0 <= hand_idx < len(player.hand)):
             return False
         effects = trainer_runtime_effects(player.hand[hand_idx])
@@ -482,22 +530,22 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         actions: list[AIAction],
     ) -> AIAction | None:
         """Cash in clear development before a terminal pass or switch."""
-        if preferred.action not in {PlayerAction.RETREAT, PlayerAction.END_TURN}:
+        if preferred.kind not in {PlayerAction.RETREAT, PlayerAction.END_TURN}:
             return None
         base_score = self.evaluate_state(state, player_idx)
         preferred_score = None
-        if preferred.action != PlayerAction.END_TURN:
+        if preferred.kind != PlayerAction.END_TURN:
             preferred_score = self._simulated_action_score(state, player_idx, preferred)
-        allow_draw = preferred.action == PlayerAction.END_TURN
+        allow_draw = preferred.kind == PlayerAction.END_TURN
         candidates: list[tuple[float, AIAction]] = []
         for action in actions:
-            if action == preferred or action.action in {
+            if action == preferred or action.kind in {
                 PlayerAction.DECLARE_ATTACK,
                 PlayerAction.RETREAT,
                 PlayerAction.END_TURN,
             }:
                 continue
-            if action.action not in {
+            if action.kind not in {
                 PlayerAction.ATTACH_ENERGY,
                 PlayerAction.EVOLVE,
                 PlayerAction.USE_ABILITY,
@@ -533,15 +581,15 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         quick = self._quick_action_priority(state, player_idx, action)
         value = max(0.0, delta) * 0.22 + max(0.0, terminal_delta) * 0.35
 
-        if action.action == PlayerAction.ATTACH_ENERGY:
+        if action.kind == PlayerAction.ATTACH_ENERGY:
             attach_value = self._pre_attack_attach_value(state, player_idx, action)
             if attach_value <= 0:
                 return 0.0
             value += 65.0 + attach_value * 0.72
-        elif action.action == PlayerAction.EVOLVE:
+        elif action.kind == PlayerAction.EVOLVE:
             value += 60.0 + max(0.0, quick - 320.0) * 0.20
-        elif action.action == PlayerAction.USE_ABILITY:
-            slot = action.params.get("slot")
+        elif action.kind == PlayerAction.USE_ABILITY:
+            slot = action.primary_slot()
             ability = self._ability_for_action(state, player_idx, action)
             if ability is None:
                 return 0.0
@@ -553,9 +601,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             if not converts and effect_value < 70:
                 return 0.0
             value += 70.0 + effect_value * 0.65 + max(0.0, quick - 300.0) * 0.22
-        elif action.action == PlayerAction.PLAY_TRAINER:
+        elif action.kind == PlayerAction.PLAY_TRAINER:
             player = state.get_player(player_idx)
-            hand_idx = action.params.get("hand_idx")
+            hand_idx = action.hand_index()
             if not isinstance(hand_idx, int) or not (0 <= hand_idx < len(player.hand)):
                 return 0.0
             effects = trainer_runtime_effects(player.hand[hand_idx])
@@ -568,11 +616,11 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             value += 55.0 + effect_value * 0.68 + max(0.0, quick - 360.0) * 0.22
             if resource_effect:
                 value += 35.0
-        elif action.action == PlayerAction.PLAY_BASIC:
+        elif action.kind == PlayerAction.PLAY_BASIC:
             if not allow_draw:
                 return 0.0
             player = state.get_player(player_idx)
-            hand_idx = action.params.get("hand_idx")
+            hand_idx = action.hand_index()
             if not isinstance(hand_idx, int) or not (0 <= hand_idx < len(player.hand)):
                 return 0.0
             cid = getattr(player.hand[hand_idx], "api_id", "")
@@ -619,21 +667,21 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         quick = self._quick_action_priority(state, player_idx, action)
         value = max(0.0, delta) * 0.25 + max(0.0, trainer_delta) * 0.18
 
-        if action.action == PlayerAction.ATTACH_ENERGY:
+        if action.kind == PlayerAction.ATTACH_ENERGY:
             attach_value = self._pre_attack_attach_value(state, player_idx, action)
             if attach_value <= 0:
                 return 0.0
             value += 70.0 + attach_value * 0.75
-        elif action.action == PlayerAction.EVOLVE:
+        elif action.kind == PlayerAction.EVOLVE:
             player = state.get_player(player_idx)
-            hand_idx = action.params.get("hand_idx")
+            hand_idx = action.hand_index()
             card_bonus = 0.0
             if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                 card_bonus = self._profile_card_bonus(state, player_idx, player.hand[hand_idx])
             value += 80.0 + max(0.0, quick - 320.0) * 0.20 + card_bonus * 0.35
-        elif action.action == PlayerAction.PLAY_BASIC:
+        elif action.kind == PlayerAction.PLAY_BASIC:
             player = state.get_player(player_idx)
-            hand_idx = action.params.get("hand_idx")
+            hand_idx = action.hand_index()
             if not isinstance(hand_idx, int) or not (0 <= hand_idx < len(player.hand)):
                 return 0.0
             card = player.hand[hand_idx]
@@ -643,8 +691,8 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             value += 70.0 + self._profile_card_bonus(state, player_idx, card) * 0.45
             if player.bench_count() < 3:
                 value += 25.0
-        elif action.action == PlayerAction.USE_ABILITY:
-            slot = action.params.get("slot")
+        elif action.kind == PlayerAction.USE_ABILITY:
+            slot = action.primary_slot()
             ability = self._ability_for_action(state, player_idx, action)
             if ability is None:
                 return 0.0
@@ -661,8 +709,8 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
     def _ability_for_action(self, state: GameState, player_idx: int, action: AIAction):
         player = state.get_player(player_idx)
-        slot = action.params.get("slot")
-        ability_name = action.params.get("ability_name")
+        slot = action.primary_slot()
+        ability_name = action.ability_name()
         if not isinstance(slot, str) or not isinstance(ability_name, str):
             return None
         pokemon = player.get_pokemon(slot)
@@ -714,7 +762,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         opponent = state.get_player(1 - player_idx)
         if player.active is None or opponent.active is None:
             return None
-        attack_idx = preferred_attack.params.get("attack_idx")
+        attack_idx = preferred_attack.attack_index()
         if not isinstance(attack_idx, int) or not (0 <= attack_idx < len(player.active.card.attacks)):
             return None
 
@@ -734,7 +782,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         attack_score = self._simulated_action_score(state, player_idx, preferred_attack)
         candidates: list[tuple[float, AIAction]] = []
         for action in actions:
-            if action.action not in {
+            if action.kind not in {
                 PlayerAction.ATTACH_ENERGY,
                 PlayerAction.EVOLVE,
                 PlayerAction.USE_ABILITY,
@@ -768,14 +816,14 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         attack_delta = 0.0 if attack_score is None else sim_score - attack_score
         quick = self._quick_action_priority(state, player_idx, action)
         value = 0.0
-        if action.action == PlayerAction.ATTACH_ENERGY:
+        if action.kind == PlayerAction.ATTACH_ENERGY:
             value += self._pre_attack_attach_value(state, player_idx, action)
-        elif action.action == PlayerAction.EVOLVE:
+        elif action.kind == PlayerAction.EVOLVE:
             value += 55.0 + max(0.0, delta) * 0.20
-        elif action.action == PlayerAction.USE_ABILITY:
+        elif action.kind == PlayerAction.USE_ABILITY:
             effects = []
-            slot = action.params.get("slot")
-            ability_name = action.params.get("ability_name")
+            slot = action.primary_slot()
+            ability_name = action.ability_name()
             player = state.get_player(player_idx)
             if isinstance(slot, str) and isinstance(ability_name, str):
                 pokemon = player.get_pokemon(slot)
@@ -786,10 +834,10 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             value += self._effect_tactical_value(state, player_idx, effects, source_slot=slot if isinstance(slot, str) else None) * 0.35
             if self._attack_has_productive_effect(effects):
                 value += 8.0
-        elif action.action == PlayerAction.PLAY_TRAINER:
+        elif action.kind == PlayerAction.PLAY_TRAINER:
             effects = []
             player = state.get_player(player_idx)
-            hand_idx = action.params.get("hand_idx")
+            hand_idx = action.hand_index()
             if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                 effects = trainer_runtime_effects(player.hand[hand_idx])
             value += max(0.0, delta) * 0.25 + max(0.0, quick - 360.0) * 0.18
@@ -798,9 +846,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 value += 8.0
             if self._effects_include_draw(effects) and len(player.hand) <= 3:
                 value += 12.0
-        elif action.action == PlayerAction.PLAY_BASIC:
+        elif action.kind == PlayerAction.PLAY_BASIC:
             player = state.get_player(player_idx)
-            hand_idx = action.params.get("hand_idx")
+            hand_idx = action.hand_index()
             if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                 cid = getattr(player.hand[hand_idx], "api_id", "")
                 if cid in self.profile.core_cards or cid in self.profile.preferred_bench:
@@ -820,8 +868,8 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         self, state: GameState, player_idx: int, action: AIAction
     ) -> float:
         player = state.get_player(player_idx)
-        hand_idx = action.params.get("hand_idx")
-        target_slot = action.params.get("target_slot")
+        hand_idx = action.hand_index()
+        target_slot = action.target_slot()
         if not isinstance(hand_idx, int) or not isinstance(target_slot, str):
             return 0.0
         if not (0 <= hand_idx < len(player.hand)):
@@ -866,7 +914,12 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                     return None
             return self.evaluate_state(sim, player_idx)
         except Exception as exc:
-            _logger.debug("search action scoring failed: %s %s -> %s", action.action, action.params, exc)
+            _logger.debug(
+                "search action scoring failed: %s %s -> %s",
+                action.kind_name,
+                action.payload,
+                exc,
+            )
             return None
         finally:
             self.random.setstate(rng_state)
@@ -900,12 +953,12 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
     def _should_override_with_ko_attack(
         self, state: GameState, player_idx: int, preferred: AIAction, ko_attack: AIAction
     ) -> bool:
-        if preferred.action == PlayerAction.END_TURN:
+        if preferred.kind == PlayerAction.END_TURN:
             return True
-        if preferred.action != PlayerAction.DECLARE_ATTACK:
+        if preferred.kind != PlayerAction.DECLARE_ATTACK:
             return False
-        preferred_idx = preferred.params.get("attack_idx")
-        ko_idx = ko_attack.params.get("attack_idx")
+        preferred_idx = preferred.attack_index()
+        ko_idx = ko_attack.attack_index()
         if preferred_idx == ko_idx:
             return False
         if not isinstance(preferred_idx, int):
@@ -917,7 +970,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
     def _action_executes_successfully(
         self, state: GameState, player_idx: int, action: AIAction
     ) -> bool:
-        if action.action in ("NOOP", "SETUP_DONE"):
+        if action.kind in ("NOOP", "SETUP_DONE"):
             return True
         rng_state = self.random.getstate()
         try:
@@ -925,273 +978,296 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             result = self._apply_action_for_sim(sim, player_idx, action)
             return result is not None and result.success
         except Exception as exc:
-            _logger.debug("search action validation failed: %s %s -> %s", action.action, action.params, exc)
+            _logger.debug(
+                "search action validation failed: %s %s -> %s",
+                action.kind_name,
+                action.payload,
+                exc,
+            )
             return False
         finally:
             self.random.setstate(rng_state)
 
-    def resolve_pending_action(self, state: GameState, action_request: ActionRequest) -> AIChoice:
-        return self.choice_policy.resolve_pending_action(state, action_request)
+    def resolve_pending_action(
+        self,
+        state: GameState,
+        request: ChoiceView,
+    ) -> ChoiceResponse:
+        """Choose exclusively through public ChoiceView v2 option IDs."""
+        from engine.game_engine import DEFAULT_GAME_ENGINE
 
-    def _resolve_pending_action_impl(self, state: GameState, action_request: ActionRequest) -> AIChoice:
-        req = action_request
-        player_idx = req.player if req.player in (0, 1) else state.active_player_idx
-
-        if (
-            req.request_type in ("search_deck", "select_hand_to_discard")
-            and (getattr(req, "from_zone", "") or "").lower() in {"board", "bench"}
-        ):
-            from engine.actions import PokemonRef, resolve_pokemon_ref
-            from engine.game_engine import DEFAULT_GAME_ENGINE
-
-            structured = DEFAULT_GAME_ENGINE.choice_request(state, req)
-            candidates = [
-                option for option in structured.options
-                if isinstance(option.ref, PokemonRef)
-                and resolve_pokemon_ref(state, option.ref) is not None
-            ]
-            if candidates:
-                prompt = (req.prompt or "").lower()
-
-                def board_value(option):
-                    pokemon = resolve_pokemon_ref(state, option.ref)
-                    if pokemon is None:
-                        return -10**9
-                    if "回复" in req.prompt or "heal" in prompt:
-                        return max(0, pokemon.card.hp - pokemon.current_hp)
-                    if "附着能量" in req.prompt or "energy" in prompt:
-                        return self._energy_target_value(
-                            state,
-                            option.ref.player,
-                            option.ref.slot,
-                        )
-                    if option.ref.player != player_idx:
-                        return self._target_priority(pokemon)
-                    return self._promotion_value_for_state(
-                        state,
-                        option.ref.player,
-                        pokemon,
-                    )
-
-                selected = max(candidates, key=board_value)
-                return AIChoice(
-                    selected_cards=[selected.ref],
-                    option_ids=[selected.option_id],
-                )
-
-        if req.request_type in ("search_deck", "select_hand_to_discard"):
-            cards = list(req.card_list)
-            if req.request_type == "select_hand_to_discard" or self._is_hand_cost_selection(req):
-                ranked = sorted(cards, key=lambda c: self._discard_priority(state, player_idx, c))
-            else:
-                ranked = sorted(
-                    cards,
-                    key=lambda c: self._search_card_value(state, player_idx, c, req),
-                    reverse=True,
-                )
-            count = max(req.min_select, min(req.max_select, len(ranked)))
-            return AIChoice(selected_cards=ranked[:count])
-
-        if req.request_type in ("select_bench", "select_opponent_bench", "select_own_bench_energy"):
-            slot = self._choose_bench_slot(state, req)
-            return AIChoice(selected_bench_slot=slot)
-
-        if req.request_type == "select_bench_targets":
-            target_player = self._request_target_player(state, req)
-            choices = [
-                i for i in (req.bench_indices or range(5))
-                if 0 <= i < len(target_player.bench) and target_player.bench[i] is not None
-            ]
-            ranked = sorted(
-                choices,
-                key=lambda i: self._target_priority(target_player.bench[i]),
-                reverse=True,
+        if not isinstance(request, ChoiceView):
+            raise TypeError("ChallengeAI requires ChoiceView v2")
+        player_idx = (
+            request.player
+            if request.player in (0, 1)
+            else state.active_player_idx
+        )
+        request_type = request.request_type
+        if request_type == "coin_flip":
+            return ChoiceResponse(request.request_id, ())
+        if request_type == "select_retreat_payment":
+            return DEFAULT_GAME_ENGINE.choice_manager.default_choice_response(
+                request
             )
-            selected: list[int] = []
-            for idx in ranked:
-                selected.append(idx)
-                if len(selected) >= req.max_select:
-                    break
-            return AIChoice(selected_bench_targets=selected)
-
-        if req.request_type == "confirm":
-            return AIChoice(confirmed=self._confirm_pending(state, player_idx, req))
-
-        if req.request_type == "confirm_trigger":
-            return AIChoice(confirmed=True)
-
-        if req.request_type == "coin_flip":
-            results = list(
-                (getattr(req, "continuation", {}) or {}).get("results", [])
+        if request_type == "choose_turn_order":
+            return self._response_for_preferred_id(request, "turn:first")
+        if request_type == "choose_mulligan_draw_count":
+            draw_options = [
+                option
+                for option in request.options
+                if option.option_id.startswith("draw:")
+            ]
+            selected = max(
+                draw_options,
+                key=lambda option: self._numeric_option_suffix(
+                    option.option_id
+                ),
+                default=None,
             )
-            return AIChoice(coin_results=results)
-
-        if req.request_type == "choose_turn_order":
-            return AIChoice(option_ids=["turn_order:first"])
-
-        if req.request_type == "choose_mulligan_draw_count":
-            maximum = int((getattr(req, "continuation", {}) or {}).get("maximum", 0) or 0)
-            return AIChoice(option_ids=[f"mulligan_draw:{maximum}"])
-
-        if req.request_type == "select_prize":
-            positions = [
-                int(item.get("index", index))
-                for index, item in enumerate(getattr(req, "target_info", []) or [])
-                if isinstance(item, dict)
-            ]
-            selected = min(positions) if positions else 0
-            return AIChoice(option_ids=[f"prize:{selected}"])
-
-        if req.request_type == "choose_trigger_order":
-            positions = [
-                int(item.get("index", index))
-                for index, item in enumerate(getattr(req, "target_info", []) or [])
-                if isinstance(item, dict)
-            ]
-            selected = min(positions) if positions else 0
-            return AIChoice(option_ids=[f"trigger:{selected}"])
-
-        if req.request_type == "select_attachment":
-            from engine.actions import AttachmentRef
-
-            refs = [
-                AttachmentRef(
-                    int(item.get("player", player_idx)),
-                    str(item.get("slot", "")),
-                    str(item.get("attachment_type", "energy")),
-                    int(item.get("index", 0)),
-                    str(item.get("card_id", "")),
+            if selected is not None:
+                return ChoiceResponse(
+                    request.request_id, (selected.option_id,)
                 )
-                for item in (getattr(req, "target_info", []) or [])
-                if isinstance(item, dict)
-            ]
-            count = min(len(refs), max(int(req.min_select), int(req.max_select)))
-            return AIChoice(option_ids=[ref.ref_id for ref in refs[:count]])
+        if request_type in {"confirm", "confirm_trigger"}:
+            confirmed = (
+                True
+                if request_type == "confirm_trigger"
+                else self._confirm_choice(state, player_idx, request)
+            )
+            return self._response_for_preferred_id(
+                request,
+                "confirm:yes" if confirmed else "confirm:no",
+            )
+        if not request.options:
+            return ChoiceResponse(
+                request.request_id,
+                (),
+                bool(request.can_cancel and request.min_select > 0),
+            )
 
-        if req.request_type == "select_prize_energy_target":
-            from engine.actions import PokemonRef
+        ranked = sorted(
+            request.options,
+            key=lambda option: (
+                self._choice_option_score(
+                    state, player_idx, request, option
+                ),
+                option.option_id,
+            ),
+            reverse=True,
+        )
+        count = self._choice_selection_count(request, len(ranked))
+        if count <= 0:
+            return ChoiceResponse(request.request_id, ())
+        if request.allow_duplicates:
+            selected_ids = tuple(ranked[0].option_id for _ in range(count))
+        else:
+            selected_ids = tuple(
+                option.option_id for option in ranked[:count]
+            )
+        if len(selected_ids) < max(0, request.min_select):
+            return DEFAULT_GAME_ENGINE.choice_manager.default_choice_response(
+                request
+            )
+        return ChoiceResponse(request.request_id, selected_ids)
 
-            player = state.get_player(player_idx)
-            candidates = [
-                (slot, pokemon)
-                for slot, pokemon in player.get_all_pokemon()
+    @staticmethod
+    def _numeric_option_suffix(option_id: str) -> int:
+        try:
+            return int(option_id.rsplit(":", 1)[-1])
+        except (TypeError, ValueError):
+            return -1
+
+    @staticmethod
+    def _response_for_preferred_id(
+        request: ChoiceView,
+        preferred_id: str,
+    ) -> ChoiceResponse:
+        selected = next(
+            (
+                option.option_id
+                for option in request.options
+                if option.option_id == preferred_id
+            ),
+            request.options[0].option_id if request.options else "",
+        )
+        return ChoiceResponse(
+            request.request_id,
+            (selected,) if selected else (),
+            bool(request.can_cancel and request.min_select > 0 and not selected),
+        )
+
+    @staticmethod
+    def _choice_selection_count(
+        request: ChoiceView,
+        available: int,
+    ) -> int:
+        minimum = max(0, int(request.min_select))
+        maximum = max(minimum, int(request.max_select))
+        if not request.allow_duplicates:
+            maximum = min(available, maximum)
+        elif available <= 0:
+            maximum = 0
+        purpose = str(request.presentation.get("purpose", "")).lower()
+        destructive = any(
+            marker in purpose
+            for marker in (
+                "discard_cards",
+                "discard_hand",
+                "discard_attachment",
+                "discard_energy_attachments",
+                "bottom_deck",
+            )
+        )
+        # Optional costs are never paid just because a selectable option
+        # exists. Mandatory costs still select their exact minimum.
+        return minimum if destructive else maximum
+
+    def _choice_option_score(
+        self,
+        state: GameState,
+        player_idx: int,
+        request: ChoiceView,
+        option: ChoiceOption,
+    ) -> float:
+        ref = option.ref
+        purpose = str(request.presentation.get("purpose", "")).lower()
+        prompt = (request.prompt or "").lower()
+        context = f"{request.request_type} {purpose} {prompt}"
+        if isinstance(ref, CardRef):
+            from data.card_registry import CardRegistry
+
+            card = CardRegistry.get(ref.card_id)
+            if card is None:
+                return 0.0
+            if any(
+                marker in context
+                for marker in (
+                    "discard_cards",
+                    "discard_hand",
+                    "select_hand_to_discard",
+                    "bottom_deck",
+                    "弃",
+                    "牌库底",
+                )
+            ):
+                return -self._discard_priority(state, player_idx, card)
+            return self._search_card_value(
+                state, player_idx, card, request
+            )
+        if isinstance(ref, PokemonRef):
+            pokemon = resolve_pokemon_ref(state, ref)
+            if pokemon is None:
+                return -1_000_000.0
+            if "heal" in context or "回复" in request.prompt:
+                return float(max(0, pokemon.card.hp - pokemon.current_hp))
+            if "energy" in context or "能量" in request.prompt:
+                return self._energy_target_value(
+                    state, ref.player, ref.slot
+                )
+            if ref.player != player_idx or "opponent" in context:
+                return self._target_priority(pokemon)
+            value = self._promotion_value_for_state(
+                state, ref.player, pokemon
+            )
+            if any(
+                marker in context
+                for marker in ("switch", "retreat", "交换", "撤退")
+            ) and ref.slot.startswith("bench_"):
+                try:
+                    bench_idx = int(ref.slot[6:])
+                except ValueError:
+                    bench_idx = -1
+                if bench_idx >= 0 and not self._retreat_has_good_target(
+                    state, ref.player, bench_idx
+                ):
+                    value -= 200.0
+            return value
+        if isinstance(ref, SlotRef):
+            if "energy" in context or "能量" in request.prompt:
+                return self._energy_target_value(
+                    state, ref.player, ref.slot
+                )
+            pokemon = state.get_player(ref.player).get_pokemon(ref.slot)
+            return (
+                self._promotion_value_for_state(
+                    state, ref.player, pokemon
+                )
                 if pokemon is not None
+                else 0.0
+            )
+        if isinstance(ref, AttachmentRef):
+            from data.card_registry import CardRegistry
+
+            card = CardRegistry.get(ref.card_id)
+            value = (
+                self._card_value(state, ref.player, card)
+                if card is not None
+                else 0.0
+            )
+            if "discard" in context or "弃" in request.prompt:
+                return -value
+            return value
+        if request.request_type in {
+            "select_prize",
+            "choose_trigger_order",
+        }:
+            return -float(self._numeric_option_suffix(option.option_id))
+        return 0.0
+
+    def _confirm_choice(
+        self,
+        state: GameState,
+        player_idx: int,
+        request: ChoiceView,
+    ) -> bool:
+        purpose = str(request.presentation.get("purpose", "")).lower()
+        prompt = request.prompt or ""
+        text = f"{purpose} {prompt.lower()}"
+        player = state.get_player(player_idx)
+        if ("top" in text and "hand" in text) or "牌库顶" in prompt:
+            card_id = str(request.presentation.get("top_card_id", ""))
+            if card_id:
+                from data.card_registry import CardRegistry
+
+                card = CardRegistry.get(card_id)
+                if card is not None:
+                    return self._card_value(state, player_idx, card) >= 55
+        if any(
+            marker in text
+            for marker in ("switch", "retreat", "替换", "交换", "撤退")
+        ):
+            if player.active is None or not player.bench_count():
+                return False
+            active_value = self._promotion_value_for_state(
+                state, player_idx, player.active
+            )
+            if player.active.status_conditions:
+                active_value -= 90
+            candidates = [
+                (index, pokemon)
+                for index, pokemon in enumerate(player.bench)
+                if pokemon is not None
+                and self._retreat_has_good_target(
+                    state, player_idx, index
+                )
             ]
             if not candidates:
-                return AIChoice(option_ids=[])
-            slot, pokemon = max(
-                candidates,
-                key=lambda row: self._energy_target_value(
-                    state,
-                    player_idx,
-                    row[0],
-                ),
-            )
-            return AIChoice(
-                option_ids=[PokemonRef(player_idx, slot, pokemon.card.api_id).ref_id]
-            )
-
-        if req.request_type == "distribute_energy":
-            return AIChoice(assignments=self._choose_energy_assignments(state, player_idx, req))
-
-        if req.request_type == "evolve_skip_stage":
-            candidate = self._choose_evolve_skip_stage_candidate(state, player_idx, req)
-            if candidate is not None:
-                return AIChoice(
-                    selected_cards=[candidate],
-                    option_ids=[self._evolve_skip_stage_option_id(candidate)],
+                return False
+            best_value = max(
+                self._promotion_value_for_state(
+                    state, player_idx, pokemon
                 )
-            return AIChoice(cancelled=True, confirmed=False)
-
-        return AIChoice(cancelled=True, confirmed=False)
-
-    def apply_choice(
-        self,
-        state: GameState,
-        action_request: ActionRequest,
-        choice: AIChoice | None = None,
-    ) -> ActionRequest | ActionResult | None:
-        return self.simulator.apply_choice(state, action_request, choice)
-
-    def _apply_choice_impl(
-        self,
-        state: GameState,
-        action_request: ActionRequest,
-        choice: AIChoice | None = None,
-    ) -> ActionRequest | ActionResult | None:
-        """Apply an AIChoice to an ActionRequest callback, including UI-side switch logic."""
-        req = action_request
-        choice = choice or self.resolve_pending_action(state, req)
-        result: ActionRequest | ActionResult | None = None
-
-        if choice.cancelled:
-            return None
-
-        if req.request_type in ("search_deck", "select_hand_to_discard"):
-            if req.callback:
-                result = req.callback(choice.selected_cards)
-
-        elif req.request_type == "select_own_bench_energy":
-            if req.callback:
-                result = req.callback(choice.selected_bench_slot)
-
-        elif req.request_type in ("select_bench", "select_opponent_bench"):
-            slot = choice.selected_bench_slot
-            target_player = self._request_target_player(state, req)
-            if slot is not None and 0 <= slot < len(target_player.bench) and target_player.bench[slot]:
-                if req.callback:
-                    # Callback does the switch in the engine layer (unified semantics)
-                    result = req.callback(slot)
-                else:
-                    # Legacy fallback: switch directly
-                    target_player.switch_active_to_bench(slot)
-
-        elif req.request_type == "select_bench_targets":
-            if req.callback:
-                result = req.callback(choice.selected_bench_targets)
-
-        elif req.request_type == "confirm":
-            if req.callback:
-                result = req.callback(choice.confirmed)
-
-        elif req.request_type == "coin_flip":
-            if req.callback:
-                result = req.callback(choice.coin_results)
-
-        elif req.request_type == "choose_turn_order":
-            if req.callback:
-                result = req.callback("first")
-
-        elif req.request_type == "choose_mulligan_draw_count":
-            maximum = int((getattr(req, "continuation", {}) or {}).get("maximum", 0) or 0)
-            if req.callback:
-                result = req.callback(maximum)
-
-        elif req.request_type == "select_prize":
-            positions = [
-                int(item.get("index", index))
-                for index, item in enumerate(getattr(req, "target_info", []) or [])
-                if isinstance(item, dict)
-            ]
-            if req.callback:
-                result = req.callback(min(positions) if positions else 0)
-
-        elif req.request_type == "distribute_energy":
-            if req.callback:
-                result = req.callback(choice.assignments)
-
-        elif req.request_type == "evolve_skip_stage":
-            selected = (
-                choice.selected_cards[0]
-                if choice.selected_cards and isinstance(choice.selected_cards[0], dict)
-                else self._choose_evolve_skip_stage_candidate(state, req.player, req)
+                for _index, pokemon in candidates
             )
-            if selected is not None and req.callback:
-                result = req.callback(selected)
-
-        self._consume_pending_card(state, req)
-        return result
-
+            return best_value > active_value + 25
+        if "heal" in text or "回复" in prompt:
+            return any(
+                pokemon is not None
+                and pokemon.current_hp < pokemon.card.hp
+                for _slot, pokemon in player.get_all_pokemon()
+            )
+        return True
     # ------------------------------------------------------------------
     # Action generation and search
     # ------------------------------------------------------------------
@@ -1230,7 +1306,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         player = state.get_player(player_idx)
         actions = [
             action for action in actions
-            if action.action != PlayerAction.USE_ABILITY
+            if action.kind != PlayerAction.USE_ABILITY
             or self._generated_ability_has_value(state, player_idx, action)
         ]
         actions = self._filter_strategically_relevant_actions(state, player_idx, actions, trace)
@@ -1239,8 +1315,8 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         actions.sort(key=lambda a: self._quick_action_priority(state, player_idx, a), reverse=True)
         result = actions[: self.config.max_turn_actions]
         # END_TURN must always be available as a legal terminal action
-        if not any(a.action == PlayerAction.END_TURN for a in result):
-            end_turn = [a for a in actions if a.action == PlayerAction.END_TURN]
+        if not any(a.kind == PlayerAction.END_TURN for a in result):
+            end_turn = [a for a in actions if a.kind == PlayerAction.END_TURN]
             if end_turn:
                 result.append(end_turn[0])
         trace["accepted"] = [self._trace_action(action) for action in result]
@@ -1254,7 +1330,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         action: AIAction,
     ) -> bool:
         ability = self._ability_for_action(state, player_idx, action)
-        slot = action.params.get("slot")
+        slot = action.primary_slot()
         return bool(
             ability is not None
             and isinstance(slot, str)
@@ -1271,8 +1347,8 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         filtered: list[AIAction] = []
         player = state.get_player(player_idx)
         for action in actions:
-            if action.action == PlayerAction.PLAY_TRAINER:
-                hand_idx = action.params.get("hand_idx")
+            if action.kind == PlayerAction.PLAY_TRAINER:
+                hand_idx = action.hand_index()
                 if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                     effects = trainer_runtime_effects(player.hand[hand_idx])
                     if self._draw_pressure_is_unsafe(state, player_idx, effects):
@@ -1286,8 +1362,8 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                     ):
                         self._trace_rejection(trace, action, "switch_self_has_no_good_target")
                         continue
-            elif action.action == PlayerAction.RETREAT:
-                bench_idx = action.params.get("bench_idx")
+            elif action.kind == PlayerAction.RETREAT:
+                bench_idx = action.bench_index()
                 if isinstance(bench_idx, int) and not self._retreat_has_good_target(
                     state, player_idx, bench_idx
                 ):
@@ -1391,19 +1467,18 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         because their resolution may carry additional constraints.
         """
         filtered: list[AIAction] = []
-        opponent_idx = 1 - player_idx
         for action in actions:
             need_sim = False
-            if action.action == PlayerAction.PLAY_TRAINER:
-                hand_idx = action.params.get("hand_idx")
+            if action.kind == PlayerAction.PLAY_TRAINER:
+                hand_idx = action.hand_index()
                 player = state.get_player(player_idx)
                 if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                     card = player.hand[hand_idx]
                     if trainer_runtime_effects(card):
                         need_sim = True
-            elif action.action == PlayerAction.USE_ABILITY:
+            elif action.kind == PlayerAction.USE_ABILITY:
                 pass  # can_use_ability already fully validates
-            elif action.action == PlayerAction.USE_STADIUM:
+            elif action.kind == PlayerAction.USE_STADIUM:
                 pass  # can_play_stadium already fully validates
             else:
                 filtered.append(action)
@@ -1413,17 +1488,14 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 filtered.append(action)
                 continue
 
-            if self._is_opponent_masked(state, opponent_idx):
-                sim = self._clone_state(state)
-            else:
-                sim = self._masked_clone_for_eval(state, player_idx)
+            sim = self._masked_clone_for_eval(state, player_idx)
             result = self._apply_action_for_sim(sim, player_idx, action)
             if result is not None and result.success:
                 filtered.append(action)
             else:
                 reason = "dry_run_failed"
-                if result is not None and getattr(result, "log_message", ""):
-                    reason = f"{reason}: {result.log_message}"
+                if result is not None and result.message:
+                    reason = f"{reason}: {result.message}"
                 self._trace_rejection(trace, action, reason)
         return filtered
 
@@ -1457,11 +1529,11 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         return False
 
     def _attack_draw_pressure_is_unsafe(self, state: GameState, player_idx: int, action: AIAction) -> bool:
-        if action.action != PlayerAction.DECLARE_ATTACK:
+        if action.kind != PlayerAction.DECLARE_ATTACK:
             return False
         player = state.get_player(player_idx)
         opponent = state.get_player(1 - player_idx)
-        attack_idx = action.params.get("attack_idx")
+        attack_idx = action.attack_index()
         if player.active is None or not isinstance(attack_idx, int):
             return False
         if not (0 <= attack_idx < len(player.active.card.attacks)):
@@ -1780,363 +1852,81 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
     def _apply_action_for_sim(
         self, state: GameState, player_idx: int, action: AIAction
-    ) -> ActionResult | None:
+    ) -> StepResult | None:
         return self.simulator.apply_action(state, player_idx, action)
 
     def _apply_action_for_sim_impl(
         self, state: GameState, player_idx: int, action: AIAction
-    ) -> ActionResult | None:
-        from engine.ai.planner import _map_legacy_choice
+    ) -> StepResult | None:
         from engine.game_engine import DEFAULT_GAME_ENGINE
         from engine.random_source import SamplingRandomSource
 
         def choose(sim_state, structured_request):
-            legacy_choice = self._resolve_pending_for_sim(
-                sim_state,
-                structured_request.legacy_request,
-            )
-            mapped = _map_legacy_choice(structured_request, legacy_choice)
-            if mapped is not None:
-                return mapped
-            return DEFAULT_GAME_ENGINE.choice_manager.default_choice_response(
-                structured_request,
-                rng,
+            return self.resolve_pending_action(
+                sim_state, structured_request
             )
 
         rng = SamplingRandomSource(self.random.randrange(0, 2**31))
         step = DEFAULT_GAME_ENGINE.apply_action(
             state,
-            action.with_actor(player_idx) if action.actor is None else action,
+            action.with_actor(player_idx)
+            if action.actor not in (0, 1)
+            else action,
             rng,
             auto_resolve=True,
             choice_policy=choose,
             auto_finish_attack=True,
         )
-        if step.action_result is not None:
-            return step.action_result
-        return ActionResult(step.success, step.message)
+        return step
 
     def _auto_promote_for_sim(self, state: GameState) -> None:
-        from engine.commands.attack_frames import finalize_game_over_if_needed
+        from engine.game_engine import DEFAULT_GAME_ENGINE
+        from engine.random_source import SamplingRandomSource
 
         guard = 0
         while state.pending_promotions and guard < 4 and not state.is_terminal():
             guard += 1
-            player_idx = state.pop_pending_promotion()
+            player_idx = int(state.pending_promotions[0])
             player = state.get_player(player_idx)
-            if player.active is not None:
-                continue
-            candidates = [(i, p) for i, p in enumerate(player.bench) if p is not None]
-            if not candidates:
-                if not player.has_any_pokemon_in_play():
-                    finalize_game_over_if_needed(state, reason="promotion")
-                continue
-            bench_idx, _ = max(
-                candidates,
-                key=lambda row: self._forced_promotion_value(state, player_idx, row[1]),
-            )
-            player.promote_from_bench(bench_idx)
-            if state.phase == TurnPhase.DRAW:
-                TurnManager(state).continue_after_promotion()
-            # continue loop if more promotions queued
-        if state.is_terminal():
-            return
-        for player_idx in (0, 1):
-            player = state.get_player(player_idx)
-            if player.active is not None:
-                continue
-            if not player.has_any_pokemon_in_play():
-                finalize_game_over_if_needed(state, reason="promotion")
+            actions = [
+                action
+                for action in DEFAULT_GAME_ENGINE.legal_actions(
+                    state, player_idx, validate_effects=False
+                )
+                if str(getattr(action.kind, "name", action.kind)) == "PROMOTE"
+            ]
+            if not actions:
                 return
-            state.pending_promotion_player = player_idx
-            if guard < 4:
-                self._auto_promote_for_sim(state)
-            return
+            selected = max(
+                actions,
+                key=lambda action: self._forced_promotion_value(
+                    state,
+                    player_idx,
+                    player.bench[int(action.bench_index())],
+                ),
+            )
+            step = DEFAULT_GAME_ENGINE.apply_action(
+                state,
+                selected,
+                SamplingRandomSource(self.random.randrange(0, 2**31)),
+            )
+            if not step.success:
+                return
 
     # ------------------------------------------------------------------
     # Setup
     # ------------------------------------------------------------------
 
     def _choose_setup_action(self, state: GameState, player_idx: int) -> AIAction:
-        actions = self._setup_actions(state, player_idx)
+        actions = list(_native_legal_actions(state, player_idx))
         if not actions:
-            return AIAction("SETUP_DONE", {}, terminal=True)
+            return AIAction(
+                kind="SETUP_DONE",
+                actor=player_idx,
+                base_revision=state.revision,
+            )
         actions.sort(key=lambda a: self._setup_action_value(state, player_idx, a), reverse=True)
         return actions[0]
-
-    def _setup_actions(self, state: GameState, player_idx: int) -> list[AIAction]:
-        stage = str(getattr(state, "setup_stage", ""))
-        if player_idx != int(getattr(state, "setup_actor_idx", -1)):
-            return []
-        if stage not in {"INITIAL_PLACEMENT", "BONUS_PLACEMENT"}:
-            return []
-        player = state.get_player(player_idx)
-        actions: list[AIAction] = []
-        seen: set[str] = set()
-        eligible_bonus = list(
-            getattr(state, "setup_bonus_card_ids", ([], []))[player_idx]
-        )
-        for hand_idx, card in enumerate(player.hand):
-            if not card.is_basic_pokemon or card.api_id in seen:
-                continue
-            if stage == "BONUS_PLACEMENT" and card.api_id not in eligible_bonus:
-                continue
-            seen.add(card.api_id)
-            if stage == "INITIAL_PLACEMENT" and player.active is None:
-                actions.append(AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": hand_idx, "target": "active"}))
-            elif player.bench_has_space():
-                empty = player.find_empty_bench_slot()
-                if empty is not None:
-                    actions.append(AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": hand_idx, "target": f"bench_{empty}"}))
-        if player.active is not None or stage == "BONUS_PLACEMENT":
-            actions.append(AIAction("SETUP_DONE", {}, terminal=True))
-        return actions
-
-    # ------------------------------------------------------------------
-    # Pending choices
-    # ------------------------------------------------------------------
-
-    def _resolve_pending_for_sim(self, state: GameState, req: ActionRequest) -> AIChoice:
-        if req.request_type == "coin_flip":
-            results = list(
-                (getattr(req, "continuation", {}) or {}).get("results", [])
-            )
-            return AIChoice(coin_results=results)
-        return self.resolve_pending_action(state, req)
-
-    def _choose_evolve_skip_stage_candidate(
-        self,
-        state: GameState,
-        player_idx: int,
-        req: ActionRequest,
-    ) -> dict[str, Any] | None:
-        candidates = [
-            candidate for candidate in (getattr(req, "target_info", None) or [])
-            if isinstance(candidate, dict)
-        ]
-        if not candidates:
-            return None
-        owner_idx = player_idx if player_idx in (0, 1) else state.active_player_idx
-        player = state.get_player(owner_idx)
-
-        def candidate_value(candidate: dict[str, Any]) -> float:
-            slot = str(candidate.get("slot", "") or "")
-            card_id = str(candidate.get("card_id", "") or "")
-            value = 0.0
-            try:
-                from data.card_registry import CardRegistry
-
-                stage2 = CardRegistry.get(card_id) if card_id else None
-            except Exception:
-                stage2 = None
-            if stage2 is not None:
-                value += self._search_card_value(state, owner_idx, stage2, req)
-                value += max(0, int(getattr(stage2, "hp", 0))) * 0.2
-                if getattr(stage2, "api_id", "") in self.profile.evolution_cards:
-                    value += 50
-            target = player.get_pokemon(slot)
-            if target is not None:
-                value += self._promotion_value_for_state(state, owner_idx, target) * 0.1
-            if slot == "active":
-                value += 12
-            return value
-
-        return max(candidates, key=candidate_value)
-
-    @staticmethod
-    def _evolve_skip_stage_option_id(candidate: dict[str, Any]) -> str:
-        return "rare_candy:%s:%d:%s" % (
-            str(candidate.get("slot", "") or ""),
-            int(candidate.get("hand_index", -1)),
-            str(candidate.get("card_id", "") or ""),
-        )
-
-    def _choose_bench_slot(self, state: GameState, req: ActionRequest) -> int | None:
-        player = self._request_target_player(state, req)
-        candidates = [
-            i for i in (req.bench_indices or range(len(player.bench)))
-            if 0 <= i < len(player.bench) and player.bench[i] is not None
-        ]
-        if not candidates:
-            return None
-
-        if req.request_type == "select_opponent_bench" or req.target_player == "opponent":
-            return max(candidates, key=lambda i: self._target_priority(player.bench[i]))
-        if req.request_type == "select_own_bench_energy":
-            owner_idx = self._request_target_player_idx(state, req)
-            return max(candidates, key=lambda i: self._energy_target_value(state, owner_idx, f"bench_{i}"))
-        owner_idx = self._request_target_player_idx(state, req)
-        if self._is_self_switch_request(req):
-            good = [i for i in candidates if self._retreat_has_good_target(state, owner_idx, i)]
-            if good:
-                candidates = good
-        return max(candidates, key=lambda i: self._promotion_value_for_state(state, owner_idx, player.bench[i]))
-
-    def _is_self_switch_request(self, req: ActionRequest) -> bool:
-        if req.target_player == "opponent" or req.request_type == "select_opponent_bench":
-            return False
-        if req.request_type != "select_bench":
-            return False
-        prompt = (req.prompt or "").lower()
-        source_name = (getattr(req, "source_name", "") or "").lower()
-        text = f"{prompt} {source_name}"
-        return any(marker in text for marker in ("switch", "retreat", "替换", "交换", "撤退"))
-
-    def _request_target_player(self, state: GameState, req: ActionRequest):
-        if req.target_player == "opponent" or req.request_type == "select_opponent_bench":
-            owner_idx = req.player if req.player in (0, 1) else state.active_player_idx
-            return state.get_player(1 - owner_idx)
-        if req.target_player == "self" or req.request_type == "select_own_bench_energy":
-            owner_idx = req.player if req.player in (0, 1) else state.active_player_idx
-            return state.get_player(owner_idx)
-        if req.player in (0, 1):
-            return state.get_player(req.player)
-        return state.get_active_player()
-
-    def _request_target_player_idx(self, state: GameState, req: ActionRequest) -> int:
-        if req.target_player == "opponent" or req.request_type == "select_opponent_bench":
-            owner_idx = req.player if req.player in (0, 1) else state.active_player_idx
-            return 1 - owner_idx
-        if req.target_player == "self" or req.request_type == "select_own_bench_energy":
-            return req.player if req.player in (0, 1) else state.active_player_idx
-        if req.player in (0, 1):
-            return req.player
-        return state.active_player_idx
-
-    def _confirm_pending(self, state: GameState, player_idx: int, req: ActionRequest) -> bool:
-        prompt = req.prompt or ""
-        prompt_l = prompt.lower()
-        player = state.get_player(player_idx)
-        if "牌库顶" in prompt or ("top" in prompt_l and "hand" in prompt_l):
-            return self._should_keep_top_deck_card(state, player_idx)
-        if "switch" in prompt_l or "替换" in prompt or "交换" in prompt:
-            if not player.active or not player.bench_count():
-                return False
-            good_indices = [
-                idx for idx, p in enumerate(player.bench)
-                if p is not None and self._retreat_has_good_target(state, player_idx, idx)
-            ]
-            if not good_indices:
-                return False
-            best_bench = max(
-                (player.bench[idx] for idx in good_indices if player.bench[idx] is not None),
-                key=lambda p: self._promotion_value_for_state(state, player_idx, p),
-            )
-            active_value = self._promotion_value_for_state(state, player_idx, player.active)
-            if player.active.status_conditions:
-                active_value -= 90
-            best_missing = self._best_missing_energy(best_bench)
-            active_safe = (
-                not player.active.status_conditions
-                and player.active.current_hp > max(40, player.active.card.hp * 0.35)
-            )
-            if best_missing > 0 and active_safe:
-                return False
-            return self._promotion_value_for_state(state, player_idx, best_bench) > active_value + 25
-        if "discard" in prompt_l or "draw" in prompt_l:
-            return True
-        if player.active and player.active.current_hp <= max(40, player.active.card.hp * 0.35):
-            return True
-        if "heal" in prompt_l:
-            return any(p and p.current_hp < p.card.hp for _, p in player.get_all_pokemon())
-        return True
-
-    def _is_hand_cost_selection(self, req: ActionRequest) -> bool:
-        if (getattr(req, "from_zone", "") or "").lower() != "hand":
-            return False
-        prompt = req.prompt or ""
-        prompt_l = prompt.lower()
-        cost_markers = (
-            "discard",
-            "bottom",
-            "put",
-            "丢",
-            "弃",
-            "放回",
-            "牌库底",
-            "牌库下方",
-            "洗回",
-        )
-        return any(marker in prompt_l or marker in prompt for marker in cost_markers)
-
-    def _should_keep_top_deck_card(self, state: GameState, player_idx: int) -> bool:
-        player = state.get_player(player_idx)
-        if not player.deck:
-            return False
-        card = player.deck[-1]
-        value = self._card_value(state, player_idx, card)
-        if getattr(card, "api_id", "") in self.profile.core_cards:
-            return True
-        if getattr(card, "is_energy", False):
-            targets = [p for _, p in player.get_all_pokemon() if p is not None]
-            if any(self._best_missing_energy(p) > 0 for p in targets):
-                return True
-        duplicates = sum(1 for c in player.hand if getattr(c, "api_id", None) == getattr(card, "api_id", None))
-        if duplicates >= 2 and value < 90:
-            return False
-        return value >= 55
-
-    def _choose_energy_assignments(
-        self, state: GameState, player_idx: int, req: ActionRequest
-    ) -> list[tuple[int, str]]:
-        targets = list(getattr(req, "target_info", []) or [])
-        cards = list(req.card_list)
-        mode = getattr(req, "distribute_mode", "") or ""
-        if not targets:
-            return []
-        if mode == "source_select":
-            return self._choose_energy_source_assignment(state, player_idx, targets)
-        if not cards:
-            return []
-        assignments: list[tuple[int, str]] = []
-        per_target: dict[str, int] = {}
-        for energy_idx, energy_card in enumerate(cards):
-            available_targets = [
-                t for t in targets
-                if per_target.get(t["slot"], 0) < getattr(req, "max_per_target", 99)
-            ]
-            if not available_targets:
-                break
-            best_target = max(
-                available_targets,
-                key=lambda t: self._energy_assignment_target_value(state, player_idx, t["slot"], energy_card) -
-                per_target.get(t["slot"], 0) * 12,
-            )
-            slot = best_target["slot"]
-            assignments.append((energy_idx, slot))
-            per_target[slot] = per_target.get(slot, 0) + 1
-        return assignments
-
-    def _choose_energy_source_assignment(
-        self, state: GameState, player_idx: int, targets: list[dict[str, Any]]
-    ) -> list[tuple[int, str]]:
-        scored: list[tuple[float, str]] = []
-        for info in targets:
-            slot = str(info.get("slot", ""))
-            pokemon = state.get_player(player_idx).get_pokemon(slot)
-            if pokemon is None or not pokemon.energy_cards:
-                continue
-            scored.append((self._best_energy_relocation_gain(state, player_idx, slot), slot))
-        if not scored:
-            return []
-        scored.sort(key=lambda row: row[0], reverse=True)
-        return [(0, scored[0][1])]
-
-    def _consume_pending_card(self, state: GameState, req: ActionRequest):
-        card = getattr(req, "pending_card", None)
-        if not card:
-            return
-        player_idx = req.player if req.player in (0, 1) else state.active_player_idx
-        player = state.get_player(player_idx)
-        # Use identity (is) rather than equality (==) for the discard guard:
-        # Card.__eq__ matches by api_id, and CardRegistry returns singleton
-        # objects, so multiple deck copies are the same object.  Without an
-        # identity check the second copy would be skipped because its __eq__
-        # already matches the first one sitting in the discard pile.
-        if all(c is not card for c in player.discard) and card not in player.hand:
-            if getattr(card, "is_trainer_supporter", False) or getattr(card, "is_trainer_item", False):
-                player.discard.append(card)
-        req.pending_card = None
 
     # ------------------------------------------------------------------
     # Evaluation
@@ -2255,7 +2045,10 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 score += 28 + damage * 0.12
 
         if active_missing > 0 and ready_bench:
-            can_move_ready = any(can_retreat(state, player_idx, idx)[0] for idx, _pokemon, _damage in ready_bench)
+            can_move_ready = any(
+                _native_can_retreat(state, player_idx, idx)
+                for idx, _pokemon, _damage in ready_bench
+            )
             score += 115 if can_move_ready else -85
         if active_missing >= 2 and not ready_bench and not nearly_ready_bench:
             score -= 70
@@ -2343,7 +2136,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             return 0.0
         pressure = 0.0
         for attack_idx, attack in enumerate(player.active.card.attacks):
-            if can_declare_attack(state, player_idx, attack_idx)[0]:
+            if _native_can_declare_attack(state, player_idx, attack_idx):
                 damage = self._estimated_attack_damage(state, player_idx, attack_idx)
                 pressure = max(pressure, damage * 1.2)
                 if damage >= opponent.active.current_hp:
@@ -2362,7 +2155,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             [
                 self._estimated_attack_damage(state, player_idx, attack_idx)
                 for attack_idx, _ in enumerate(player.active.card.attacks)
-                if can_declare_attack(state, player_idx, attack_idx)[0]
+                if _native_can_declare_attack(state, player_idx, attack_idx)
             ] or [0]
         )
 
@@ -2381,7 +2174,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         if not low_bench:
             return 0.0
         for attack_idx, attack in enumerate(player.active.card.attacks):
-            if not can_declare_attack(state, player_idx, attack_idx)[0]:
+            if not _native_can_declare_attack(state, player_idx, attack_idx):
                 continue
             for effect in attack_runtime_effects(attack):
                 etype = self._effect_type(effect)
@@ -2550,12 +2343,11 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             elif etype == "conditional_damage_heal":
                 base = int(params.get("base", damage) or 0)
                 bonus = int(params.get("bonus", 0) or 0)
-                condition = params.get("condition", "")
-                damaged_self = any(
-                    p is not None and p.damage_counters > 0
-                    for _, p in player.get_all_pokemon()
+                healed_self = bool(
+                    player.active is not None
+                    and player.active.healed_this_turn
                 )
-                damage = max(damage, base + (bonus if condition in ("self_damaged", "") and damaged_self else 0))
+                damage = max(damage, base + (bonus if healed_self else 0))
             elif etype in ("damage_per_self_energy", "damage_per_self_energy_type"):
                 energy_type = params.get("energy_type", params.get("energy_filter", "any"))
                 energy_count = EnergyView.from_pokemon(player.active).count(str(energy_type or "any"))
@@ -2641,15 +2433,14 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         formula_ast = params.get("formula_ast")
         if formula_ast is not None:
             try:
-                from engine.commands.base import ResolutionContext
                 from engine.commands.formula_ast import evaluate_formula_ast
-                from engine.commands.resolution_stack import ResolutionStack
 
-                ctx = ResolutionContext(
-                    state,
-                    player_idx,
-                    "active",
-                    ResolutionStack(state),
+                ctx = SimpleNamespace(
+                    state=state,
+                    player_idx=player_idx,
+                    source_slot="active",
+                    player=state.get_player(player_idx),
+                    opponent=state.get_player(1 - player_idx),
                 )
                 return evaluate_formula_ast(formula_ast, ctx)
             except (TypeError, ValueError):
@@ -2797,7 +2588,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                     value += 0
                 else:
                     value += 70
-            elif etype in ("heal", "heal_all", "potion_heal", "damage_and_self_heal", "conditional_damage_heal"):
+            elif etype in ("heal", "heal_all", "potion_heal", "damage_and_self_heal"):
                 damaged = sum(max(0, p.card.hp - p.current_hp) for _, p in player.get_all_pokemon() if p)
                 value += min(80, damaged * 0.6)
             elif etype == "damage_counter_self":
@@ -2850,7 +2641,6 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             "heal_all",
             "potion_heal",
             "damage_and_self_heal",
-            "conditional_damage_heal",
         }
         disruption_effects = {"energy_discard", "switch_opponent", "any_pokemon_damage"}
         for effect in iter_effects_recursive(effects):
@@ -2881,7 +2671,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 [
                     self._estimated_attack_damage(state, player_idx, idx)
                     for idx, _ in enumerate(player.active.card.attacks)
-                    if can_declare_attack(state, player_idx, idx)[0]
+                    if _native_can_declare_attack(state, player_idx, idx)
                 ] or [0]
             )
             if best_damage >= opponent.active.current_hp:
@@ -3016,12 +2806,20 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         return value
 
     def _search_card_value(
-        self, state: GameState, player_idx: int, card: Any, req: ActionRequest | None = None
+        self,
+        state: GameState,
+        player_idx: int,
+        card: Any,
+        req: ChoiceView | None = None,
     ) -> float:
         value = self._card_value(state, player_idx, card)
         player = state.get_player(player_idx)
         prompt = ((req.prompt if req else "") or "").lower()
-        from_zone = (getattr(req, "from_zone", "") or "").lower() if req else ""
+        from_zone = (
+            str(req.presentation.get("source_zone", "")).lower()
+            if req
+            else ""
+        )
         if getattr(card, "is_pokemon", False):
             if getattr(card, "is_basic_pokemon", False) and player.bench_has_space():
                 value += 45
@@ -3065,17 +2863,17 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
     def _quick_action_priority(self, state: GameState, player_idx: int, action: AIAction) -> float:
         player = state.get_player(player_idx)
         profile_bonus = 0.0
-        hand_idx = action.params.get("hand_idx")
+        hand_idx = action.hand_index()
         if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
             profile_bonus += self._profile_card_bonus(state, player_idx, player.hand[hand_idx])
-        slot = action.params.get("slot") or action.params.get("target_slot") or action.params.get("target")
+        slot = action.primary_slot()
         if isinstance(slot, str):
             pokemon = player.get_pokemon(slot)
             if pokemon:
                 profile_bonus += self._profile_pokemon_bonus(pokemon, slot) * 0.35
         expert_bonus = self._expert_action_order_bonus(state, player_idx, action)
-        if action.action == PlayerAction.DECLARE_ATTACK:
-            attack_idx = action.params["attack_idx"]
+        if action.kind == PlayerAction.DECLARE_ATTACK:
+            attack_idx = action.attack_index()
             attack = player.active.card.attacks[attack_idx] if player.active else None
             effect_bonus = self._effect_tactical_value(
                 state,
@@ -3088,32 +2886,32 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             if opponent.active and damage >= opponent.active.current_hp:
                 ko_bonus = 120 + opponent.active.card.prize_value * 80
             return 500 + damage + effect_bonus * 0.7 + ko_bonus + profile_bonus + expert_bonus
-        if action.action == PlayerAction.PLAY_TRAINER:
+        if action.kind == PlayerAction.PLAY_TRAINER:
             return 360 + profile_bonus + self._trainer_action_priority(state, player_idx, action) + expert_bonus
-        if action.action == PlayerAction.EVOLVE:
+        if action.kind == PlayerAction.EVOLVE:
             return 330 + profile_bonus + expert_bonus
-        if action.action == PlayerAction.ATTACH_ENERGY:
+        if action.kind == PlayerAction.ATTACH_ENERGY:
             return 300 + profile_bonus + self._attach_action_priority(state, player_idx, action) + expert_bonus
-        if action.action == PlayerAction.USE_ABILITY:
+        if action.kind == PlayerAction.USE_ABILITY:
             return 280 + profile_bonus + self._ability_action_priority(state, player_idx, action) + expert_bonus
-        if action.action == PlayerAction.PLAY_BASIC:
+        if action.kind == PlayerAction.PLAY_BASIC:
             return 210 + profile_bonus + expert_bonus
-        if action.action == PlayerAction.RETREAT:
+        if action.kind == PlayerAction.RETREAT:
             return 120 + profile_bonus + expert_bonus
-        if action.action == PlayerAction.END_TURN:
+        if action.kind == PlayerAction.END_TURN:
             return -50 + expert_bonus
         return expert_bonus
 
     def _trainer_action_priority(self, state: GameState, player_idx: int, action: AIAction) -> float:
         player = state.get_player(player_idx)
-        hand_idx = action.params.get("hand_idx")
+        hand_idx = action.hand_index()
         if not isinstance(hand_idx, int) or not (0 <= hand_idx < len(player.hand)):
             return 0.0
         card = player.hand[hand_idx]
         effects = trainer_runtime_effects(card)
         value = self._effect_tactical_value(state, player_idx, effects) * 1.4
         value += self._card_value(state, player_idx, card) * 0.18
-        target_slot = action.params.get("target_slot")
+        target_slot = action.target_slot()
         if getattr(card, "is_trainer_tool", False) and isinstance(target_slot, str):
             target = player.get_pokemon(target_slot)
             if target:
@@ -3124,8 +2922,8 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
     def _ability_action_priority(self, state: GameState, player_idx: int, action: AIAction) -> float:
         player = state.get_player(player_idx)
-        slot = action.params.get("slot")
-        ability_name = action.params.get("ability_name")
+        slot = action.primary_slot()
+        ability_name = action.ability_name()
         if not isinstance(slot, str) or not isinstance(ability_name, str):
             return 0.0
         pokemon = player.get_pokemon(slot)
@@ -3146,13 +2944,13 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         return value
 
     def _setup_action_value(self, state: GameState, player_idx: int, action: AIAction) -> float:
-        if action.action == "SETUP_DONE":
+        if action.kind == "SETUP_DONE":
             return 10
         player = state.get_player(player_idx)
-        card = player.hand[action.params["hand_idx"]]
+        card = player.hand[action.hand_index()]
         value = card.hp + self._ready_attack_value_for_card(card)
         value += self._profile_card_bonus(state, player_idx, card) * 1.5
-        if action.params.get("target") == "active":
+        if action.target_slot() == "active":
             value += 80
             if card.api_id in self.profile.setup_active:
                 value += 120
@@ -3563,8 +3361,8 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
     def _attach_action_priority(self, state: GameState, player_idx: int, action: AIAction) -> float:
         player = state.get_player(player_idx)
-        hand_idx = action.params.get("hand_idx")
-        target_slot = action.params.get("target_slot")
+        hand_idx = action.hand_index()
+        target_slot = action.target_slot()
         if not isinstance(hand_idx, int) or not isinstance(target_slot, str):
             return 0.0
         if not (0 <= hand_idx < len(player.hand)):
@@ -3657,20 +3455,12 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
     def _missing_energy_count(self, pokemon, cost: list[str]) -> int:
         return EnergyView.from_pokemon(pokemon).missing_count(cost)
 
-    def _action_key(
-        self, state: GameState, player_idx: int, action: AIAction, card_key: str = ""
-    ) -> tuple:
-        params = tuple(sorted((k, v) for k, v in action.params.items() if k != "hand_idx"))
-        if "hand_idx" in action.params and card_key:
-            return (action.action, card_key, params)
-        return (action.action, params)
-
     def _trace_action(self, action: AIAction) -> dict[str, Any]:
-        action_name = action.action.name if isinstance(action.action, PlayerAction) else str(action.action)
         return {
-            "action": action_name,
-            "params": dict(action.params or {}),
-            "terminal": bool(getattr(action, "terminal", False)),
+            "kind": action.kind_name,
+            "payload": dict(action.payload),
+            "source": serialize_entity_ref(action.source),
+            "target": serialize_entity_ref(action.target),
         }
 
     def _trace_rejection(

@@ -161,6 +161,8 @@ static func validate_payload(message_type: String, payload: Dictionary) -> Dicti
 				or not _bounded_int(payload, "rules_version", 1, 2147483647)
 				or not _bounded_int(payload, "action_version", 1, 2147483647)
 				or (payload.has("resume") and not payload["resume"] is bool)
+				or (payload.has("core_fingerprint") and not _valid_sha256(
+					payload["core_fingerprint"]))
 				or str(payload.get("rules_profile_id", "")) != RULES_PROFILE_ID
 				or not _validate_rules_options(payload.get("rules_options", {}))
 			):
@@ -173,6 +175,8 @@ static func validate_payload(message_type: String, payload: Dictionary) -> Dicti
 				or not _bounded_int(payload, "rules_version", 1, 2147483647)
 				or not _bounded_int(payload, "action_version", 1, 2147483647)
 				or (payload.has("resume") and not payload["resume"] is bool)
+				or (payload.has("core_fingerprint") and not _valid_sha256(
+					payload["core_fingerprint"]))
 				or str(payload.get("rules_profile_id", "")) != RULES_PROFILE_ID
 				or not _validate_rules_options(payload.get("rules_options", {}))
 			):
@@ -272,7 +276,7 @@ static func _validate_state_update_payload(payload: Dictionary) -> Dictionary:
 		if not _validate_presentation_event(event_value):
 			return _invalid("invalid_payload", "表现事件格式无效。")
 	if payload.get("choice_request") != null:
-		var choice_validation := _validate_choice_request(payload["choice_request"])
+		var choice_validation := _validate_choice_view(payload["choice_request"])
 		if not bool(choice_validation.get("ok", false)):
 			return choice_validation
 		if int(Dictionary(payload["choice_request"]).get(
@@ -408,6 +412,22 @@ static func _validate_player_payload(
 	]:
 		if payload.has(flag) and not payload[flag] is bool:
 			return _invalid("invalid_payload", "玩家状态标记类型无效。")
+	if payload.has("attack_locked_names"):
+		var locks_value: Variant = payload["attack_locked_names"]
+		if not locks_value is Dictionary or Dictionary(locks_value).size() > 32:
+			return _invalid("invalid_payload", "玩家招式限制数据无效。")
+		for attack_name_value in Dictionary(locks_value).keys():
+			var attack_name := str(attack_name_value)
+			var expires_value: Variant = Dictionary(locks_value)[attack_name_value]
+			if (
+				not attack_name_value is String
+				or not _bounded_string(attack_name, MAX_IDENTIFIER_BYTES)
+				or attack_name.is_empty()
+				or not expires_value is int
+				or int(expires_value) < 0
+				or int(expires_value) > 2147483647
+			):
+				return _invalid("invalid_payload", "玩家招式限制数据无效。")
 	return {"ok": true}
 
 
@@ -563,7 +583,7 @@ static func _validate_choice_response(value: Variant) -> Dictionary:
 	return {"ok": true}
 
 
-static func _validate_choice_request(value: Variant) -> Dictionary:
+static func _validate_choice_view(value: Variant) -> Dictionary:
 	if not value is Dictionary:
 		return _invalid("invalid_payload", "选择请求必须是对象。")
 	var request: Dictionary = value
@@ -839,13 +859,14 @@ static func _validate_presentation_endpoint(value: Variant) -> bool:
 static func _validate_presentation_data(data: Dictionary) -> bool:
 	for field in [
 		"player", "actor", "source_player", "target_player", "winner",
-		"loser", "first_player", "coin_winner",
+		"loser", "first_player", "coin_winner", "visibility_owner",
 	]:
 		if data.has(field) and not _bounded_int(data, field, -1, 1):
 			return false
 	for field_and_bounds in [
 		["bench_idx", -1, MAX_BENCH_SIZE - 1],
 		["source_index", -1, MAX_DECK_CARDS],
+		["target_index", -1, MAX_DECK_CARDS],
 		["count", 0, MAX_DECK_CARDS],
 		["amount", 0, 2147483647],
 		["turn", 0, 2147483647],
@@ -866,6 +887,11 @@ static func _validate_presentation_data(data: Dictionary) -> bool:
 	for field in ["card_ids", "selected_card_ids"]:
 		if data.has(field) and not _bounded_string_array(
 			data[field], MAX_DECK_CARDS, MAX_IDENTIFIER_BYTES
+		):
+			return false
+	for field in ["source_indices", "target_indices"]:
+		if data.has(field) and not _bounded_integer_array(
+			data[field], MAX_DECK_CARDS, -1, MAX_DECK_CARDS
 		):
 			return false
 	if data.has("cards") and not _validate_presentation_cards(data["cards"]):
@@ -960,6 +986,24 @@ static func _bounded_string_array(
 	return true
 
 
+static func _bounded_integer_array(
+	value: Variant,
+	max_items: int,
+	minimum: int,
+	maximum: int,
+) -> bool:
+	if not value is Array or Array(value).size() > max_items:
+		return false
+	for item in Array(value):
+		if (
+			not _is_integer_number(item)
+			or int(item) < minimum
+			or int(item) > maximum
+		):
+			return false
+	return true
+
+
 static func _fixed_string_array(
 	value: Variant,
 	expected_items: int,
@@ -1033,6 +1077,17 @@ static func _json_tree_is_bounded(value: Variant, depth: int = 0) -> bool:
 				return false
 		return true
 	return false
+
+
+static func _valid_sha256(value: Variant) -> bool:
+	if not value is String:
+		return false
+	var text := str(value)
+	return (
+		text.length() == 64
+		and text == text.to_lower()
+		and text.is_valid_hex_number(false)
+	)
 
 
 static func _json_tree_is_serializable(value: Variant, depth: int = 0) -> bool:

@@ -1,11 +1,12 @@
 #include "../src/ptcg_ai_core.hpp"
 #include "../src/ptcg_determinizer.hpp"
 #include "../src/ptcg_encoder.hpp"
-#include "../src/ptcg_game.hpp"
+#include "ptcg_game.hpp"
 #include "../src/ptcg_infoset.hpp"
-#include "../src/ptcg_rules.hpp"
+#include "ptcg_rules.hpp"
+#include "ptcg_rules_session.hpp"
 #include "../src/ptcg_search.hpp"
-#include "../src/ptcg_value.hpp"
+#include "ptcg_value.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -27,6 +28,8 @@ using ptcg::ai::NativeGameKernel;
 using ptcg::ai::NativeDeterminizer;
 using ptcg::ai::NativeInformationSetEncoder;
 using ptcg::ai::NativeRulesKernel;
+using ptcg::ai::RulesSession;
+using ptcg::ai::RulesSessionResult;
 using ptcg::ai::NativeSearchConfig;
 using ptcg::ai::NativeSearchJob;
 using ptcg::ai::NativeSearchLimiter;
@@ -115,6 +118,22 @@ py::object value_to_python(const Value &source) {
         }
     }
     throw py::type_error("invalid_native_value_type");
+}
+
+py::dict rules_session_result_to_python(
+    const RulesSessionResult &native_result
+) {
+    py::dict result;
+    result["success"] = native_result.success;
+    result["error_code"] = native_result.error_code;
+    result["message_key"] = native_result.message_key;
+    result["state"] = value_to_python(native_result.state);
+    result["pending"] = value_to_python(native_result.pending);
+    result["events"] = value_to_python(Value(native_result.events));
+    result["rng_state"] = native_result.rng_state;
+    result["winner"] = native_result.winner;
+    result["terminal"] = native_result.terminal;
+    return result;
 }
 
 template <typename T, std::size_t Size>
@@ -1107,6 +1126,175 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
             py::arg("rng_state")
         );
 
+    py::class_<RulesSession>(module, "NativeRulesSession")
+        .def(py::init<>())
+        .def(
+            "set_catalog",
+            [](RulesSession &session, const py::dict &catalog) {
+                session.set_cards(value_from_python(catalog));
+            },
+            py::arg("catalog")
+        )
+        .def(
+            "create",
+            [](RulesSession &session,
+               const py::dict &catalog,
+               const py::object &decks,
+               const py::dict &match_config,
+               std::uint32_t seed) {
+                Value native_catalog = value_from_python(catalog);
+                Value native_decks = value_from_python(decks);
+                Value native_config = value_from_python(match_config);
+                RulesSessionResult result;
+                {
+                    py::gil_scoped_release release;
+                    result = session.create(
+                        native_catalog,
+                        native_decks,
+                        native_config,
+                        seed
+                    );
+                }
+                return rules_session_result_to_python(result);
+            },
+            py::arg("catalog"),
+            py::arg("decks"),
+            py::arg("match_config") = py::dict(),
+            py::arg("seed") = 0x6D2B79F5u
+        )
+        .def(
+            "load_scenario",
+            [](RulesSession &session,
+               const py::dict &snapshot,
+               std::uint32_t rng_state,
+               const py::dict &match_config) {
+                Value native_snapshot = value_from_python(snapshot);
+                Value native_config = value_from_python(match_config);
+                RulesSessionResult result;
+                {
+                    py::gil_scoped_release release;
+                    result = session.load_scenario(
+                        native_snapshot,
+                        rng_state,
+                        native_config
+                    );
+                }
+                return rules_session_result_to_python(result);
+            },
+            py::arg("snapshot"),
+            py::arg("rng_state"),
+            py::arg("match_config") = py::dict()
+        )
+        .def(
+            "legal_actions",
+            [](const RulesSession &session, std::int32_t actor) {
+                return value_to_python(session.legal_actions(actor));
+            },
+            py::arg("actor")
+        )
+        .def(
+            "pokemon_max_hp",
+            [](const RulesSession &session, const py::dict &pokemon) {
+                return session.pokemon_max_hp(value_from_python(pokemon));
+            },
+            py::arg("pokemon")
+        )
+        .def(
+            "pokemon_current_hp",
+            [](const RulesSession &session, const py::dict &pokemon) {
+                return session.pokemon_current_hp(
+                    value_from_python(pokemon)
+                );
+            },
+            py::arg("pokemon")
+        )
+        .def(
+            "pending_choice",
+            [](const RulesSession &session, std::int32_t viewer) {
+                return value_to_python(session.pending_choice(viewer));
+            },
+            py::arg("viewer")
+        )
+        .def(
+            "apply_action",
+            [](RulesSession &session, const py::dict &action) {
+                Value native_action = value_from_python(action);
+                RulesSessionResult result;
+                {
+                    py::gil_scoped_release release;
+                    result = session.apply_action(native_action);
+                }
+                return rules_session_result_to_python(result);
+            },
+            py::arg("action")
+        )
+        .def(
+            "apply_choice",
+            [](RulesSession &session, const py::dict &response) {
+                Value native_response = value_from_python(response);
+                RulesSessionResult result;
+                {
+                    py::gil_scoped_release release;
+                    result = session.apply_choice(native_response);
+                }
+                return rules_session_result_to_python(result);
+            },
+            py::arg("response")
+        )
+        .def(
+            "surrender",
+            [](RulesSession &session, std::int32_t actor) {
+                return rules_session_result_to_python(session.concede(actor));
+            },
+            py::arg("actor")
+        )
+        .def(
+            "view_for",
+            [](const RulesSession &session, std::int32_t viewer) {
+                return value_to_python(session.view_for(viewer));
+            },
+            py::arg("viewer")
+        )
+        .def(
+            "snapshot",
+            [](const RulesSession &session) {
+                return value_to_python(session.snapshot());
+            }
+        )
+        .def(
+            "restore",
+            [](RulesSession &session,
+               const py::dict &snapshot,
+               std::uint32_t rng_state) {
+                std::string error;
+                const bool success = session.restore(
+                    value_from_python(snapshot), rng_state, &error);
+                return py::dict(
+                    "success"_a = success,
+                    "error_code"_a = error
+                );
+            },
+            py::arg("snapshot"),
+            py::arg("rng_state")
+        )
+        .def("fork", &RulesSession::fork)
+        .def(
+            "journal",
+            [](const RulesSession &session) {
+                return value_to_python(session.journal());
+            }
+        )
+        .def(
+            "get_contract",
+            [](const RulesSession &session) {
+                return value_to_python(session.contract());
+            }
+        )
+        .def_property_readonly("state_hash", &RulesSession::state_hash)
+        .def_property_readonly("rng_state", &RulesSession::rng_state)
+        .def_property_readonly("revision", &RulesSession::revision)
+        .def_property_readonly("initialized", &RulesSession::initialized);
+
     py::class_<NativeInformationSetEncoder>(
         module,
         "NativeInformationSetEncoder"
@@ -1241,6 +1429,22 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
         .def_property_readonly(
             "card_count",
             &NativeGameKernel::card_count
+        )
+        .def(
+            "pokemon_max_hp",
+            [](const NativeGameKernel &kernel, const py::dict &pokemon) {
+                return kernel.pokemon_max_hp(value_from_python(pokemon));
+            },
+            py::arg("pokemon")
+        )
+        .def(
+            "pokemon_current_hp",
+            [](const NativeGameKernel &kernel, const py::dict &pokemon) {
+                return kernel.pokemon_current_hp(
+                    value_from_python(pokemon)
+                );
+            },
+            py::arg("pokemon")
         )
         .def(
             "legal_actions",

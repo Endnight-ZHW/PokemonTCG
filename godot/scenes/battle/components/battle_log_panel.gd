@@ -166,7 +166,7 @@ func _entry_category(text: String) -> String:
 		return "回合"
 	if "奖赏卡" in text:
 		return "奖赏卡"
-	if "气绝" in text or "KO" in text:
+	if "气绝" in text or "昏厥" in text or "KO" in text:
 		return "气绝"
 	if "伤害" in text or "受到" in text:
 		return "伤害"

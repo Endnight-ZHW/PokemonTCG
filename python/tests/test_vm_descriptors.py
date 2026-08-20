@@ -8,18 +8,12 @@ from engine.commands.descriptors import (
     VM_COMMAND_DESCRIPTORS,
     descriptor_export_payload,
 )
-from engine.commands.dsl_compiler import DEFAULT_COMMAND_REGISTRY
-from engine.commands.dsl_compiler import compile_command_spec
 from engine.commands.vm_contract import VM_IR_VERSION, validate_command_spec
 
 
 class VmCommandDescriptorTests(unittest.TestCase):
-    def test_authoritative_inventory_is_frozen_and_matches_handlers(self):
+    def test_authoritative_inventory_is_frozen(self):
         self.assertEqual(len(VM_COMMAND_DESCRIPTORS), 80)
-        self.assertEqual(
-            frozenset(VM_COMMAND_DESCRIPTORS),
-            DEFAULT_COMMAND_REGISTRY.supported_ops,
-        )
         with self.assertRaises(TypeError):
             VM_COMMAND_DESCRIPTORS["late_op"] = {}  # type: ignore[index]
         mutated = dict(VM_COMMAND_DESCRIPTORS["draw_cards"])
@@ -163,7 +157,7 @@ class VmCommandDescriptorTests(unittest.TestCase):
             )
             self.assertTrue(any("internal" in error for error in errors), op)
 
-    def test_compiler_does_not_normalize_away_malformed_envelopes(self):
+    def test_contract_does_not_normalize_away_malformed_envelopes(self):
         malformed_specs = (
             {"op": "draw_cards", "args": {}, "branches": {}, "extra": True},
             {"op": "draw_cards", "args": [], "branches": {}},
@@ -171,53 +165,12 @@ class VmCommandDescriptorTests(unittest.TestCase):
         )
         for spec in malformed_specs:
             with self.subTest(spec=spec):
-                with self.assertRaisesRegex(ValueError, "Invalid VM command spec"):
-                    compile_command_spec(spec)
-
-    def test_exp_share_trigger_uses_attached_descriptor_card_identity(self):
-        """A cloned tool must work without the historical svg2-exps ID."""
-        from copy import deepcopy
-
-        from data.card_registry import CardRegistry
-        from data.deck_definitions import ALL_CARD_IDS
-        from engine.commands.modifier_registration import register_pokemon_modifiers
-        from engine.commands.trigger_commands import command_specs_from_trigger_results
-        from engine.enums import EventType
-        from engine.game_state import GameState
-        from engine.player_state import PokemonInPlay
-
-        if not CardRegistry.is_initialized():
-            CardRegistry.initialize(ALL_CARD_IDS)
-
-        cloned_tool = deepcopy(CardRegistry.get("svg2-exps"))
-        cloned_tool.api_id = "clone-exp-share"
-
-        state = GameState()
-        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
-        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-2")]
-        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
-        state.p1.bench[0].attached_tool = cloned_tool
-        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
-
-        register_pokemon_modifiers(
-            state.p1.bench[0],
-            0,
-            "bench_0",
-            event_bus=state.event_bus,
-        )
-        results = state.event_bus.emit(
-            EventType.POKEMON_KO,
-            state=state,
-            player_idx=0,
-            slot="active",
-            knocked_out=state.p1.active,
-            from_attack=True,
-        )
-        specs = command_specs_from_trigger_results(results)
-
-        self.assertEqual(len(specs), 1)
-        self.assertEqual(specs[0]["op"], "trigger_move_basic_energy")
-        self.assertEqual(specs[0]["args"]["target_tool_id"], "clone-exp-share")
+                errors = validate_command_spec(
+                    spec,
+                    supported_ops=set(VM_COMMAND_DESCRIPTORS),
+                    descriptors=VM_COMMAND_DESCRIPTORS,
+                )
+                self.assertTrue(errors)
 
     @staticmethod
     def _wrong_type(expected):

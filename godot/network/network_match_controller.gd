@@ -19,9 +19,6 @@ var remote_deck_key := ""
 var send_sequence := 0
 var receive_sequence := 0
 var current_revision := -1
-# `awaiting_update` remains as a compatibility mirror for callers that only need
-# a boolean. Correlation and timeout state live in `pending_submission`.
-var awaiting_update := false
 var pending_submission: Dictionary = {}
 var resync_in_progress := false
 var connected := false
@@ -183,6 +180,7 @@ func poll() -> Array[Dictionary]:
 						"player_idx": 1,
 						"rules_version": AppState.RULES_SCHEMA_VERSION,
 						"action_version": AppState.ACTION_SCHEMA_VERSION,
+						"core_fingerprint": _core_fingerprint(),
 						"rules_profile_id": GameState.RULES_PROFILE_ID,
 						"rules_options": rules_options.duplicate(true),
 						"resume": session != null and session.state != null,
@@ -514,6 +512,7 @@ func _handle_host_message(
 				!= AppState.ACTION_SCHEMA_VERSION
 				or str(payload.get("rules_profile_id", ""))
 				!= GameState.RULES_PROFILE_ID
+				or not _peer_core_compatible(payload)
 			):
 				_reject("schema_mismatch", "规则或动作版本不兼容。")
 				return
@@ -651,6 +650,7 @@ func _handle_client_message(
 				!= AppState.ACTION_SCHEMA_VERSION
 				or str(payload.get("rules_profile_id", ""))
 				!= GameState.RULES_PROFILE_ID
+				or not _peer_core_compatible(payload)
 			):
 				connected = false
 				connection_phase = ConnectionPhase.CLOSED
@@ -672,6 +672,7 @@ func _handle_client_message(
 					"deck_key": local_deck_key,
 					"rules_version": AppState.RULES_SCHEMA_VERSION,
 					"action_version": AppState.ACTION_SCHEMA_VERSION,
+					"core_fingerprint": _core_fingerprint(),
 					"rules_profile_id": GameState.RULES_PROFILE_ID,
 					"rules_options": rules_options.duplicate(true),
 					"resume": reconnecting or current_revision >= 0,
@@ -857,12 +858,10 @@ func _begin_pending_submission(
 		"sent_msec": Time.get_ticks_msec(),
 		"timeout_notified": false,
 	}
-	awaiting_update = true
 
 
 func _clear_pending_submission() -> void:
 	pending_submission.clear()
-	awaiting_update = false
 
 
 func _check_pending_submission_timeout(now_msec: int) -> void:
@@ -968,8 +967,8 @@ func _resolve_pending_error(row: Dictionary) -> Dictionary:
 			)
 		)
 	else:
-		# Legacy errors did not echo correlation identifiers. There can only be
-		# one in-flight client submission, so the rejection is still attributable.
+		# There can only be one in-flight client submission, so an uncorrelated
+		# rejection is still attributable to that submission.
 		origins["action_id"] = pending_action_id
 		origins["request_id"] = pending_request_id
 		matched = true
@@ -1043,6 +1042,15 @@ func _can_reconnect_match() -> bool:
 		current_revision >= 0
 		and connection_phase != ConnectionPhase.CLOSED
 	) or reconnecting
+
+
+func _core_fingerprint() -> String:
+	return str(catalog.card_ir.get("contract_fingerprint", ""))
+
+
+func _peer_core_compatible(payload: Dictionary) -> bool:
+	var peer := str(payload.get("core_fingerprint", ""))
+	return peer.is_empty() or peer == _core_fingerprint()
 
 
 func _begin_reconnect(reason: String) -> void:

@@ -112,7 +112,10 @@ EFFECTS = {
                 "effects": [
                     {
                         "effect_type": "self_attack_lock",
-                        "params": {"attack_name": "钢铁之刃"},
+                        "params": {
+                            "attack_name": "钢铁之刃",
+                            "scope": "self",
+                        },
                     }
                 ]
             },

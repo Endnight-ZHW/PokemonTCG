@@ -30,7 +30,6 @@ from engine.game_state import GameState
 from engine.game_engine import DEFAULT_GAME_ENGINE
 from engine.random_source import RandomSource
 from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
-from engine.turn_manager import TurnManager
 
 TRAINABLE_KEYS = [
     "core_in_play",
@@ -367,7 +366,7 @@ def _make_ai(deck_key: str, weights: dict[str, float] | None, seed: int,
 
 def finish_setup(
     state: GameState,
-    tm: TurnManager,
+    _tm: Any,
     ais: list[Any],
     rng: RandomSource | None = None,
 ) -> None:
@@ -376,7 +375,7 @@ def finish_setup(
     for _ in range(128):
         if state.setup_stage == "COMPLETE":
             return
-        pending = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+        pending = DEFAULT_GAME_ENGINE.pending_choice(state)
         if pending is not None:
             response = DEFAULT_GAME_ENGINE.choice_manager.default_choice_response(
                 pending,
@@ -401,17 +400,24 @@ def finish_setup(
     raise RuntimeError("Setup exceeded the 128-step safety limit.")
 
 
-def _force_setup_basic(tm: TurnManager, player_idx: int) -> None:
-    player = tm.state.get_player(player_idx)
-    for idx, card in enumerate(player.hand):
-        if card.is_basic_pokemon:
-            tm.setup_place_basic(player_idx, idx, "active")
-            return
-
-
 def force_end_turn(state: GameState, player_idx: int) -> None:
     if state.phase in (TurnPhase.MAIN, TurnPhase.ATTACK):
-        TurnManager(state).perform_action(PlayerAction.END_TURN, player_idx=player_idx)
+        action = next(
+            (
+                candidate
+                for candidate in DEFAULT_GAME_ENGINE.legal_actions(
+                    state, player_idx, validate_effects=False
+                )
+                if candidate.kind == PlayerAction.END_TURN
+            ),
+            None,
+        )
+        if action is not None:
+            DEFAULT_GAME_ENGINE.apply_action(
+                state,
+                action,
+                RandomSource(getattr(state, "_native_rng_state", 1)),
+            )
 
 
 def play_game(
@@ -499,7 +505,6 @@ def _play_match_impl(
     if not setup_step.success:
         raise RuntimeError(setup_step.message)
     state.public_deck_keys = (deck1_key, deck2_key)
-    tm = TurnManager(state)
     if deck_a_player_idx == 0:
         ai0 = _make_ai(deck_a, weights_a, seed + 11, search_preset, search_quality)
         ai1 = _make_ai(deck_b, weights_b, seed + 29, search_preset, search_quality)
@@ -508,7 +513,7 @@ def _play_match_impl(
         ai1 = _make_ai(deck_a, weights_a, seed + 11, search_preset, search_quality)
     ais = [ai0, ai1]
     with setup_rng.bind_state(state):
-        finish_setup(state, tm, ais, setup_rng)
+        finish_setup(state, None, ais, setup_rng)
 
     failed_signatures: dict[int, set[tuple]] = {0: set(), 1: set()}
     prev_player_idx: int | None = None
@@ -523,14 +528,10 @@ def _play_match_impl(
         steps += 1
         if state.is_terminal():
             break
-        if state.pending_promotion_player >= 0:
-            ais[state.pending_promotion_player]._auto_promote_for_sim(state)
-            continue
-        if state.phase == TurnPhase.DRAW:
-            TurnManager(state).advance_phase()
+        if state.pending_promotions:
+            ais[state.pending_promotions[0]]._auto_promote_for_sim(state)
             continue
         if state.phase not in (TurnPhase.MAIN, TurnPhase.ATTACK):
-            TurnManager(state).advance_phase()
             continue
 
         player_idx = state.active_player_idx
@@ -565,7 +566,7 @@ def _play_match_impl(
             rule_exceptions += 1
         signature = action.signature
         if result is None or not result.success:
-            if result is not None and _looks_like_no_target_failure(result.log_message):
+            if result is not None and _looks_like_no_target_failure(result.message):
                 no_target_actions += 1
             failed_signatures[player_idx].add(signature)
             if len(failed_signatures[player_idx]) >= 2:

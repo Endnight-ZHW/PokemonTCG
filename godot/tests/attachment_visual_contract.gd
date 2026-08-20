@@ -87,23 +87,11 @@ func _run() -> void:
 	var canonical_ref: Dictionary = ATTACHMENT_VISUALS.canonical_ref({
 		"attachment_type": "energy",
 		"card_id": "svi-dtur",
-		"attachment_index": 3,
+		"index": 3,
 	})
 	_check(
-		int(canonical_ref.get("index", -1)) == 3
-		and not canonical_ref.has("attachment_index"),
-		"Legacy attachment_index did not normalize to the canonical index field",
-	)
-	var seeded_legacy_ref: Dictionary = ATTACHMENT_VISUALS.canonical_ref({
-		"attachment_type": "energy",
-		"card_id": "sv1-ener-2",
-		"index": -1,
-		"attachment_index": 1,
-	})
-	_check(
-		int(seeded_legacy_ref.get("index", -1)) == 1
-		and not seeded_legacy_ref.has("attachment_index"),
-		"A seeded invalid index masked the legacy physical attachment index",
+		int(canonical_ref.get("index", -1)) == 3,
+		"Canonical attachment index was not retained",
 	)
 
 	var scene := load("res://ui/card_view.tscn") as PackedScene
@@ -373,7 +361,7 @@ func _run() -> void:
 				"ref": {
 					"attachment_type": "energy",
 					"card_id": "svi-dtur",
-					"attachment_index": 3,
+					"index": 3,
 				},
 			},
 			{

@@ -2,7 +2,8 @@
 
 EFFECTS = {'svf-rio': {'attacks': {'重拳': {'effects': []},
                          '突击': {'effects': [{'effect_type': 'damage_counter_self',
-                                             'params': {'amount': 20}}]}}},
+                                             'params': {'amount': 20,
+                                                        'damage_kind': 'self_damage'}}]}}},
  'svf-luca': {'abilities': {'旺盛斗气': {'trigger': '',
                                      'effects': [{'effect_type': 'damage_counter_self',
                                                   'params': {'amount': 20}},
@@ -15,9 +16,11 @@ EFFECTS = {'svf-rio': {'attacks': {'重拳': {'effects': []},
                                                  'params': {'base': 10, 'per_energy': 60}}]}}},
  'svf-klea': {'attacks': {'大树切割': {'effects': [{'effect_type': 'coin_flip_double_ko', 'params': {}}]},
                           '暴走冲撞': {'effects': [{'effect_type': 'damage_counter_self',
-                                                'params': {'amount': 30}}]}}},
+                                                'params': {'amount': 30,
+                                                           'damage_kind': 'self_damage'}}]}}},
  'svf-pass': {'attacks': {'辅助传递': {'effects': [{'effect_type': 'energy_relocate',
                                                 'params': {'amount': 1, 'from_self': True}}]}}},
  'svf-terr': {'attacks': {'岩窟冲撞': {'effects': [{'effect_type': 'prevent_damage', 'params': {}},
                                                {'effect_type': 'self_attack_lock',
-                                                'params': {'attack_name': '岩窟冲撞'}}]}}}}
+                                                'params': {'attack_name': '岩窟冲撞',
+                                                           'scope': 'player'}}]}}}}

@@ -3,6 +3,7 @@
 #include "onnx_inference.hpp"
 #include "ptcg_ai_core.hpp"
 #include "ptcg_godot_value.hpp"
+#include "ptcg_rules_session.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -27,73 +28,6 @@ namespace {
 std::string utf8_string(const String &source) {
     const CharString encoded = source.utf8();
     return std::string(encoded.get_data(), encoded.length());
-}
-
-Dictionary vm_result_dictionary(
-    const ptcg::ai::VmExecutionResult &native_result
-) {
-    Dictionary result;
-    result["success"] = native_result.success;
-    result["error_code"] = String::utf8(
-        native_result.error_code.c_str()
-    );
-    result["state"] = ptcg::ai::value_to_godot(native_result.state);
-    result["context"] = ptcg::ai::value_to_godot(native_result.context);
-    result["modifier"] = ptcg::ai::value_to_godot(native_result.modifier);
-    result["pending"] = ptcg::ai::value_to_godot(native_result.pending);
-    result["continuation"] = ptcg::ai::value_to_godot(
-        native_result.continuation
-    );
-    Array events;
-    for (const std::string &event : native_result.event_types) {
-        events.push_back(String::utf8(event.c_str()));
-    }
-    result["event_types"] = events;
-    result["events"] = ptcg::ai::value_to_godot(
-        ptcg::ai::Value(native_result.events)
-    );
-    result["rng_state"] = static_cast<int64_t>(native_result.rng_state);
-    return result;
-}
-
-Dictionary game_result_dictionary(
-    const ptcg::ai::GameExecutionResult &native_result
-) {
-    Dictionary result;
-    result["success"] = native_result.success;
-    result["error_code"] = String::utf8(
-        native_result.error_code.c_str()
-    );
-    result["state"] = ptcg::ai::value_to_godot(native_result.state);
-    result["pending"] = ptcg::ai::value_to_godot(native_result.pending);
-    result["continuation"] = ptcg::ai::value_to_godot(
-        native_result.continuation
-    );
-    Array events;
-    for (const std::string &event : native_result.event_types) {
-        events.push_back(String::utf8(event.c_str()));
-    }
-    result["event_types"] = events;
-    result["events"] = ptcg::ai::value_to_godot(
-        ptcg::ai::Value(native_result.events)
-    );
-    result["rng_state"] = static_cast<int64_t>(native_result.rng_state);
-    return result;
-}
-
-Dictionary vm_wrapper_error(const std::string &message) {
-    Dictionary result;
-    result["success"] = false;
-    result["error_code"] = String::utf8(message.c_str());
-    result["state"] = Dictionary();
-    result["context"] = Dictionary();
-    result["modifier"] = Dictionary();
-    result["pending"] = Dictionary();
-    result["continuation"] = Dictionary();
-    result["event_types"] = Array();
-    result["events"] = Array();
-    result["rng_state"] = int64_t{0};
-    return result;
 }
 
 Dictionary encoded_request_dictionary(
@@ -758,63 +692,12 @@ void NativeDeepSearch::_bind_methods() {
         &NativeDeepSearch::get_contract
     );
     ClassDB::bind_method(
-        D_METHOD("vm_set_cards", "cards"),
-        &NativeDeepSearch::vm_set_cards
+        D_METHOD("set_catalog", "cards"),
+        &NativeDeepSearch::set_catalog
     );
     ClassDB::bind_method(
-        D_METHOD("simulation_set_decks", "decks"),
-        &NativeDeepSearch::simulation_set_decks
-    );
-    ClassDB::bind_method(
-        D_METHOD(
-            "vm_execute",
-            "state",
-            "command_spec",
-            "actor",
-            "source_slot",
-            "seed",
-            "context_mode"
-        ),
-        &NativeDeepSearch::vm_execute
-    );
-    ClassDB::bind_method(
-        D_METHOD(
-            "vm_resume",
-            "state",
-            "context",
-            "continuation",
-            "selected_options",
-            "cancelled",
-            "rng_state"
-        ),
-        &NativeDeepSearch::vm_resume
-    );
-    ClassDB::bind_method(
-        D_METHOD("vm_contract"),
-        &NativeDeepSearch::vm_contract
-    );
-    ClassDB::bind_method(
-        D_METHOD("game_apply_action", "state", "action", "rng_state"),
-        &NativeDeepSearch::game_apply_action
-    );
-    ClassDB::bind_method(
-        D_METHOD("game_legal_actions", "state", "actor"),
-        &NativeDeepSearch::game_legal_actions
-    );
-    ClassDB::bind_method(
-        D_METHOD("game_choice_candidates", "request"),
-        &NativeDeepSearch::game_choice_candidates
-    );
-    ClassDB::bind_method(
-        D_METHOD(
-            "game_resume_choice",
-            "state",
-            "continuation",
-            "selected_options",
-            "cancelled",
-            "rng_state"
-        ),
-        &NativeDeepSearch::game_resume_choice
+        D_METHOD("set_decks", "decks"),
+        &NativeDeepSearch::set_decks
     );
     ClassDB::bind_method(
         D_METHOD("validate_runtime_snapshot", "state", "actor"),
@@ -1497,6 +1380,9 @@ int64_t NativeDeepSearch::puct_select(
 
 Dictionary NativeDeepSearch::get_contract() const {
     Dictionary result;
+    result["native_abi_version"] = ptcg::ai::NATIVE_ABI_VERSION;
+    result["rules_session_abi_version"] =
+        ptcg::ai::NATIVE_RULES_SESSION_ABI_VERSION;
     result["planner_id"] = "infoset_puct_v2";
     result["schema_version"] = SCHEMA_VERSION;
     result["c_puct"] = C_PUCT;
@@ -1513,7 +1399,6 @@ Dictionary NativeDeepSearch::get_contract() const {
     result["leaf_evaluator"] = "neural_wdl";
     result["challenge_prior_weight"] = 0.0;
     result["full_turn_rollout"] = false;
-    result["native_rules"] = vm_contract();
     result["infoset_abi_version"] =
         ptcg::ai::NATIVE_INFOSET_ABI_VERSION;
     result["runtime_hidden_identity_policy"] = "reject";
@@ -1532,150 +1417,17 @@ Dictionary NativeDeepSearch::get_contract() const {
     return result;
 }
 
-void NativeDeepSearch::vm_set_cards(const Dictionary &cards) {
+void NativeDeepSearch::set_catalog(const Dictionary &cards) {
     ptcg::ai::Value native_cards = ptcg::ai::value_from_godot(cards);
     cards_ = native_cards;
-    rules_kernel_.set_cards(native_cards);
     game_kernel_.set_cards(native_cards);
     encoder_.set_cards(std::move(native_cards));
 }
 
-void NativeDeepSearch::simulation_set_decks(const Dictionary &decks) {
+void NativeDeepSearch::set_decks(const Dictionary &decks) {
     decks_ = ptcg::ai::value_from_godot(decks);
     determinizer_.set_decks(decks_);
 }
-
-Dictionary NativeDeepSearch::vm_execute(
-    const Dictionary &state,
-    const Dictionary &command_spec,
-    int64_t actor,
-    const String &source_slot,
-    int64_t seed,
-    const String &context_mode
-) const {
-    try {
-        return vm_result_dictionary(rules_kernel_.execute(
-            ptcg::ai::value_from_godot(state),
-            ptcg::ai::value_from_godot(command_spec),
-            static_cast<std::int32_t>(actor),
-            utf8_string(source_slot),
-            static_cast<std::uint32_t>(seed),
-            utf8_string(context_mode)
-        ));
-    } catch (const std::exception &error) {
-        return vm_wrapper_error(error.what());
-    }
-}
-
-Dictionary NativeDeepSearch::vm_resume(
-    const Dictionary &state,
-    const Dictionary &context,
-    const Dictionary &continuation,
-    const Array &selected_options,
-    bool cancelled,
-    int64_t rng_state
-) const {
-    try {
-        return vm_result_dictionary(rules_kernel_.resume(
-            ptcg::ai::value_from_godot(state),
-            ptcg::ai::value_from_godot(context),
-            ptcg::ai::value_from_godot(continuation),
-            ptcg::ai::value_from_godot(selected_options),
-            cancelled,
-            static_cast<std::uint32_t>(rng_state)
-        ));
-    } catch (const std::exception &error) {
-        return vm_wrapper_error(error.what());
-    }
-}
-
-Dictionary NativeDeepSearch::vm_contract() const {
-    Dictionary result;
-    result["abi_version"] = ptcg::ai::NATIVE_RULES_ABI_VERSION;
-    result["card_count"] = static_cast<int64_t>(rules_kernel_.card_count());
-    result["implemented_op_count"] = static_cast<int64_t>(
-        rules_kernel_.implemented_op_count()
-    );
-    result["required_op_count"] = static_cast<int64_t>(
-        ptcg::ai::NativeRulesKernel::required_op_count()
-    );
-    result["complete"] = (
-        rules_kernel_.implemented_op_count()
-        == ptcg::ai::NativeRulesKernel::required_op_count()
-    );
-    result["game_abi_version"] = ptcg::ai::NATIVE_GAME_ABI_VERSION;
-    result["game_card_count"] = static_cast<int64_t>(
-        game_kernel_.card_count()
-    );
-    return result;
-}
-
-Dictionary NativeDeepSearch::game_apply_action(
-    const Dictionary &state,
-    const Dictionary &action,
-    int64_t rng_state
-) const {
-    try {
-        return game_result_dictionary(game_kernel_.apply_action(
-            ptcg::ai::value_from_godot(state),
-            ptcg::ai::value_from_godot(action),
-            static_cast<std::uint32_t>(rng_state)
-        ));
-    } catch (const std::exception &error) {
-        return vm_wrapper_error(error.what());
-    }
-}
-
-Array NativeDeepSearch::game_legal_actions(
-    const Dictionary &state,
-    int64_t actor
-) const {
-    try {
-        return Array(ptcg::ai::value_to_godot(
-            game_kernel_.legal_actions(
-                ptcg::ai::value_from_godot(state),
-                static_cast<std::int32_t>(actor)
-            )
-        ));
-    } catch (...) {
-        return Array();
-    }
-}
-
-Array NativeDeepSearch::game_choice_candidates(
-    const Dictionary &request
-) const {
-    try {
-        return Array(ptcg::ai::value_to_godot(
-            ptcg::ai::NativeGameKernel::choice_candidates(
-                ptcg::ai::value_from_godot(request)
-            )
-        ));
-    } catch (...) {
-        return Array();
-    }
-}
-
-Dictionary NativeDeepSearch::game_resume_choice(
-    const Dictionary &state,
-    const Dictionary &continuation,
-    const Array &selected_options,
-    bool cancelled,
-    int64_t rng_state
-) const {
-    try {
-        return game_result_dictionary(game_kernel_.resume_choice(
-            ptcg::ai::value_from_godot(state),
-            ptcg::ai::value_from_godot(continuation),
-            ptcg::ai::value_from_godot(selected_options),
-            cancelled,
-            static_cast<std::uint32_t>(rng_state)
-        ));
-    } catch (const std::exception &error) {
-        return vm_wrapper_error(error.what());
-    }
-}
-
 String NativeDeepSearch::validate_runtime_snapshot(
     const Dictionary &state,
     int64_t actor

@@ -16,12 +16,6 @@ android.release.arm64 = "res://bin/android/libpokemon_ai.android.template_releas
 windows.debug.x86_64 = {
     "res://bin/windows/onnxruntime.dll": ""
 }
-windows.release.x86_64 = {
-    "res://bin/windows/onnxruntime.dll": ""
-}
 android.debug.arm64 = {
-    "res://bin/android/libonnxruntime.so": ""
-}
-android.release.arm64 = {
     "res://bin/android/libonnxruntime.so": ""
 }

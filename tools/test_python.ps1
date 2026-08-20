@@ -23,25 +23,22 @@ $env:PYTHONNOUSERSITE = '1'
 $modules = @()
 if ($Tier -eq 'core') {
     $modules = @(
-        'tests.test_game_engine_refactor',
-        'tests.test_action_preflight',
-        'tests.test_regression_fixes',
-        'tests.test_vm_ir_contract',
+		'tests.test_card_authoring_dsl',
+		'tests.test_card_rules_consistency',
+		'tests.test_vm_descriptors',
+		'tests.test_native_rules_session',
+		'tests.test_native_game_engine_facade',
         'tests.test_godot_export',
         'tests.test_release_manifest',
         'tests.test_android_release_gate',
-        'tests.test_pending_continuations',
         'tests.test_snapshot_schema',
-        'tests.test_deck_contract',
         'tests.test_draw_ai_semantics',
+		'tests.test_energy_view',
 		'tests.test_ai_strategy_definitions',
 		'tests.test_ai_evaluation_report',
-		'tests.test_game_screen_input',
+		'tests.test_release_evidence_v2',
         'tests.test_python_tool_boundary',
-        'tests.test_relay_server',
-        'tests.test_type_matchups',
-        'tests.test_darkness_deck',
-        'tests.test_steel_deck'
+		'tests.test_relay_server'
     )
 }
 

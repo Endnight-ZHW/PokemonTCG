@@ -1,21 +1,15 @@
-"""Strict JSON codecs for the Python rules/tooling boundary.
-
-The public choice contract deliberately omits ``ChoiceOption.value``.  That
-field is authoritative VM state, not something a caller must echo back when it
-submits a :class:`~engine.actions.ChoiceResponse`.  Pending choices use the
-separate internal codec below so snapshots retain the values required to resume
-their continuations.
-"""
+"""Strict Action v4 and ChoiceView v2 codecs for Python tooling."""
 from __future__ import annotations
 
 import math
 from typing import Any
 
 from engine.actions import (
+    ACTION_SCHEMA_VERSION,
     AttachmentRef,
     CardRef,
     ChoiceOption,
-    ChoiceRequest,
+    ChoiceView,
     ChoiceResponse,
     GameAction,
     PokemonRef,
@@ -37,18 +31,19 @@ PUBLIC_GAME_ACTIONS = frozenset(
     | {"PROMOTE", "SETUP_DONE"}
 )
 
-_ACTION_FIELDS = frozenset({
-    "action", "params", "terminal", "actor", "source", "target", "action_id",
+_ACTION_V4_FIELDS = frozenset({
+    "schema_version", "action_id", "base_revision", "actor", "kind",
+    "source", "target", "payload",
 })
 _REF_FIELDS = frozenset({
     "kind", "player", "zone", "slot", "index", "attachment_type", "card_id",
 })
-_CHOICE_REQUEST_FIELDS = frozenset({
-    "request_id", "request_type", "player", "prompt", "options", "min_select",
-    "max_select", "allow_duplicates", "can_cancel", "metadata",
+_CHOICE_VIEW_FIELDS = frozenset({
+    "schema_version", "request_id", "base_revision", "player",
+    "request_type", "prompt", "options", "min_select", "max_select",
+    "allow_duplicates", "can_cancel", "presentation",
 })
 _PUBLIC_CHOICE_OPTION_FIELDS = frozenset({"option_id", "label", "ref"})
-_INTERNAL_CHOICE_OPTION_FIELDS = frozenset({"option_id", "label", "ref", "value"})
 _CHOICE_RESPONSE_FIELDS = frozenset({"request_id", "option_ids", "cancelled"})
 
 
@@ -219,104 +214,91 @@ def deserialize_entity_ref(data: dict | None):
     raise ValueError(f"unsupported reference kind: {kind!r}")
 
 
-# Backward-compatible private aliases retained for callers which imported the
-# old helpers during the v2 transition.
-_serialize_ref = serialize_entity_ref
-_deserialize_ref = deserialize_entity_ref
-
-
-def _validate_action_params(params: dict[str, Any]) -> dict[str, Any]:
-    canonical = _canonical_json(params)
-    for field, maximum in (("hand_idx", 59), ("bench_idx", 4), ("attack_idx", 31)):
-        if field in canonical:
-            _bounded_int(canonical[field], f"action params.{field}", 0, maximum)
-    for field in ("slot", "target", "target_slot", "ability_name"):
-        if field in canonical:
-            _bounded_string(canonical[field], f"action params.{field}")
-    if "energy_indices" in canonical:
-        indices = canonical["energy_indices"]
-        if not isinstance(indices, list) or len(indices) > MAX_DECK_CARDS:
-            raise ValueError("action params.energy_indices is invalid")
-        for index in indices:
-            _bounded_int(index, "action params.energy_indices item", 0, 59)
-    return canonical
-
-
 def serialize_game_action(action: GameAction) -> dict:
-    """Return the complete action-schema-v3 envelope."""
+    """Return the complete strict Action v4 envelope."""
     if not isinstance(action, GameAction):
         raise ValueError("action must be a GameAction")
-    action_name = (
-        action.action.name
-        if isinstance(action.action, PlayerAction)
-        else str(action.action)
-    )
+    action_name = action.kind_name
     if action_name not in PUBLIC_GAME_ACTIONS:
         raise ValueError(f"unsupported public game action: {action_name!r}")
     actor = _bounded_int(action.actor, "action actor", 0, 1)
-    if type(action.terminal) is not bool:
-        raise ValueError("action terminal must be a bool")
     action_id = _bounded_string(action.action_id, "action action_id")
+    base_revision = _bounded_int(
+        action.base_revision,
+        "action base_revision",
+        0,
+        2**63 - 1,
+    )
+    if action.schema_version != ACTION_SCHEMA_VERSION:
+        raise ValueError("action schema_version must be 4")
     return {
-        "action": action_name,
-        "params": _validate_action_params(action.params),
-        "terminal": action.terminal,
+        "schema_version": ACTION_SCHEMA_VERSION,
+        "action_id": action_id,
+        "base_revision": base_revision,
         "actor": actor,
+        "kind": action_name,
         "source": serialize_entity_ref(action.source),
         "target": serialize_entity_ref(action.target),
-        "action_id": action_id,
+        "payload": _canonical_action_payload(action_name, action.payload),
     }
 
 
 def deserialize_game_action(data: dict) -> GameAction:
-    """Restore a validated :class:`GameAction` from a strict v3 envelope."""
-    data = _require_exact_object(data, _ACTION_FIELDS, "action")
-    action_name = _bounded_string(data["action"], "action name", maximum=64, allow_empty=False)
+    """Restore a validated :class:`GameAction` from a strict v4 envelope."""
+    data = _require_exact_object(data, _ACTION_V4_FIELDS, "action")
+    if data["schema_version"] != ACTION_SCHEMA_VERSION:
+        raise ValueError("action schema_version must be 4")
+    action_name = _bounded_string(data["kind"], "action kind", maximum=64, allow_empty=False)
     if action_name not in PUBLIC_GAME_ACTIONS:
         raise ValueError(f"unsupported public game action: {action_name!r}")
-    params = data["params"]
-    if not isinstance(params, dict):
-        raise ValueError("action params must be an object")
-    terminal = data["terminal"]
-    if type(terminal) is not bool:
-        raise ValueError("action terminal must be a bool")
+    payload = data["payload"]
+    if not isinstance(payload, dict):
+        raise ValueError("action payload must be an object")
     actor = _bounded_int(data["actor"], "action actor", 0, 1)
     action_id = _bounded_string(data["action_id"], "action action_id")
     action = PlayerAction.__members__.get(action_name, action_name)
     return GameAction(
-        action=action,
-        params=_validate_action_params(params),
-        terminal=terminal,
+        kind=action,
+        payload=_canonical_action_payload(action_name, payload),
         actor=actor,
         source=deserialize_entity_ref(data["source"]),
         target=deserialize_entity_ref(data["target"]),
         action_id=action_id,
+        base_revision=_bounded_int(
+            data["base_revision"], "action base_revision", 0, 2**63 - 1
+        ),
     )
 
 
-def serialize_choice_request(request: ChoiceRequest) -> dict:
-    """Return the public request shape without authoritative option values."""
-    return _serialize_choice_request(request, internal=False)
+def _canonical_action_payload(kind: str, payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("action payload must be an object")
+    expected: dict[str, type] = {
+        "DECLARE_ATTACK": {"attack_index": int},
+        "USE_ABILITY": {"ability_name": str},
+    }.get(kind, {})
+    if set(payload) != set(expected):
+        raise ValueError(f"action payload fields are invalid for {kind}")
+    result = _canonical_json(payload)
+    for field_name, field_type in expected.items():
+        value = result[field_name]
+        if field_type is int:
+            _bounded_int(value, f"action payload.{field_name}", 0, 31)
+        elif field_type is str:
+            _bounded_string(
+                value,
+                f"action payload.{field_name}",
+                allow_empty=False,
+            )
+    return result
 
 
-def serialize_choice_request_internal(request: ChoiceRequest) -> dict:
-    """Serialize a state-owned pending request, including continuation values."""
-    return _serialize_choice_request(request, internal=True)
-
-
-def serialize_choice_option_internal(option: ChoiceOption) -> dict:
-    """Encode one state-owned option for pending-choice persistence."""
-    return _serialize_choice_option(option, internal=True)
-
-
-def canonical_internal_json(value: Any):
-    """Expose the bounded internal JSON canonicalizer to snapshot code."""
-    return _canonical_json(value, allow_api_id=True)
-
-
-def _serialize_choice_request(request: ChoiceRequest, *, internal: bool) -> dict:
-    if not isinstance(request, ChoiceRequest):
-        raise ValueError("choice request must be a ChoiceRequest")
+def serialize_choice_view(request: ChoiceView) -> dict:
+    """Return the strict public ChoiceView v2 shape."""
+    if not isinstance(request, ChoiceView):
+        raise ValueError("choice view must be a ChoiceView")
+    if request.schema_version != 2:
+        raise ValueError("choice schema_version must be 2")
     request_id = _bounded_string(
         request.request_id,
         "choice request_id",
@@ -345,29 +327,36 @@ def _serialize_choice_request(request: ChoiceRequest, *, internal: bool) -> dict
     if type(request.allow_duplicates) is not bool or type(request.can_cancel) is not bool:
         raise ValueError("choice boolean fields are invalid")
     options = [
-        _serialize_choice_option(option, internal=internal)
+        _serialize_choice_option(option)
         for option in request.options
     ]
     option_ids = [option["option_id"] for option in options]
     if len(set(option_ids)) != len(option_ids):
         raise ValueError("choice option IDs must be unique")
-    if not isinstance(request.metadata, dict):
-        raise ValueError("choice metadata must be an object")
+    if not isinstance(request.presentation, dict):
+        raise ValueError("choice presentation must be an object")
     return {
+        "schema_version": 2,
         "request_id": request_id,
-        "request_type": request_type,
+        "base_revision": _bounded_int(
+            request.base_revision,
+            "choice base_revision",
+            0,
+            2**63 - 1,
+        ),
         "player": player,
+        "request_type": request_type,
         "prompt": prompt,
         "options": options,
         "min_select": min_select,
         "max_select": max_select,
         "allow_duplicates": request.allow_duplicates,
         "can_cancel": request.can_cancel,
-        "metadata": _canonical_json(request.metadata, allow_api_id=internal),
+        "presentation": _canonical_json(request.presentation),
     }
 
 
-def _serialize_choice_option(option: ChoiceOption, *, internal: bool) -> dict:
+def _serialize_choice_option(option: ChoiceOption) -> dict:
     if not isinstance(option, ChoiceOption):
         raise ValueError("choice option must be a ChoiceOption")
     result = {
@@ -383,14 +372,14 @@ def _serialize_choice_option(option: ChoiceOption, *, internal: bool) -> dict:
         ),
         "ref": serialize_entity_ref(option.ref),
     }
-    if internal:
-        result["value"] = _canonical_json(option.value, allow_api_id=True)
     return result
 
 
-def deserialize_choice_request(data: dict) -> ChoiceRequest:
-    """Restore a strictly validated public choice request."""
-    data = _require_exact_object(data, _CHOICE_REQUEST_FIELDS, "choice request")
+def deserialize_choice_view(data: dict) -> ChoiceView:
+    """Restore a strictly validated public ChoiceView v2."""
+    data = _require_exact_object(data, _CHOICE_VIEW_FIELDS, "choice view")
+    if data["schema_version"] != 2:
+        raise ValueError("choice schema_version must be 2")
     options_data = data["options"]
     if not isinstance(options_data, list) or len(options_data) > MAX_CHOICE_OPTIONS:
         raise ValueError("choice options are invalid")
@@ -406,11 +395,14 @@ def deserialize_choice_request(data: dict) -> ChoiceRequest:
             _bounded_string(option["label"], "choice label", maximum=MAX_TEXT_BYTES),
             deserialize_entity_ref(option["ref"]),
         ))
-    metadata = data["metadata"]
-    if not isinstance(metadata, dict):
-        raise ValueError("choice metadata must be an object")
-    request = ChoiceRequest(
+    presentation = data["presentation"]
+    if not isinstance(presentation, dict):
+        raise ValueError("choice presentation must be an object")
+    request = ChoiceView(
         request_id=_bounded_string(data["request_id"], "choice request_id", allow_empty=False),
+        base_revision=_bounded_int(
+            data["base_revision"], "choice base_revision", 0, 2**63 - 1
+        ),
         request_type=_bounded_string(
             data["request_type"], "choice request_type", maximum=64, allow_empty=False
         ),
@@ -421,10 +413,10 @@ def deserialize_choice_request(data: dict) -> ChoiceRequest:
         max_select=_bounded_int(data["max_select"], "choice max_select", 0, MAX_CHOICE_OPTIONS),
         allow_duplicates=data["allow_duplicates"],
         can_cancel=data["can_cancel"],
-        metadata=_canonical_json(metadata),
+        presentation=_canonical_json(presentation),
     )
     # Reuse serializer validation for cross-field and duplicate-ID checks.
-    serialize_choice_request(request)
+    serialize_choice_view(request)
     return request
 
 

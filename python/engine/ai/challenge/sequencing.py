@@ -12,12 +12,12 @@ class ExpertSequencingMixin:
         player = state.get_player(player_idx)
         bonus = 0.0
 
-        if action.action in {PlayerAction.DECLARE_ATTACK, PlayerAction.RETREAT, PlayerAction.END_TURN}:
+        if action.kind in {PlayerAction.DECLARE_ATTACK, PlayerAction.RETREAT, PlayerAction.END_TURN}:
             bonus += self._expert_terminal_action_value(state, player_idx, action)
 
-        if action.action == PlayerAction.ATTACH_ENERGY:
-            hand_idx = action.params.get("hand_idx")
-            target_slot = action.params.get("target_slot")
+        if action.kind == PlayerAction.ATTACH_ENERGY:
+            hand_idx = action.hand_index()
+            target_slot = action.target_slot()
             if isinstance(hand_idx, int) and isinstance(target_slot, str) and 0 <= hand_idx < len(player.hand):
                 target = player.get_pokemon(target_slot)
                 if target is not None:
@@ -38,8 +38,8 @@ class ExpertSequencingMixin:
                     if target_slot == "active" and cid in self.profile.core_cards and before == 0:
                         bonus += 155.0
 
-        elif action.action == PlayerAction.EVOLVE:
-            hand_idx = action.params.get("hand_idx")
+        elif action.kind == PlayerAction.EVOLVE:
+            hand_idx = action.hand_index()
             if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                 card = player.hand[hand_idx]
                 cid = getattr(card, "api_id", "")
@@ -47,16 +47,16 @@ class ExpertSequencingMixin:
                 if cid in self.profile.core_cards or cid in self.profile.evolution_cards:
                     bonus += 85.0
 
-        elif action.action == PlayerAction.USE_ABILITY:
-            slot = action.params.get("slot")
+        elif action.kind == PlayerAction.USE_ABILITY:
+            slot = action.primary_slot()
             pokemon = player.get_pokemon(slot) if isinstance(slot, str) else None
             if pokemon is not None:
                 bonus += 35.0
                 if self._best_missing_energy(pokemon) > 0:
                     bonus += 35.0
 
-        elif action.action == PlayerAction.PLAY_TRAINER:
-            hand_idx = action.params.get("hand_idx")
+        elif action.kind == PlayerAction.PLAY_TRAINER:
+            hand_idx = action.hand_index()
             if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                 card = player.hand[hand_idx]
                 effects = trainer_runtime_effects(card)
@@ -65,8 +65,8 @@ class ExpertSequencingMixin:
                 if self._effects_include_draw(effects) and len(player.hand) <= 4:
                     bonus += 55.0
 
-        elif action.action == PlayerAction.PLAY_BASIC:
-            hand_idx = action.params.get("hand_idx")
+        elif action.kind == PlayerAction.PLAY_BASIC:
+            hand_idx = action.hand_index()
             if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                 cid = getattr(player.hand[hand_idx], "api_id", "")
                 if cid in self.profile.preferred_bench or cid in self.profile.core_cards:
@@ -75,6 +75,6 @@ class ExpertSequencingMixin:
         return bonus
 
     def _expert_terminal_tie_breaker(self, state, player_idx: int, action) -> float:
-        if action.action == PlayerAction.END_TURN:
+        if action.kind == PlayerAction.END_TURN:
             return -1000.0
         return self._expert_action_order_bonus(state, player_idx, action)

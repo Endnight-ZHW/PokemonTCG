@@ -1,7 +1,7 @@
 # PokemonTCG
 
 宝可梦集换式卡牌对战项目。Godot 4.7 是唯一发布客户端；Python 是本地
-调试、规则验证、AI 训练评估以及卡牌/卡图导入工具链。
+卡牌作者工具、AI 训练评估以及数据/卡图导入工具链。
 
 ![Godot 4.7“午夜竞技场”开始界面](docs/images/godot-guide/title-midnight-arena.png)
 
@@ -10,7 +10,7 @@
 | 目录 | 定位 | 状态 |
 |---|---|---|
 | [`godot/`](godot/) | 当前发布客户端 | Godot 4.7，版本 0.7.0 |
-| [`python/`](python/) | Pygame 本地调试、规则对照、AI 训练与数据/卡图导出 | 开发工具，不发布、不提供客户端联机 |
+| [`python/`](python/) | 卡牌 DSL、原生规则绑定、AI 训练与数据/卡图导出 | 开发工具，不发布客户端 |
 | [`tools/`](tools/) | 测试、模型导出、Godot 构建和发布脚本 | 由根目录 manifest 驱动 |
 | [`docs/`](docs/) | 规则、开发手册、发布说明和 AI rollout | 项目文档 |
 
@@ -46,14 +46,14 @@ Android 系统返回按钮或手势继续有效。
 
 更多命令见 [`godot/README.md`](godot/README.md)。
 
-### Python 本地调试与训练工具链
+### Python 作者与训练工具链
 
 ```powershell
 python -m pip install -r .\python\requirements.txt
-python .\python\main.py
+python .\python\scripts\card_author.py status --json
 ```
 
-Pygame 只启动本地 `DebugMatchSession`，不包含 Lobby 或客户端网络状态。
+Python 不再提供 Pygame 客户端；场景调试和日志回放统一使用 Godot Workbench。
 GPU 训练使用精确锁定的 `python/environment.yml`；发布 ONNX 使用
 `python/environment-export.yml` 或 `tools/setup_ai_toolchain.ps1` 创建的 CPU 环境。
 更多说明见
@@ -87,6 +87,7 @@ Relay 仅验证并转发 Godot Protocol v6 消息，不承载 Python 客户端�
 
 - [发布说明](docs/RELEASE_NOTES.md)
 - [Godot 4.7 新手开发手册](docs/GODOT_DEVELOPMENT_GUIDE.md)
+- [Native ABI 2 单一规则核心迁移](docs/NATIVE_RULES_CORE_MIGRATION.md)
 - [Challenge 传统 AI 分层策略架构](docs/TRADITIONAL_AI_ARCHITECTURE.md)
 - [Deep AI 信息集 AlphaZero v2](docs/deep_ai_alphazero_v2.md)
 - [游戏规则](docs/RULES.md)

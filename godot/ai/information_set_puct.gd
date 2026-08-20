@@ -24,8 +24,8 @@ func _init() -> void:
 	if ClassDB.class_exists("NativeDeepSearch"):
 		_native = ClassDB.instantiate("NativeDeepSearch")
 		var catalog := CardCatalog.shared()
-		_native.call("vm_set_cards", catalog.cards)
-		_native.call("simulation_set_decks", catalog.decks)
+		_native.call("set_catalog", catalog.cards)
+		_native.call("set_decks", catalog.decks)
 
 
 func decide(

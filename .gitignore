@@ -73,9 +73,12 @@ godot/android/
 godot/build/
 godot/dist/
 godot/native/**/*.obj
+godot/native/**/*.o
 godot/native/**/*.os
 godot/native/**/*.obj.import
 godot/native/**/.sconsign.dblite
+godot/native/ptcg_core/lib/
+godot/native/ptcg_core/bin/
 godot/bin/**/*.exp
 godot/bin/**/*.lib
 godot/bin/**/*.TMP

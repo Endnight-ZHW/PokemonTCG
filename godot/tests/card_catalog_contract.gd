@@ -113,7 +113,10 @@ func _run_contract() -> void:
 	var session := AuthoritativeSession.new("catalog-contract", repository)
 	_check(controller.catalog == repository, "network controller must preserve catalog injection")
 	_check(session.catalog == repository, "authoritative session must preserve catalog injection")
-	_check(session.engine.catalog == repository, "authoritative engine must share session catalog")
+	_check(
+		session.native_rules.catalog == repository,
+		"authoritative native session must share the injected catalog",
+	)
 	_check(
 		_source_contains(
 			"res://scenes/battle/components/battle_table.gd",

@@ -40,7 +40,6 @@ var mulligan_bonus_max := 0
 var setup_bonus_card_ids: Array = [[], []]
 var pending_promotions: Array[int] = []
 var processed_action_ids: Array[String] = []
-var event_stream := GameEventStream.new()
 var turn_fact_book: Dictionary = {
 	"current_turn": {"knockouts": []},
 	"previous_turn": {"knockouts": []},
@@ -64,24 +63,14 @@ func get_opponent(index: int = active_player_idx) -> PlayerState:
 
 func log_action(message: String) -> void:
 	action_log.append(message)
-	if action_log.size() > 100:
+	if action_log.size() > 256:
 		action_log.pop_front()
-
-
-func is_first_turn() -> bool:
-	return turn_number == 1
 
 
 func is_player_first_turn(player_idx: int) -> bool:
 	if player_idx == first_player_idx:
 		return turn_number == 1
 	return turn_number == 2
-
-
-func type_matchups_enabled() -> bool:
-	# Keep the legacy field as the live value so existing callers that directly
-	# assign it continue to work. rules_options is the public wire contract.
-	return apply_type_matchups
 
 
 func set_type_matchups_enabled(enabled: bool) -> void:
@@ -93,48 +82,14 @@ func is_terminal() -> bool:
 	return result_status != RESULT_ONGOING or phase == "GAME_OVER"
 
 
-func clear_result() -> void:
-	winner = -1
-	result_status = RESULT_ONGOING
-	result_reason = ""
-	result_conditions = [[], []]
-
-
-func set_win(player_idx: int, reason: String, conditions: Array = [[], []]) -> void:
-	winner = player_idx
-	result_status = RESULT_WIN
-	result_reason = reason
-	result_conditions = conditions.duplicate(true)
-	phase = "GAME_OVER"
-
-
-func set_draw(reason: String, conditions: Array = [[], []]) -> void:
-	winner = -1
-	result_status = RESULT_DRAW
-	result_reason = reason
-	result_conditions = conditions.duplicate(true)
-	phase = "GAME_OVER"
-
-
-func record_knockout(fact: Dictionary) -> void:
-	var current: Dictionary = turn_fact_book.get("current_turn", {"knockouts": []})
-	var knockouts: Array = current.get("knockouts", [])
-	knockouts.append(fact.duplicate(true))
-	current["knockouts"] = knockouts
-	turn_fact_book["current_turn"] = current
-
-
-func advance_turn_facts() -> void:
-	turn_fact_book["previous_turn"] = Dictionary(turn_fact_book.get(
-		"current_turn", {"knockouts": []})).duplicate(true)
-	turn_fact_book["current_turn"] = {"knockouts": []}
-
-
 func had_knockout_last_turn(defeated_player_idx: int) -> bool:
 	var previous: Dictionary = turn_fact_book.get("previous_turn", {})
 	for fact_value in previous.get("knockouts", []):
 		var fact: Dictionary = fact_value
-		if int(fact.get("defeated_player", -1)) == defeated_player_idx:
+		if (
+			int(fact.get("defeated_player", -1)) == defeated_player_idx
+			and int(fact.get("source_player", -1)) >= 0
+		):
 			return true
 	return false
 
@@ -151,76 +106,6 @@ func had_attack_knockout_last_turn(defeated_player_idx: int) -> bool:
 		):
 			return true
 	return false
-
-
-func setup_game(
-	deck_one: Array[String],
-	deck_two: Array[String],
-	rng: PortableRandomSource,
-	forced_first: int = -1,
-) -> void:
-	players = [PlayerState.new("玩家1"), PlayerState.new("玩家2")]
-	players[0].deck = deck_one.duplicate()
-	players[1].deck = deck_two.duplicate()
-	rng.shuffle(players[0].deck)
-	rng.shuffle(players[1].deck)
-	first_player_idx = forced_first if forced_first in [0, 1] else (0 if rng.coin() else 1)
-	opening_coin_winner_idx = first_player_idx
-	active_player_idx = first_player_idx
-	turn_number = 0
-	phase = "SETUP"
-	clear_result()
-	revision = 0
-	choice_sequence = 0
-	setup_ready = [false, false]
-	setup_stage = SETUP_TURN_ORDER
-	setup_actor_idx = opening_coin_winner_idx
-	mulligan_bonus_max = 0
-	setup_bonus_card_ids = [[], []]
-	stadium_card_id = ""
-	stadium_owner_idx = -1
-	turn_fact_book = {
-		"current_turn": {"knockouts": []},
-		"previous_turn": {"knockouts": []},
-	}
-	pending_promotions.clear()
-	processed_action_ids.clear()
-	resolution_stack = {
-		"schema_version": 3,
-		"frames": [],
-		"pending_request": null,
-		"sequence": 0,
-		"context": {},
-	}
-	if forced_first in [0, 1]:
-		log_action("游戏开始！%s先攻。" % players[first_player_idx].name)
-	else:
-		log_action("游戏开始！%s赢得开局硬币。" % players[opening_coin_winner_idx].name)
-
-
-func set_prizes() -> void:
-	players[0].set_prizes(6)
-	players[1].set_prizes(6)
-	log_action("双方各放置6张奖赏卡。")
-
-
-func discard_pokemon(player_idx: int, slot: String) -> PokemonState:
-	var player := players[player_idx]
-	var pokemon := player.get_pokemon(slot)
-	if pokemon == null:
-		return null
-	player.discard.append(pokemon.card_id)
-	player.discard.append_array(pokemon.evolution_stack_ids)
-	if not pokemon.attached_tool_id.is_empty():
-		player.discard.append(pokemon.attached_tool_id)
-	player.discard.append_array(pokemon.energy_card_ids)
-	if slot == "active":
-		player.active = null
-	elif slot.begins_with("bench_"):
-		var index := slot.trim_prefix("bench_").to_int()
-		if index >= 0 and index < player.bench.size():
-			player.bench[index] = null
-	return pokemon
 
 
 func to_dict() -> Dictionary:
@@ -337,8 +222,45 @@ func clone_state() -> GameState:
 	result.processed_action_ids.assign(processed_action_ids)
 	result.resolution_stack = resolution_stack.duplicate(true)
 	result.turn_fact_book = turn_fact_book.duplicate(true)
-	result.event_stream = GameEventStream.new()
 	return result
+
+
+func adopt_state(source: GameState) -> bool:
+	## DTO-only in-place replacement used by the Native ABI compatibility
+	## facade. No rule calculation occurs here.
+	if source == null or source.players.size() != 2:
+		return false
+	players = [source.players[0].clone_state(), source.players[1].clone_state()]
+	active_player_idx = source.active_player_idx
+	phase = source.phase
+	turn_number = source.turn_number
+	first_player_idx = source.first_player_idx
+	stadium_card_id = source.stadium_card_id
+	stadium_owner_idx = source.stadium_owner_idx
+	winner = source.winner
+	result_status = source.result_status
+	result_reason = source.result_reason
+	result_conditions = source.result_conditions.duplicate(true)
+	revision = source.revision
+	choice_sequence = source.choice_sequence
+	public_deck_keys.assign(source.public_deck_keys)
+	apply_type_matchups = source.apply_type_matchups
+	rules_profile_id = source.rules_profile_id
+	rules_options = source.rules_options.duplicate(true)
+	action_log.assign(source.action_log)
+	mulligan_count.assign(source.mulligan_count)
+	extra_draws.assign(source.extra_draws)
+	setup_ready.assign(source.setup_ready)
+	setup_stage = source.setup_stage
+	setup_actor_idx = source.setup_actor_idx
+	opening_coin_winner_idx = source.opening_coin_winner_idx
+	mulligan_bonus_max = source.mulligan_bonus_max
+	setup_bonus_card_ids = source.setup_bonus_card_ids.duplicate(true)
+	pending_promotions.assign(source.pending_promotions)
+	processed_action_ids.assign(source.processed_action_ids)
+	resolution_stack = source.resolution_stack.duplicate(true)
+	turn_fact_book = source.turn_fact_book.duplicate(true)
+	return true
 
 
 static func from_dict(data: Dictionary) -> GameState:

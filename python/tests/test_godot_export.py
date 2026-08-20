@@ -10,19 +10,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.export_godot_data import (
     _export_images,
     _exported_image_errors,
-    _godot_mulligan_bonus_max,
-    _godot_pokemon_payload,
-    _godot_turn_fact_book_payload,
     _image_hashes,
     _parse_image_mapping,
-    _state_payload,
     _validate_image_mapping,
     export,
 )
 from engine.actions import ChoiceOption
 from engine.ai.dl.encoder import ActionStateEncoder, card_index
 from engine.ai.observation import Observation
-from engine.game_state import GameState
 from engine.commands.descriptors import descriptor_export_payload
 from engine.commands.vm_contract import VM_IR_VERSION
 
@@ -58,13 +53,12 @@ class GodotDataExportTests(unittest.TestCase):
             "engine.ai.dl.encoder.CardRegistry.get",
             side_effect=lookup,
         ):
-            private_value = encoder.encode_choice_option(
+            opaque_option = encoder.encode_choice_option(
                 observation,
                 "select_card",
                 ChoiceOption(
                     "opaque-option",
-                    "private value must stay private",
-                    value={"card_id": "sv2-cand"},
+                    "no private value channel",
                 ),
             )
             malformed_ref = encoder.encode_choice_option(
@@ -90,99 +84,9 @@ class GodotDataExportTests(unittest.TestCase):
                 ChoiceOption("card:hand:1:sv2-cand", "known public ID"),
             )
 
-        self.assertEqual(private_value.card_id, 0)
+        self.assertEqual(opaque_option.card_id, 0)
         self.assertEqual(malformed_ref.card_id, 0)
         self.assertEqual(option_id_fallback.card_id, card_index("sv2-cand"))
-
-    def test_state_adapter_covers_rules_v4_and_snapshot_v2_fields(self):
-        state = GameState()
-        state.stadium_owner_idx = 1
-        state.result_status = "DRAW"
-        state.result_reason = "EQUAL_RULE_CONDITIONS"
-        state.result_conditions = [["PRIZES"], ["PRIZES"]]
-        state.rules_options = {"apply_type_matchups": True}
-        state.apply_type_matchups = True
-        state.setup_stage = "BONUS_PLACEMENT"
-        state.setup_actor_idx = 1
-        state.opening_coin_winner_idx = 0
-        state.mulligan_bonus_max = (0, 2)
-        state.setup_initial_done = (True, True)
-        state.setup_bonus_card_ids = ([], ["private-basic"])
-        state.pending_promotions = [1, 0]
-        state.turn_fact_book = {
-            "version": 1,
-            "current": {
-                "turn_number": 4,
-                "turn_player": 0,
-                "knockouts": [{
-                    "turn_number": 4,
-                    "owner": 1,
-                    "cause": "attack_damage",
-                    "source_player": 0,
-                    "card_id": "knocked-out",
-                    "slot": "active",
-                }],
-            },
-            "previous": {
-                "turn_number": 3,
-                "turn_player": 1,
-                "knockouts": [],
-            },
-        }
-
-        payload = _state_payload(state)
-
-        self.assertEqual(payload["stadium_owner_idx"], 1)
-        self.assertEqual(payload["winner"], -1)
-        self.assertEqual(payload["result_status"], "DRAW")
-        self.assertEqual(payload["result_conditions"], [["PRIZES"], ["PRIZES"]])
-        self.assertEqual(payload["rules_profile_id"], "CN_MAINLAND_3_1_0")
-        self.assertTrue(payload["rules_options"]["apply_type_matchups"])
-        self.assertEqual(payload["setup_ready"], [True, True])
-        self.assertEqual(payload["setup_stage"], "BONUS_PLACEMENT")
-        self.assertEqual(payload["setup_actor_idx"], 1)
-        self.assertEqual(payload["opening_coin_winner_idx"], 0)
-        self.assertEqual(payload["mulligan_bonus_max"], 2)
-        self.assertEqual(payload["setup_bonus_card_ids"], [[], ["private-basic"]])
-        self.assertEqual(payload["pending_promotions"], [1, 0])
-        self.assertEqual(
-            payload["turn_fact_book"]["current_turn"]["knockouts"][0],
-            {
-                "defeated_player": 1,
-                "slot": "active",
-                "card_id": "knocked-out",
-                "source_player": 0,
-                "source_kind": "attack_damage",
-                "cause_kind": "damage",
-                "cause_detail": "",
-                "turn": 4,
-            },
-        )
-
-        pokemon = _godot_pokemon_payload({
-            "card_id": "healer",
-            "healed_this_turn": True,
-            "max_hp_modifiers": [{
-                "source": "boost",
-                "modifier_kind": "conditional_hp_boost",
-                "energy_type": "Water",
-                "threshold": 3,
-                "amount": 50,
-            }],
-        })
-        self.assertTrue(pokemon["healed_this_turn"])
-        self.assertEqual(
-            pokemon["modifiers"][0]["params"],
-            {"energy_type": "Water", "threshold": 3, "amount": 50},
-        )
-        self.assertEqual(_godot_mulligan_bonus_max({"mulligan_bonus_max": [3, 0]}), 3)
-        self.assertEqual(
-            _godot_turn_fact_book_payload({}),
-            {
-                "current_turn": {"knockouts": []},
-                "previous_turn": {"knockouts": []},
-            },
-        )
 
     def test_image_mapping_rejects_missing_duplicate_source_and_escape(self):
         with self.assertRaisesRegex(ValueError, "JSON object"):

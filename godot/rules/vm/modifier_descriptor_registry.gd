@@ -93,6 +93,7 @@ const CONDITION_TYPES := {
 	"energy_type": TYPE_STRING,
 	"threshold": TYPE_INT,
 	"behind_on_prizes": TYPE_BOOL,
+	"target_active": TYPE_BOOL,
 	"target_stage": TYPE_STRING,
 	"target_basic": TYPE_BOOL,
 	"expires_after_turn": TYPE_INT,

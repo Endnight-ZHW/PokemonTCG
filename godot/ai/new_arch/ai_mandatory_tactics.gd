@@ -481,7 +481,7 @@ static func seek_only_backup_out_action(
 		return null
 	var semantic_catalog := CardSemanticCatalog.new(engine.catalog)
 	var lethal_probability := _public_imminent_lethal_attack_probability(
-		information_set, state, actor, engine.catalog, semantic_catalog)
+		information_set, state, actor, engine, semantic_catalog)
 	if lethal_probability < IMMINENT_LETHAL_MIN_PROBABILITY:
 		return null
 	if _has_deterministic_defense_action(
@@ -555,9 +555,10 @@ static func _public_imminent_lethal_attack_probability(
 	information_set: AIInformationSet,
 	state: GameState,
 	actor: int,
-	catalog: CardCatalog,
+	engine: GameEngine,
 	semantic_catalog: CardSemanticCatalog,
 ) -> float:
+	var catalog := engine.catalog
 	var defender := state.get_player(actor).active
 	var attacker := state.get_player(1 - actor).active
 	if defender == null or attacker == null or defender.prevents_damage():
@@ -592,7 +593,7 @@ static func _public_imminent_lethal_attack_probability(
 		if (
 			attacker.has_enough_energy(attack.get("cost", []), catalog)
 			and _damage_after_public_modifiers(
-				state, actor, attacker, defender, damage, catalog)
+				state, actor, attacker, defender, damage, engine)
 			>= defender.current_hp(catalog)
 		):
 			return 1.0
@@ -640,7 +641,7 @@ static func _public_imminent_lethal_attack_probability(
 					future_attacker,
 					defender,
 					int(attack_row["base_damage"]),
-					catalog,
+					engine,
 				)
 				>= defender.current_hp(catalog)
 			):
@@ -659,25 +660,15 @@ static func _damage_after_public_modifiers(
 	attacker: PokemonState,
 	defender: PokemonState,
 	base_damage: int,
-	catalog: CardCatalog,
+	engine: GameEngine,
 ) -> int:
-	var context := {
-		"actor": 1 - defending_actor,
-		"attacker_slot": "active",
-		"attacker": attacker,
-		"defender": defender,
-		"target_player": defending_actor,
-		"target_slot": "active",
-		"damage": base_damage,
-		"ignore_weakness": true,
-		"ignore_resistance": true,
-		"modifier_phase": "attacker",
-	}
-	var damage := VMDamageModifierHooks.apply_modify_damage(
-		state, catalog, context)
-	context["damage"] = damage
-	context["modifier_phase"] = "defender"
-	return VMDamageModifierHooks.apply_modify_damage(state, catalog, context)
+	return engine.estimate_public_damage(
+		state,
+		1 - defending_actor,
+		attacker,
+		defender,
+		base_damage,
+	)
 
 
 static func _attack_commands_can_invalidate_base_damage(commands: Array) -> bool:
@@ -745,7 +736,6 @@ static func _has_deterministic_defense_action(
 static func _semantic_commands_have_defensive_effect(commands: Array) -> bool:
 	const DEFENSIVE_KINDS := [
 		"attack_lock_basic",
-		"conditional_damage_heal",
 		"conditional_status",
 		"damage_and_self_heal",
 		"heal",

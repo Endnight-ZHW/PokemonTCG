@@ -1,0 +1,6280 @@
+{
+  "authored_card_count": 137,
+  "card_count": 137,
+  "cards": {
+    "sv1-104": {
+      "abilities": {},
+      "attacks": {
+        "啃咬": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "幽魂射击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 11,
+        "line": 3,
+        "path": "python/card_data/effects/psychic.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-106": {
+      "abilities": {},
+      "attacks": {
+        "扫墓": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 80
+                    },
+                    {
+                      "factors": [
+                        {
+                          "filter": {
+                            "card_type": "pokemon",
+                            "energy_type": "Psychic"
+                          },
+                          "op": "discard_count",
+                          "player": "self"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_per_discard_psychic",
+              "op": "deal_damage",
+              "path": "/cards/sv1-106/attacks/扫墓/effects/0/0",
+              "source": {
+                "column": 48,
+                "line": 4,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 4,
+        "path": "python/card_data/effects/psychic.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-107": {
+      "abilities": {},
+      "attacks": {
+        "三连突刺": {
+          "commands": [
+            {
+              "args": {
+                "damage_per_head": 10,
+                "flips": 3
+              },
+              "branches": {},
+              "op": "flip_coin_repeat_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "coin_flip_triple",
+              "op": "flip_coin_repeat_damage",
+              "path": "/cards/sv1-107/attacks/三连突刺/effects/0/0",
+              "source": {
+                "column": 54,
+                "line": 6,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 6,
+        "path": "python/card_data/effects/psychic.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-108": {
+      "abilities": {
+        "以太感知": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "basic_psychic",
+                "from_zone": "hand",
+                "to": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            },
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_attach",
+              "op": "attach_energy",
+              "path": "/cards/sv1-108/abilities/以太感知/effects/0/0",
+              "source": {
+                "column": 48,
+                "line": 9,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            },
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/sv1-108/abilities/以太感知/effects/1/0",
+              "source": {
+                "column": 48,
+                "line": 14,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "attacks": {
+        "超念力": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 8,
+        "path": "python/card_data/effects/psychic.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-109": {
+      "abilities": {},
+      "attacks": {
+        "循环抽取": {
+          "commands": [
+            {
+              "args": {
+                "discard_amount": 1,
+                "draw_amount": 3
+              },
+              "branches": {},
+              "op": "discard_then_draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "discard_then_draw",
+              "op": "discard_then_draw_cards",
+              "path": "/cards/sv1-109/attacks/循环抽取/effects/0/0",
+              "source": {
+                "column": 54,
+                "line": 17,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "月亮强念": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 30
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "psychic",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 30
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_per_self_energy",
+              "op": "deal_damage",
+              "path": "/cards/sv1-109/attacks/月亮强念/effects/0/0",
+              "source": {
+                "column": 54,
+                "line": 19,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 17,
+        "path": "python/card_data/effects/psychic.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-110": {
+      "abilities": {
+        "薄雾飘浮": {
+          "commands": [
+            {
+              "args": {
+                "energy_type": "psychic"
+              },
+              "branches": {},
+              "op": "register_conditional_zero_retreat"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "conditional_zero_retreat",
+              "op": "register_conditional_zero_retreat",
+              "path": "/cards/sv1-110/abilities/薄雾飘浮/effects/0/0",
+              "source": {
+                "column": 48,
+                "line": 25,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "如果这只宝可梦身上附着了超能量的话，则这只宝可梦撤退所需能量全部消除。",
+          "trigger": "passive"
+        }
+      },
+      "attacks": {
+        "念动弹": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 23,
+        "path": "python/card_data/effects/psychic.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-111": {
+      "abilities": {},
+      "attacks": {
+        "洁净光芒": {
+          "commands": [
+            {
+              "args": {
+                "amount": 3,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_discard",
+              "op": "discard_energy",
+              "path": "/cards/sv1-111/attacks/洁净光芒/effects/0/0",
+              "source": {
+                "column": 54,
+                "line": 29,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "滑翔": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 28,
+        "path": "python/card_data/effects/psychic.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-112": {
+      "abilities": {},
+      "attacks": {
+        "基因螺旋": {
+          "commands": [
+            {
+              "args": {
+                "amount": 99,
+                "from_self": true
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_relocate",
+              "op": "relocate_energy",
+              "path": "/cards/sv1-112/attacks/基因螺旋/effects/0/0",
+              "source": {
+                "column": 54,
+                "line": 32,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "精神拳": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 31,
+        "path": "python/card_data/effects/psychic.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-113": {
+      "abilities": {},
+      "attacks": {
+        "光子镭射": {
+          "commands": [
+            {
+              "args": {
+                "bonus": 90,
+                "condition": "field_energy_ge_5"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "op": "conditional_damage",
+              "path": "/cards/sv1-113/attacks/光子镭射/effects/0/0",
+              "source": {
+                "column": 54,
+                "line": 40,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "新月生长": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "psychic",
+                "from_zone": "deck",
+                "going_second_bonus": 3,
+                "to": "any"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_attach",
+              "op": "attach_energy",
+              "path": "/cards/sv1-113/attacks/新月生长/effects/0/0",
+              "source": {
+                "column": 54,
+                "line": 34,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 34,
+        "path": "python/card_data/effects/psychic.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-114": {
+      "abilities": {},
+      "attacks": {
+        "小使者": {
+          "commands": [
+            {
+              "args": {
+                "count": 2,
+                "destination": "hand",
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "search",
+              "op": "search_cards",
+              "path": "/cards/sv1-114/attacks/小使者/effects/0/0",
+              "source": {
+                "column": 51,
+                "line": 42,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "旋转折返": {
+          "commands": [
+            {
+              "args": {
+                "optional": true,
+                "target": "self"
+              },
+              "branches": {},
+              "op": "switch_pokemon"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "switch_self",
+              "op": "switch_pokemon",
+              "path": "/cards/sv1-114/attacks/旋转折返/effects/0/0",
+              "source": {
+                "column": 54,
+                "line": 49,
+                "path": "python/card_data/effects/psychic.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 42,
+        "path": "python/card_data/effects/psychic.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-150": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 18,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "switch_self",
+          "op": "switch_pokemon",
+          "path": "/cards/sv1-150/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 18,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "target": "self"
+          },
+          "branches": {},
+          "op": "switch_pokemon"
+        }
+      ]
+    },
+    "sv1-151": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 19,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "search",
+          "op": "search_cards",
+          "path": "/cards/sv1-151/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 19,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 1,
+            "destination": "bench",
+            "filter": "basic_pokemon",
+            "from_zone": "deck",
+            "reveal": true
+          },
+          "branches": {},
+          "op": "search_cards"
+        }
+      ]
+    },
+    "sv1-152": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 25,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "evolve_skip_stage",
+          "op": "evolve_skip_stage",
+          "path": "/cards/sv1-152/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 25,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "skip_to": "stage2"
+          },
+          "branches": {},
+          "op": "evolve_skip_stage"
+        }
+      ]
+    },
+    "sv1-153": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 26,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "conditional",
+          "op": "conditional",
+          "path": "/cards/sv1-153/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 26,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        },
+        {
+          "effect_type": "discard",
+          "op": "discard_cards",
+          "path": "/cards/sv1-153/trainer/effects/0/1",
+          "source": {
+            "column": 51,
+            "line": 27,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        },
+        {
+          "effect_type": "search",
+          "op": "search_cards",
+          "path": "/cards/sv1-153/trainer/effects/0/2",
+          "source": {
+            "column": 53,
+            "line": 29,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {
+            "cost": [
+              {
+                "args": {
+                  "amount": 2,
+                  "from": "hand"
+                },
+                "branches": {},
+                "op": "discard_cards"
+              }
+            ],
+            "on_pay": [
+              {
+                "args": {
+                  "count": 1,
+                  "destination": "hand",
+                  "filter": "pokemon",
+                  "from_zone": "deck",
+                  "reveal": true
+                },
+                "branches": {},
+                "op": "search_cards"
+              }
+            ]
+          },
+          "op": "conditional"
+        }
+      ]
+    },
+    "sv1-170": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 37,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "look_top_deck",
+          "op": "look_top_deck",
+          "path": "/cards/sv1-170/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 37,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 5,
+            "destination": "bench_energy",
+            "filter": "lightning_energy",
+            "min_select": 0,
+            "shuffle_rest": true,
+            "take": 2,
+            "target_pokemon_type": "Lightning"
+          },
+          "branches": {},
+          "op": "look_top_deck"
+        }
+      ]
+    },
+    "sv1-171": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 45,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "search",
+          "op": "search_cards",
+          "path": "/cards/sv1-171/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 45,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 2,
+            "destination": "hand",
+            "filter": "basic_energy",
+            "from_zone": "discard",
+            "min_select": 0,
+            "reveal": true
+          },
+          "branches": {},
+          "op": "search_cards"
+        }
+      ]
+    },
+    "sv1-176": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 16,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "judge",
+          "op": "judge",
+          "path": "/cards/sv1-176/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 16,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "draw": 4
+          },
+          "branches": {},
+          "op": "judge"
+        }
+      ]
+    },
+    "sv1-180": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 17,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "draw",
+          "op": "draw_cards",
+          "path": "/cards/sv1-180/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 17,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 3,
+            "player": "self"
+          },
+          "branches": {},
+          "op": "draw_cards"
+        }
+      ]
+    },
+    "sv1-189": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 15,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "discard_draw",
+          "op": "discard_then_draw_cards",
+          "path": "/cards/sv1-189/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 15,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "discard_hand": true,
+            "draw": 7
+          },
+          "branches": {},
+          "op": "discard_then_draw_cards"
+        }
+      ]
+    },
+    "sv1-201": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 80,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "tool",
+          "op": "register_tool_modifier",
+          "path": "/cards/sv1-201/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 80,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "effect": "damage_boost_when_behind"
+          },
+          "branches": {},
+          "op": "register_tool_modifier"
+        }
+      ]
+    },
+    "sv1-202": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 81,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "tool",
+          "op": "register_tool_modifier",
+          "path": "/cards/sv1-202/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 81,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "effect": "hp_boost_basic"
+          },
+          "branches": {},
+          "op": "register_tool_modifier"
+        }
+      ]
+    },
+    "sv1-203": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 82,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "clara",
+          "op": "recover_clara",
+          "path": "/cards/sv1-203/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 82,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "energy_count": 2,
+            "pokemon_count": 2
+          },
+          "branches": {},
+          "op": "recover_clara"
+        }
+      ]
+    },
+    "sv1-204": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 83,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "arven",
+          "op": "search_item_and_tool",
+          "path": "/cards/sv1-204/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 83,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "search_item_and_tool"
+        }
+      ]
+    },
+    "sv1-49": {
+      "abilities": {},
+      "attacks": {
+        "愤怒冷冻": {
+          "commands": [
+            {
+              "args": {
+                "condition": "ko_by_attack_damage_last_turn",
+                "status": "paralyzed",
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "conditional_status"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "conditional_status",
+              "op": "conditional_status",
+              "path": "/cards/sv1-49/attacks/愤怒冷冻/effects/0/0",
+              "source": {
+                "column": 63,
+                "line": 3,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 11,
+        "line": 3,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-1": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 4,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-2": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 5,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-3": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 6,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-4": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 7,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-5": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 8,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-6": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 9,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-7": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 10,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-8": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 11,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-38": {
+      "abilities": {},
+      "attacks": {
+        "跳一下": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_tails": [
+                  {
+                    "args": {},
+                    "branches": {},
+                    "op": "fail_attack"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "coin_flip",
+              "op": "flip_coin",
+              "path": "/cards/sv2-38/attacks/跳一下/effects/0/0",
+              "source": {
+                "column": 50,
+                "line": 42,
+                "path": "python/card_data/effects/water.py"
+              }
+            },
+            {
+              "effect_type": "attack_fail",
+              "op": "fail_attack",
+              "path": "/cards/sv2-38/attacks/跳一下/effects/0/1",
+              "source": {
+                "column": 69,
+                "line": 44,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 42,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-39": {
+      "abilities": {},
+      "attacks": {
+        "折返瞬击": {
+          "commands": [
+            {
+              "args": {
+                "optional": true,
+                "target": "self"
+              },
+              "branches": {},
+              "op": "switch_pokemon"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "switch_self",
+              "op": "switch_pokemon",
+              "path": "/cards/sv2-39/attacks/折返瞬击/effects/0/0",
+              "source": {
+                "column": 53,
+                "line": 46,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 46,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-cand": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 5,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "look_top_deck",
+          "op": "look_top_deck",
+          "path": "/cards/sv2-cand/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 5,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 7,
+            "filter": "water_pokemon_and_energy",
+            "min_select": 0,
+            "shuffle_rest": true,
+            "take": 99
+          },
+          "branches": {},
+          "op": "look_top_deck"
+        }
+      ]
+    },
+    "sv2-catch": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 11,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "coin_flip",
+          "op": "flip_coin",
+          "path": "/cards/sv2-catch/trainer/effects/0/0",
+          "source": {
+            "column": 33,
+            "line": 11,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        },
+        {
+          "effect_type": "switch_opponent",
+          "op": "switch_pokemon",
+          "path": "/cards/sv2-catch/trainer/effects/0/1",
+          "source": {
+            "column": 58,
+            "line": 12,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {
+            "on_heads": [
+              {
+                "args": {
+                  "target": "opponent",
+                  "you_choose": true
+                },
+                "branches": {},
+                "op": "switch_pokemon"
+              }
+            ]
+          },
+          "op": "flip_coin"
+        }
+      ]
+    },
+    "sv2-delib": {
+      "abilities": {},
+      "attacks": {
+        "冰之翼": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "双重抽取": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/sv2-delib/attacks/双重抽取/effects/0/0",
+              "source": {
+                "column": 56,
+                "line": 31,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 31,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-glast": {
+      "abilities": {},
+      "attacks": {
+        "冻结": {
+          "commands": [
+            {
+              "args": {
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "apply_attack_lock_basic"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attack_lock_basic",
+              "op": "apply_attack_lock_basic",
+              "path": "/cards/sv2-glast/attacks/冻结/effects/0/0",
+              "source": {
+                "column": 50,
+                "line": 19,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "疯狂冲撞": {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_counter_self",
+              "op": "place_damage_counters",
+              "path": "/cards/sv2-glast/attacks/疯狂冲撞/effects/0/0",
+              "source": {
+                "column": 56,
+                "line": 21,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 19,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-grex": {
+      "abilities": {},
+      "attacks": {
+        "激流斩": {
+          "commands": [
+            {
+              "args": {
+                "bonus": 120,
+                "condition": "opponent_active_damaged"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "op": "conditional_damage",
+              "path": "/cards/sv2-grex/attacks/激流斩/effects/0/0",
+              "source": {
+                "column": 52,
+                "line": 11,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "隐蔽手里剑": {
+          "commands": [
+            {
+              "args": {
+                "amount": 40,
+                "bench_skips_type_matchups": true,
+                "player": "opponent"
+              },
+              "branches": {},
+              "op": "choose_damage_target"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "any_pokemon_damage",
+              "op": "choose_damage_target",
+              "path": "/cards/sv2-grex/attacks/隐蔽手里剑/effects/0/0",
+              "source": {
+                "column": 58,
+                "line": 7,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 7,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-keldeo": {
+      "abilities": {},
+      "attacks": {
+        "踢飞": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "队列之力": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 10
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "bench_count",
+                          "player": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_plus_bench",
+              "op": "deal_damage",
+              "path": "/cards/sv2-keldeo/attacks/队列之力/effects/0/0",
+              "source": {
+                "column": 57,
+                "line": 15,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 14,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-starm": {
+      "abilities": {
+        "神秘彗星": {
+          "commands": [
+            {
+              "args": {
+                "counters": 2,
+                "target": "opponent_any"
+              },
+              "branches": {},
+              "op": "place_counters_then_self_discard"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "place_counters_and_self_discard",
+              "op": "place_counters_then_self_discard",
+              "path": "/cards/sv2-starm/abilities/神秘彗星/effects/0/0",
+              "source": {
+                "column": 50,
+                "line": 39,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "attacks": {
+        "高速攻击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 38,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-staryu": {
+      "abilities": {},
+      "attacks": {
+        "高速星星": {
+          "commands": [
+            {
+              "args": {
+                "ignore_defender_damage_effects": true,
+                "ignore_resistance": true,
+                "ignore_weakness": true
+              },
+              "branches": {},
+              "op": "set_attack_flags"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attack_flags",
+              "op": "set_attack_flags",
+              "path": "/cards/sv2-staryu/attacks/高速星星/effects/0/0",
+              "source": {
+                "column": 57,
+                "line": 34,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 34,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-tatsu": {
+      "abilities": {},
+      "attacks": {
+        "上弓折返": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {},
+              "op": "return_to_hand"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "return_to_hand",
+              "op": "return_to_hand",
+              "path": "/cards/sv2-tatsu/attacks/上弓折返/effects/0/0",
+              "source": {
+                "column": 56,
+                "line": 30,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "预先准备": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "filter": "basic_water",
+                "from_zone": "deck",
+                "min_select": 0,
+                "to": "self_basic"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_attach",
+              "op": "attach_energy",
+              "path": "/cards/sv2-tatsu/attacks/预先准备/effects/0/0",
+              "source": {
+                "column": 56,
+                "line": 24,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 24,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-young": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 11,
+        "line": 3,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "shuffle_draw",
+          "op": "shuffle_then_draw_cards",
+          "path": "/cards/sv2-young/trainer/effects/0/0",
+          "source": {
+            "column": 43,
+            "line": 3,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "affect": "self_only",
+            "draw": 5,
+            "shuffle_hand": true
+          },
+          "branches": {},
+          "op": "shuffle_then_draw_cards"
+        }
+      ]
+    },
+    "sv3-134": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 35,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "shuffle_from_discard",
+          "op": "shuffle_from_discard_to_deck",
+          "path": "/cards/sv3-134/trainer/effects/0/0",
+          "source": {
+            "column": 31,
+            "line": 35,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 3,
+            "filter": "pokemon_and_energy"
+          },
+          "branches": {},
+          "op": "shuffle_from_discard_to_deck"
+        }
+      ]
+    },
+    "svd-absol": {
+      "abilities": {},
+      "attacks": {
+        "深挖伤口": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "const": 50
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attack_damage_formula",
+              "op": "set_attack_damage_formula",
+              "path": "/cards/svd-absol/attacks/深挖伤口/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 107,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "漩涡灾祸": {
+          "commands": [
+            {
+              "args": {
+                "amount": 10,
+                "choose_targets": false,
+                "count": 5,
+                "player": "opponent"
+              },
+              "branches": {},
+              "op": "deal_bench_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "bench_damage",
+              "op": "deal_bench_damage",
+              "path": "/cards/svd-absol/attacks/漩涡灾祸/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 94,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 90,
+        "path": "python/card_data/effects/darkness.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-dark-patch": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 175,
+        "path": "python/card_data/effects/darkness.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "attach_from_discard",
+          "op": "attach_energy_from_discard",
+          "path": "/cards/svd-dark-patch/trainer/effects/0/0",
+          "source": {
+            "column": 26,
+            "line": 176,
+            "path": "python/card_data/effects/darkness.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 1,
+            "energy_type": "basic_darkness",
+            "target": "bench",
+            "target_pokemon_type": "Darkness"
+          },
+          "branches": {},
+          "op": "attach_energy_from_discard"
+        }
+      ]
+    },
+    "svd-darkrai": {
+      "abilities": {},
+      "attacks": {
+        "恶梦": {
+          "commands": [
+            {
+              "args": {
+                "status": "asleep",
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "apply_status"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "status",
+              "op": "apply_status",
+              "path": "/cards/svd-darkrai/attacks/恶梦/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 126,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "漆黑之刃": {
+          "commands": [
+            {
+              "args": {
+                "attack_name": "漆黑之刃",
+                "scope": "all"
+              },
+              "branches": {},
+              "op": "apply_self_attack_lock"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "self_attack_lock",
+              "op": "apply_self_attack_lock",
+              "path": "/cards/svd-darkrai/attacks/漆黑之刃/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 134,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 122,
+        "path": "python/card_data/effects/darkness.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-dodrio": {
+      "abilities": {
+        "暴走抽取": {
+          "commands": [
+            {
+              "args": {
+                "amount": 10
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            },
+            {
+              "args": {
+                "amount": 1,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_counter_self",
+              "op": "place_damage_counters",
+              "path": "/cards/svd-dodrio/abilities/暴走抽取/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 42,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            },
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/svd-dodrio/abilities/暴走抽取/effects/1/0",
+              "source": {
+                "column": 20,
+                "line": 43,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": "on_turn"
+        }
+      },
+      "attacks": {
+        "愤怒之喙": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 10
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "damage_counters",
+                          "target": "self"
+                        },
+                        {
+                          "const": 30
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attack_damage_formula",
+              "op": "set_attack_damage_formula",
+              "path": "/cards/svd-dodrio/attacks/愤怒之喙/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 50,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 37,
+        "path": "python/card_data/effects/darkness.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-doduo": {
+      "abilities": {},
+      "attacks": {
+        "突击": {
+          "commands": [
+            {
+              "args": {
+                "amount": 10,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_counter_self",
+              "op": "place_damage_counters",
+              "path": "/cards/svd-doduo/attacks/突击/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 62,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 58,
+        "path": "python/card_data/effects/darkness.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-hard-belt": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 186,
+        "path": "python/card_data/effects/darkness.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "tool",
+          "op": "register_tool_modifier",
+          "path": "/cards/svd-hard-belt/trainer/effects/0/0",
+          "source": {
+            "column": 26,
+            "line": 187,
+            "path": "python/card_data/effects/darkness.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 30,
+            "effect": "damage_reduction_stage1"
+          },
+          "branches": {},
+          "op": "register_tool_modifier"
+        }
+      ]
+    },
+    "svd-mabosstiff-ex": {
+      "abilities": {},
+      "attacks": {
+        "恫吓": {
+          "commands": [
+            {
+              "args": {
+                "amount": 50,
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "apply_outgoing_damage_reduction"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "apply_outgoing_damage_reduction",
+              "op": "apply_outgoing_damage_reduction",
+              "path": "/cards/svd-mabosstiff-ex/attacks/恫吓/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 8,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "自尊獠牙": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "const": 100
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attack_damage_formula",
+              "op": "set_attack_damage_formula",
+              "path": "/cards/svd-mabosstiff-ex/attacks/自尊獠牙/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 16,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 4,
+        "path": "python/card_data/effects/darkness.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-maschiff": {
+      "abilities": {},
+      "attacks": {
+        "踢飞": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "锐利之牙": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 31,
+        "path": "python/card_data/effects/darkness.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-morpeko": {
+      "abilities": {},
+      "attacks": {
+        "捡食": {
+          "commands": [
+            {
+              "args": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "item",
+                "from_zone": "discard",
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "search",
+              "op": "search_cards",
+              "path": "/cards/svd-morpeko/attacks/捡食/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 146,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "空腹撞击": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "const": 20
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attack_damage_formula",
+              "op": "set_attack_damage_formula",
+              "path": "/cards/svd-morpeko/attacks/空腹撞击/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 160,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 142,
+        "path": "python/card_data/effects/darkness.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-seviper": {
+      "abilities": {},
+      "attacks": {
+        "挥落": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "const": 50
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attack_damage_formula",
+              "op": "set_attack_damage_formula",
+              "path": "/cards/svd-seviper/attacks/挥落/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 75,
+                "path": "python/card_data/effects/darkness.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "锐利之牙": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 70,
+        "path": "python/card_data/effects/darkness.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-ensw2": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 99,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "energy_relocate",
+          "op": "relocate_energy",
+          "path": "/cards/svf-ensw2/trainer/effects/0/0",
+          "source": {
+            "column": 33,
+            "line": 99,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 1,
+            "energy_type": "basic_energy"
+          },
+          "branches": {},
+          "op": "relocate_energy"
+        }
+      ]
+    },
+    "svf-farf": {
+      "abilities": {},
+      "attacks": {
+        "甩葱殴打": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "背来": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/svf-farf/attacks/背来/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 53,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 53,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-hawl": {
+      "abilities": {},
+      "attacks": {
+        "展示姿态": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "energy_type": "basic",
+                "min_select": 0,
+                "same_target": true,
+                "select_source": true,
+                "target": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy_from_discard"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attach_from_discard",
+              "op": "attach_energy_from_discard",
+              "path": "/cards/svf-hawl/attacks/展示姿态/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 56,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "挥落": {
+          "commands": [
+            {
+              "args": {
+                "bonus": 30,
+                "condition": "opponent_active_evolved"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "op": "conditional_damage",
+              "path": "/cards/svf-hawl/attacks/挥落/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 63,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 56,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-houb": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 101,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "houb",
+          "op": "hand_to_bottom_draw_until",
+          "path": "/cards/svf-houb/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 101,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "target_hand_size": 5
+          },
+          "branches": {},
+          "op": "hand_to_bottom_draw_until"
+        }
+      ]
+    },
+    "svf-klea": {
+      "abilities": {},
+      "attacks": {
+        "大树切割": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {},
+              "op": "flip_coin_then_ko"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "coin_flip_double_ko",
+              "op": "flip_coin_then_ko",
+              "path": "/cards/svf-klea/attacks/大树切割/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 17,
+                "path": "python/card_data/effects/fighting.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "暴走冲撞": {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_counter_self",
+              "op": "place_damage_counters",
+              "path": "/cards/svf-klea/attacks/暴走冲撞/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 18,
+                "path": "python/card_data/effects/fighting.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 17,
+        "path": "python/card_data/effects/fighting.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-luca": {
+      "abilities": {
+        "旺盛斗气": {
+          "commands": [
+            {
+              "args": {
+                "amount": 20
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            },
+            {
+              "args": {
+                "amount": 1,
+                "filter": "fighting",
+                "from_zone": "deck",
+                "to": "self"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_counter_self",
+              "op": "place_damage_counters",
+              "path": "/cards/svf-luca/abilities/旺盛斗气/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 8,
+                "path": "python/card_data/effects/fighting.py"
+              }
+            },
+            {
+              "effect_type": "energy_attach",
+              "op": "attach_energy",
+              "path": "/cards/svf-luca/abilities/旺盛斗气/effects/1/0",
+              "source": {
+                "column": 49,
+                "line": 10,
+                "path": "python/card_data/effects/fighting.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "attacks": {
+        "连续波导弹": {
+          "commands": [
+            {
+              "args": {
+                "base": 10,
+                "per_energy": 60
+              },
+              "branches": {},
+              "op": "discard_energy_then_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "discard_fighting_energy_damage",
+              "op": "discard_energy_then_damage",
+              "path": "/cards/svf-luca/attacks/连续波导弹/effects/0/0",
+              "source": {
+                "column": 58,
+                "line": 15,
+                "path": "python/card_data/effects/fighting.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 7,
+        "path": "python/card_data/effects/fighting.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-pass": {
+      "abilities": {},
+      "attacks": {
+        "辅助传递": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "from_self": true
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_relocate",
+              "op": "relocate_energy",
+              "path": "/cards/svf-pass/attacks/辅助传递/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 21,
+                "path": "python/card_data/effects/fighting.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 21,
+        "path": "python/card_data/effects/fighting.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-potion": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 98,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "potion_heal",
+          "op": "choose_heal_damage",
+          "path": "/cards/svf-potion/trainer/effects/0/0",
+          "source": {
+            "column": 34,
+            "line": 98,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 30
+          },
+          "branches": {},
+          "op": "choose_heal_damage"
+        }
+      ]
+    },
+    "svf-rio": {
+      "abilities": {},
+      "attacks": {
+        "突击": {
+          "commands": [
+            {
+              "args": {
+                "amount": 20,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_counter_self",
+              "op": "place_damage_counters",
+              "path": "/cards/svf-rio/attacks/突击/effects/0/0",
+              "source": {
+                "column": 48,
+                "line": 4,
+                "path": "python/card_data/effects/fighting.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "重拳": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 11,
+        "line": 3,
+        "path": "python/card_data/effects/fighting.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-scyt": {
+      "abilities": {},
+      "attacks": {
+        "高速镰刀": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 11,
+        "line": 3,
+        "path": "python/card_data/effects/grass.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-terr": {
+      "abilities": {},
+      "attacks": {
+        "岩窟冲撞": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {},
+              "op": "prevent_damage"
+            },
+            {
+              "args": {
+                "attack_name": "岩窟冲撞",
+                "scope": "player"
+              },
+              "branches": {},
+              "op": "apply_self_attack_lock"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "prevent_damage",
+              "op": "prevent_damage",
+              "path": "/cards/svf-terr/attacks/岩窟冲撞/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 23,
+                "path": "python/card_data/effects/fighting.py"
+              }
+            },
+            {
+              "effect_type": "self_attack_lock",
+              "op": "apply_self_attack_lock",
+              "path": "/cards/svf-terr/attacks/岩窟冲撞/effects/1/0",
+              "source": {
+                "column": 47,
+                "line": 24,
+                "path": "python/card_data/effects/fighting.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 23,
+        "path": "python/card_data/effects/fighting.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-alt": {
+      "abilities": {
+        "哼唱治愈": {
+          "commands": [
+            {
+              "args": {
+                "amount": 20
+              },
+              "branches": {},
+              "op": "heal_all"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "heal_all",
+              "op": "heal_all",
+              "path": "/cards/svg-alt/abilities/哼唱治愈/effects/0/0",
+              "source": {
+                "column": 48,
+                "line": 4,
+                "path": "python/card_data/effects/dragon.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": "on_turn"
+        }
+      },
+      "attacks": {
+        "光之波动": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {},
+              "op": "prevent_effects"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "prevent_effects",
+              "op": "prevent_effects",
+              "path": "/cards/svg-alt/attacks/光之波动/effects/0/0",
+              "source": {
+                "column": 54,
+                "line": 5,
+                "path": "python/card_data/effects/dragon.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 11,
+        "line": 3,
+        "path": "python/card_data/effects/dragon.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-beri": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 103,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "draw_until_more",
+          "op": "draw_until_more_than_opponent",
+          "path": "/cards/svg-beri/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 103,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "draw_until_more_than_opponent"
+        }
+      ]
+    },
+    "svg-cast": {
+      "abilities": {},
+      "attacks": {
+        "双重抽取": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/svg-cast/attacks/双重抽取/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 70,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "暴风": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "energy_type": "basic_energy",
+                "from_self": true
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_relocate",
+              "op": "relocate_energy",
+              "path": "/cards/svg-cast/attacks/暴风/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 71,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 70,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-ceti": {
+      "abilities": {},
+      "attacks": {
+        "头突": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "扫除冲撞": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "lhs": {
+                    "const": 200
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "factors": [
+                      {
+                        "op": "damage_counters",
+                        "target": "self"
+                      },
+                      {
+                        "const": 20
+                      }
+                    ],
+                    "op": "mul"
+                  }
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_self_penalty",
+              "op": "deal_damage",
+              "path": "/cards/svg-ceti/attacks/扫除冲撞/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 49,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 48,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-ceto": {
+      "abilities": {},
+      "attacks": {
+        "撞击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 47,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-chef": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 102,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "heal",
+          "op": "heal_damage",
+          "path": "/cards/svg-chef/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 102,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 70,
+            "target": "self"
+          },
+          "branches": {},
+          "op": "heal_damage"
+        }
+      ]
+    },
+    "svg-dram": {
+      "abilities": {},
+      "attacks": {
+        "逆鳞": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "damage_counters",
+                          "target": "self"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_per_self_damage",
+              "op": "deal_damage",
+              "path": "/cards/svg-dram/attacks/逆鳞/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 6,
+                "path": "python/card_data/effects/dragon.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 6,
+        "path": "python/card_data/effects/dragon.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-milt": {
+      "abilities": {},
+      "attacks": {
+        "活泼冲撞": {
+          "commands": [
+            {
+              "args": {
+                "base": 60,
+                "bonus": 90
+              },
+              "branches": {},
+              "op": "conditional_damage_then_heal"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "conditional_damage_heal",
+              "op": "conditional_damage_then_heal",
+              "path": "/cards/svg-milt/attacks/活泼冲撞/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 68,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 68,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-swa": {
+      "abilities": {},
+      "attacks": {
+        "连续旋转": {
+          "commands": [
+            {
+              "args": {
+                "per_head": 20
+              },
+              "branches": {},
+              "op": "flip_until_tails"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "coin_flip_until_tails",
+              "op": "flip_until_tails",
+              "path": "/cards/svg-swa/attacks/连续旋转/effects/0/0",
+              "source": {
+                "column": 54,
+                "line": 66,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 66,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-tatsu": {
+      "abilities": {},
+      "attacks": {
+        "水枪": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "生存战略": {
+          "commands": [
+            {
+              "args": {
+                "count": 2,
+                "min_select": 0,
+                "source_slot": "active",
+                "switch_optional": true
+              },
+              "branches": {},
+              "op": "search_any_and_switch"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "search_any_and_switch",
+              "op": "search_any_and_switch",
+              "path": "/cards/svg-tatsu/attacks/生存战略/effects/0/0",
+              "source": {
+                "column": 56,
+                "line": 9,
+                "path": "python/card_data/effects/dragon.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 8,
+        "path": "python/card_data/effects/dragon.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-brel": {
+      "abilities": {},
+      "attacks": {
+        "音速直击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 18,
+        "path": "python/card_data/effects/grass.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-empo": {
+      "abilities": {
+        "紧急上浮": {
+          "commands": [
+            {
+              "args": {
+                "card_id": "svg2-empo"
+              },
+              "branches": {},
+              "op": "discard_then_revive"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "ability_discard_revive",
+              "op": "discard_then_revive",
+              "path": "/cards/svg2-empo/abilities/紧急上浮/effects/0/0",
+              "source": {
+                "column": 50,
+                "line": 52,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": "on_turn"
+        }
+      },
+      "attacks": {
+        "水之矢": {
+          "commands": [
+            {
+              "args": {
+                "amount": 60,
+                "bench_skips_type_matchups": true
+              },
+              "branches": {},
+              "op": "choose_damage_target"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "any_pokemon_damage",
+              "op": "choose_damage_target",
+              "path": "/cards/svg2-empo/attacks/水之矢/effects/0/0",
+              "source": {
+                "column": 53,
+                "line": 54,
+                "path": "python/card_data/effects/water.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 51,
+        "path": "python/card_data/effects/water.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-exps": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 105,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "tool_exp_share",
+          "op": "register_tool_exp_share",
+          "path": "/cards/svg2-exps/trainer/effects/0/0",
+          "source": {
+            "column": 33,
+            "line": 105,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "register_tool_exp_share"
+        }
+      ]
+    },
+    "svg2-gard": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 106,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "draw_and_attach_energy",
+          "op": "draw_and_attach_energy",
+          "path": "/cards/svg2-gard/trainer/effects/0/0",
+          "source": {
+            "column": 33,
+            "line": 106,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "energy_count": 2,
+            "energy_type": "Grass",
+            "min_select": 0
+          },
+          "branches": {},
+          "op": "draw_and_attach_energy"
+        }
+      ]
+    },
+    "svg2-grot": {
+      "abilities": {
+        "日光甲壳": {
+          "commands": [
+            {
+              "args": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "grass_pokemon",
+                "from_zone": "deck",
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "search",
+              "op": "search_cards",
+              "path": "/cards/svg2-grot/abilities/日光甲壳/effects/0/0",
+              "source": {
+                "column": 50,
+                "line": 6,
+                "path": "python/card_data/effects/grass.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": "on_turn"
+        }
+      },
+      "attacks": {
+        "飞叶快刀": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 5,
+        "path": "python/card_data/effects/grass.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-hamm": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 104,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "coin_flip_energy_discard",
+          "op": "flip_coin_then_discard_energy",
+          "path": "/cards/svg2-hamm/trainer/effects/0/0",
+          "source": {
+            "column": 33,
+            "line": 104,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "flip_coin_then_discard_energy"
+        }
+      ]
+    },
+    "svg2-lume": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [
+        {
+          "downgrade_if_other_special": true,
+          "kind": "provide_energy",
+          "types": [
+            "Rainbow"
+          ]
+        }
+      ],
+      "source": {
+        "column": 4,
+        "line": 61,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-shro": {
+      "abilities": {},
+      "attacks": {
+        "吸取": {
+          "commands": [
+            {
+              "args": {
+                "damage": 10,
+                "heal": 10
+              },
+              "branches": {},
+              "op": "deal_damage_then_heal"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_and_self_heal",
+              "op": "deal_damage_then_heal",
+              "path": "/cards/svg2-shro/attacks/吸取/effects/0/0",
+              "source": {
+                "column": 50,
+                "line": 16,
+                "path": "python/card_data/effects/grass.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 16,
+        "path": "python/card_data/effects/grass.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-tort": {
+      "abilities": {},
+      "attacks": {
+        "头突": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "进化压制": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "op": "evolved_count",
+                      "player": "self"
+                    },
+                    {
+                      "const": 50
+                    }
+                  ],
+                  "op": "mul"
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_per_evolved",
+              "op": "deal_damage",
+              "path": "/cards/svg2-tort/attacks/进化压制/effects/0/0",
+              "source": {
+                "column": 56,
+                "line": 13,
+                "path": "python/card_data/effects/grass.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 13,
+        "path": "python/card_data/effects/grass.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-turt": {
+      "abilities": {},
+      "attacks": {
+        "咬住": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "鲁莽头击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 4,
+        "path": "python/card_data/effects/grass.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-zaru": {
+      "abilities": {},
+      "attacks": {
+        "反复鞭挞": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "Grass",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_per_self_energy_type",
+              "op": "deal_damage",
+              "path": "/cards/svg2-zaru/attacks/反复鞭挞/effects/0/0",
+              "source": {
+                "column": 56,
+                "line": 23,
+                "path": "python/card_data/effects/grass.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "唤群之歌": {
+          "commands": [
+            {
+              "args": {
+                "default_count": 1,
+                "filter": "grass_pokemon",
+                "max_count": 3
+              },
+              "branches": {},
+              "op": "conditional_search"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "conditional_search_extra",
+              "op": "conditional_search",
+              "path": "/cards/svg2-zaru/attacks/唤群之歌/effects/0/0",
+              "source": {
+                "column": 56,
+                "line": 19,
+                "path": "python/card_data/effects/grass.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 19,
+        "path": "python/card_data/effects/grass.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-aipo": {
+      "abilities": {},
+      "attacks": {
+        "掌击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "骗取": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/svi-aipo/attacks/骗取/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 15,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 15,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-ambi": {
+      "abilities": {},
+      "attacks": {
+        "招来": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/svi-ambi/attacks/招来/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 18,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "长手抛掷": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "op": "hand_size",
+                      "player": "self"
+                    },
+                    {
+                      "const": 20
+                    }
+                  ],
+                  "op": "mul"
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_per_hand_size",
+              "op": "deal_damage",
+              "path": "/cards/svi-ambi/attacks/长手抛掷/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 20,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 18,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-cait": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 77,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "hand_to_bottom_draw",
+          "op": "hand_to_bottom_then_draw",
+          "path": "/cards/svi-cait/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 77,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "hand_to_bottom_then_draw"
+        }
+      ]
+    },
+    "svi-chim": {
+      "abilities": {},
+      "attacks": {
+        "火花": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_discard",
+              "op": "discard_energy",
+              "path": "/cards/svi-chim/attacks/火花/effects/0/0",
+              "source": {
+                "column": 59,
+                "line": 3,
+                "path": "python/card_data/effects/fire.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 11,
+        "line": 3,
+        "path": "python/card_data/effects/fire.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-chiy": {
+      "abilities": {},
+      "attacks": {
+        "嫉妒业火": {
+          "commands": [
+            {
+              "args": {
+                "bonus": 90,
+                "condition": "ko_by_attack_damage_last_turn"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "op": "conditional_damage",
+              "path": "/cards/svi-chiy/attacks/嫉妒业火/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 30,
+                "path": "python/card_data/effects/fire.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "闪焰生成": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "energy_type": "basic_fire",
+                "min_select": 0,
+                "target": "self_or_bench"
+              },
+              "branches": {},
+              "op": "attach_energy_from_discard"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attach_from_discard",
+              "op": "attach_energy_from_discard",
+              "path": "/cards/svi-chiy/attacks/闪焰生成/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 25,
+                "path": "python/card_data/effects/fire.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 25,
+        "path": "python/card_data/effects/fire.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-dtur": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless",
+            "Colorless"
+          ]
+        },
+        {
+          "effect": {
+            "delta": -20
+          },
+          "hook": "MODIFY_DAMAGE",
+          "kind": "modifier",
+          "priority": 30,
+          "scope": "attached_attacker"
+        }
+      ],
+      "source": {
+        "column": 4,
+        "line": 24,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-enst": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 63,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "look_top_deck",
+          "op": "look_top_deck",
+          "path": "/cards/svi-enst/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 63,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 7,
+            "destination": "hand",
+            "filter": "energy",
+            "shuffle_rest": true,
+            "take": 1
+          },
+          "branches": {},
+          "op": "look_top_deck"
+        }
+      ]
+    },
+    "svi-ente": {
+      "abilities": {
+        "压迫感": {
+          "commands": [
+            {
+              "args": {
+                "before_weakness": true,
+                "reduction": 20,
+                "requires_active": true
+              },
+              "branches": {},
+              "op": "register_aura_damage_reduction"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "aura_damage_reduction",
+              "op": "register_aura_damage_reduction",
+              "path": "/cards/svi-ente/abilities/压迫感/effects/0/0",
+              "source": {
+                "column": 48,
+                "line": 14,
+                "path": "python/card_data/effects/fire.py"
+              }
+            }
+          ],
+          "text": "只要这只宝可梦在战斗场上，对手战斗宝可梦使用的招式伤害「-20」。",
+          "trigger": "passive"
+        }
+      },
+      "attacks": {
+        "火焰之球": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "fire",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_per_self_energy",
+              "op": "deal_damage",
+              "path": "/cards/svi-ente/attacks/火焰之球/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 18,
+                "path": "python/card_data/effects/fire.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 12,
+        "path": "python/card_data/effects/fire.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-erec": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 61,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "shuffle_from_discard",
+          "op": "shuffle_from_discard_to_deck",
+          "path": "/cards/svi-erec/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 61,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 5,
+            "filter": "basic_energy"
+          },
+          "branches": {},
+          "op": "shuffle_from_discard_to_deck"
+        }
+      ]
+    },
+    "svi-flam": {
+      "abilities": {},
+      "attacks": {
+        "俯冲": {
+          "commands": [
+            {
+              "args": {
+                "amount": 20,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_counter_self",
+              "op": "place_damage_counters",
+              "path": "/cards/svi-flam/attacks/俯冲/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 47,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "振翅": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 46,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-gree": {
+      "abilities": {},
+      "attacks": {
+        "倾倒一空": {
+          "commands": [
+            {
+              "args": {
+                "base_damage": 60,
+                "bonus": 150,
+                "threshold": 5
+              },
+              "branches": {},
+              "op": "discard_hand_then_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "discard_hand_conditional_bonus",
+              "op": "discard_hand_then_damage",
+              "path": "/cards/svi-gree/attacks/倾倒一空/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 31,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "招来": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/svi-gree/attacks/招来/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 29,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 29,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-hrot": {
+      "abilities": {},
+      "attacks": {
+        "高温冲撞": {
+          "commands": [
+            {
+              "args": {
+                "amount": 40,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_counter_self",
+              "op": "place_damage_counters",
+              "path": "/cards/svi-hrot/attacks/高温冲撞/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 22,
+                "path": "python/card_data/effects/fire.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 22,
+        "path": "python/card_data/effects/fire.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-inde": {
+      "abilities": {},
+      "attacks": {
+        "妙手强念": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "op": "hand_size",
+                      "player": "self"
+                    },
+                    {
+                      "const": 10
+                    }
+                  ],
+                  "op": "mul"
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_per_hand_size",
+              "op": "deal_damage",
+              "path": "/cards/svi-inde/attacks/妙手强念/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 37,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "招来": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/svi-inde/attacks/招来/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 35,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 35,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-infr": {
+      "abilities": {},
+      "attacks": {
+        "燃烧踢": {
+          "commands": [
+            {
+              "args": {
+                "amount": 99,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_discard",
+              "op": "discard_energy",
+              "path": "/cards/svi-infr/attacks/燃烧踢/effects/0/0",
+              "source": {
+                "column": 52,
+                "line": 10,
+                "path": "python/card_data/effects/fire.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "螺旋业火": {
+          "commands": [
+            {
+              "args": {
+                "damage_per": 80,
+                "mill_count": 5
+              },
+              "branches": {},
+              "op": "mill_then_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "mill_and_damage_per_energy",
+              "op": "mill_then_damage",
+              "path": "/cards/svi-infr/attacks/螺旋业火/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 8,
+                "path": "python/card_data/effects/fire.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 8,
+        "path": "python/card_data/effects/fire.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-jete": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless"
+          ]
+        },
+        {
+          "condition": {
+            "from_zone": "hand",
+            "target": "bench"
+          },
+          "effect": {
+            "op": "switch_with_active"
+          },
+          "hook": "ON_ATTACH",
+          "kind": "trigger",
+          "priority": 20
+        }
+      ],
+      "source": {
+        "column": 4,
+        "line": 12,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-maus": {
+      "abilities": {
+        "团结一致": {
+          "commands": [
+            {
+              "args": {
+                "filter_names": [
+                  "一对鼠",
+                  "一家鼠ex",
+                  "一家鼠"
+                ],
+                "per_pokemon": 3
+              },
+              "branches": {},
+              "op": "register_reactive_thorns"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "reactive_thorns",
+              "op": "register_reactive_thorns",
+              "path": "/cards/svi-maus/abilities/团结一致/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 41,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": "on_damaged"
+        }
+      },
+      "attacks": {
+        "贪婪门牙": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/svi-maus/attacks/贪婪门牙/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 44,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 40,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-mela": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 52,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "conditional",
+          "op": "conditional",
+          "path": "/cards/svi-mela/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 52,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        },
+        {
+          "effect_type": "attach_from_discard",
+          "op": "attach_energy_from_discard",
+          "path": "/cards/svi-mela/trainer/effects/0/1",
+          "source": {
+            "column": 55,
+            "line": 55,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        },
+        {
+          "effect_type": "draw_until",
+          "op": "draw_until",
+          "path": "/cards/svi-mela/trainer/effects/0/2",
+          "source": {
+            "column": 55,
+            "line": 59,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "condition": "ko_last_opponent_turn"
+          },
+          "branches": {
+            "on_pay": [
+              {
+                "args": {
+                  "amount": 1,
+                  "energy_type": "basic_fire",
+                  "target": "self_or_bench"
+                },
+                "branches": {},
+                "op": "attach_energy_from_discard"
+              },
+              {
+                "args": {
+                  "target_hand_size": 6
+                },
+                "branches": {},
+                "op": "draw_until"
+              }
+            ]
+          },
+          "op": "conditional"
+        }
+      ]
+    },
+    "svi-mirc": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless"
+          ]
+        },
+        {
+          "condition": {
+            "min_damage": 10,
+            "scope": "attached_defender"
+          },
+          "effect": {
+            "amount": 1,
+            "op": "draw_cards"
+          },
+          "hook": "AFTER_DAMAGE",
+          "kind": "trigger",
+          "priority": 20
+        }
+      ],
+      "source": {
+        "column": 4,
+        "line": 49,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-monf": {
+      "abilities": {},
+      "attacks": {
+        "喷射火焰": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_discard",
+              "op": "discard_energy",
+              "path": "/cards/svi-monf/attacks/喷射火焰/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 6,
+                "path": "python/card_data/effects/fire.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "火焰": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 5,
+        "path": "python/card_data/effects/fire.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-nemb": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 69,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "search",
+          "op": "search_cards",
+          "path": "/cards/svi-nemb/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 69,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 2,
+            "destination": "hand",
+            "filter": "any",
+            "filter_name": "妮莫",
+            "from_zone": "discard",
+            "min_select": 0,
+            "reveal": true
+          },
+          "branches": {},
+          "op": "search_cards"
+        }
+      ]
+    },
+    "svi-popp": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 78,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "energy_relocate",
+          "op": "relocate_energy",
+          "path": "/cards/svi-popp/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 78,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 2,
+            "min_select": 0,
+            "same_target": true
+          },
+          "branches": {},
+          "op": "relocate_energy"
+        }
+      ]
+    },
+    "svi-skwv": {
+      "abilities": {},
+      "attacks": {
+        "啃咬": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 28,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-sqwk": {
+      "abilities": {},
+      "attacks": {
+        "呼朋引伴": {
+          "commands": [
+            {
+              "args": {
+                "count": 2,
+                "destination": "bench",
+                "filter": "basic_pokemon",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "search",
+              "op": "search_cards",
+              "path": "/cards/svi-sqwk/attacks/呼朋引伴/effects/0/0",
+              "source": {
+                "column": 65,
+                "line": 3,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "飞翔": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {},
+                    "branches": {},
+                    "op": "prevent_all"
+                  }
+                ],
+                "on_tails": [
+                  {
+                    "args": {},
+                    "branches": {},
+                    "op": "fail_attack"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "coin_flip",
+              "op": "flip_coin",
+              "path": "/cards/svi-sqwk/attacks/飞翔/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 10,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            },
+            {
+              "effect_type": "prevent_all",
+              "op": "prevent_all",
+              "path": "/cards/svi-sqwk/attacks/飞翔/effects/0/1",
+              "source": {
+                "column": 70,
+                "line": 11,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            },
+            {
+              "effect_type": "attack_fail",
+              "op": "fail_attack",
+              "path": "/cards/svi-sqwk/attacks/飞翔/effects/0/2",
+              "source": {
+                "column": 70,
+                "line": 13,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 11,
+        "line": 3,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-stan": {
+      "abilities": {},
+      "attacks": {
+        "后踢": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "疯狂俯冲": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 0
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "any",
+                          "op": "energy_count",
+                          "scope": "opponent_active"
+                        },
+                        {
+                          "const": 30
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                },
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_per_energy",
+              "op": "deal_damage",
+              "path": "/cards/svi-stan/attacks/疯狂俯冲/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 23,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 22,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-tand": {
+      "abilities": {},
+      "attacks": {
+        "紧贴": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "踢飞": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 39,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-trea": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless"
+          ]
+        },
+        {
+          "condition": {
+            "source_zone": "prizes"
+          },
+          "effect": {
+            "op": "attach_to_benched_pokemon"
+          },
+          "hook": "ON_PRIZE_REVEALED",
+          "kind": "trigger",
+          "optional": true,
+          "priority": 20
+        }
+      ],
+      "source": {
+        "column": 4,
+        "line": 36,
+        "path": "python/card_data/effects/energy.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-chat": {
+      "abilities": {},
+      "attacks": {
+        "循环抽取": {
+          "commands": [
+            {
+              "args": {
+                "discard_amount": 1,
+                "draw_amount": 2
+              },
+              "branches": {},
+              "op": "discard_then_draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "discard_then_draw",
+              "op": "discard_then_draw_cards",
+              "path": "/cards/svl-chat/attacks/循环抽取/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 50,
+                "path": "python/card_data/effects/colorless.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "振翅": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 50,
+        "path": "python/card_data/effects/colorless.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-chin": {
+      "abilities": {},
+      "attacks": {
+        "电球": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 10,
+        "path": "python/card_data/effects/lightning.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-emol": {
+      "abilities": {},
+      "attacks": {
+        "电击": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {
+                      "status": "paralyzed",
+                      "target": "opponent_active"
+                    },
+                    "branches": {},
+                    "op": "apply_status"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "coin_flip",
+              "op": "flip_coin",
+              "path": "/cards/svl-emol/attacks/电击/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 21,
+                "path": "python/card_data/effects/lightning.py"
+              }
+            },
+            {
+              "effect_type": "status",
+              "op": "apply_status",
+              "path": "/cards/svl-emol/attacks/电击/effects/0/1",
+              "source": {
+                "column": 70,
+                "line": 22,
+                "path": "python/card_data/effects/lightning.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 21,
+        "path": "python/card_data/effects/lightning.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-ensw": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 89,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "search",
+          "op": "search_cards",
+          "path": "/cards/svl-ensw/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 89,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 1,
+            "destination": "hand",
+            "filter": "basic_energy",
+            "from_zone": "deck",
+            "reveal": true
+          },
+          "branches": {},
+          "op": "search_cards"
+        }
+      ]
+    },
+    "svl-flaa2": {
+      "abilities": {
+        "电气发电机": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "energy_type": "lightning",
+                "target": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy_from_discard"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attach_from_discard",
+              "op": "attach_energy_from_discard",
+              "path": "/cards/svl-flaa2/abilities/电气发电机/effects/0/0",
+              "source": {
+                "column": 51,
+                "line": 16,
+                "path": "python/card_data/effects/lightning.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "attacks": {
+        "电球": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 15,
+        "path": "python/card_data/effects/lightning.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-lant": {
+      "abilities": {},
+      "attacks": {
+        "炫目光束": {
+          "commands": [
+            {
+              "args": {
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "apply_dazzling_beam"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "dazzling_beam",
+              "op": "apply_dazzling_beam",
+              "path": "/cards/svl-lant/attacks/炫目光束/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 11,
+                "path": "python/card_data/effects/lightning.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "电球": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 11,
+        "path": "python/card_data/effects/lightning.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-mare2": {
+      "abilities": {},
+      "attacks": {
+        "后踢": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "电球": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 14,
+        "path": "python/card_data/effects/lightning.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-pikaex": {
+      "abilities": {},
+      "attacks": {
+        "强劲伏特": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_tails": [
+                  {
+                    "args": {
+                      "amount": 99,
+                      "filter": "any",
+                      "from": "self"
+                    },
+                    "branches": {},
+                    "op": "discard_energy"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "coin_flip",
+              "op": "flip_coin",
+              "path": "/cards/svl-pikaex/attacks/强劲伏特/effects/0/0",
+              "source": {
+                "column": 57,
+                "line": 4,
+                "path": "python/card_data/effects/lightning.py"
+              }
+            },
+            {
+              "effect_type": "energy_discard",
+              "op": "discard_energy",
+              "path": "/cards/svl-pikaex/attacks/强劲伏特/effects/0/1",
+              "source": {
+                "column": 74,
+                "line": 6,
+                "path": "python/card_data/effects/lightning.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "皮卡拳": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 11,
+        "line": 3,
+        "path": "python/card_data/effects/lightning.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-thun": {
+      "abilities": {},
+      "attacks": {
+        "打雷": {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_counter_self",
+              "op": "place_damage_counters",
+              "path": "/cards/svl-thun/attacks/打雷/effects/0/0",
+              "source": {
+                "column": 49,
+                "line": 32,
+                "path": "python/card_data/effects/lightning.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "辅助电光": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "lightning",
+                "from_zone": "hand",
+                "optional": true,
+                "to": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_attach",
+              "op": "attach_energy",
+              "path": "/cards/svl-thun/attacks/辅助电光/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 26,
+                "path": "python/card_data/effects/lightning.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 26,
+        "path": "python/card_data/effects/lightning.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-trks": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 95,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "trekking_shoes",
+          "op": "trekking_shoes",
+          "path": "/cards/svl-trks/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 95,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "trekking_shoes"
+        }
+      ]
+    },
+    "svl-vitb": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 96,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "tool",
+          "op": "register_tool_modifier",
+          "path": "/cards/svl-vitb/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 96,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "effect": "damage_boost_10"
+          },
+          "branches": {},
+          "op": "register_tool_modifier"
+        }
+      ]
+    },
+    "svl-zera": {
+      "abilities": {},
+      "attacks": {
+        "疯狂伏特": {
+          "commands": [
+            {
+              "args": {
+                "amount": 20,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "damage_counter_self",
+              "op": "place_damage_counters",
+              "path": "/cards/svl-zera/attacks/疯狂伏特/effects/0/0",
+              "source": {
+                "column": 55,
+                "line": 35,
+                "path": "python/card_data/effects/lightning.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 35,
+        "path": "python/card_data/effects/lightning.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-zinn": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 97,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "zinnia_resolve",
+          "op": "zinnia_resolve",
+          "path": "/cards/svl-zinn/trainer/effects/0/0",
+          "source": {
+            "column": 32,
+            "line": 97,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "zinnia_resolve"
+        }
+      ]
+    },
+    "svm-bronzong": {
+      "abilities": {
+        "金属转移": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "energy_type": "Metal"
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_relocate",
+              "op": "relocate_energy",
+              "path": "/cards/svm-bronzong/abilities/金属转移/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 99,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": "repeatable"
+        }
+      },
+      "attacks": {
+        "意念头锤": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 94,
+        "path": "python/card_data/effects/metal.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-bronzor": {
+      "abilities": {},
+      "attacks": {
+        "金属压制": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {
+                      "status": "paralyzed",
+                      "target": "opponent_active"
+                    },
+                    "branches": {},
+                    "op": "apply_status"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "coin_flip",
+              "op": "flip_coin",
+              "path": "/cards/svm-bronzor/attacks/金属压制/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 75,
+                "path": "python/card_data/effects/metal.py"
+              }
+            },
+            {
+              "effect_type": "status",
+              "op": "apply_status",
+              "path": "/cards/svm-bronzor/attacks/金属压制/effects/0/1",
+              "source": {
+                "column": 32,
+                "line": 79,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 71,
+        "path": "python/card_data/effects/metal.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-cobalion": {
+      "abilities": {
+        "正义法则": {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "attacker_subtype": "Basic",
+                "defender_type": "Darkness"
+              },
+              "branches": {},
+              "op": "register_aura_damage_boost"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "aura_damage_boost",
+              "op": "register_aura_damage_boost",
+              "path": "/cards/svm-cobalion/abilities/正义法则/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 129,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": "passive"
+        }
+      },
+      "attacks": {
+        "跟进": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "max_per_target": 1,
+                "min_select": 0,
+                "select_source": true,
+                "to": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "energy_attach",
+              "op": "attach_energy",
+              "path": "/cards/svm-cobalion/attacks/跟进/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 143,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 124,
+        "path": "python/card_data/effects/metal.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-dialga": {
+      "abilities": {},
+      "attacks": {
+        "时之逆流": {
+          "commands": [
+            {
+              "args": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "any",
+                "from_zone": "discard",
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "search",
+              "op": "search_cards",
+              "path": "/cards/svm-dialga/attacks/时之逆流/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 163,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "金属爆破": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "Metal",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attack_damage_formula",
+              "op": "set_attack_damage_formula",
+              "path": "/cards/svm-dialga/attacks/金属爆破/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 177,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 159,
+        "path": "python/card_data/effects/metal.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-klefki": {
+      "abilities": {},
+      "attacks": {
+        "解锁": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "draw",
+              "op": "draw_cards",
+              "path": "/cards/svm-klefki/attacks/解锁/effects/0/0",
+              "source": {
+                "column": 43,
+                "line": 190,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 189,
+        "path": "python/card_data/effects/metal.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-marnie-pride": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "column": 1,
+        "line": 84,
+        "path": "python/card_data/effects/trainer.py"
+      },
+      "source_map": [
+        {
+          "effect_type": "attach_from_discard",
+          "op": "attach_energy_from_discard",
+          "path": "/cards/svm-marnie-pride/trainer/effects/0/0",
+          "source": {
+            "column": 40,
+            "line": 84,
+            "path": "python/card_data/effects/trainer.py"
+          }
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 1,
+            "energy_type": "basic_energy",
+            "select_source": true,
+            "target": "bench"
+          },
+          "branches": {},
+          "op": "attach_energy_from_discard"
+        }
+      ]
+    },
+    "svm-orthworm": {
+      "abilities": {
+        "营养铁质": {
+          "commands": [
+            {
+              "args": {
+                "amount": 100,
+                "energy_type": "Metal",
+                "threshold": 3
+              },
+              "branches": {},
+              "op": "register_conditional_hp_boost"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "conditional_hp_boost",
+              "op": "register_conditional_hp_boost",
+              "path": "/cards/svm-orthworm/abilities/营养铁质/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 197,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": "passive"
+        }
+      },
+      "attacks": {
+        "刺穿": {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "choose_targets": true,
+                "count": 1,
+                "player": "opponent"
+              },
+              "branches": {},
+              "op": "deal_bench_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "bench_damage",
+              "op": "deal_bench_damage",
+              "path": "/cards/svm-orthworm/attacks/刺穿/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 207,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 192,
+        "path": "python/card_data/effects/metal.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-skarmory": {
+      "abilities": {},
+      "attacks": {
+        "啄": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "钢铁之刃": {
+          "commands": [
+            {
+              "args": {
+                "attack_name": "钢铁之刃",
+                "scope": "self"
+              },
+              "branches": {},
+              "op": "apply_self_attack_lock"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "self_attack_lock",
+              "op": "apply_self_attack_lock",
+              "path": "/cards/svm-skarmory/attacks/钢铁之刃/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 113,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 108,
+        "path": "python/card_data/effects/metal.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-smeargle": {
+      "abilities": {},
+      "attacks": {
+        "冲撞": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "多彩调色盘": {
+          "commands": [
+            {
+              "args": {
+                "count": 5,
+                "filter": "basic_energy",
+                "shuffle_rest": true,
+                "take": 99,
+                "target": "self_or_bench"
+              },
+              "branches": {},
+              "op": "look_top_attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "look_top_attach_energy",
+              "op": "look_top_attach_energy",
+              "path": "/cards/svm-smeargle/attacks/多彩调色盘/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 56,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 52,
+        "path": "python/card_data/effects/metal.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-zacian": {
+      "abilities": {},
+      "attacks": {
+        "战斗军团": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 20
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "bench_count",
+                          "player": "self"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                },
+                "ignore_defender_damage_effects": true,
+                "ignore_weakness": true
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attack_damage_formula",
+              "op": "set_attack_damage_formula",
+              "path": "/cards/svm-zacian/attacks/战斗军团/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 37,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        },
+        "薄片利刃": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 33,
+        "path": "python/card_data/effects/metal.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-zamazenta": {
+      "abilities": {
+        "金属之盾": {
+          "commands": [
+            {
+              "args": {
+                "reduction": 30,
+                "requires_attached_energy": true
+              },
+              "branches": {},
+              "op": "register_aura_damage_reduction"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "aura_damage_reduction",
+              "op": "register_aura_damage_reduction",
+              "path": "/cards/svm-zamazenta/abilities/金属之盾/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 9,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": "passive"
+        }
+      },
+      "attacks": {
+        "报仇": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "const": 100
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "effect_type": "attack_damage_formula",
+              "op": "set_attack_damage_formula",
+              "path": "/cards/svm-zamazenta/attacks/报仇/effects/0/0",
+              "source": {
+                "column": 20,
+                "line": 19,
+                "path": "python/card_data/effects/metal.py"
+              }
+            }
+          ],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "column": 4,
+        "line": 4,
+        "path": "python/card_data/effects/metal.py"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    }
+  },
+  "command_count": 160,
+  "content_fingerprint": "70b41b8eac2aa884ba519571be263e78415a06de993fb0ef215d7d0319a1ca93",
+  "contract_fingerprint": "80ec2ee0282430c43674d2ab0191aeb338e60f2ba02b614bc64af2950897e96e",
+  "descriptor_digest": "d990e5514e1dcd1278b03a8bc5a3d8b74503d707a92801904ba494d579b299b2",
+  "effect_count": 160,
+  "format": "ptcg_card_ir/3",
+  "source_map_coverage": 1.0,
+  "source_mapped_effect_count": 160,
+  "unused_vm_ops": [
+    "deal_damage_per_discard_psychic",
+    "deal_damage_per_energy",
+    "deal_damage_per_evolved",
+    "deal_damage_per_hand_size",
+    "deal_damage_per_self_damage",
+    "deal_damage_per_self_energy",
+    "deal_damage_per_self_energy_type",
+    "deal_damage_plus_bench",
+    "deal_damage_with_self_penalty",
+    "set_attack_damage_formula",
+    "trigger_draw_cards",
+    "trigger_move_basic_energy",
+    "trigger_place_damage_counters",
+    "trigger_switch_with_active"
+  ],
+  "used_vm_ops": [
+    "apply_attack_lock_basic",
+    "apply_dazzling_beam",
+    "apply_outgoing_damage_reduction",
+    "apply_self_attack_lock",
+    "apply_status",
+    "attach_energy",
+    "attach_energy_from_discard",
+    "choose_damage_target",
+    "choose_heal_damage",
+    "conditional",
+    "conditional_damage",
+    "conditional_damage_then_heal",
+    "conditional_search",
+    "conditional_status",
+    "deal_bench_damage",
+    "deal_damage",
+    "deal_damage_then_heal",
+    "discard_cards",
+    "discard_energy",
+    "discard_energy_then_damage",
+    "discard_hand_then_damage",
+    "discard_then_draw_cards",
+    "discard_then_revive",
+    "draw_and_attach_energy",
+    "draw_cards",
+    "draw_until",
+    "draw_until_more_than_opponent",
+    "evolve_skip_stage",
+    "fail_attack",
+    "flip_coin",
+    "flip_coin_repeat_damage",
+    "flip_coin_then_discard_energy",
+    "flip_coin_then_ko",
+    "flip_until_tails",
+    "hand_to_bottom_draw_until",
+    "hand_to_bottom_then_draw",
+    "heal_all",
+    "heal_damage",
+    "judge",
+    "look_top_attach_energy",
+    "look_top_deck",
+    "mill_then_damage",
+    "place_counters_then_self_discard",
+    "place_damage_counters",
+    "prevent_all",
+    "prevent_damage",
+    "prevent_effects",
+    "recover_clara",
+    "register_aura_damage_boost",
+    "register_aura_damage_reduction",
+    "register_conditional_hp_boost",
+    "register_conditional_zero_retreat",
+    "register_reactive_thorns",
+    "register_tool_exp_share",
+    "register_tool_modifier",
+    "relocate_energy",
+    "return_to_hand",
+    "search_any_and_switch",
+    "search_cards",
+    "search_item_and_tool",
+    "set_attack_flags",
+    "shuffle_from_discard_to_deck",
+    "shuffle_then_draw_cards",
+    "switch_pokemon",
+    "trekking_shoes",
+    "zinnia_resolve"
+  ],
+  "vm_ir_version": 3
+}

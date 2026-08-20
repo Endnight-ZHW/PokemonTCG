@@ -32,6 +32,7 @@ var _option_rows: VBoxContainer
 var _confirm_button: Button
 var _cancel_button: Button
 var _button_by_id: Dictionary = {}
+var _visibility_tween: Tween
 
 
 func _ready() -> void:
@@ -43,6 +44,10 @@ func _ready() -> void:
 	var viewport := get_viewport()
 	if viewport and not viewport.size_changed.is_connected(_reposition):
 		viewport.size_changed.connect(_reposition)
+
+
+func _exit_tree() -> void:
+	_kill_visibility_tween()
 
 
 func show_for_source(
@@ -75,6 +80,7 @@ func show_for_source(
 	_source_label_text = source_label
 	_compact = safe_rect.size.x < 960.0 or safe_rect.size.y <= 540.0
 	_rebuild_rows()
+	_kill_visibility_tween()
 	visible = true
 	modulate.a = 1.0
 	_reposition()
@@ -91,6 +97,8 @@ func refresh_selection(
 
 
 func dismiss(emit_signal := true) -> void:
+	_kill_visibility_tween()
+	modulate.a = 1.0
 	if not visible:
 		return
 	visible = false
@@ -336,14 +344,26 @@ func _source_global_rect() -> Rect2:
 
 
 func _play_open_motion() -> void:
+	_kill_visibility_tween()
 	var duration := MotionPolicy.duration("panel")
 	if duration <= 0.0 or MotionPolicy.reduced():
 		modulate.a = 1.0
 		return
 	modulate.a = 0.0
-	create_tween().tween_property(self, "modulate:a", 1.0, duration).set_trans(
-		Tween.TRANS_QUAD,
-	).set_ease(Tween.EASE_OUT)
+	var tween := create_tween()
+	_visibility_tween = tween
+	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "modulate:a", 1.0, duration)
+	tween.finished.connect(func() -> void:
+		if _visibility_tween == tween:
+			_visibility_tween = null
+	)
+
+
+func _kill_visibility_tween() -> void:
+	if _visibility_tween and _visibility_tween.is_valid():
+		_visibility_tween.kill()
+	_visibility_tween = null
 
 
 func _panel_style() -> StyleBoxFlat:

@@ -25,7 +25,7 @@ if str(PYTHON_ROOT) not in sys.path:
 
 import ptcg_ai_core
 
-from engine.action_codec import serialize_choice_request
+from engine.action_codec import serialize_choice_view
 from engine.ai.dl.alphazero_v2 import (
     GameTask,
     _advance_nondecision_phase,
@@ -418,7 +418,7 @@ def audit(
         current_rng = int(native_result.get("rng_state", 0))
 
         for choice_depth in range(max_depth):
-            request = DEFAULT_GAME_ENGINE.pending_choice_request(
+            request = DEFAULT_GAME_ENGINE.pending_choice(
                 current_formal_state
             )
             if request is None:
@@ -697,12 +697,12 @@ def audit(
                 )
 
             formal_request = (
-                DEFAULT_GAME_ENGINE.pending_choice_request(
+                DEFAULT_GAME_ENGINE.pending_choice(
                     formal_next_state
                 )
             )
             formal_next_pending = (
-                serialize_choice_request(formal_request)
+                serialize_choice_view(formal_request)
                 if formal_request is not None
                 else None
             )
@@ -772,7 +772,7 @@ def audit(
                 break
 
             actor = environment.actor(state)
-            request = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+            request = DEFAULT_GAME_ENGINE.pending_choice(state)
             trajectory_seed = (
                 task.seed + decision * 65537
             ) & 0xFFFFFFFF
@@ -852,12 +852,7 @@ def audit(
                     "action": repr(key),
                 }
                 if key[0] == "PLAY_TRAINER":
-                    hand_index = int(
-                        formal_by_key[key].payload.params.get(
-                            "hand_idx",
-                            -1,
-                        )
-                    )
+                    hand_index = formal_by_key[key].payload.hand_index()
                     hand = actor_player.get("hand", [])
                     action_context["trainer_card_id"] = (
                         str(hand[hand_index])
@@ -865,12 +860,7 @@ def audit(
                         else ""
                     )
                 elif key[0] == "DECLARE_ATTACK":
-                    attack_index = int(
-                        formal_by_key[key].payload.params.get(
-                            "attack_idx",
-                            -1,
-                        )
-                    )
+                    attack_index = formal_by_key[key].payload.attack_index()
                     definition = cards.get(
                         action_context["active_card_id"],
                         {},
@@ -998,12 +988,12 @@ def audit(
                     )
 
                 formal_pending_request = (
-                    DEFAULT_GAME_ENGINE.pending_choice_request(
+                    DEFAULT_GAME_ENGINE.pending_choice(
                         formal_state
                     )
                 )
                 formal_pending = (
-                    serialize_choice_request(formal_pending_request)
+                    serialize_choice_view(formal_pending_request)
                     if formal_pending_request is not None
                     else None
                 )
@@ -1100,9 +1090,6 @@ def audit(
                         "phase": str(state.phase),
                         "active_player_idx": int(
                             state.active_player_idx
-                        ),
-                        "pending_promotion_player": int(
-                            state.pending_promotion_player
                         ),
                         "pending_promotions": list(
                             game_state_to_native_wire(state).get(

@@ -64,6 +64,8 @@ func _run_contract() -> void:
 	_check_theme_contract()
 	_check_frontend_font_coverage()
 	_check_battle_theme_isolation()
+	for failure in BattleTableLayoutContract.run():
+		failures.append("Battle table layout: %s" % failure)
 	var catalog := CardCatalog.shared()
 	await _check_main_shell_contract()
 	await _check_shared_backdrop_contract()
@@ -124,6 +126,7 @@ func _check_main_shell_contract() -> void:
 		and fit_spec.cancel_role == ModalSpec.ButtonRole.SECONDARY,
 		"ModalSpec semantic button-role defaults changed",
 	)
+	_check_generic_choice_category_limits(main)
 	await _check_pointer_only_input_contract(main)
 	main.show_deck_select("challenge")
 	await _settle_layout(4)
@@ -204,8 +207,29 @@ func _check_main_shell_contract() -> void:
 	_check_pointer_only_controls(main.modal_layer, "help-modal")
 	_check(main.modal_panel.theme != null,
 		"Frontend modal did not apply the isolated frontend theme")
-	main._close_modal()
-	main._finish_modal_close(main._modal_generation)
+	var previous_reduced_motion := bool(_settings_node.get("reduced_motion"))
+	var previous_animation_mode := str(_settings_node.get("animation_mode"))
+	_settings_node.set("reduced_motion", false)
+	_settings_node.set("animation_mode", "fast")
+	var close_calls := [0]
+	main._close_modal(func() -> void:
+		close_calls[0] = int(close_calls[0]) + 1
+	)
+	var close_generation := int(main._modal_generation)
+	main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+	_check(
+		int(main._modal_generation) == close_generation
+		and bool(main._modal_closing),
+		"Android back re-entered an in-flight modal close transaction",
+	)
+	main._finish_modal_close(close_generation)
+	main._finish_modal_close(close_generation)
+	_settings_node.set("reduced_motion", previous_reduced_motion)
+	_settings_node.set("animation_mode", previous_animation_mode)
+	_check(
+		int(close_calls[0]) == 1 and not bool(main._modal_closing),
+		"Modal close completion was lost or invoked more than once",
+	)
 	_check(main.modal_panel.theme == null,
 		"Closing a frontend modal did not restore inherited shell theme")
 	main._show_deck_details("fire")
@@ -257,6 +281,54 @@ func _check_main_shell_contract() -> void:
 	await _check_open_modal_resize(main)
 	main.queue_free()
 	await _settle_layout(2)
+
+
+func _check_generic_choice_category_limits(main: Control) -> void:
+	var options: Array[Dictionary] = [
+		{
+			"option_id": "energy:0",
+			"label": "基本能量 A",
+			"ref": EntityRef.new(
+				"card", 0, "discard", "", 0, "", "sv1-ener-2"
+			).to_dict(),
+		},
+		{
+			"option_id": "energy:1",
+			"label": "基本能量 B",
+			"ref": EntityRef.new(
+				"card", 0, "discard", "", 1, "", "sv1-ener-3"
+			).to_dict(),
+		},
+		{
+			"option_id": "pokemon:0",
+			"label": "宝可梦",
+			"ref": EntityRef.new(
+				"card", 0, "discard", "", 2, "", "svi-chim"
+			).to_dict(),
+		},
+	]
+	var request := ChoiceView.new(
+		"choice:generic-category-limits",
+		1,
+		"select_cards",
+		0,
+		"",
+		options,
+		0,
+		3,
+		false,
+		true,
+		{"category_limits": {"energy": 1, "pokemon": 1}},
+	)
+	main.selected_choice_ids.assign(["energy:0"])
+	_check(
+		not str(main._choice_addition_blocked_reason(
+			request, "energy:1")).is_empty()
+		and str(main._choice_addition_blocked_reason(
+			request, "pokemon:0")).is_empty(),
+		"Generic ChoiceView category_limits were ignored by the player UI",
+	)
+	main.selected_choice_ids.clear()
 
 
 func _check_pointer_only_input_contract(main: Control) -> void:
@@ -2277,7 +2349,6 @@ func _check_frontend_font_coverage() -> void:
 	for path in [
 		"res://data/cards.json",
 		"res://data/decks.json",
-		"res://data/effects.json",
 	]:
 		if FileAccess.file_exists(path):
 			sources.append(path)

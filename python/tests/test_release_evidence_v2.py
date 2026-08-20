@@ -211,7 +211,7 @@ class ReleaseEvidenceV2Tests(unittest.TestCase):
     def _ready_native() -> dict:
         return {
             "available": True,
-            "abi_version": 1,
+            "abi_version": 2,
             "ready": True,
             "blockers": [],
         }
@@ -455,7 +455,7 @@ class ReleaseEvidenceV2Tests(unittest.TestCase):
                 inputs=inputs,
                 native_status={
                     "available": True,
-                    "abi_version": 1,
+                    "abi_version": 2,
                     "ready": False,
                     "blockers": ["compact_apply_undo_kernel_not_integrated"],
                 },

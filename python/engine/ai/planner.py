@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
-from engine.actions import ChoiceRequest, ChoiceResponse, GameAction
+from engine.actions import ChoiceView, ChoiceResponse, GameAction
 from engine.ai.observation import fair_search_clone
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_engine import DEFAULT_GAME_ENGINE, GameEngine
@@ -31,7 +31,7 @@ def terminal_outcome_value(state, perspective: int) -> float:
 class PolicyBackend(Protocol):
     def priors(self, state, actor: int, actions: list[GameAction]) -> list[float]: ...
     def value(self, state, perspective: int) -> float: ...
-    def choose(self, state, request: ChoiceRequest) -> ChoiceResponse: ...
+    def choose(self, state, request: ChoiceView) -> ChoiceResponse: ...
 
 
 @dataclass
@@ -94,12 +94,11 @@ class HeuristicBackend:
         raw = float(self._evaluator(state, perspective))
         return max(-1.0, min(1.0, raw / 1_000_000.0))
 
-    def choose(self, state, request: ChoiceRequest) -> ChoiceResponse:
-        if self._choice_resolver is not None and request.legacy_request is not None:
-            legacy_choice = self._choice_resolver(state, request.legacy_request)
-            mapped = _map_legacy_choice(request, legacy_choice)
-            if mapped is not None:
-                return mapped
+    def choose(self, state, request: ChoiceView) -> ChoiceResponse:
+        if self._choice_resolver is not None:
+            response = self._choice_resolver(state, request)
+            if isinstance(response, ChoiceResponse):
+                return response
         count = min(len(request.options), max(request.min_select, request.max_select))
         return ChoiceResponse(
             request.request_id,
@@ -143,7 +142,11 @@ class AnytimePlanner:
             else actions
         )
         if not root_actions:
-            return GameAction(PlayerAction.END_TURN, {}, True, player_idx)
+            return GameAction(
+                kind=PlayerAction.END_TURN,
+                actor=player_idx,
+                base_revision=int(getattr(state, "revision", -1)),
+            )
         set_perspective = getattr(self.backend, "set_perspective", None)
         if callable(set_perspective):
             set_perspective(player_idx)
@@ -285,8 +288,8 @@ class AnytimePlanner:
         opponent_actions = 0
         while depth < self.config.max_depth and time.perf_counter() < deadline:
             actor = (
-                state.pending_promotion_player
-                if state.pending_promotion_player >= 0
+                int(state.pending_promotions[0])
+                if state.pending_promotions
                 else state.active_player_idx
             )
             actions = list(self.engine.legal_actions(
@@ -400,71 +403,3 @@ def _dirichlet(
     if total <= 1e-30:
         return [1.0 / count] * count
     return [value / total for value in values]
-
-
-def _map_legacy_choice(request: ChoiceRequest, choice) -> ChoiceResponse | None:
-    option_ids = list(getattr(choice, "option_ids", []) or [])
-    if option_ids:
-        return ChoiceResponse(request.request_id, tuple(option_ids), bool(getattr(choice, "cancelled", False)))
-    if getattr(choice, "cancelled", False):
-        return ChoiceResponse(request.request_id, (), True)
-    if request.request_type == "coin_flip":
-        # The command already consumed RNG and stored the result in its
-        # continuation.  The public choice only acknowledges the display.
-        return ChoiceResponse(request.request_id, ())
-    if request.request_type in {"confirm", "confirm_trigger"}:
-        option_id = "confirm:yes" if getattr(choice, "confirmed", False) else "confirm:no"
-        return ChoiceResponse(request.request_id, (option_id,))
-    selected_slot = getattr(choice, "selected_bench_slot", None)
-    if selected_slot is not None:
-        for option in request.options:
-            if option.value == selected_slot:
-                return ChoiceResponse(request.request_id, (option.option_id,))
-    selected_targets = list(getattr(choice, "selected_bench_targets", []) or [])
-    if selected_targets:
-        ids = [
-            option.option_id
-            for target in selected_targets
-            for option in request.options
-            if option.value == target
-        ]
-        return ChoiceResponse(request.request_id, tuple(ids))
-    assignments = list(getattr(choice, "assignments", []) or [])
-    if assignments:
-        ids = []
-        for energy_idx, slot in assignments:
-            match = next(
-                (
-                    option for option in request.options
-                    if isinstance(option.value, dict)
-                    and str(option.value.get("slot", "")) == str(slot)
-                    and (
-                        request.metadata.get("distribute_mode") == "source_select"
-                        or int(option.value.get("energy_index", -1)) == int(energy_idx)
-                    )
-                ),
-                None,
-            )
-            if match is not None:
-                ids.append(match.option_id)
-        if ids:
-            return ChoiceResponse(request.request_id, tuple(ids))
-    selected_cards = list(getattr(choice, "selected_cards", []) or [])
-    if selected_cards:
-        ids = []
-        unused = list(request.options)
-        for card in selected_cards:
-            match = next(
-                (
-                    option for option in unused
-                    if option.value is card
-                    or getattr(option.value, "api_id", None) == getattr(card, "api_id", None)
-                ),
-                None,
-            )
-            if match is not None:
-                ids.append(match.option_id)
-                unused.remove(match)
-        if ids:
-            return ChoiceResponse(request.request_id, tuple(ids))
-    return None

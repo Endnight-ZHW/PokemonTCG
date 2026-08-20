@@ -3868,6 +3868,20 @@
           "can_cancel": true,
           "continuation_kind": "attach_discard_energy_distribution",
           "max_select": 2,
+          "metadata": {
+            "card_ids": [
+              "sv1-ener-1",
+              "sv1-ener-5",
+              "sv1-ener-6"
+            ],
+            "domain": "distribute_energy",
+            "energy_type": "basic",
+            "max_per_target": 2,
+            "purpose": "attach_discard_energy_distribution",
+            "same_target": true,
+            "source_player": 0,
+            "source_zone": "discard"
+          },
           "min_select": 0,
           "options": [
             {
@@ -6499,7 +6513,7 @@
               "can_cancel": false,
               "continuation_kind": "search_move",
               "max_select": 1,
-              "min_select": 1,
+              "min_select": 0,
               "options": [
                 {
                   "card_id": "sv1-104",
@@ -7216,7 +7230,7 @@
             "can_cancel": false,
             "continuation_kind": "search_move",
             "max_select": 1,
-            "min_select": 1,
+            "min_select": 0,
             "options": [
               {
                 "card_id": "sv1-104",
@@ -9541,10 +9555,10 @@
           },
           "request": {
             "allow_duplicates": false,
-            "can_cancel": false,
+            "can_cancel": true,
             "continuation_kind": "search_move",
             "max_select": 1,
-            "min_select": 1,
+            "min_select": 0,
             "options": [
               {
                 "card_id": "svf-scyt",
@@ -9636,10 +9650,10 @@
         "modifier": {},
         "pending": {
           "allow_duplicates": false,
-          "can_cancel": false,
+          "can_cancel": true,
           "continuation_kind": "search_move",
           "max_select": 1,
-          "min_select": 1,
+          "min_select": 0,
           "options": [
             {
               "card_id": "svf-scyt",
@@ -23346,9 +23360,22 @@
           },
           "request": {
             "allow_duplicates": false,
-            "can_cancel": true,
+            "can_cancel": false,
             "continuation_kind": "draw_attach_distribution",
             "max_select": 2,
+            "metadata": {
+              "card_ids": [
+                "sv1-ener-1",
+                "sv1-ener-1"
+              ],
+              "domain": "distribute_energy",
+              "energy_type": "Grass",
+              "max_per_target": 2,
+              "purpose": "draw_attach_distribution",
+              "same_target": true,
+              "source_player": 0,
+              "source_zone": "hand"
+            },
             "min_select": 0,
             "options": [
               {
@@ -23464,9 +23491,22 @@
         "modifier": {},
         "pending": {
           "allow_duplicates": false,
-          "can_cancel": true,
+          "can_cancel": false,
           "continuation_kind": "draw_attach_distribution",
           "max_select": 2,
+          "metadata": {
+            "card_ids": [
+              "sv1-ener-1",
+              "sv1-ener-1"
+            ],
+            "domain": "distribute_energy",
+            "energy_type": "Grass",
+            "max_per_target": 2,
+            "purpose": "draw_attach_distribution",
+            "same_target": true,
+            "source_player": 0,
+            "source_zone": "hand"
+          },
           "min_select": 0,
           "options": [
             {
@@ -43207,7 +43247,6 @@
                   ],
                   "discard": [
                     "sv1-ener-6",
-                    "svg2-empo",
                     "sv1-201"
                   ],
                   "energy_attached_this_turn": false,
@@ -43221,7 +43260,8 @@
                     "sv1-ener-6",
                     "sv1-ener-1",
                     "sv1-ener-5",
-                    "sv1-104"
+                    "sv1-104",
+                    "svg2-empo"
                   ],
                   "healed_this_turn": false,
                   "name": "玩家1",
@@ -43391,6 +43431,16 @@
             "can_cancel": true,
             "continuation_kind": "clara",
             "max_select": 4,
+            "metadata": {
+              "category_limits": {
+                "energy": 2,
+                "pokemon": 2
+              },
+              "domain": "recover",
+              "energy_count": 2,
+              "pokemon_count": 2,
+              "purpose": "clara"
+            },
             "min_select": 0,
             "options": [
               {
@@ -43450,15 +43500,15 @@
                 "zone": "discard"
               },
               {
-                "card_id": "sv1-ener-6",
-                "index": 2,
+                "card_id": "sv1-104",
+                "index": 3,
                 "kind": "card",
                 "player": 0,
                 "zone": "discard"
               },
               {
-                "card_id": "sv1-104",
-                "index": 3,
+                "card_id": "svg2-empo",
+                "index": 4,
                 "kind": "card",
                 "player": 0,
                 "zone": "discard"
@@ -43524,6 +43574,16 @@
           "can_cancel": true,
           "continuation_kind": "clara",
           "max_select": 4,
+          "metadata": {
+            "category_limits": {
+              "energy": 2,
+              "pokemon": 2
+            },
+            "domain": "recover",
+            "energy_count": 2,
+            "pokemon_count": 2,
+            "purpose": "clara"
+          },
           "min_select": 0,
           "options": [
             {
@@ -53615,7 +53675,7 @@
             "modifier": {},
             "pending": {},
             "revision": 1,
-            "rng_state": 571135540,
+            "rng_state": 113341597,
             "state": {
               "active_player_idx": 0,
               "apply_type_matchups": false,
@@ -53690,27 +53750,26 @@
                     null
                   ],
                   "deck": [
-                    "sv1-104",
-                    "sv1-ener-1",
-                    "sv1-ener-1",
-                    "sv1-104",
-                    "sv1-ener-6",
                     "sv1-ener-3",
-                    "sv1-201",
-                    "sv1-201",
                     "sv1-106",
-                    "sv2-38",
+                    "sv1-151",
                     "sv1-ener-1",
                     "svf-scyt",
-                    "sv1-106",
-                    "sv1-ener-6",
-                    "sv1-151",
                     "sv1-150",
-                    "sv2-38",
-                    "sv1-151",
+                    "sv1-104",
                     "sv1-ener-3",
                     "sv1-ener-1",
-                    "svf-scyt"
+                    "sv1-ener-6",
+                    "svf-scyt",
+                    "sv1-201",
+                    "sv2-38",
+                    "sv1-151",
+                    "sv1-104",
+                    "sv1-ener-6",
+                    "sv1-ener-1",
+                    "sv1-106",
+                    "sv2-38",
+                    "sv1-ener-1"
                   ],
                   "discard": [
                     "sv1-ener-1",
@@ -53729,7 +53788,8 @@
                     "sv1-201",
                     "sv1-ener-5",
                     "sv1-ener-6",
-                    "sv1-150"
+                    "sv1-150",
+                    "sv1-201"
                   ],
                   "healed_this_turn": false,
                   "name": "玩家1",
@@ -53899,7 +53959,15 @@
             "can_cancel": false,
             "continuation_kind": "arven",
             "max_select": 2,
-            "min_select": 1,
+            "metadata": {
+              "category_limits": {
+                "item": 1,
+                "tool": 1
+              },
+              "domain": "search",
+              "purpose": "arven"
+            },
+            "min_select": 0,
             "options": [
               {
                 "card_id": "sv1-150",
@@ -53958,8 +54026,8 @@
                 "zone": "deck"
               },
               {
-                "card_id": "sv1-151",
-                "index": 3,
+                "card_id": "sv1-201",
+                "index": 4,
                 "kind": "card",
                 "player": 0,
                 "zone": "deck"
@@ -54013,7 +54081,15 @@
           "can_cancel": false,
           "continuation_kind": "arven",
           "max_select": 2,
-          "min_select": 1,
+          "metadata": {
+            "category_limits": {
+              "item": 1,
+              "tool": 1
+            },
+            "domain": "search",
+            "purpose": "arven"
+          },
+          "min_select": 0,
           "options": [
             {
               "card_id": "sv1-150",

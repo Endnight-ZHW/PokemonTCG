@@ -1,5 +1,5 @@
 class_name ChoiceView
-extends ChoiceRequest
+extends RefCounted
 
 const SCHEMA_VERSION := 2
 const PRIVATE_FIELD_NAMES: Array[String] = [
@@ -52,7 +52,16 @@ const PRESENTATION_FIELDS: Array[String] = [
 	"labels",
 ]
 
+var request_id: String
 var base_revision: int
+var request_type: String
+var player: int
+var prompt: String
+var options: Array[Dictionary]
+var min_select: int
+var max_select: int
+var allow_duplicates: bool
+var can_cancel: bool
 var presentation: Dictionary
 
 
@@ -69,38 +78,17 @@ func _init(
 	p_can_cancel: bool = false,
 	p_presentation: Dictionary = {},
 ) -> void:
-	super(
-		p_request_id,
-		p_request_type,
-		p_player,
-		_public_prompt(p_prompt, p_request_type),
-		_public_options(p_options, p_request_type, p_player),
-		p_min_select,
-		p_max_select,
-		p_allow_duplicates,
-		p_can_cancel,
-		_project_presentation(p_presentation, p_request_type),
-	)
+	request_id = p_request_id
 	base_revision = p_base_revision
-	presentation = metadata
-
-
-static func from_request(request: ChoiceRequest, revision: int) -> ChoiceView:
-	if request == null:
-		return null
-	return ChoiceView.new(
-		request.request_id,
-		revision,
-		request.request_type,
-		request.player,
-		request.prompt,
-		request.options,
-		request.min_select,
-		request.max_select,
-		request.allow_duplicates,
-		request.can_cancel,
-		request.metadata,
-	)
+	request_type = p_request_type
+	player = p_player
+	prompt = _public_prompt(p_prompt, p_request_type)
+	options = _public_options(p_options, p_request_type, p_player)
+	min_select = p_min_select
+	max_select = p_max_select
+	allow_duplicates = p_allow_duplicates
+	can_cancel = p_can_cancel
+	presentation = _project_presentation(p_presentation, p_request_type)
 
 
 func to_dict() -> Dictionary:
@@ -118,10 +106,6 @@ func to_dict() -> Dictionary:
 		"can_cancel": can_cancel,
 		"presentation": presentation.duplicate(true),
 	}
-
-
-func to_public_dict(_base_revision: int = -1) -> Dictionary:
-	return to_dict()
 
 
 static func from_dict(data: Dictionary) -> ChoiceView:

@@ -18,20 +18,25 @@ $release = Get-ReleaseManifest -RepoRoot $repoRoot
 Assert-ReleaseDeepFallbackContract -Manifest $release
 $version = [string]$release.version
 $modelCount = [int]$release.model_count
+$deepEnabled = [bool]$release.deep_runtime_enabled
 
 $releaseInputs = @(
     (Join-Path $repoRoot 'docs\RELEASE_NOTES.md'),
     (Join-Path $repoRoot 'release_manifest.json'),
     (Join-Path $projectRoot 'data\release_manifest.json'),
     (Join-Path $projectRoot 'data\cards.json'),
+    (Join-Path $projectRoot 'data\card_ir_v3.json'),
     (Join-Path $projectRoot 'data\decks.json'),
-    (Join-Path $projectRoot 'data\effects.json'),
     (Join-Path $projectRoot 'data\card_images.json'),
     (Join-Path $projectRoot 'data\card_image_hashes.json'),
-    (Join-Path $projectRoot 'data\ai_models_runtime.json'),
-    (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE'),
-    (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt')
+    (Join-Path $projectRoot 'data\ai_models_runtime.json')
 )
+if ($deepEnabled) {
+    $releaseInputs += @(
+        (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE'),
+        (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt')
+    )
+}
 foreach ($required in $releaseInputs) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Missing release input: $required"
@@ -115,6 +120,10 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ne 0) {
         throw 'Release native AI build failed.'
     }
+    & $pythonExe -B -m unittest -q python.tests.test_native_rules_session
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Native ABI 2 pybind session contract failed after release build.'
+    }
     $target = if ($AndroidSigning -eq 'none') { 'windows' } else { 'all' }
     & (Join-Path $PSScriptRoot 'build_godot.ps1') `
         -Target $target `
@@ -169,18 +178,23 @@ New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 foreach ($name in @(
     'PokemonTCG.exe',
     'PokemonTCG.pck',
-    'libpokemon_ai.windows.template_release.x86_64.dll',
-    'onnxruntime.dll'
+    'libpokemon_ai.windows.template_release.x86_64.dll'
 )) {
     Copy-Item -LiteralPath (Join-Path $windowsRoot $name) -Destination $packageRoot
+}
+if ($deepEnabled) {
+    Copy-Item -LiteralPath (Join-Path $windowsRoot 'onnxruntime.dll') `
+        -Destination $packageRoot
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\RELEASE_NOTES.md') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $repoRoot 'release_manifest.json') `
     -Destination (Join-Path $packageRoot 'RELEASE_MANIFEST.json')
-Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE') `
-    -Destination (Join-Path $packageRoot 'ONNXRUNTIME_LICENSE.txt')
-Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt') `
-    -Destination (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.txt')
+if ($deepEnabled) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE') `
+        -Destination (Join-Path $packageRoot 'ONNXRUNTIME_LICENSE.txt')
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt') `
+        -Destination (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.txt')
+}
 
 $buildInfo = [ordered]@{
     version = $version
@@ -219,9 +233,11 @@ $releaseFiles = @(
     $zipPath,
     $windowsExe,
     $windowsPck,
-    (Join-Path $windowsRoot 'libpokemon_ai.windows.template_release.x86_64.dll'),
-    (Join-Path $windowsRoot 'onnxruntime.dll')
+    (Join-Path $windowsRoot 'libpokemon_ai.windows.template_release.x86_64.dll')
 )
+if ($deepEnabled) {
+    $releaseFiles += (Join-Path $windowsRoot 'onnxruntime.dll')
+}
 if ($AndroidSigning -ne 'none') {
     $androidApk = Join-Path $androidRoot 'PokemonTCG.apk'
     if (-not (Test-Path -LiteralPath $androidApk)) {

@@ -14,7 +14,7 @@ from typing import Any
 
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS
-from engine.commands.dsl_compiler import DEFAULT_COMMAND_REGISTRY
+from engine.commands.descriptors import VM_COMMAND_DESCRIPTORS
 from engine.commands.vm_contract import VM_IR_VERSION, validate_command_spec
 
 
@@ -146,7 +146,7 @@ def build_card_rules_matrix(
     ids = [str(card_id) for card_id in card_ids]
     if not CardRegistry.is_initialized():
         CardRegistry.initialize(ids)
-    python_ops = set(DEFAULT_COMMAND_REGISTRY.supported_ops)
+    python_ops = set(VM_COMMAND_DESCRIPTORS)
     peer_ops = set(str(op) for op in peer_supported_ops) if peer_supported_ops is not None else None
     errors: list[str] = []
 

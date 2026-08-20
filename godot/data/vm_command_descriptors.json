@@ -1,5 +1,5 @@
 {
-  "descriptor_digest": "73c834d4fc44cb495293aa0a3a54530cc8f8314a5cbbd2675f3524dc2d55afe0",
+  "descriptor_digest": "d990e5514e1dcd1278b03a8bc5a3d8b74503d707a92801904ba494d579b299b2",
   "descriptor_schema_version": 1,
   "descriptors": {
     "apply_attack_lock_basic": {
@@ -2004,6 +2004,9 @@
           "amount": {
             "minimum": 0,
             "type": "integer"
+          },
+          "damage_kind": {
+            "type": "string"
           }
         },
         "required": [],
@@ -2193,12 +2196,18 @@
       "args_schema": {
         "additional_properties": false,
         "properties": {
+          "before_weakness": {
+            "type": "boolean"
+          },
           "priority": {
             "type": "integer"
           },
           "reduction": {
             "minimum": 0,
             "type": "integer"
+          },
+          "requires_active": {
+            "type": "boolean"
           },
           "requires_attached_energy": {
             "type": "boolean"

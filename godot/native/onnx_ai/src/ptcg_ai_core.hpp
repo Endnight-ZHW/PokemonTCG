@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ptcg_random.hpp"
+
 #include <array>
 #include <condition_variable>
 #include <cstddef>
@@ -15,26 +17,13 @@
 
 namespace ptcg::ai {
 
-inline constexpr int NATIVE_ABI_VERSION = 1;
+inline constexpr int NATIVE_ABI_VERSION = 2;
 inline constexpr std::size_t STATE_GLOBAL_SIZE = 128;
 inline constexpr std::size_t ENTITY_SLOTS = 128;
 inline constexpr std::size_t ENTITY_NUMERIC_SIZE = 16;
 inline constexpr std::size_t ENTITY_TYPE_FIELDS = 4;
 inline constexpr std::size_t CANDIDATE_NUMERIC_SIZE = 32;
 inline constexpr std::size_t CANDIDATE_REF_FIELDS = 4;
-
-class XorShift32 {
-public:
-    explicit XorShift32(std::uint32_t seed = 0x6D2B79F5u);
-
-    std::uint32_t state() const noexcept;
-    void set_state(std::uint32_t state) noexcept;
-    std::uint32_t next_u32() noexcept;
-    float next_unit() noexcept;
-
-private:
-    std::uint32_t state_;
-};
 
 struct UndoMark {
     std::size_t journal_size = 0;

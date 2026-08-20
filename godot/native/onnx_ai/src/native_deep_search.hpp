@@ -4,7 +4,6 @@
 #include "ptcg_encoder.hpp"
 #include "ptcg_game.hpp"
 #include "ptcg_infoset.hpp"
-#include "ptcg_rules.hpp"
 #include "ptcg_search.hpp"
 
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -48,44 +47,8 @@ public:
         double c_puct = C_PUCT
     ) const;
     Dictionary get_contract() const;
-    void vm_set_cards(const Dictionary &cards);
-    void simulation_set_decks(const Dictionary &decks);
-    Dictionary vm_execute(
-        const Dictionary &state,
-        const Dictionary &command_spec,
-        int64_t actor,
-        const String &source_slot,
-        int64_t seed,
-        const String &context_mode
-    ) const;
-    Dictionary vm_resume(
-        const Dictionary &state,
-        const Dictionary &context,
-        const Dictionary &continuation,
-        const Array &selected_options,
-        bool cancelled,
-        int64_t rng_state
-    ) const;
-    Dictionary vm_contract() const;
-    Dictionary game_apply_action(
-        const Dictionary &state,
-        const Dictionary &action,
-        int64_t rng_state
-    ) const;
-    Array game_legal_actions(
-        const Dictionary &state,
-        int64_t actor
-    ) const;
-    Array game_choice_candidates(
-        const Dictionary &request
-    ) const;
-    Dictionary game_resume_choice(
-        const Dictionary &state,
-        const Dictionary &continuation,
-        const Array &selected_options,
-        bool cancelled,
-        int64_t rng_state
-    ) const;
+    void set_catalog(const Dictionary &cards);
+    void set_decks(const Dictionary &decks);
     String validate_runtime_snapshot(
         const Dictionary &state,
         int64_t actor
@@ -113,7 +76,6 @@ public:
     String action_signature_v2(const Dictionary &action) const;
 
 private:
-    ptcg::ai::NativeRulesKernel rules_kernel_;
     ptcg::ai::NativeGameKernel game_kernel_;
     ptcg::ai::NativeInformationSetEncoder encoder_;
     ptcg::ai::NativeDeterminizer determinizer_;

@@ -481,12 +481,7 @@ class InformationSetEncoderV7:
             self._candidate_encoder.encode_game_action(observation, action)
             for action in actions
         ]
-        type_names = [
-            action.action.name
-            if hasattr(action.action, "name")
-            else str(action.action)
-            for action in actions
-        ]
+        type_names = [action.kind_name for action in actions]
         return self._candidate_arrays(rows, type_names, actions)
 
     def encode_choices(
@@ -559,8 +554,6 @@ class InformationSetEncoderV7:
                 break
         if not row and isinstance(source, ChoiceOption):
             row = _reference_mapping(source.ref)
-            if not row:
-                row = _reference_mapping(source.value)
         owner = int(row.get("player", -1))
         return np.asarray(
             (

@@ -13,9 +13,10 @@ import numpy as np
 
 from engine.actions import (
     ChoiceOption,
-    ChoiceRequest,
+    ChoiceView,
     ChoiceResponse,
     GameAction,
+    PokemonRef,
 )
 from engine.ai.challenge_ai import AIConfig
 from engine.ai.dl.alphazero_v2 import (
@@ -936,17 +937,18 @@ class AlphaZeroV2Tests(unittest.TestCase):
         )
 
     def test_teacher_choice_mapping_canonicalizes_unordered_multiselect(self):
-        request = ChoiceRequest(
-            "request",
-            "search_deck",
-            0,
-            "choose",
-            (
+        request = ChoiceView(
+            request_id="request",
+            base_revision=0,
+            request_type="search_deck",
+            player=0,
+            prompt="choose",
+            options=(
                 ChoiceOption("card:a", "a"),
                 ChoiceOption("card:b", "b"),
             ),
-            2,
-            2,
+            min_select=2,
+            max_select=2,
         )
         candidate = _choice_candidate_for_response(
             _choice_responses(request),
@@ -962,17 +964,18 @@ class AlphaZeroV2Tests(unittest.TestCase):
         )
 
     def test_teacher_choice_mapping_retains_preferred_candidate_past_cap(self):
-        request = ChoiceRequest(
-            "large-request",
-            "search_deck",
-            0,
-            "choose",
-            tuple(
+        request = ChoiceView(
+            request_id="large-request",
+            base_revision=0,
+            request_type="search_deck",
+            player=0,
+            prompt="choose",
+            options=tuple(
                 ChoiceOption(f"card:{index:02d}", str(index))
                 for index in range(17)
             ),
-            3,
-            3,
+            min_select=3,
+            max_select=3,
         )
         preferred = ChoiceResponse(
             request.request_id,
@@ -1014,8 +1017,18 @@ class AlphaZeroV2Tests(unittest.TestCase):
                 return GameAction("END_TURN")
 
         actions = (
-            GameAction("PROMOTE", {"bench_idx": 0}, actor=1),
-            GameAction("PROMOTE", {"bench_idx": 1}, actor=1),
+            GameAction(
+                kind="PROMOTE",
+                actor=1,
+                target=PokemonRef(1, "bench_0", "fixture-0"),
+                base_revision=0,
+            ),
+            GameAction(
+                kind="PROMOTE",
+                actor=1,
+                target=PokemonRef(1, "bench_1", "fixture-1"),
+                base_revision=0,
+            ),
         )
         selected, proposal = _challenge_authoritative_action(
             state,
@@ -1118,7 +1131,7 @@ class AlphaZeroV2Tests(unittest.TestCase):
             ),
             patch(
                 "engine.ai.dl.alphazero_v2.DEFAULT_GAME_ENGINE."
-                "pending_choice_request",
+                "pending_choice",
                 return_value=SimpleNamespace(),
             ),
         ):
@@ -1201,7 +1214,7 @@ class AlphaZeroV2Tests(unittest.TestCase):
             ),
             patch(
                 "engine.ai.dl.alphazero_v2.DEFAULT_GAME_ENGINE."
-                "pending_choice_request",
+                "pending_choice",
                 return_value=None,
             ),
         ):

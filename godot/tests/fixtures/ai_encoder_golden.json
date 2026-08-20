@@ -1,13 +1,12 @@
 {
   "actions": [
     {
-      "action": "ATTACH_ENERGY",
       "action_id": "",
       "actor": 1,
-      "params": {
-        "hand_idx": 0,
-        "target_slot": "active"
-      },
+      "base_revision": 0,
+      "kind": "ATTACH_ENERGY",
+      "payload": {},
+      "schema_version": 4,
       "source": {
         "attachment_type": "",
         "card_id": "sv1-ener-3",
@@ -25,16 +24,17 @@
         "player": 1,
         "slot": "active",
         "zone": ""
-      },
-      "terminal": false
+      }
     },
     {
-      "action": "DECLARE_ATTACK",
       "action_id": "",
       "actor": 1,
-      "params": {
-        "attack_idx": 1
+      "base_revision": 0,
+      "kind": "DECLARE_ATTACK",
+      "payload": {
+        "attack_index": 1
       },
+      "schema_version": 4,
       "source": {
         "attachment_type": "",
         "card_id": "sv2-grex",
@@ -44,17 +44,17 @@
         "slot": "active",
         "zone": ""
       },
-      "target": null,
-      "terminal": true
+      "target": null
     },
     {
-      "action": "END_TURN",
       "action_id": "",
       "actor": 1,
-      "params": {},
+      "base_revision": 0,
+      "kind": "END_TURN",
+      "payload": {},
+      "schema_version": 4,
       "source": null,
-      "target": null,
-      "terminal": true
+      "target": null
     }
   ],
   "choice": {

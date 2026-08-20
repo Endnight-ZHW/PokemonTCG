@@ -9,14 +9,29 @@ if ([string]::IsNullOrWhiteSpace($Python)) {
 }
 $env:PYTHONNOUSERSITE = '1'
 
-& (Join-Path $PSScriptRoot 'test_python.ps1') -Tier core -Python $Python
-if ($LASTEXITCODE -ne 0) { throw 'Python core tests failed.' }
+& (Join-Path $PSScriptRoot 'test_ptcg_core.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'Dependency-free C++ rules core failed.' }
 
-& $Python -B (Join-Path $repoRoot 'python\scripts\export_godot_data.py') `
-    --check --skip-images
-if ($LASTEXITCODE -ne 0) { throw 'Godot generated data check failed.' }
+& $Python -B (Join-Path $repoRoot 'python\scripts\card_author.py') lint
+if ($LASTEXITCODE -ne 0) { throw 'Card authoring contract failed.' }
 
-& (Join-Path $PSScriptRoot 'test_godot.ps1')
-if ($LASTEXITCODE -ne 0) { throw 'Godot core tests failed.' }
+. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$godotPaths = Get-GodotToolchainPaths -RepoRoot $repoRoot
+$godot = $godotPaths.Console
+Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
+$godotOutput = & $godot `
+    --headless `
+    --path (Join-Path $repoRoot 'godot') `
+    --script 'res://tests/native_rules_session_contract_test.gd' 2>&1
+$godotOutput | ForEach-Object { Write-Host $_ }
+$godotExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+$joinedGodotOutput = $godotOutput -join "`n"
+if (
+    $godotExitCode -ne 0 `
+    -or $joinedGodotOutput -match '(?m)^(SCRIPT ERROR|ERROR|WARNING):' `
+    -or $joinedGodotOutput -notmatch 'NATIVE_RULES_SESSION_CONTRACT_OK'
+) {
+    throw 'Single-process Godot Native ABI 2 contract failed.'
+}
 
 Write-Host 'FAST_VERIFICATION_OK'

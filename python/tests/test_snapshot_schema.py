@@ -8,6 +8,10 @@ from data.deck_definitions import ALL_CARD_IDS
 from engine.enums import StatusType, TurnPhase
 from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
+from engine.native_state_codec import (
+    adopt_native_snapshot,
+    state_to_native_snapshot,
+)
 from engine.snapshot import (
     SNAPSHOT_SCHEMA_VERSION,
     canonical_state_payload,
@@ -35,10 +39,12 @@ class SnapshotSchemaTests(unittest.TestCase):
 
     def test_canonical_payload_roundtrip_has_explicit_schema(self):
         state = self._state()
+        state.p1.attack_locked_names = {"岩窟冲撞": 5}
         payload = canonical_state_payload(state)
         self.assertEqual(payload["schema_version"], SNAPSHOT_SCHEMA_VERSION)
 
         restored = state_from_payload(payload)
+        self.assertEqual(restored.p1.attack_locked_names, {"岩窟冲撞": 5})
         self.assertEqual(canonical_state_payload(restored), payload)
 
     def test_pre_schema_payload_is_rejected_explicitly(self):
@@ -46,6 +52,19 @@ class SnapshotSchemaTests(unittest.TestCase):
         payload.pop("schema_version")
         with self.assertRaisesRegex(ValueError, "incompatible_snapshot_rules"):
             state_from_payload(payload)
+
+    def test_player_scoped_attack_lock_survives_native_dto_roundtrip(self):
+        state = self._state()
+        state.p1.attack_locked_names = {"岩窟冲撞": 5}
+        payload = state_to_native_snapshot(state)
+        self.assertEqual(
+            payload["players"][0]["attack_locked_names"],
+            {"岩窟冲撞": 5},
+        )
+
+        restored = self._state()
+        adopt_native_snapshot(restored, payload)
+        self.assertEqual(restored.p1.attack_locked_names, {"岩窟冲撞": 5})
 
     def test_canonical_payload_sorts_set_backed_fields(self):
         state = self._state()

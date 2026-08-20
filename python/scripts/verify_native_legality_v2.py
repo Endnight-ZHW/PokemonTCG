@@ -120,7 +120,7 @@ def audit(
                 break
 
             actor = environment.actor(state)
-            request = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+            request = DEFAULT_GAME_ENGINE.pending_choice(state)
             decision_seed = task.seed + decision * 65537
             if request is not None:
                 choices += 1

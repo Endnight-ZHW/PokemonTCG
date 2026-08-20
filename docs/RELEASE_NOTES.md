@@ -1,4 +1,46 @@
-# PokemonTCG Godot 0.6.0
+# PokemonTCG Godot 0.7.0
+
+0.7.0 将规则运行时收敛为 Native ABI 2 的单一 C++ `ptcg_core`。Godot 与 Python
+只保留绑定/DTO、卡牌作者工具和训练编排；旧 Python/GDScript 规则执行器与 Pygame UI
+已删除。Protocol 6、Actions 4、ChoiceView 2、Snapshot 3 与 VM IR 3 的对外形状保持兼容。
+
+## 0.7.0 规则核心与发布边界
+
+- `NativeRulesSession` 独占完整状态、xorshift32 RNG、revision、动作幂等记录、事务快照、
+  continuation、结算栈与玩家视图；规则错误 fail-closed，不回退旧引擎。
+- 迁移期入口已清零：Python/Godot 只接受 Action v4 与 ChoiceView v2，删除旧 ChoiceRequest、
+  `ActionResult` 双重包装、规则运行时开关、网络等待镜像及旧附件字段适配。
+- 137 张卡由类型化 Python DSL 编译为 Card IR v3；80 个 VM 描述符由同一 C++ handler
+  集合执行，发布 C++ 源码不按卡牌 ID 分派。
+- 新增 MatchJournal v1、确定性 replay/fork、Workbench 场景构造与首分歧诊断。
+- 本地双人、Challenge AI、原生 Deep 搜索基础、LAN 与 Relay 均消费同一 RulesSession。
+  当前没有可晋升 AlphaZero v2 模型，因此发布 UI 继续关闭 Deep 并回退 Challenge。
+- Choice 日志按显式语义区分“从弃牌区回收”和“弃置手牌/能量”，不再根据请求名
+  中的 `discard` 猜测；Challenge AI 同步使用 Native ABI 2 发布的规范转附、弃置与换位语义。
+- Challenge AI 不再执行两张同名、同状态宝可梦之间没有任何收益的撤退；若撤退能够
+  清除特殊状态/临时效果，或换上更健康、更就绪的同名宝可梦，仍会按正常战术评估。
+- 撤退、训练家/特性换位、强制换位、喷射能量及晋升事件现在都携带明确的板凳槽位；
+  即使交换双方 `card_id` 完全相同也会播放双向动画。付费撤退保持先弃能量、后换位，
+  离开战斗场的宝可梦会按规则清除特殊状态与临时攻击效果。
+- Windows x86_64 与 Android 9+ ARM64 共用同源核心；快速门禁只运行一次 C++、一次
+  Python 作者工具检查和一个 Godot 进程。
+- Deep 未启用时，Release 扩展不编译搜索/ONNX 绑定且包内不携带 ONNX Runtime；Debug
+  仍可按需构建完整 Deep 工具链。
+
+## 0.7.0 验证
+
+- 326 个 Python 作者/绑定/训练工具测试、C++ 独立核心测试、Godot 绑定/UI/协议合同通过。
+- 10 组 Challenge AI、LAN 与 Relay 完整对局正常结算；冻结转换语料零分歧。
+- 本次 AI 实战回归覆盖 1,095 个动作与 158 个选择；同名换位的 50% 动画检查和最终
+  权威状态对账均通过。
+- 原生搜索 7 次中位数为 2,843.60 simulations/s，是冻结基线的 106.37%，并显著快于
+  Python 深拷贝/绑定退化路径。
+- Windows Release 启动烟测、Android APK 签名/ABI/载荷静态合同通过；实体 Android
+  设备烟测仍须在有设备的发布环境执行。
+
+---
+
+## 0.6.0 历史说明
 
 Godot 4.7 是唯一发布客户端。0.6.0 在 0.5.0 的严格动作信封和事务管线之上，补齐 VM 描述符、可挂起触发栈、持续 Modifier 和规则/表现边界。该版本是原子破坏性升级，不提供 Protocol 5 或 Snapshot 2 桥接。
 

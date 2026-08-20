@@ -3,7 +3,7 @@
   "card_vocab_size": 139,
   "card_vocab_version": 1,
   "compatibility_bridge": {
-    "python_action_version": 3,
+    "python_action_version": 4,
     "python_encoder_version": 7,
     "python_rules_version": 5,
     "version": 2
@@ -61,7 +61,7 @@
       ]
     },
     "model_variant": "universal_infoset_transformer_v2",
-    "native_abi_version": 1,
+    "native_abi_version": 2,
     "outputs": {
       "policy_logits": [
         "float32",

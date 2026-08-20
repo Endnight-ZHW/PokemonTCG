@@ -39,7 +39,6 @@ func plan(
 		return _failure("actor_must_match_perspective", 0, "error")
 	if engine == null or root_actions.is_empty():
 		return _failure("no_legal_actions", 0, "error")
-	engine.begin_search_decision()
 	var root_limit := clampi(
 		int(config.get("root_actions", DEFAULT_ROOT_ACTIONS)),
 		1,

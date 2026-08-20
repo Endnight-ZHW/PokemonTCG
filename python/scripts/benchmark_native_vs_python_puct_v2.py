@@ -35,6 +35,9 @@ from engine.ai.dl.puct_v2 import (
 )
 
 
+POLL_TIMEOUT_MILLISECONDS = 1
+
+
 def _fixture(repo_root: Path):
     formal = _setup_game(
         GameTask(
@@ -131,7 +134,11 @@ def _run_native(
         if time.perf_counter() >= deadline:
             job.cancel()
             raise TimeoutError("native_puct_benchmark_timeout")
-        tensors = batch.poll_inference(256, 10)
+        # A long external poll can race the worker's final completion and add
+        # an entire timeout after the search has already finished. Keep this
+        # driver-only tail below one millisecond so the report measures search
+        # throughput rather than Python polling jitter.
+        tensors = batch.poll_inference(256, POLL_TIMEOUT_MILLISECONDS)
         request_ids = tensors["request_ids"]
         if request_ids.size == 0:
             continue
@@ -193,6 +200,7 @@ def benchmark(
         "repeats": repeats,
         "simulations_per_search": simulations,
         "max_depth": max_depth,
+        "poll_timeout_milliseconds": POLL_TIMEOUT_MILLISECONDS,
         "python": {
             "samples_seconds": python_samples,
             "median_seconds": python_median,

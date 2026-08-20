@@ -113,12 +113,8 @@ static func canonical_ref(ref_value: Variant) -> Dictionary:
 	if not ref_value is Dictionary:
 		return {}
 	var result := Dictionary(ref_value).duplicate(true)
-	var index := int(result.get("index", -1))
-	if index < 0 and result.has("attachment_index"):
-		index = int(result.get("attachment_index", -1))
-	if result.has("index") or result.has("attachment_index"):
-		result["index"] = index
-	result.erase("attachment_index")
+	if result.has("index"):
+		result["index"] = int(result["index"])
 	return result
 
 

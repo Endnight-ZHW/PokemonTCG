@@ -434,7 +434,7 @@ def evaluate_release_evidence(
 
     status = dict(native_status or native_technical_status())
     gate.check("native.available", status.get("available") is True)
-    gate.check("native.abi", int(status.get("abi_version", 0)) == 1)
+    gate.check("native.abi", int(status.get("abi_version", 0)) == 2)
     gate.check("native.ready", status.get("ready") is True)
     gate.check("native.blockers", not list(status.get("blockers") or ()))
 

@@ -50,7 +50,7 @@ func rebuild(action_rows: Array[Dictionary], selected_key := "") -> void:
 			_unreachable_rows.append(row)
 			continue
 		if is_system_action(action):
-			_system_rows[action.action] = row
+			_system_rows[action.kind] = row
 			continue
 		if not is_supported_card_action(action):
 			_unreachable_rows.append(row)
@@ -274,11 +274,11 @@ func all_card_actions_reachable_from(visible_source_keys: Array[String]) -> bool
 
 
 static func is_system_action(action: GameAction) -> bool:
-	return action != null and SYSTEM_ACTIONS.has(action.action)
+	return action != null and SYSTEM_ACTIONS.has(action.kind)
 
 
 static func is_supported_card_action(action: GameAction) -> bool:
-	return action != null and CARD_ACTIONS.has(action.action)
+	return action != null and CARD_ACTIONS.has(action.kind)
 
 
 static func hand_key(hand_index: int) -> String:
@@ -302,13 +302,13 @@ static func source_key_for_action(action: GameAction, row: Dictionary = {}) -> S
 	if not explicit_source.is_empty():
 		return explicit_source
 
-	var hand_index := int(action.params.get("hand_idx", -1))
+	var hand_index := action.hand_index()
 	if hand_index < 0 and action.source and action.source.zone == "hand":
 		hand_index = action.source.index
 	if hand_index >= 0:
 		return hand_key(hand_index)
 
-	match action.action:
+	match action.kind:
 		"RETREAT", "DECLARE_ATTACK":
 			return pokemon_key(action.actor, "active")
 		"PROMOTE":
@@ -321,7 +321,7 @@ static func source_key_for_action(action: GameAction, row: Dictionary = {}) -> S
 		var source_key := _entity_key(action.source)
 		if not source_key.is_empty():
 			return source_key
-	var slot := str(action.params.get("slot", ""))
+	var slot := str(action.primary_slot())
 	if not slot.is_empty():
 		return pokemon_key(action.actor, slot)
 	return ""
@@ -364,18 +364,18 @@ static func target_keys_for_action(
 		return result
 
 	# Attacks, abilities and promotions execute from their source card. Any
-	# EntityRef target on those rows is informational or resolved by ChoiceRequest.
-	if action.action in ["DECLARE_ATTACK", "USE_ABILITY", "USE_STADIUM", "PROMOTE"]:
+	# EntityRef target on those rows is informational or resolved by ChoiceView.
+	if action.kind in ["DECLARE_ATTACK", "USE_ABILITY", "USE_STADIUM", "PROMOTE"]:
 		return result
 
 	var slot := ""
-	match action.action:
+	match action.kind:
 		"PLAY_BASIC":
-			slot = str(action.params.get("target", ""))
+			slot = str(action.target_slot())
 		"EVOLVE":
-			slot = str(action.params.get("slot", ""))
+			slot = str(action.primary_slot())
 		"ATTACH_ENERGY", "PLAY_TRAINER":
-			slot = str(action.params.get("target_slot", ""))
+			slot = str(action.target_slot())
 		"RETREAT":
 			slot = _bench_slot(action)
 	if slot.is_empty() and action.target:
@@ -406,7 +406,7 @@ static func _bench_slot(action: GameAction) -> String:
 		return ""
 	if action.target and action.target.slot.begins_with("bench_"):
 		return action.target.slot
-	var bench_index := int(action.params.get("bench_idx", -1))
+	var bench_index := action.bench_index()
 	return "bench_%d" % bench_index if bench_index >= 0 else ""
 
 
@@ -431,8 +431,8 @@ func _build_groups() -> void:
 			if not group_indices.has(group_key):
 				var group := {
 					"key": group_key,
-					"action_type": action.action,
-					"label": str(row.get("label", action.action)),
+					"action_type": action.kind,
+					"label": str(row.get("label", action.kind)),
 					"hint": str(row.get("hint", "")),
 					"icon": row.get("icon"),
 					"rows": [],
@@ -459,15 +459,15 @@ func _group_key(action: GameAction, row: Dictionary) -> String:
 	var explicit_key := str(row.get("group_key", ""))
 	if not explicit_key.is_empty():
 		return explicit_key
-	match action.action:
+	match action.kind:
 		"DECLARE_ATTACK":
-			return "%s:%d" % [action.action, int(action.params.get("attack_idx", -1))]
+			return "%s:%d" % [action.kind, action.attack_index()]
 		"USE_ABILITY":
-			return "%s:%s" % [action.action, str(action.params.get("ability_name", ""))]
+			return "%s:%s" % [action.kind, str(action.ability_name())]
 		"PLAY_TRAINER":
 			return "%s:%s" % [
-				action.action,
+				action.kind,
 				"targeted" if not target_keys_for_action(action, row).is_empty() else "direct",
 			]
 		_:
-			return action.action
+			return action.kind

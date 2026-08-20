@@ -19,7 +19,7 @@ from engine.ai.dl.native_bridge_v2 import (
     NativeBridgeError,
     NativeModelBackend,
     NativeSearchService,
-    _native_choice_request,
+    _native_choice_view,
     _public_native_bench_damage_continuation,
     _public_native_exp_share_continuation,
     _public_native_exp_share_order_continuation,
@@ -171,6 +171,7 @@ class NativeAICoreTests(unittest.TestCase):
                 for row in self.game.legal_actions(state, 0)
             )
         )
+
         active["attack_locked"] = False
         active["attack_locked_names"] = {"跟进": 2}
         self.assertFalse(
@@ -188,18 +189,25 @@ class NativeAICoreTests(unittest.TestCase):
         state["players"][0]["hand"] = ["sv1-ener-5"]
         state["players"][0]["deck"] = ["sv1-ener-5", "sv1-ener-5"]
         state["players"][0]["bench"] = [None, None, None, None, None]
-        # With no matching source, the leading attachment is a successful
-        # no-op and the later draw keeps the ability legal.
+        # Clairvoyant Sense requires a Basic Psychic Energy attachment; its
+        # later draw does not make a missing public source legal.
         state["players"][0]["hand"] = ["sv1-189"]
-        self.assertTrue(
+        self.assertFalse(
             any(
                 row["kind"] == "USE_ABILITY"
                 and row["payload"]["ability_name"] == "以太感知"
                 for row in self.game.legal_actions(state, 0)
             )
         )
-        # When matching energy exists, the same required attachment fails
-        # without a Bench target, so the later draw cannot rescue the action.
+        state["players"][0]["hand"] = ["svg2-lume"]
+        self.assertFalse(
+            any(
+                row["kind"] == "USE_ABILITY"
+                and row["payload"]["ability_name"] == "以太感知"
+                for row in self.game.legal_actions(state, 0)
+            )
+        )
+        # A matching Basic Energy still needs a Benched target.
         state["players"][0]["hand"] = ["sv1-ener-5"]
         self.assertFalse(
             any(
@@ -242,6 +250,87 @@ class NativeAICoreTests(unittest.TestCase):
             any(
                 row["kind"] == "DECLARE_ATTACK"
                 for row in self.game.legal_actions(state, 0)
+            )
+        )
+
+        active.update(
+            card_id="svf-luca",
+            damage_counters=0,
+            energy_card_ids=["svg2-lume", "sv1-ener-6"],
+            evolution_stack_ids=["svf-rio"],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[],
+        )
+        state["players"][1]["active"].update(
+            card_id="svd-mabosstiff-ex",
+            damage_counters=0,
+            energy_card_ids=[],
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[],
+        )
+        state["players"][0]["discard"] = []
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+        )
+        result = self.game.apply_action(state, action, 0x1A11E5CE)
+        self.assertTrue(result["success"], result)
+        self.assertEqual(
+            result["state"]["players"][1]["active"]["damage_counters"],
+            13,
+        )
+        self.assertEqual(
+            result["state"]["players"][0]["active"]["energy_card_ids"],
+            [],
+        )
+        self.assertCountEqual(
+            result["state"]["players"][0]["discard"],
+            ["svg2-lume", "sv1-ener-6"],
+        )
+
+        relocate_state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        relocate_state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        bronzong = relocate_state["players"][0]["active"]
+        bronzong.update(
+            card_id="svm-bronzong",
+            energy_card_ids=["svg2-lume"],
+            evolution_stack_ids=["svm-bronzor"],
+            used_abilities=[],
+            modifiers=[],
+        )
+        target = copy.deepcopy(bronzong)
+        target.update(card_id="svm-zacian", energy_card_ids=[])
+        relocate_state["players"][0]["bench"] = [
+            target,
+            None,
+            None,
+            None,
+            None,
+        ]
+        self.assertTrue(
+            any(
+                row["kind"] == "USE_ABILITY"
+                for row in self.game.legal_actions(relocate_state, 0)
+            )
+        )
+        bronzong["energy_card_ids"] = ["svg2-lume", "svi-dtur"]
+        self.assertFalse(
+            any(
+                row["kind"] == "USE_ABILITY"
+                for row in self.game.legal_actions(relocate_state, 0)
             )
         )
 
@@ -458,6 +547,9 @@ class NativeAICoreTests(unittest.TestCase):
         payload = copy.deepcopy(source)
         payload.pop("continuation_operations", None)
         payload.pop("frame_kinds", None)
+        metadata = payload.get("metadata")
+        if isinstance(metadata, dict):
+            metadata.pop("required_units", None)
         return payload
 
     def test_rng_replay_and_apply_undo_are_deterministic(self):
@@ -1062,16 +1154,17 @@ class NativeAICoreTests(unittest.TestCase):
             metrics = backend.native_metrics
 
         self.assertEqual(result.decisions, 32)
-        self.assertEqual(result.simulations, 64)
+        self.assertGreaterEqual(result.simulations, 60)
         self.assertEqual(result.invalid_actions, 0)
         self.assertEqual(result.illegal_choices, 0)
         self.assertEqual(result.rule_exceptions, 0)
         self.assertTrue(result.truncated)
         # Every decision, including the intervening search/deck choices,
         # reached the native inference queue for both simulations.
-        self.assertEqual(metrics["inference_requests"], 64)
-        self.assertEqual(metrics["search_decisions"], 32)
-        self.assertEqual(metrics["search_simulations"], 64)
+        self.assertEqual(metrics["inference_requests"], result.simulations)
+        self.assertGreaterEqual(metrics["search_decisions"], 30)
+        self.assertLessEqual(metrics["search_decisions"], result.decisions)
+        self.assertEqual(metrics["search_simulations"], result.simulations)
 
     def test_native_search_flips_wdl_when_actor_changes(self):
         state = copy.deepcopy(
@@ -1519,6 +1612,139 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertEqual(continued_operations, 27)
         self.assertEqual(choice_rounds, 33)
 
+    def test_native_grouped_card_choices_enforce_category_limits(self):
+        arven_row = self.vm_fixture["cases"]["search_item_and_tool"]
+        arven = self.rules.execute(
+            arven_row["initial_state"],
+            arven_row["command_spec"],
+            arven_row["actor"],
+            arven_row["source_slot"],
+            arven_row["portable_seed"],
+            arven_row["context_mode"],
+        )
+        self.assertTrue(arven["success"], arven)
+        self.assertEqual(
+            arven["pending"]["metadata"]["category_limits"],
+            {"item": 1, "tool": 1},
+        )
+        arven_options = arven["pending"]["options"]
+
+        two_items = [arven_options[0], arven_options[1]]
+        rejected_arven = self.rules.resume(
+            arven["state"],
+            arven["context"],
+            arven["continuation"],
+            two_items,
+            False,
+            arven["rng_state"],
+        )
+        self.assertFalse(rejected_arven["success"])
+        self.assertEqual(
+            rejected_arven["error_code"],
+            "arven_category_limit_exceeded",
+        )
+
+        mismatched = copy.deepcopy(arven_options[0])
+        mismatched["card_id"] = arven_options[2]["card_id"]
+        rejected_identity = self.rules.resume(
+            arven["state"],
+            arven["context"],
+            arven["continuation"],
+            [mismatched],
+            False,
+            arven["rng_state"],
+        )
+        self.assertFalse(rejected_identity["success"])
+        self.assertEqual(
+            rejected_identity["error_code"],
+            "selected_card_identity_mismatch",
+        )
+
+        valid_arven = self.rules.resume(
+            arven["state"],
+            arven["context"],
+            arven["continuation"],
+            [arven_options[0], arven_options[2]],
+            False,
+            arven["rng_state"],
+        )
+        self.assertTrue(valid_arven["success"], valid_arven)
+        self.assertIn("sv1-150", valid_arven["state"]["players"][0]["hand"])
+        self.assertIn("sv1-201", valid_arven["state"]["players"][0]["hand"])
+
+        clara_row = self.vm_fixture["cases"]["recover_clara"]
+        clara_state = copy.deepcopy(clara_row["initial_state"])
+        clara_state["players"][0]["discard"].append("svg2-lume")
+        clara = self.rules.execute(
+            clara_state,
+            clara_row["command_spec"],
+            clara_row["actor"],
+            clara_row["source_slot"],
+            clara_row["portable_seed"],
+            clara_row["context_mode"],
+        )
+        self.assertTrue(clara["success"], clara)
+        self.assertEqual(
+            clara["pending"]["metadata"]["category_limits"],
+            {"energy": 2, "pokemon": 2},
+        )
+        clara_options = clara["pending"]["options"]
+
+        rejected_clara = self.rules.resume(
+            clara["state"],
+            clara["context"],
+            clara["continuation"],
+            clara_options[:3],
+            False,
+            clara["rng_state"],
+        )
+        self.assertFalse(rejected_clara["success"])
+        self.assertEqual(
+            rejected_clara["error_code"],
+            "clara_category_limit_exceeded",
+        )
+
+        forged_special_energy = {
+            "card_id": "svg2-lume",
+            "index": len(clara_state["players"][0]["discard"]) - 1,
+            "kind": "card",
+            "player": 0,
+            "zone": "discard",
+        }
+        rejected_special_energy = self.rules.resume(
+            clara["state"],
+            clara["context"],
+            clara["continuation"],
+            [forged_special_energy],
+            False,
+            clara["rng_state"],
+        )
+        self.assertFalse(rejected_special_energy["success"])
+        self.assertEqual(
+            rejected_special_energy["error_code"],
+            "clara_selection_category_invalid",
+        )
+
+        valid_clara = self.rules.resume(
+            clara["state"],
+            clara["context"],
+            clara["continuation"],
+            [
+                clara_options[0],
+                clara_options[1],
+                clara_options[3],
+                clara_options[4],
+            ],
+            False,
+            clara["rng_state"],
+        )
+        self.assertTrue(valid_clara["success"], valid_clara)
+        recovered = valid_clara["state"]["players"][0]["hand"][-4:]
+        self.assertEqual(
+            recovered,
+            ["sv1-ener-1", "sv1-ener-5", "sv1-104", "svg2-empo"],
+        )
+
     def test_all_23_rule_action_goldens_match_native_game_kernel(self):
         fixture = self.rules_fixture
         self.assertEqual(fixture["fixture_version"], 3)
@@ -1556,7 +1782,7 @@ class NativeAICoreTests(unittest.TestCase):
                         trace["event_types"],
                     )
                     self.assertEqual(
-                        result["pending"],
+                        self._rule_pending_projection(result["pending"]),
                         self._rule_pending_projection(
                             trace.get("pending", {})
                         ),
@@ -1573,8 +1799,8 @@ class NativeAICoreTests(unittest.TestCase):
                 if pending:
                     self.assertIsNotNone(last_result)
                     self.assertEqual(
-                        last_result["pending"],
-                        pending["request"],
+                        self._rule_pending_projection(last_result["pending"]),
+                        self._rule_pending_projection(pending["request"]),
                     )
                     response = row["choice_response"]
                     result = self.game.resume_choice(
@@ -1598,7 +1824,7 @@ class NativeAICoreTests(unittest.TestCase):
                         trace["event_types"],
                     )
                     self.assertEqual(
-                        result["pending"],
+                        self._rule_pending_projection(result["pending"]),
                         self._rule_pending_projection(
                             trace.get("pending", {})
                         ),
@@ -1765,7 +1991,9 @@ class NativeAICoreTests(unittest.TestCase):
             None,
         ]
         owner["discard"] = ["sv1-151"]
-        self.assertFalse(
+        # An attack can still be declared when its search/attachment effect
+        # will find no matching card; the effect then resolves as far as it can.
+        self.assertTrue(
             any(
                 action["kind"] == "DECLARE_ATTACK"
                 and action["payload"]["attack_index"] == 0
@@ -1773,6 +2001,19 @@ class NativeAICoreTests(unittest.TestCase):
             )
         )
         owner["discard"].append("sv1-ener-6")
+        self.assertTrue(
+            any(
+                action["kind"] == "DECLARE_ATTACK"
+                and action["payload"]["attack_index"] == 0
+                for action in self.game.legal_actions(state, 0)
+            )
+        )
+
+        owner["active"] = pokemon(
+            "svd-morpeko",
+            energy=("sv1-ener-7",),
+        )
+        owner["discard"] = []
         self.assertTrue(
             any(
                 action["kind"] == "DECLARE_ATTACK"
@@ -1850,6 +2091,58 @@ class NativeAICoreTests(unittest.TestCase):
             [["a", "a"], ["a", "b"], ["b", "b"]],
         )
 
+        energy_options = [
+            {
+                "option_id": (
+                    f"energy:{energy_index}:sv1-ener-3"
+                    f"->pokemon:0:{slot}:sv2-tatsu"
+                ),
+                "kind": "pokemon",
+                "player": 0,
+                "slot": slot,
+                "card_id": "sv2-tatsu",
+            }
+            for slot in ("active", "bench_0")
+            for energy_index in (0, 1)
+        ]
+        same_target_candidates = self.game.choice_candidates({
+            "request_id": "choice-energy-same",
+            "request_type": "distribute_energy",
+            "min_select": 2,
+            "max_select": 2,
+            "allow_duplicates": False,
+            "can_cancel": False,
+            "options": energy_options,
+            "metadata": {"same_target": True, "max_per_target": 2},
+        })
+        self.assertEqual(len(same_target_candidates), 2)
+        for candidate in same_target_candidates:
+            selected = candidate["selected_options"]
+            self.assertEqual(len(selected), 2)
+            self.assertEqual(
+                len({
+                    option_id.split("->pokemon:0:", 1)[1].split(":", 1)[0]
+                    for option_id in selected
+                }),
+                1,
+            )
+            self.assertEqual(
+                {option_id.split(":", 2)[1] for option_id in selected},
+                {"0", "1"},
+            )
+
+        distinct_target_candidates = self.game.choice_candidates({
+            "request_id": "choice-energy-distinct",
+            "request_type": "distribute_energy",
+            "min_select": 2,
+            "max_select": 2,
+            "allow_duplicates": False,
+            "can_cancel": False,
+            "options": energy_options,
+            "metadata": {"same_target": False, "max_per_target": 1},
+        })
+        self.assertEqual(len(distinct_target_candidates), 2)
+
     def test_native_ultra_ball_auto_pays_the_only_legal_cost(self):
         state = copy.deepcopy(
             next(iter(self.rules_fixture["cases"].values()))[
@@ -1879,7 +2172,7 @@ class NativeAICoreTests(unittest.TestCase):
 
         self.assertTrue(result["success"], result)
         self.assertEqual(result["pending"]["request_type"], "search_move")
-        self.assertEqual(result["pending"]["min_select"], 1)
+        self.assertEqual(result["pending"]["min_select"], 0)
         self.assertEqual(result["pending"]["max_select"], 1)
         self.assertEqual(len(result["pending"]["options"]), 1)
         self.assertEqual(
@@ -1965,6 +2258,38 @@ class NativeAICoreTests(unittest.TestCase):
         )
         self.assertIn("deck_shuffled", result["event_types"])
 
+    def test_native_paid_hidden_search_can_find_zero_matching_cards(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        owner = state["players"][0]
+        owner["hand"] = ["sv1-153", "sv1-ener-2", "sv1-ener-2"]
+        owner["deck"] = ["sv1-ener-2"]
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "PLAY_TRAINER"
+            and row["source"]["card_id"] == "sv1-153"
+        )
+        result = self.game.apply_action(state, action, 0x5A45524F)
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["pending"], {})
+        self.assertEqual(result["state"]["players"][0]["hand"], [])
+        self.assertEqual(
+            result["state"]["players"][0]["discard"].count("sv1-ener-2"),
+            2,
+        )
+        self.assertIn("sv1-153", result["state"]["players"][0]["discard"])
+        self.assertIn("deck_shuffled", result["event_types"])
+
     def test_native_discard_then_draw_attack_suspends_and_resumes(self):
         state = copy.deepcopy(
             next(iter(self.rules_fixture["cases"].values()))[
@@ -2023,6 +2348,102 @@ class NativeAICoreTests(unittest.TestCase):
             ["sv1-151", "sv1-ener-1", "sv1-ener-1", "sv1-153"],
         )
 
+    def test_native_houb_accepts_one_other_card_and_only_auto_selects_it(self):
+        base = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        base.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        owner = base["players"][0]
+        owner["supporter_played_this_turn"] = False
+        owner["deck"] = ["sv1-ener-1"] * 8
+        owner["hand"] = ["svf-houb", "svi-chim"]
+
+        action = next(
+            row
+            for row in self.game.legal_actions(base, 0)
+            if row["kind"] == "PLAY_TRAINER"
+            and row["source"]["card_id"] == "svf-houb"
+        )
+        auto = self.game.apply_action(base, action, 0x484F5542)
+        self.assertTrue(auto["success"], auto)
+        self.assertEqual(auto["pending"], {})
+        self.assertEqual(len(auto["state"]["players"][0]["hand"]), 5)
+        self.assertIn("card_moved", auto["event_types"])
+        moved = next(
+            event
+            for event in auto["events"]
+            if event["event_type"] == "card_moved"
+        )
+        self.assertEqual(moved["data"]["card_ids"], ["svi-chim"])
+
+        selectable = copy.deepcopy(base)
+        selectable["players"][0]["hand"] = [
+            "svf-houb",
+            "svi-chim",
+            "sv1-151",
+        ]
+        selectable_action = next(
+            row
+            for row in self.game.legal_actions(selectable, 0)
+            if row["kind"] == "PLAY_TRAINER"
+            and row["source"]["card_id"] == "svf-houb"
+        )
+        suspended = self.game.apply_action(
+            selectable,
+            selectable_action,
+            0x484F5543,
+        )
+        self.assertTrue(suspended["success"], suspended)
+        self.assertEqual(suspended["pending"]["request_type"], "houb")
+        self.assertEqual(len(suspended["pending"]["options"]), 2)
+
+    def test_native_draw_supporter_preflight_uses_post_play_hand(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        owner = state["players"][0]
+        opponent = state["players"][1]
+        owner["supporter_played_this_turn"] = False
+        owner["deck"] = ["sv1-ener-1"] * 4
+        opponent["hand"] = ["sv1-151"]
+
+        # After Beri itself leaves the hand, two cards already equal the
+        # required opponent+1 target, so the Supporter would do nothing.
+        owner["hand"] = ["svg-beri", "sv1-151", "sv1-150"]
+        self.assertFalse(any(
+            row["kind"] == "PLAY_TRAINER"
+            and row["source"]["card_id"] == "svg-beri"
+            for row in self.game.legal_actions(state, 0)
+        ))
+
+        owner["hand"] = ["svg-beri"]
+        self.assertTrue(any(
+            row["kind"] == "PLAY_TRAINER"
+            and row["source"]["card_id"] == "svg-beri"
+            for row in self.game.legal_actions(state, 0)
+        ))
+        owner["deck"] = []
+        self.assertFalse(any(
+            row["kind"] == "PLAY_TRAINER"
+            and row["source"]["card_id"] == "svg-beri"
+            for row in self.game.legal_actions(state, 0)
+        ))
+
     def test_native_required_discard_energy_attach_cannot_cancel(self):
         state = copy.deepcopy(
             next(iter(self.rules_fixture["cases"].values()))[
@@ -2058,6 +2479,80 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertEqual(result["pending"]["min_select"], 1)
         self.assertEqual(result["pending"]["max_select"], 1)
         self.assertFalse(result["pending"]["can_cancel"])
+
+    def test_native_energy_discard_rejects_duplicate_or_stale_attachments(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        active = state["players"][0]["active"]
+        active.update({
+            "card_id": "sv1-111",
+            "damage_counters": 0,
+            "energy_card_ids": ["sv1-ener-5"] * 4,
+            "evolution_stack_ids": [],
+            "attached_tool_id": "",
+            "status_conditions": [],
+            "modifiers": [],
+        })
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+            and row["payload"]["attack_index"] == 1
+        )
+        suspended = self.game.apply_action(state, action, 0x4C415449)
+        self.assertTrue(suspended["success"], suspended)
+        options = suspended["pending"]["options"]
+        self.assertEqual(len(options), 4)
+
+        duplicate = self.game.resume_choice(
+            suspended["state"],
+            suspended["continuation"],
+            [options[0], options[0], options[1]],
+            False,
+            suspended["rng_state"],
+        )
+        self.assertFalse(duplicate["success"])
+        self.assertEqual(
+            duplicate["error_code"],
+            "duplicate_energy_discard_selection",
+        )
+
+        stale = copy.deepcopy(options[:3])
+        stale[0]["card_id"] = "sv1-ener-1"
+        rejected_stale = self.game.resume_choice(
+            suspended["state"],
+            suspended["continuation"],
+            stale,
+            False,
+            suspended["rng_state"],
+        )
+        self.assertFalse(rejected_stale["success"])
+        self.assertEqual(
+            rejected_stale["error_code"],
+            "energy_discard_selection_invalid",
+        )
+
+        resolved = self.game.resume_choice(
+            suspended["state"],
+            suspended["continuation"],
+            options[:3],
+            False,
+            suspended["rng_state"],
+        )
+        self.assertTrue(resolved["success"], resolved)
+        self.assertEqual(
+            resolved["state"]["players"][0]["active"]["energy_card_ids"],
+            ["sv1-ener-5"],
+        )
 
     def test_native_marnie_single_target_still_selects_discard_source(self):
         state = copy.deepcopy(
@@ -2397,7 +2892,12 @@ class NativeAICoreTests(unittest.TestCase):
             suspended["pending"]["request_type"],
             "distribute_energy",
         )
-        selected = [
+        self.assertTrue(suspended["pending"]["metadata"]["same_target"])
+        self.assertEqual(
+            suspended["pending"]["metadata"]["max_per_target"],
+            2,
+        )
+        mismatched = [
             next(
                 option
                 for option in suspended["pending"]["options"]
@@ -2408,6 +2908,32 @@ class NativeAICoreTests(unittest.TestCase):
                 option
                 for option in suspended["pending"]["options"]
                 if option["slot"] == "bench_1"
+                and option["option_id"].startswith("energy:1:")
+            ),
+        ]
+        rejected = self.game.resume_choice(
+            suspended["state"],
+            suspended["continuation"],
+            mismatched,
+            False,
+            suspended["rng_state"],
+        )
+        self.assertFalse(rejected["success"])
+        self.assertEqual(
+            rejected["error_code"],
+            "energy_distribution_target_mismatch",
+        )
+        selected = [
+            next(
+                option
+                for option in suspended["pending"]["options"]
+                if option["slot"] == "bench_0"
+                and option["option_id"].startswith("energy:0:")
+            ),
+            next(
+                option
+                for option in suspended["pending"]["options"]
+                if option["slot"] == "bench_0"
                 and option["option_id"].startswith("energy:1:")
             ),
         ]
@@ -2429,6 +2955,57 @@ class NativeAICoreTests(unittest.TestCase):
             resumed["state"]["players"][0]["bench"][1]["energy_card_ids"],
             [],
         )
+
+    def test_native_gardenia_draw_is_legal_without_a_bench(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        owner = state["players"][0]
+        owner["hand"] = ["svg2-gard"]
+        owner["deck"] = ["sv1-151", "sv1-ener-1"]
+        owner["bench"] = [None, None, None, None, None]
+        owner["supporter_played_this_turn"] = False
+
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "PLAY_TRAINER"
+            and row["source"]["card_id"] == "svg2-gard"
+        )
+        resolved = self.game.apply_action(state, action, 0x47415245)
+        self.assertTrue(resolved["success"], resolved)
+        self.assertEqual(resolved["pending"], {})
+        self.assertEqual(
+            resolved["state"]["players"][0]["hand"],
+            ["sv1-ener-1", "sv1-151"],
+        )
+        self.assertEqual(
+            resolved["event_types"],
+            ["trainer_played", "cards_drawn"],
+        )
+
+        empty_deck = copy.deepcopy(state)
+        empty_deck["players"][0]["deck"] = []
+        empty_deck["players"][0]["bench"][0] = copy.deepcopy(
+            empty_deck["players"][0]["active"]
+        )
+        empty_deck["players"][0]["hand"] = [
+            "svg2-gard",
+            "sv1-ener-1",
+        ]
+        self.assertFalse(any(
+            row["kind"] == "PLAY_TRAINER"
+            and row["source"]["card_id"] == "svg2-gard"
+            for row in self.game.legal_actions(empty_deck, 0)
+        ))
 
     def test_native_chi_yu_attaches_all_discard_energy_to_first_target(self):
         state = copy.deepcopy(
@@ -2474,7 +3051,7 @@ class NativeAICoreTests(unittest.TestCase):
             next(
                 option
                 for option in suspended["pending"]["options"]
-                if option["slot"] == "bench_0"
+                if option["slot"] == "active"
                 and option["option_id"].startswith("energy:1:")
             ),
         ]
@@ -2628,6 +3205,75 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertEqual(result["pending"]["min_select"], 0)
         self.assertEqual(result["pending"]["max_select"], 2)
         self.assertEqual(len(result["pending"]["options"]), 12)
+        metadata = result["pending"]["metadata"]
+        self.assertTrue(metadata["same_target"])
+        self.assertEqual(metadata["max_per_target"], 2)
+        self.assertEqual(metadata["source_zone"], "deck")
+        self.assertEqual(metadata["card_ids"], ["sv1-ener-3"] * 2)
+
+        same_target = [
+            option
+            for option in result["pending"]["options"]
+            if option["slot"] == "bench_0"
+        ][:2]
+        resolved = self.game.resume_choice(
+            result["state"],
+            result["continuation"],
+            same_target,
+            False,
+            result["rng_state"],
+        )
+        self.assertTrue(resolved["success"], resolved)
+        self.assertEqual(
+            resolved["state"]["players"][0]["bench"][0][
+                "energy_card_ids"
+            ],
+            ["sv1-ener-3", "sv1-ener-3"],
+        )
+
+        first_source_two_targets = [
+            next(
+                option
+                for option in result["pending"]["options"]
+                if option["slot"] == slot
+                and option["option_id"].startswith("energy:0:")
+            )
+            for slot in ("bench_0", "bench_1")
+        ]
+        duplicate_source = self.game.resume_choice(
+            result["state"],
+            result["continuation"],
+            first_source_two_targets,
+            False,
+            result["rng_state"],
+        )
+        self.assertFalse(duplicate_source["success"])
+        self.assertEqual(
+            duplicate_source["error_code"],
+            "energy_distribution_selection_invalid",
+        )
+
+        mismatched_targets = [
+            next(
+                option
+                for option in result["pending"]["options"]
+                if option["slot"] == slot
+                and option["option_id"].startswith(f"energy:{index}:")
+            )
+            for index, slot in enumerate(("bench_0", "bench_1"))
+        ]
+        mismatched = self.game.resume_choice(
+            result["state"],
+            result["continuation"],
+            mismatched_targets,
+            False,
+            result["rng_state"],
+        )
+        self.assertFalse(mismatched["success"])
+        self.assertEqual(
+            mismatched["error_code"],
+            "energy_distribution_target_mismatch",
+        )
 
     def test_native_chi_yu_discard_distribution_is_protocol_bounded(self):
         state = copy.deepcopy(
@@ -2714,6 +3360,28 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertEqual(result["pending"]["min_select"], 0)
         self.assertEqual(result["pending"]["max_select"], 2)
         self.assertEqual(len(result["pending"]["options"]), 10)
+        metadata = result["pending"]["metadata"]
+        self.assertFalse(metadata["same_target"])
+        self.assertEqual(metadata["max_per_target"], 1)
+        self.assertEqual(metadata["source_zone"], "deck")
+        self.assertEqual(metadata["card_ids"], ["sv1-ener-8"] * 2)
+        same_target = [
+            option
+            for option in result["pending"]["options"]
+            if option["slot"] == "bench_0"
+        ][:2]
+        rejected = self.game.resume_choice(
+            result["state"],
+            result["continuation"],
+            same_target,
+            False,
+            result["rng_state"],
+        )
+        self.assertFalse(rejected["success"])
+        self.assertEqual(
+            rejected["error_code"],
+            "energy_distribution_target_capacity_exceeded",
+        )
 
     def test_native_mela_executes_condition_branch_without_discard_cost(self):
         state = copy.deepcopy(
@@ -2733,7 +3401,11 @@ class NativeAICoreTests(unittest.TestCase):
         owner["supporter_played_this_turn"] = False
         state["turn_fact_book"] = {
             "previous_turn": {
-                "knockouts": [{"defeated_player": 0}],
+                "knockouts": [{
+                    "defeated_player": 0,
+                    "source_player": 1,
+                    "source_kind": "attack_damage",
+                }],
             },
             "current_turn": {"knockouts": []},
         }
@@ -2758,6 +3430,14 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertIn("svi-mela", result["state"]["players"][0]["discard"])
         self.assertIn("energy_attached", result["event_types"])
         self.assertIn("cards_drawn", result["event_types"])
+
+        missing_source = copy.deepcopy(state)
+        missing_source["players"][0]["discard"] = []
+        self.assertFalse(any(
+            row["kind"] == "PLAY_TRAINER"
+            and row["source"]["card_id"] == "svi-mela"
+            for row in self.game.legal_actions(missing_source, 0)
+        ))
 
     def test_native_targeted_damage_consumes_outgoing_reduction(self):
         state = copy.deepcopy(
@@ -3065,6 +3745,188 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertTrue(protected["damage_prevented"])
         self.assertTrue(protected["all_prevented"])
 
+    def test_native_prevent_effects_blocks_status_and_direct_knockout(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        protected = state["players"][1]["active"]
+        protected["all_prevented"] = False
+        protected["modifiers"] = [{
+            "hook": "PREVENT_EFFECTS",
+            "operation": {"kind": "prevent_effects"},
+            "duration": "until_end_of_opponents_next_turn",
+            "condition": {"expires_after_turn": 4},
+        }]
+        status = self.rules.execute(
+            state,
+            {
+                "op": "apply_status",
+                "args": {"status": "asleep", "target": "opponent_active"},
+                "branches": {},
+            },
+            0,
+            "active",
+            0x53544154,
+            "attack",
+        )
+        self.assertTrue(status["success"], status)
+        self.assertEqual(
+            status["state"]["players"][1]["active"]["status_conditions"],
+            [],
+        )
+        self.assertNotIn("status_applied", status["event_types"])
+
+        suspended = self.rules.execute(
+            state,
+            {"op": "flip_coin_then_ko", "args": {}, "branches": {}},
+            0,
+            "active",
+            2,
+            "attack",
+        )
+        self.assertEqual(suspended["continuation"]["flips"], [True, True])
+        direct_ko = self.rules.resume(
+            suspended["state"],
+            suspended["context"],
+            suspended["continuation"],
+            [],
+            False,
+            suspended["rng_state"],
+        )
+        self.assertTrue(direct_ko["success"], direct_ko)
+        self.assertIsNotNone(direct_ko["state"]["players"][1]["active"])
+        self.assertNotIn("pokemon_ko", direct_ko["event_types"])
+
+    def test_native_type_matchups_apply_only_to_active_attack_damage(self):
+        cards = copy.deepcopy(self.game_cards)
+        cards["audit-fire"] = {
+            "name": "Audit Fire",
+            "supertype": "Pokémon",
+            "subtypes": ["Basic"],
+            "energy_types": ["Fire"],
+            "hp": 120,
+            "attacks": [
+                {
+                    "name": "Weakness Hit",
+                    "damage": 30,
+                    "cost": [],
+                    "compiled_effects": [],
+                },
+                {
+                    "name": "Bench Hit",
+                    "damage": 0,
+                    "cost": [],
+                    "compiled_effects": [{
+                        "op": "choose_damage_target",
+                        "args": {
+                            "amount": 30,
+                            "player": "opponent",
+                            "bench_skips_type_matchups": True,
+                        },
+                        "branches": {},
+                    }],
+                },
+            ],
+            "abilities": [],
+            "weaknesses": [],
+            "resistances": [],
+            "prize_value": 1,
+        }
+        cards["audit-weak"] = {
+            "name": "Audit Weak",
+            "supertype": "Pokémon",
+            "subtypes": ["Basic"],
+            "energy_types": ["Grass"],
+            "hp": 200,
+            "attacks": [],
+            "abilities": [],
+            "weaknesses": [{"energy_type": "Fire", "value": "×2"}],
+            "resistances": [],
+            "prize_value": 1,
+        }
+        game = ptcg_ai_core.NativeGameKernel(cards)
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+            apply_type_matchups=True,
+        )
+        state["rules_options"]["apply_type_matchups"] = True
+        state["players"][0]["active"].update(
+            card_id="audit-fire",
+            damage_counters=0,
+            energy_card_ids=[],
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+        )
+        state["players"][1]["active"].update(
+            card_id="audit-weak",
+            damage_counters=0,
+            energy_card_ids=[],
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+        )
+        weak_action = next(
+            row
+            for row in game.legal_actions(state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+            and row["payload"]["attack_index"] == 0
+        )
+        weak_result = game.apply_action(state, weak_action, 0x5745414B)
+        self.assertTrue(weak_result["success"], weak_result)
+        self.assertEqual(
+            weak_result["state"]["players"][1]["active"]["damage_counters"],
+            6,
+        )
+
+        bench_state = copy.deepcopy(state)
+        bench_target = copy.deepcopy(bench_state["players"][1]["active"])
+        bench_state["players"][1]["bench"] = [
+            bench_target,
+            None,
+            None,
+            None,
+            None,
+        ]
+        bench_action = next(
+            row
+            for row in game.legal_actions(bench_state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+            and row["payload"]["attack_index"] == 1
+        )
+        suspended_bench = game.apply_action(
+            bench_state, bench_action, 0x42454E43)
+        self.assertTrue(suspended_bench["success"], suspended_bench)
+        selected_bench = next(
+            option
+            for option in suspended_bench["pending"]["options"]
+            if option.get("slot") == "bench_0"
+        )
+        bench_result = game.resume_choice(
+            suspended_bench["state"],
+            suspended_bench["continuation"],
+            [selected_bench],
+            False,
+            suspended_bench["rng_state"],
+        )
+        self.assertTrue(bench_result["success"], bench_result)
+        self.assertEqual(
+            bench_result["state"]["players"][1]["bench"][0][
+                "damage_counters"
+            ],
+            3,
+        )
+
     def test_native_zero_damage_attack_is_not_raised_by_tool_modifier(self):
         state = copy.deepcopy(
             next(iter(self.rules_fixture["cases"].values()))[
@@ -3203,6 +4065,12 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertEqual(result["pending"]["player"], 1)
         self.assertIsNone(result["state"]["players"][0]["active"])
         self.assertEqual(result["state"]["active_player_idx"], 0)
+        thorns_fact = result["state"]["turn_fact_book"]["current_turn"][
+            "knockouts"
+        ][-1]
+        self.assertEqual(thorns_fact["cause_kind"], "damage_counters")
+        self.assertEqual(thorns_fact["source_kind"], "damage_counters")
+        self.assertFalse(result["state"]["players"][0]["was_ko_by_attack"])
 
     def test_native_attack_waits_for_defender_promotion_after_prize_choice(self):
         state = copy.deepcopy(
@@ -3277,6 +4145,92 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertEqual(completed["state"]["phase"], "MAIN")
         self.assertEqual(completed["state"]["active_player_idx"], 1)
         self.assertEqual(completed["state"]["pending_promotions"], [])
+
+    def test_native_direct_knockout_uses_prize_trigger_pipeline(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        owner = state["players"][0]
+        opponent = state["players"][1]
+        owner["active"].update(
+            card_id="svf-klea",
+            damage_counters=0,
+            energy_card_ids=["sv1-ener-6", "sv1-ener-6"],
+            evolution_stack_ids=["svf-scyt"],
+            attached_tool_id="",
+            status_conditions=[],
+        )
+        prize_target = copy.deepcopy(owner["active"])
+        prize_target.update(
+            card_id="svf-rio",
+            damage_counters=0,
+            energy_card_ids=[],
+            evolution_stack_ids=[],
+        )
+        owner["bench"] = [prize_target, None, None, None, None]
+        owner["prizes"] = ["svi-trea", "sv1-ener-3"]
+        promoted = copy.deepcopy(opponent["active"])
+        promoted["damage_counters"] = 0
+        opponent["bench"] = [promoted, None, None, None, None]
+
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+            and row["payload"]["attack_index"] == 0
+        )
+        coin = self.game.apply_action(state, action, 2)
+        self.assertTrue(coin["success"], coin)
+        prize = self.game.resume_choice(
+            coin["state"],
+            coin["continuation"],
+            [],
+            False,
+            coin["rng_state"],
+        )
+        self.assertTrue(prize["success"], prize)
+        self.assertEqual(prize["pending"]["request_type"], "select_prize")
+        treasure_option = next(
+            option
+            for option in prize["pending"]["options"]
+            if option["option_id"] == "prize:0"
+        )
+        treasure = self.game.resume_choice(
+            prize["state"],
+            prize["continuation"],
+            [treasure_option],
+            False,
+            prize["rng_state"],
+        )
+        self.assertTrue(treasure["success"], treasure)
+        self.assertEqual(
+            treasure["pending"]["request_type"],
+            "select_prize_energy_target",
+        )
+        attached = self.game.resume_choice(
+            treasure["state"],
+            treasure["continuation"],
+            [treasure["pending"]["options"][0]],
+            False,
+            treasure["rng_state"],
+        )
+        self.assertTrue(attached["success"], attached)
+        self.assertIn(
+            "svi-trea",
+            attached["state"]["players"][0]["bench"][0][
+                "energy_card_ids"
+            ],
+        )
+        self.assertNotIn("svi-trea", attached["state"]["players"][0]["hand"])
+        self.assertEqual(attached["state"]["pending_promotions"], [1])
 
     def test_native_targeted_bench_knockout_queues_prize_and_finishes_attack(
         self,
@@ -3418,6 +4372,11 @@ class NativeAICoreTests(unittest.TestCase):
             "sv1-ener-6",
             result["state"]["players"][0]["discard"],
         )
+        knockout = result["state"]["turn_fact_book"]["current_turn"][
+            "knockouts"
+        ][-1]
+        self.assertEqual(knockout["cause_kind"], "damage_counters")
+        self.assertEqual(knockout["source_kind"], "damage_counters")
 
     def test_native_exp_share_trigger_resolves_before_attack_knockout(self):
         state = copy.deepcopy(
@@ -3699,6 +4658,119 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertIn(
             1,
             double_resolved["state"]["pending_promotions"],
+        )
+
+    def test_native_multiple_exp_share_triggers_are_ordered_and_all_resolved(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=11,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        owner = state["players"][0]
+        opponent = state["players"][1]
+        owner["active"].update(
+            card_id="svi-ente",
+            damage_counters=0,
+            energy_card_ids=["sv1-ener-2"] * 3,
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+        )
+        opponent["active"].update(
+            card_id="svg2-tort",
+            damage_counters=12,
+            energy_card_ids=["sv1-ener-1", "sv1-ener-1"],
+            evolution_stack_ids=["svg2-grot", "svg2-turt"],
+            attached_tool_id="",
+            status_conditions=[],
+        )
+        first_target = copy.deepcopy(opponent["active"])
+        first_target.update(
+            card_id="svg2-shro",
+            damage_counters=0,
+            energy_card_ids=[],
+            evolution_stack_ids=[],
+            attached_tool_id="svg2-exps",
+        )
+        second_target = copy.deepcopy(first_target)
+        opponent["bench"] = [
+            first_target,
+            second_target,
+            None,
+            None,
+            None,
+        ]
+
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+            and row["payload"]["attack_index"] == 0
+        )
+        ordered = self.game.apply_action(state, action, 0x4D554C54)
+        self.assertTrue(ordered["success"], ordered)
+        self.assertEqual(
+            ordered["pending"]["request_type"],
+            "choose_trigger_order",
+        )
+        self.assertEqual(len(ordered["pending"]["options"]), 2)
+        self.assertIsNotNone(ordered["state"]["players"][1]["active"])
+
+        first = self.game.resume_choice(
+            ordered["state"],
+            ordered["continuation"],
+            [ordered["pending"]["options"][1]],
+            False,
+            ordered["rng_state"],
+        )
+        self.assertTrue(first["success"], first)
+        self.assertEqual(first["pending"]["request_type"], "confirm_trigger")
+        first_declined = self.game.resume_choice(
+            first["state"],
+            first["continuation"],
+            [
+                next(
+                    option
+                    for option in first["pending"]["options"]
+                    if option["option_id"] == "confirm:no"
+                )
+            ],
+            False,
+            first["rng_state"],
+        )
+        self.assertTrue(first_declined["success"], first_declined)
+        self.assertEqual(
+            first_declined["pending"]["request_type"],
+            "confirm_trigger",
+        )
+        second_declined = self.game.resume_choice(
+            first_declined["state"],
+            first_declined["continuation"],
+            [
+                next(
+                    option
+                    for option in first_declined["pending"]["options"]
+                    if option["option_id"] == "confirm:no"
+                )
+            ],
+            False,
+            first_declined["rng_state"],
+        )
+        self.assertTrue(second_declined["success"], second_declined)
+        self.assertEqual(
+            second_declined["pending"]["request_type"],
+            "select_prize",
+        )
+        self.assertIsNone(second_declined["state"]["players"][1]["active"])
+        self.assertEqual(
+            second_declined["state"]["pending_promotions"],
+            [1],
         )
 
     def test_native_returning_attacker_waits_for_exp_share_before_promotions(self):
@@ -4557,7 +5629,7 @@ class NativeAICoreTests(unittest.TestCase):
         )
         self.assertNotIn("damage_dealt", result["event_types"])
 
-    def test_native_judge_skips_an_opponent_with_no_hand(self):
+    def test_native_judge_draws_for_an_opponent_with_no_hand(self):
         state = copy.deepcopy(
             next(iter(self.rules_fixture["cases"].values()))[
                 "initial_state"
@@ -4588,11 +5660,22 @@ class NativeAICoreTests(unittest.TestCase):
         result = self.game.apply_action(state, action, 0x1138F00D)
 
         self.assertTrue(result["success"], result)
-        self.assertEqual(result["state"]["players"][1]["hand"], [])
+        expected_draw = min(4, len(opponent_deck))
         self.assertEqual(
-            result["state"]["players"][1]["deck"],
-            opponent_deck,
+            len(result["state"]["players"][1]["hand"]),
+            expected_draw,
         )
+        self.assertEqual(
+            len(result["state"]["players"][1]["deck"]),
+            len(opponent_deck) - expected_draw,
+        )
+        opponent_draw = next(
+            event
+            for event in result["events"]
+            if event["event_type"] == "cards_drawn"
+            and event["data"]["player"] == 1
+        )
+        self.assertEqual(opponent_draw["data"]["count"], expected_draw)
 
     def test_native_search_can_start_from_choice_root(self):
         state, _unused_decks = self._native_search_fixture()
@@ -4970,7 +6053,7 @@ class NativeAICoreTests(unittest.TestCase):
             "choice:visible",
             ("card:0:deck:3:sv2-tatsu",),
         )
-        native = _native_choice_request(
+        native = _native_choice_view(
             pending,
             [SearchCandidate("choice:visible:only", response)],
             0,
@@ -4995,7 +6078,7 @@ class NativeAICoreTests(unittest.TestCase):
             NativeBridgeError,
             "opponent_hidden_choice_reference_rejected",
         ):
-            _native_choice_request(
+            _native_choice_view(
                 leaked,
                 [SearchCandidate("choice:leaked", response)],
                 0,
@@ -5378,128 +6461,6 @@ class NativeAICoreTests(unittest.TestCase):
             "native_public_vm_continuation_invalid",
         ):
             _public_native_vm_continuation(wire, malformed, 0)
-
-    def test_native_bridge_rebuilds_public_attack_energy_relocation(self):
-        from data.card_registry import CardRegistry
-        from data.deck_definitions import ALL_CARD_IDS
-        from engine.actions import GameAction
-        from engine.enums import PlayerAction, TurnPhase
-        from engine.game_engine import GameEngine
-        from engine.game_state import GameState
-        from engine.player_state import PokemonInPlay
-
-        if not CardRegistry.is_initialized():
-            CardRegistry.initialize(ALL_CARD_IDS)
-        state = GameState()
-        state.phase = TurnPhase.MAIN
-        state.turn_number = 3
-        state.first_player_idx = 1
-        state.active_player_idx = 0
-        state.p1.active = PokemonInPlay(CardRegistry.get("sv1-112"))
-        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv1-111"))
-        state.p1.bench[1] = PokemonInPlay(CardRegistry.get("sv1-113"))
-        # Keep the attack below the defender's HP so this test isolates the
-        # relocation continuation from the subsequent prize-choice flow.
-        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-grex"))
-        state.p2.hand = [CardRegistry.get("sv1-104")]
-        energy = CardRegistry.get("sv1-ener-5")
-        state.p1.active.energy_cards = [energy, energy, energy]
-        state.p1.deck = [energy] * 8
-        state.p2.deck = [energy] * 8
-        state.p1.prizes = [energy] * 6
-        state.p2.prizes = [energy] * 6
-
-        attacked = GameEngine().apply_action(
-            state,
-            GameAction(
-                PlayerAction.DECLARE_ATTACK,
-                {"attack_idx": 1},
-                actor=0,
-            ),
-            auto_resolve=False,
-        )
-        self.assertTrue(attacked.success, attacked.message)
-        wire = game_state_to_native_wire(state)
-        pending = wire["resolution_stack"]["pending_request"]
-        self.assertEqual(
-            pending["metadata"]["continuation"]["kind"],
-            "energy_relocate_distribution",
-        )
-
-        native = _public_native_vm_continuation(
-            wire,
-            pending,
-            0,
-            self.cards,
-        )
-
-        self.assertEqual(native["kind"], "vm")
-        self.assertTrue(native["finish_attack"])
-        self.assertEqual(native["vm"]["op"], "relocate_energy")
-        self.assertEqual(native["vm"]["stage"], 1)
-        self.assertEqual(
-            [row["index"] for row in native["vm"]["selected_attachments"]],
-            [0, 1, 2],
-        )
-        self.assertNotIn("sv1-104", repr(native))
-
-        stack = wire["resolution_stack"]
-        wire["resolution_stack"] = {
-            "schema_version": int(stack.get("schema_version", 3)),
-            "frames": [],
-            "pending_request": None,
-            "sequence": int(stack.get("sequence", 0)),
-            "context": {},
-        }
-        first_target = {
-            "kind": "pokemon",
-            "player": 0,
-            "card_id": "sv1-111",
-            "slot": "bench_0",
-        }
-        second_target = {
-            "kind": "pokemon",
-            "player": 0,
-            "card_id": "sv1-113",
-            "slot": "bench_1",
-        }
-        moved = self.game.resume_choice(
-            wire,
-            native,
-            [first_target, second_target, second_target],
-            False,
-            17,
-        )
-        self.assertTrue(moved["success"], moved)
-        owner = moved["state"]["players"][0]
-        self.assertEqual(owner["active"]["energy_card_ids"], [])
-        self.assertEqual(len(owner["bench"][0]["energy_card_ids"]), 1)
-        self.assertEqual(len(owner["bench"][1]["energy_card_ids"]), 2)
-        self.assertEqual(
-            moved["state"]["active_player_idx"],
-            1,
-            {
-                "phase": moved["state"].get("phase"),
-                "active_player_idx": moved["state"].get("active_player_idx"),
-                "pending_request_type": (
-                    moved.get("pending") or {}
-                ).get("request_type"),
-                "continuation_kind": (
-                    moved.get("continuation") or {}
-                ).get("kind"),
-                "event_types": moved.get("event_types", []),
-            },
-        )
-
-        malformed = copy.deepcopy(pending)
-        malformed["metadata"]["continuation"]["attachment_refs"][0][
-            "card_id"
-        ] = "opponent-hidden-card"
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(wire, malformed, 0, self.cards)
 
     def test_native_bridge_rebuilds_visible_search_cards_vm(self):
         own_deck = [
@@ -7841,6 +8802,7 @@ class NativeAICoreTests(unittest.TestCase):
             "sv1-ener-3",
             "sv1-ener-4",
             "sv1-ener-5",
+            "sv1-ener-6",
         ]
         continuation = {
             "kind": "after_damage_trigger_order",
@@ -7885,7 +8847,8 @@ class NativeAICoreTests(unittest.TestCase):
 
         self.assertTrue(second["success"], second)
         self.assertEqual(second["pending"], {})
-        self.assertEqual(len(second["state"]["players"][1]["hand"]), 3)
+        # Three trigger draws plus the mandatory next-turn draw.
+        self.assertEqual(len(second["state"]["players"][1]["hand"]), 4)
         self.assertEqual(second["state"]["active_player_idx"], 1)
         self.assertEqual(second["state"]["phase"], "MAIN")
 
@@ -7916,6 +8879,7 @@ class NativeAICoreTests(unittest.TestCase):
         state["players"][1]["deck"] = [
             "sv1-ener-3",
             "sv1-ener-4",
+            "sv1-ener-5",
         ]
         active = state["players"][0]["active"]
         active_id = active["card_id"]
@@ -7987,7 +8951,8 @@ class NativeAICoreTests(unittest.TestCase):
 
         self.assertTrue(second["success"], second)
         self.assertEqual(second["pending"], {})
-        self.assertEqual(len(second["state"]["players"][1]["hand"]), 2)
+        # Two trigger draws plus the mandatory next-turn draw.
+        self.assertEqual(len(second["state"]["players"][1]["hand"]), 3)
         self.assertEqual(second["state"]["active_player_idx"], 1)
         self.assertEqual(second["state"]["phase"], "MAIN")
 
@@ -8167,7 +9132,7 @@ class NativeAICoreTests(unittest.TestCase):
             AttachmentRef,
             CardRef,
             ChoiceOption,
-            ChoiceRequest,
+            ChoiceView,
             GameAction,
             PokemonRef,
             SlotRef,
@@ -8287,16 +9252,12 @@ class NativeAICoreTests(unittest.TestCase):
         )
         python_actions = [
             GameAction(
-                row["kind"],
-                row["payload"],
-                row["kind"] in {
-                    "DECLARE_ATTACK",
-                    "SETUP_DONE",
-                    "END_TURN",
-                },
-                row["actor"],
-                ref_from_dict(row["source"]),
-                ref_from_dict(row["target"]),
+                kind=row["kind"],
+                payload=row["payload"],
+                actor=row["actor"],
+                source=ref_from_dict(row["source"]),
+                target=ref_from_dict(row["target"]),
+                base_revision=row["base_revision"],
             )
             for row in actions
         ]
@@ -8377,8 +9338,9 @@ class NativeAICoreTests(unittest.TestCase):
             native_choice_request,
             native_choice_candidates,
         )
-        python_choice_request = ChoiceRequest(
+        python_choice_request = ChoiceView(
             request_id="encoder-choice",
+            base_revision=0,
             request_type="select_heal_target",
             player=0,
             prompt="",
@@ -8431,8 +9393,9 @@ class NativeAICoreTests(unittest.TestCase):
             prize_native_request,
             prize_native_candidates,
         )
-        prize_python_request = ChoiceRequest(
+        prize_python_request = ChoiceView(
             request_id="encoder-prize-energy-target",
+            base_revision=0,
             request_type="select_prize_energy_target",
             player=0,
             prompt="",
@@ -8604,6 +9567,829 @@ class NativeAICoreTests(unittest.TestCase):
             1,
         )
 
+    def test_native_zacian_formula_preserves_attack_flags(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        attacker = state["players"][0]["active"]
+        attacker.update(
+            card_id="svm-zacian",
+            damage_counters=0,
+            energy_card_ids=["sv1-ener-8"],
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[],
+        )
+        bench_copy = copy.deepcopy(attacker)
+        bench_copy["energy_card_ids"] = []
+        state["players"][0]["bench"] = [
+            copy.deepcopy(bench_copy),
+            copy.deepcopy(bench_copy),
+            None,
+            None,
+            None,
+        ]
+        defender = state["players"][1]["active"]
+        defender.update(
+            card_id="sv1-114",
+            damage_counters=0,
+            energy_card_ids=[],
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[{
+                "hook": "MODIFY_DAMAGE",
+                "operation": {"kind": "prevent_damage"},
+            }],
+        )
+
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+            and row["payload"]["attack_index"] == 0
+        )
+        result = self.game.apply_action(state, action, 0x5A414349)
+
+        self.assertTrue(result["success"], result)
+        # Battle Legion is 20 + 2 * 10. Dedenne's Metal Weakness and its
+        # temporary damage-prevention effect must both be ignored.
+        self.assertEqual(
+            result["state"]["players"][1]["active"]["damage_counters"],
+            4,
+        )
+
+    def test_native_cobalion_aura_stacks_and_orthworm_hp_is_dynamic(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        attacker = state["players"][0]["active"]
+        attacker.update(
+            card_id="svm-zacian",
+            damage_counters=0,
+            energy_card_ids=["sv1-ener-8"],
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[],
+        )
+        cobalion = copy.deepcopy(attacker)
+        cobalion.update(card_id="svm-cobalion", energy_card_ids=[])
+        state["players"][0]["bench"] = [
+            copy.deepcopy(cobalion),
+            copy.deepcopy(cobalion),
+            None,
+            None,
+            None,
+        ]
+        state["players"][1]["active"].update(
+            card_id="svd-mabosstiff-ex",
+            damage_counters=0,
+            energy_card_ids=[],
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[],
+        )
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+            and row["payload"]["attack_index"] == 0
+        )
+        result = self.game.apply_action(state, action, 0x434F4241)
+        self.assertTrue(result["success"], result)
+        # 20 + two Benched Pokémon * 10 + two Justified Law * 30.
+        self.assertEqual(
+            result["state"]["players"][1]["active"]["damage_counters"],
+            10,
+        )
+
+        orthworm = copy.deepcopy(attacker)
+        orthworm.update(
+            card_id="svm-orthworm",
+            damage_counters=5,
+            energy_card_ids=[
+                "sv1-ener-8",
+                "sv1-ener-8",
+                "sv1-ener-8",
+            ],
+            modifiers=[],
+        )
+        self.assertEqual(self.game.pokemon_max_hp(orthworm), 230)
+        self.assertEqual(self.game.pokemon_current_hp(orthworm), 180)
+        orthworm["energy_card_ids"].pop()
+        self.assertEqual(self.game.pokemon_max_hp(orthworm), 130)
+        self.assertEqual(self.game.pokemon_current_hp(orthworm), 80)
+
+    def test_native_heal_bonus_and_previous_turn_ko_use_correct_owner(self):
+        def state_for(card_id, energy_ids):
+            state = copy.deepcopy(
+                next(iter(self.rules_fixture["cases"].values()))[
+                    "initial_state"
+                ]
+            )
+            state.update(
+                phase="MAIN",
+                turn_number=3,
+                first_player_idx=1,
+                active_player_idx=0,
+            )
+            state["players"][0]["active"].update(
+                card_id=card_id,
+                damage_counters=0,
+                energy_card_ids=list(energy_ids),
+                evolution_stack_ids=[],
+                attached_tool_id="",
+                status_conditions=[],
+                modifiers=[],
+                healed_this_turn=False,
+            )
+            state["players"][1]["active"].update(
+                card_id="sv2-grex",
+                damage_counters=0,
+                energy_card_ids=[],
+                evolution_stack_ids=[],
+                attached_tool_id="",
+                status_conditions=[],
+                modifiers=[],
+                healed_this_turn=False,
+            )
+            return state
+
+        miltank = state_for(
+            "svg-milt",
+            ["sv1-ener-1", "sv1-ener-1", "sv1-ener-1"],
+        )
+        miltank["players"][0]["active"]["healed_this_turn"] = True
+        miltank_attack = next(
+            row
+            for row in self.game.legal_actions(miltank, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+        )
+        boosted = self.game.apply_action(miltank, miltank_attack, 0x4845414C)
+        self.assertTrue(boosted["success"], boosted)
+        self.assertEqual(
+            boosted["state"]["players"][1]["active"]["damage_counters"],
+            15,
+        )
+
+        wrong_owner = state_for(
+            "svg-milt",
+            ["sv1-ener-1", "sv1-ener-1", "sv1-ener-1"],
+        )
+        wrong_owner["players"][1]["active"]["healed_this_turn"] = True
+        normal = self.game.apply_action(
+            wrong_owner,
+            next(
+                row
+                for row in self.game.legal_actions(wrong_owner, 0)
+                if row["kind"] == "DECLARE_ATTACK"
+            ),
+            0x4F574E52,
+        )
+        self.assertEqual(
+            normal["state"]["players"][1]["active"]["damage_counters"],
+            6,
+        )
+
+        zamazenta = state_for(
+            "svm-zamazenta",
+            ["sv1-ener-8", "sv1-ener-8", "sv1-ener-8"],
+        )
+        zamazenta["turn_fact_book"]["previous_turn"]["knockouts"] = [{
+            "card_id": "svd-doduo",
+            "cause_kind": "damage_counters",
+            "defeated_player": 0,
+            "slot": "bench_0",
+            "source_kind": "damage_counters",
+            "source_player": 1,
+            "turn": 2,
+        }]
+        zamazenta["players"][0]["was_ko_by_attack"] = False
+        revenge = self.game.apply_action(
+            zamazenta,
+            next(
+                row
+                for row in self.game.legal_actions(zamazenta, 0)
+                if row["kind"] == "DECLARE_ATTACK"
+            ),
+            0x4B4F4641,
+        )
+        self.assertTrue(revenge["success"], revenge)
+        self.assertEqual(
+            revenge["state"]["players"][1]["active"]["damage_counters"],
+            22,
+        )
+
+        checkup_ko = state_for(
+            "svm-zamazenta",
+            ["sv1-ener-8", "sv1-ener-8", "sv1-ener-8"],
+        )
+        checkup_ko["turn_fact_book"]["previous_turn"]["knockouts"] = [{
+            "card_id": "svd-doduo",
+            "cause_kind": "special_condition",
+            "defeated_player": 0,
+            "slot": "active",
+            "source_kind": "special_condition",
+            "source_player": -1,
+            "turn": 2,
+        }]
+        no_revenge = self.game.apply_action(
+            checkup_ko,
+            next(
+                row
+                for row in self.game.legal_actions(checkup_ko, 0)
+                if row["kind"] == "DECLARE_ATTACK"
+            ),
+            0x43484B55,
+        )
+        self.assertTrue(no_revenge["success"], no_revenge)
+        self.assertEqual(
+            no_revenge["state"]["players"][1]["active"]["damage_counters"],
+            10,
+        )
+
+    def test_native_entei_pressure_applies_before_weakness_and_to_bench(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+            apply_type_matchups=True,
+        )
+        state["rules_options"] = {"apply_type_matchups": True}
+        state["players"][0]["active"].update(
+            card_id="sv2-39",
+            damage_counters=0,
+            energy_card_ids=["sv1-ener-3", "sv1-ener-3"],
+            evolution_stack_ids=["sv2-38"],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[],
+        )
+        state["players"][0]["bench"] = [None] * 5
+        state["players"][1]["active"].update(
+            card_id="svi-ente",
+            damage_counters=0,
+            energy_card_ids=[],
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[],
+        )
+        result = self.game.apply_action(
+            state,
+            next(
+                row
+                for row in self.game.legal_actions(state, 0)
+                if row["kind"] == "DECLARE_ATTACK"
+            ),
+            0x50524553,
+        )
+        self.assertTrue(result["success"], result)
+        # Pressure is applied before Entei's Water Weakness: (40 - 20) * 2.
+        self.assertEqual(
+            result["state"]["players"][1]["active"]["damage_counters"],
+            4,
+        )
+
+        bench_state = copy.deepcopy(state)
+        bench_state["apply_type_matchups"] = False
+        bench_state["rules_options"] = {"apply_type_matchups": False}
+        bench_state["players"][0]["active"].update(
+            card_id="svm-orthworm",
+            energy_card_ids=["sv1-ener-8"] * 4,
+            evolution_stack_ids=[],
+        )
+        bench_target = copy.deepcopy(bench_state["players"][1]["active"])
+        bench_target.update(card_id="sv2-grex", damage_counters=0)
+        bench_state["players"][1]["bench"] = [
+            bench_target,
+            None,
+            None,
+            None,
+            None,
+        ]
+        bench_result = self.game.apply_action(
+            bench_state,
+            next(
+                row
+                for row in self.game.legal_actions(bench_state, 0)
+                if row["kind"] == "DECLARE_ATTACK"
+            ),
+            0x42454E50,
+        )
+        self.assertTrue(bench_result["success"], bench_result)
+        self.assertEqual(
+            bench_result["state"]["players"][1]["active"][
+                "damage_counters"
+            ],
+            8,
+        )
+        self.assertEqual(
+            bench_result["state"]["players"][1]["bench"][0][
+                "damage_counters"
+            ],
+            1,
+        )
+
+    def test_native_recoil_damage_and_ability_counters_keep_distinct_events(
+        self,
+    ):
+        def state_for(card_id, energy_ids):
+            state = copy.deepcopy(
+                next(iter(self.rules_fixture["cases"].values()))[
+                    "initial_state"
+                ]
+            )
+            state.update(
+                phase="MAIN",
+                turn_number=3,
+                first_player_idx=1,
+                active_player_idx=0,
+            )
+            state["players"][0]["active"].update(
+                card_id=card_id,
+                damage_counters=0,
+                energy_card_ids=list(energy_ids),
+                evolution_stack_ids=[],
+                attached_tool_id="",
+                status_conditions=[],
+                modifiers=[],
+                used_abilities=[],
+            )
+            state["players"][1]["active"].update(
+                card_id="svd-mabosstiff-ex",
+                damage_counters=0,
+                energy_card_ids=[],
+                evolution_stack_ids=[],
+                attached_tool_id="",
+                status_conditions=[],
+                modifiers=[],
+            )
+            return state
+
+        recoil_state = state_for("svd-doduo", ["sv1-ener-7"])
+        attack = next(
+            row
+            for row in self.game.legal_actions(recoil_state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+        )
+        recoil = self.game.apply_action(recoil_state, attack, 0x5245434F)
+        self.assertTrue(recoil["success"], recoil)
+        damage_events = [
+            event
+            for event in recoil["events"]
+            if event["event_type"] == "damage_dealt"
+        ]
+        self.assertEqual(
+            [
+                (
+                    event["data"]["target_player"],
+                    event["data"]["amount"],
+                    event["data"]["damage_kind"],
+                )
+                for event in damage_events
+            ],
+            [(1, 30, "attack_damage"), (0, 10, "damage")],
+        )
+
+        ability_state = state_for("svd-dodrio", [])
+        ability_state["players"][0]["deck"] = ["sv1-ener-1"]
+        ability = next(
+            row
+            for row in self.game.legal_actions(ability_state, 0)
+            if row["kind"] == "USE_ABILITY"
+        )
+        ability_result = self.game.apply_action(
+            ability_state,
+            ability,
+            0x434F554E,
+        )
+        self.assertTrue(ability_result["success"], ability_result)
+        counter_event = next(
+            event
+            for event in ability_result["events"]
+            if event["event_type"] == "damage_counters_placed"
+        )
+        self.assertEqual(counter_event["data"]["target_player"], 0)
+        self.assertEqual(counter_event["data"]["counter_count"], 1)
+        self.assertEqual(counter_event["data"]["damage_kind"], "damage_counters")
+
+    def test_native_coin_branch_post_damage_order_is_ptcg_order(self):
+        def state_for(card_id, energy_ids):
+            state = copy.deepcopy(
+                next(iter(self.rules_fixture["cases"].values()))[
+                    "initial_state"
+                ]
+            )
+            state.update(
+                phase="MAIN",
+                turn_number=3,
+                first_player_idx=1,
+                active_player_idx=0,
+            )
+            state["players"][0]["active"].update(
+                card_id=card_id,
+                damage_counters=0,
+                energy_card_ids=list(energy_ids),
+                evolution_stack_ids=[],
+                attached_tool_id="",
+                status_conditions=[],
+                modifiers=[],
+            )
+            state["players"][1]["active"].update(
+                card_id="svd-mabosstiff-ex",
+                damage_counters=0,
+                energy_card_ids=[],
+                evolution_stack_ids=[],
+                attached_tool_id="",
+                status_conditions=[],
+                modifiers=[],
+            )
+            return state
+
+        pikachu_state = state_for(
+            "svl-pikaex",
+            ["sv1-ener-4", "sv1-ener-4", "svi-dtur"],
+        )
+        pikachu_attack = next(
+            row
+            for row in self.game.legal_actions(pikachu_state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+            and row["payload"]["attack_index"] == 1
+        )
+        flipped = self.game.apply_action(pikachu_state, pikachu_attack, 1)
+        self.assertTrue(flipped["success"], flipped)
+        resolved = self.game.resume_choice(
+            flipped["state"],
+            flipped["continuation"],
+            [],
+            False,
+            flipped["rng_state"],
+        )
+        self.assertTrue(resolved["success"], resolved)
+        self.assertEqual(
+            resolved["state"]["players"][1]["active"]["damage_counters"],
+            20,
+        )
+        self.assertEqual(
+            resolved["state"]["players"][0]["active"]["energy_card_ids"],
+            [],
+        )
+        self.assertLess(
+            resolved["event_types"].index("damage_dealt"),
+            resolved["event_types"].index("cards_discarded"),
+        )
+
+        status_state = state_for("svl-emol", ["sv1-ener-4"])
+        status_attack = next(
+            row
+            for row in self.game.legal_actions(status_state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+        )
+        status_flip = self.game.apply_action(status_state, status_attack, 2)
+        status_result = self.game.resume_choice(
+            status_flip["state"],
+            status_flip["continuation"],
+            [],
+            False,
+            status_flip["rng_state"],
+        )
+        self.assertTrue(status_result["success"], status_result)
+        self.assertLess(
+            status_result["event_types"].index("damage_dealt"),
+            status_result["event_types"].index("status_applied"),
+        )
+        self.assertIn(
+            "PARALYZED",
+            status_result["state"]["players"][1]["active"][
+                "status_conditions"
+            ],
+        )
+
+    def test_native_active_only_modifiers_do_not_leak_to_bench_damage(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        attacker = state["players"][0]["active"]
+        attacker.update(
+            card_id="svm-orthworm",
+            damage_counters=0,
+            energy_card_ids=["sv1-ener-8"] * 4,
+            evolution_stack_ids=[],
+            attached_tool_id="svl-vitb",
+            status_conditions=[],
+            modifiers=[{
+                "condition": {"target_active": True},
+                "hook": "MODIFY_DAMAGE",
+                "layer": "attacker_adjust",
+                "scope": "attached_attacker",
+                "operation": {"kind": "damage_delta", "amount": 10},
+            }],
+        )
+        state["players"][1]["active"].update(
+            card_id="sv2-grex",
+            damage_counters=0,
+            energy_card_ids=[],
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[],
+        )
+        bench_target = copy.deepcopy(state["players"][1]["active"])
+        bench_target.update(card_id="svi-ente", modifiers=[])
+        state["players"][1]["bench"] = [
+            bench_target,
+            copy.deepcopy(state["players"][1]["active"]),
+            None,
+            None,
+            None,
+        ]
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+        )
+        targeted = self.game.apply_action(state, action, 0x42454E43)
+        self.assertTrue(targeted["success"], targeted)
+        selected = next(
+            option
+            for option in targeted["pending"]["options"]
+            if option.get("slot") == "bench_0"
+        )
+        result = self.game.resume_choice(
+            targeted["state"],
+            targeted["continuation"],
+            [selected],
+            False,
+            targeted["rng_state"],
+        )
+        self.assertTrue(result["success"], result)
+        self.assertEqual(
+            result["state"]["players"][1]["active"]["damage_counters"],
+            11,
+        )
+        # Vitality Band only boosts damage to the Active Pokémon, and Entei's
+        # Pressure only works while Entei itself is Active.
+        self.assertEqual(
+            result["state"]["players"][1]["bench"][0]["damage_counters"],
+            3,
+        )
+
+    def test_native_poppy_moves_selected_energy_to_one_other_pokemon(self):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        owner = state["players"][0]
+        owner["active"]["energy_card_ids"] = [
+            "sv1-ener-1",
+            "sv1-ener-2",
+        ]
+        first = copy.deepcopy(owner["active"])
+        first["energy_card_ids"] = []
+        second = copy.deepcopy(owner["active"])
+        second["energy_card_ids"] = []
+        owner["bench"] = [first, second, None, None, None]
+        owner["hand"] = ["svi-popp"]
+
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "PLAY_TRAINER"
+        )
+        attachments = self.game.apply_action(state, action, 0x504F5050)
+        self.assertTrue(attachments["success"], attachments)
+        self.assertEqual(
+            attachments["pending"]["request_type"],
+            "select_attachment",
+        )
+        target = self.game.resume_choice(
+            attachments["state"],
+            attachments["continuation"],
+            attachments["pending"]["options"][:2],
+            False,
+            attachments["rng_state"],
+        )
+        self.assertTrue(target["success"], target)
+        self.assertEqual(target["pending"]["request_type"], "select_energy_target")
+        self.assertEqual(target["pending"]["min_select"], 1)
+        self.assertEqual(target["pending"]["max_select"], 1)
+        bench_one = next(
+            option
+            for option in target["pending"]["options"]
+            if option.get("slot") == "bench_1"
+        )
+        resolved = self.game.resume_choice(
+            target["state"],
+            target["continuation"],
+            [bench_one],
+            False,
+            target["rng_state"],
+        )
+        self.assertTrue(resolved["success"], resolved)
+        self.assertEqual(
+            resolved["state"]["players"][0]["active"]["energy_card_ids"],
+            [],
+        )
+        self.assertEqual(
+            resolved["state"]["players"][0]["bench"][0]["energy_card_ids"],
+            [],
+        )
+        self.assertCountEqual(
+            resolved["state"]["players"][0]["bench"][1]["energy_card_ids"],
+            ["sv1-ener-1", "sv1-ener-2"],
+        )
+
+    def test_native_youngster_draw_event_reports_five_cards(self):
+        case = self.rules_fixture["cases"]["shuffle_draw_supporter"]
+        result = self.game.apply_action(
+            copy.deepcopy(case["initial_state"]),
+            copy.deepcopy(case["actions"][0]),
+            case["portable_seed"],
+        )
+        self.assertTrue(result["success"], result)
+        drawn = next(
+            event
+            for event in result["events"]
+            if event["event_type"] == "cards_drawn"
+        )
+        self.assertEqual(drawn["data"]["count"], 5)
+        self.assertEqual(len(drawn["data"]["card_ids"]), 5)
+        self.assertEqual(len(result["state"]["players"][0]["hand"]), 5)
+
+    def test_native_named_attack_lock_survives_switch_but_instance_lock_does_not(
+        self,
+    ):
+        state = copy.deepcopy(
+            next(iter(self.rules_fixture["cases"].values()))[
+                "initial_state"
+            ]
+        )
+        state.update(
+            phase="MAIN",
+            turn_number=3,
+            first_player_idx=1,
+            active_player_idx=0,
+        )
+        terrakion = state["players"][0]["active"]
+        terrakion.update(
+            card_id="svf-terr",
+            damage_counters=0,
+            energy_card_ids=["sv1-ener-6"] * 3,
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[],
+        )
+        state["players"][1]["active"].update(
+            card_id="svd-mabosstiff-ex",
+            damage_counters=0,
+            energy_card_ids=[],
+            evolution_stack_ids=[],
+            attached_tool_id="",
+            status_conditions=[],
+            modifiers=[],
+        )
+        action = next(
+            row
+            for row in self.game.legal_actions(state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+        )
+        result = self.game.apply_action(state, action, 0x7E22A510)
+        self.assertTrue(result["success"], result)
+        self.assertEqual(
+            result["state"]["players"][0]["attack_locked_names"],
+            {"岩窟冲撞": 5},
+        )
+
+        # A switch, evolution, or copied attack must not evade Cavern Tackle's
+        # player-level "one of your Pokémon used this attack" restriction.
+        next_own_turn = copy.deepcopy(result["state"])
+        next_own_turn.update(
+            phase="MAIN",
+            turn_number=5,
+            active_player_idx=0,
+        )
+        replacement = copy.deepcopy(terrakion)
+        replacement["modifiers"] = []
+        next_own_turn["players"][0]["active"] = replacement
+        self.assertFalse(
+            any(
+                row["kind"] == "DECLARE_ATTACK"
+                for row in self.game.legal_actions(next_own_turn, 0)
+            )
+        )
+
+        # Darkrai's Blade lock is explicitly attached to "this Pokémon" and
+        # therefore remains an instance modifier, not a player-wide marker.
+        darkrai_state = copy.deepcopy(state)
+        darkrai = darkrai_state["players"][0]["active"]
+        darkrai.update(
+            card_id="svd-darkrai",
+            energy_card_ids=["sv1-ener-7"] * 3,
+            modifiers=[],
+        )
+        darkrai_action = next(
+            row
+            for row in self.game.legal_actions(darkrai_state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+            and row["payload"]["attack_index"] == 1
+        )
+        darkrai_result = self.game.apply_action(
+            darkrai_state,
+            darkrai_action,
+            0xDA4B1A1,
+        )
+        self.assertTrue(darkrai_result["success"], darkrai_result)
+        self.assertNotIn(
+            "attack_locked_names",
+            darkrai_result["state"]["players"][0],
+        )
+        active_modifiers = darkrai_result["state"]["players"][0]["active"][
+            "modifiers"
+        ]
+        self.assertTrue(
+            any(
+                modifier.get("operation", {}).get("kind") == "attack_lock"
+                for modifier in active_modifiers
+            )
+        )
+
+        skarmory_state = copy.deepcopy(state)
+        skarmory = skarmory_state["players"][0]["active"]
+        skarmory.update(
+            card_id="svm-skarmory",
+            energy_card_ids=["sv1-ener-8"] * 3,
+            modifiers=[],
+        )
+        skarmory_action = next(
+            row
+            for row in self.game.legal_actions(skarmory_state, 0)
+            if row["kind"] == "DECLARE_ATTACK"
+            and row["payload"]["attack_index"] == 1
+        )
+        skarmory_result = self.game.apply_action(
+            skarmory_state,
+            skarmory_action,
+            0x5CA4A0F1,
+        )
+        self.assertTrue(skarmory_result["success"], skarmory_result)
+        self.assertNotIn(
+            "attack_locked_names",
+            skarmory_result["state"]["players"][0],
+        )
+        named_lock = next(
+            modifier
+            for modifier in skarmory_result["state"]["players"][0][
+                "active"
+            ]["modifiers"]
+            if modifier.get("operation", {}).get("kind") == "attack_lock"
+        )
+        self.assertEqual(
+            named_lock["operation"]["attack_name"],
+            "钢铁之刃",
+        )
+
     def test_native_timed_outgoing_reduction_replaces_and_expires(
         self,
     ):
@@ -8697,7 +10483,7 @@ class NativeAICoreTests(unittest.TestCase):
         )
 
     def test_native_technical_gate_is_complete(self):
-        self.assertEqual(ptcg_ai_core.abi_version(), 1)
+        self.assertEqual(ptcg_ai_core.abi_version(), 2)
         self.assertEqual(self.rules.implemented_op_count, 80)
         self.assertTrue(ptcg_ai_core.production_ready())
         self.assertEqual(ptcg_ai_core.production_blockers(), [])

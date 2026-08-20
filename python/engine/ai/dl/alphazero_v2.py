@@ -28,7 +28,7 @@ import numpy as np
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, DECK_SPECS, expand_deck
 from engine.action_codec import (
-    serialize_choice_request_internal,
+    serialize_choice_view,
     serialize_choice_response,
     serialize_game_action,
 )
@@ -54,7 +54,6 @@ from engine.enums import PlayerAction, TurnPhase
 from engine.game_engine import DEFAULT_GAME_ENGINE
 from engine.game_state import GameState
 from engine.random_source import RandomSource
-from engine.turn_manager import TurnManager
 
 from .replay_v2 import (
     AlphaZeroSample,
@@ -308,7 +307,11 @@ class _SetupAI:
             validate_effects=False,
         )
         if not actions:
-            return GameAction(PlayerAction.END_TURN, {}, True, player_idx)
+            return GameAction(
+                kind=PlayerAction.END_TURN,
+                actor=player_idx,
+                base_revision=state.revision,
+            )
         return sorted(actions, key=lambda row: str(row.signature))[0]
 
 
@@ -335,7 +338,7 @@ def _setup_game(task: GameTask) -> GameState:
     if not step.success:
         raise RuntimeError("setup_failed:" + str(step.message))
     state.public_deck_keys = deck_by_player
-    turn_order = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+    turn_order = DEFAULT_GAME_ENGINE.pending_choice(state)
     if (
         turn_order is not None
         and turn_order.request_type == "choose_turn_order"
@@ -350,7 +353,7 @@ def _setup_game(task: GameTask) -> GameState:
             (
                 row
                 for row in turn_order.options
-                if str(row.value) == desired
+                if row.option_id == f"turn:{desired}"
             ),
             None,
         )
@@ -368,7 +371,7 @@ def _setup_game(task: GameTask) -> GameState:
     with rng.bind_state(state):
         finish_setup(
             state,
-            TurnManager(state),
+            None,
             [_SetupAI(), _SetupAI()],
             rng,
         )
@@ -380,11 +383,11 @@ def _setup_game(task: GameTask) -> GameState:
 def _advance_nondecision_phase(state: GameState) -> bool:
     if state.is_terminal():
         return False
-    if DEFAULT_GAME_ENGINE.pending_choice_request(state) is not None:
+    if DEFAULT_GAME_ENGINE.pending_choice(state) is not None:
         return False
     actor = (
-        int(state.pending_promotion_player)
-        if int(state.pending_promotion_player) >= 0
+        int(state.pending_promotions[0])
+        if state.pending_promotions
         else int(state.active_player_idx)
     )
     if DEFAULT_GAME_ENGINE.legal_actions(
@@ -393,12 +396,8 @@ def _advance_nondecision_phase(state: GameState) -> bool:
         validate_effects=False,
     ):
         return False
-    if state.phase == TurnPhase.DRAW:
-        TurnManager(state).advance_phase()
-        return True
     if state.phase not in (TurnPhase.MAIN, TurnPhase.ATTACK):
-        TurnManager(state).advance_phase()
-        return True
+        return False
     force_end_turn(state, actor)
     return True
 
@@ -498,7 +497,7 @@ def play_self_play_game(
             continue
         decision_count += 1
         observation = environment.observation(state, actor)
-        pending_choice = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+        pending_choice = DEFAULT_GAME_ENGINE.pending_choice(state)
         native_method = (
             getattr(evaluator, "search_choice", None)
             if pending_choice is not None
@@ -832,17 +831,13 @@ def _challenge_authoritative_action(
     promotion_actions = [
         action
         for action in actions
-        if (
-            action.action.name
-            if isinstance(action.action, PlayerAction)
-            else str(action.action)
-        ) == "PROMOTE"
+        if action.kind_name == "PROMOTE"
     ]
     if promotion_actions and len(promotion_actions) == len(actions):
         player = state.get_player(actor)
 
         def promotion_value(action: GameAction) -> float:
-            bench_index = int(action.params.get("bench_idx", -1))
+            bench_index = action.bench_index()
             if (
                 bench_index < 0
                 or bench_index >= len(player.bench)
@@ -906,12 +901,12 @@ def play_model_vs_challenge_game(
         actor = environment.actor(state)
         if actor == challenge_player:
             try:
-                if DEFAULT_GAME_ENGINE.pending_choice_request(state) is not None:
+                if DEFAULT_GAME_ENGINE.pending_choice(state) is not None:
                     # Challenge's normal simulated application consumes its
                     # own choice chain. A remaining request here can only have
                     # been created by the model, so use the authoritative
                     # deterministic default rather than foreign hidden data.
-                    request = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+                    request = DEFAULT_GAME_ENGINE.pending_choice(state)
                     response = (
                         DEFAULT_GAME_ENGINE.choice_manager
                         .default_choice_response(
@@ -943,7 +938,7 @@ def play_model_vs_challenge_game(
         if not candidates:
             force_end_turn(state, actor)
             continue
-        pending_choice = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+        pending_choice = DEFAULT_GAME_ENGINE.pending_choice(state)
         native_method = (
             getattr(evaluator, "search_choice", None)
             if pending_choice is not None
@@ -1013,14 +1008,15 @@ def bootstrap_fingerprint(repo_root: Path) -> dict[str, Any]:
     paths = [
         repo_root / "godot" / "data" / "cards.json",
         repo_root / "godot" / "data" / "decks.json",
-        repo_root / "godot" / "data" / "effects.json",
+        repo_root / "godot" / "data" / "card_ir_v3.json",
         repo_root / "godot" / "data" / "vm_command_descriptors.json",
-        repo_root / "python" / "engine" / "action_resolver.py",
         repo_root / "python" / "engine" / "actions.py",
-        repo_root / "python" / "engine" / "choice_manager.py",
         repo_root / "python" / "engine" / "game_engine.py",
         repo_root / "python" / "engine" / "game_state.py",
-        repo_root / "python" / "engine" / "turn_manager.py",
+        repo_root / "python" / "engine" / "native_state_codec.py",
+        repo_root / "godot" / "native" / "ptcg_core" / "src" / "ptcg_game.cpp",
+        repo_root / "godot" / "native" / "ptcg_core" / "src" / "ptcg_rules.cpp",
+        repo_root / "godot" / "native" / "ptcg_core" / "src" / "ptcg_rules_session.cpp",
         repo_root / "python" / "engine" / "ai" / "challenge_ai.py",
         repo_root / "python" / "engine" / "ai" / "planner.py",
         Path(__file__).resolve(),
@@ -1227,8 +1223,6 @@ def _split_teacher_results(
 
 
 def _teacher_game_once(task: GameTask, max_decisions: int) -> GameResult:
-    from engine.ai.planner import _map_legacy_choice
-
     state = _setup_game(task)
     ais = [
         _challenge_ai(str(state.public_deck_keys[player]), task.seed + 31 + player)
@@ -1246,25 +1240,21 @@ def _teacher_game_once(task: GameTask, max_decisions: int) -> GameResult:
                 break
         if state.is_terminal():
             break
-        request = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+        request = DEFAULT_GAME_ENGINE.pending_choice(state)
         actor = (
             int(request.player)
             if request is not None
             else (
-                int(state.pending_promotion_player)
-                if int(state.pending_promotion_player) >= 0
+                int(state.pending_promotions[0])
+                if state.pending_promotions
                 else int(state.active_player_idx)
             )
         )
         ai = ais[actor]
         keys = tuple(state.public_deck_keys)
         if request is not None:
-            legacy_choice = ai.resolve_pending_action(
-                state,
-                request.legacy_request,
-            )
-            response = _map_legacy_choice(request, legacy_choice)
-            if response is None:
+            response = ai.resolve_pending_action(state, request)
+            if not isinstance(response, ChoiceResponse):
                 response = (
                     DEFAULT_GAME_ENGINE.choice_manager
                     .default_choice_response(
@@ -1394,15 +1384,10 @@ def _teacher_game_once(task: GameTask, max_decisions: int) -> GameResult:
             ) -> ChoiceResponse:
                 nonlocal choice_ordinal
                 choice_ordinal += 1
-                legacy_choice = ai.resolve_pending_action(
-                    sim_state,
-                    structured_request.legacy_request,
+                response = ai.resolve_pending_action(
+                    sim_state, structured_request
                 )
-                response = _map_legacy_choice(
-                    structured_request,
-                    legacy_choice,
-                )
-                if response is None:
+                if not isinstance(response, ChoiceResponse):
                     response = (
                         DEFAULT_GAME_ENGINE.choice_manager
                         .default_choice_response(
@@ -1423,8 +1408,7 @@ def _teacher_game_once(task: GameTask, max_decisions: int) -> GameResult:
                 if chosen is None:
                     raise RuntimeError(
                         "teacher_choice_not_in_candidates:"
-                        f"request={serialize_choice_request_internal(structured_request)}:"
-                        f"legacy={legacy_choice!r}:"
+                        f"request={serialize_choice_view(structured_request)}:"
                         f"response={serialize_choice_response(response)}"
                     )
                 response = chosen.payload

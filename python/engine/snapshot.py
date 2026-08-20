@@ -1,10 +1,4 @@
-"""Game state snapshot system for undo/redo and state rollback.
-
-Captures the complete game state at a point in time. Supports:
-- undo: restore the previous state
-- redo: re-apply a reverted state
-- Debugging: compare state snapshots
-"""
+"""Snapshot 3 DTO conversion used by native bindings and tooling."""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
@@ -38,6 +32,7 @@ class PlayerSnapshot:
     vstar_used: bool = False
     was_ko_by_attack: bool = False
     was_ko_last_turn: bool = False
+    attack_locked_names: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -119,64 +114,6 @@ class GameSnapshot:
     action_log: list[str] = field(default_factory=list)
 
 
-class SnapshotManager:
-    """Manages undo/redo history for game state.
-
-    Usage:
-        mgr = SnapshotManager()
-        mgr.capture(state)          # take snapshot
-        mgr.undo(state)             # restore previous
-        mgr.redo(state)             # re-apply reverted
-    """
-
-    def __init__(self, max_history: int = 20):
-        self._history: list[GameSnapshot] = []
-        self._redo_stack: list[GameSnapshot] = []
-        self._max = max_history
-
-    def capture(self, state: GameState):
-        """Take a snapshot and push onto history."""
-        snap = snapshot_state(state)
-        self._history.append(snap)
-        self._redo_stack.clear()
-        if len(self._history) > self._max:
-            self._history.pop(0)
-
-    def undo(self, state: GameState) -> bool:
-        """Restore the previous snapshot. Returns True on success."""
-        if len(self._history) < 1:
-            return False
-        current = snapshot_state(state)
-        self._redo_stack.append(current)
-        previous = self._history.pop()
-        restore_state(state, previous)
-        return True
-
-    def redo(self, state: GameState) -> bool:
-        """Re-apply a reverted snapshot. Returns True on success."""
-        if not self._redo_stack:
-            return False
-        current = snapshot_state(state)
-        self._history.append(current)
-        next_state = self._redo_stack.pop()
-        restore_state(state, next_state)
-        return True
-
-    def can_undo(self) -> bool:
-        return len(self._history) > 0
-
-    def can_redo(self) -> bool:
-        return len(self._redo_stack) > 0
-
-    def clear(self):
-        self._history.clear()
-        self._redo_stack.clear()
-
-
-# ═══════════════════════════════════════════════════════
-# Capture / Restore functions
-# ═══════════════════════════════════════════════════════
-
 def snapshot_state(state: GameState) -> GameSnapshot:
     """Capture the current game state into a serializable snapshot."""
     return GameSnapshot(
@@ -232,7 +169,8 @@ def snapshot_state(state: GameState) -> GameSnapshot:
                 },
             )
         ),
-        event_stream=_snapshot_event_stream(state),
+        # Snapshot 3 retains this retired field to keep its wire shape stable.
+        event_stream=[],
         mulligan_count=tuple(getattr(state, "mulligan_count", (0, 0))),
         extra_draws=tuple(getattr(state, "extra_draws", (0, 0))),
         action_log=list(getattr(state, "action_log", ())),
@@ -242,8 +180,6 @@ def snapshot_state(state: GameState) -> GameSnapshot:
 def restore_state(
     state: GameState,
     snap: GameSnapshot,
-    *,
-    rebuild_event_bus: bool = True,
 ):
     """Restore game state from a snapshot."""
     from engine.enums import TurnPhase
@@ -294,10 +230,6 @@ def restore_state(
             },
         )
     )
-    # Never retain a callback that closes over the state from before restore.
-    # Serializable VM continuations are rebuilt on demand by GameEngine.
-    state._pending_choice_runtime = None
-    _restore_event_stream(state, getattr(snap, "event_stream", []))
     state._ko_from_attack = False
     state._mulligan_bonus_given = set(snap.mulligan_bonus_given)
 
@@ -306,37 +238,34 @@ def restore_state(
 
     state.stadium_card = _lookup_card(snap.stadium_card_id) if snap.stadium_card_id else None
     state.stadium_owner_idx = int(snap.stadium_owner_idx)
-    if rebuild_event_bus:
-        rebuild_state_event_bus(state)
-
-
-def clone_state(state: GameState, *, rebuild_event_bus: bool = True) -> GameState:
+def clone_state(state: GameState) -> GameState:
     """Create a full GameState copy through the snapshot system."""
     from engine.game_state import GameState
 
     clone = GameState()
     try:
-        restore_state(clone, snapshot_state(state), rebuild_event_bus=False)
+        restore_state(clone, snapshot_state(state))
         clone.action_log = list(state.action_log)
+        clone._native_processed_action_ids = list(
+            getattr(state, "_native_processed_action_ids", ())
+        )
+        clone._native_rng_state = int(
+            getattr(state, "_native_rng_state", 0x6D2B79F5)
+        )
     except KeyError:
         # Tests, editors, and generated scenarios may contain cards that are
         # intentionally not registered globally. A deep copy keeps those
         # snapshots local instead of mutating CardRegistry with placeholders.
         clone = copy.deepcopy(state)
-        clone._pending_choice_runtime = None
-    if rebuild_event_bus:
-        rebuild_state_event_bus(clone)
     return clone
 
 
-def state_from_snapshot(snap: GameSnapshot, *, rebuild_event_bus: bool = True) -> GameState:
+def state_from_snapshot(snap: GameSnapshot) -> GameState:
     """Create a GameState from an existing snapshot."""
     from engine.game_state import GameState
 
     state = GameState()
-    restore_state(state, snap, rebuild_event_bus=False)
-    if rebuild_event_bus:
-        rebuild_state_event_bus(state)
+    restore_state(state, snap)
     return state
 
 
@@ -457,46 +386,13 @@ def canonical_state_payload(state: GameState) -> dict:
     return snapshot_to_dict(snapshot_state(state))
 
 
-def state_from_payload(payload: dict, *, rebuild_event_bus: bool = True) -> GameState:
+def state_from_payload(payload: dict) -> GameState:
     """Restore a GameState from :func:`canonical_state_payload`."""
-    return state_from_snapshot(
-        snapshot_from_dict(payload),
-        rebuild_event_bus=rebuild_event_bus,
-    )
-
-
-def rebuild_state_event_bus(state: GameState):
-    """Re-register event-driven modifiers after snapshot restore."""
-    from engine.commands.modifier_registration import register_pokemon_modifiers
-    from engine.effects.modifier_manager import ModifierManager
-
-    state.event_bus.clear()
-    state.modifier_manager = ModifierManager(state.event_bus)
-    for player_idx in (0, 1):
-        player = state.get_player(player_idx)
-        for slot, pokemon in player.get_all_pokemon():
-            if pokemon:
-                register_pokemon_modifiers(
-                    pokemon,
-                    player_idx,
-                    slot,
-                    event_bus=state.event_bus,
-                )
-
-
-def _snapshot_event_stream(state: GameState) -> list[dict]:
-    events = getattr(getattr(state, "event_stream", None), "_events", ())
-    return [
-        {
-            "event_type": getattr(event, "event_type", ""),
-            "data": copy.deepcopy(getattr(event, "data", {}) or {}),
-        }
-        for event in events
-    ]
+    return state_from_snapshot(snapshot_from_dict(payload))
 
 
 def _player_snapshot_to_dict(snap: PlayerSnapshot) -> dict:
-    return {
+    payload = {
         "name": snap.name,
         "hand_ids": list(snap.hand_ids),
         "deck_ids": list(snap.deck_ids),
@@ -514,6 +410,11 @@ def _player_snapshot_to_dict(snap: PlayerSnapshot) -> dict:
         "was_ko_by_attack": bool(snap.was_ko_by_attack),
         "was_ko_last_turn": bool(snap.was_ko_last_turn),
     }
+    if snap.attack_locked_names:
+        payload["attack_locked_names"] = copy.deepcopy(
+            snap.attack_locked_names
+        )
+    return payload
 
 
 def _player_snapshot_from_dict(data: dict) -> PlayerSnapshot:
@@ -544,6 +445,12 @@ def _player_snapshot_from_dict(data: dict) -> PlayerSnapshot:
         vstar_used=bool(data.get("vstar_used", False)),
         was_ko_by_attack=bool(data.get("was_ko_by_attack", False)),
         was_ko_last_turn=bool(data.get("was_ko_last_turn", False)),
+        attack_locked_names={
+            str(name): int(expires)
+            for name, expires in dict(
+                data.get("attack_locked_names", {}) or {}
+            ).items()
+        },
     )
 
 
@@ -599,21 +506,6 @@ def _pokemon_snapshot_from_dict(data: dict) -> PokemonSnapshot:
     )
 
 
-def _restore_event_stream(state: GameState, events: list[dict]) -> None:
-    from engine.events.game_events import GameEvent, GameEventStream
-
-    if not hasattr(state, "event_stream") or state.event_stream is None:
-        state.event_stream = GameEventStream()
-    state.event_stream._events = [
-        GameEvent(
-            str(event.get("event_type", "")),
-            copy.deepcopy(event.get("data", {}) or {}),
-        )
-        for event in events
-        if isinstance(event, dict)
-    ]
-
-
 def _snapshot_player(player: PlayerState) -> PlayerSnapshot:
     return PlayerSnapshot(
         name=player.name,
@@ -632,6 +524,7 @@ def _snapshot_player(player: PlayerState) -> PlayerSnapshot:
         vstar_used=player.vstar_power_used,
         was_ko_by_attack=player.was_ko_by_attack,
         was_ko_last_turn=player.was_ko_last_turn,
+        attack_locked_names=copy.deepcopy(player.attack_locked_names),
     )
 
 
@@ -652,6 +545,7 @@ def _restore_player(player: PlayerState, snap: PlayerSnapshot):
     player.vstar_power_used = snap.vstar_used
     player.was_ko_by_attack = snap.was_ko_by_attack
     player.was_ko_last_turn = snap.was_ko_last_turn
+    player.attack_locked_names = copy.deepcopy(snap.attack_locked_names)
 
 
 def _snapshot_pokemon(p: PokemonInPlay) -> PokemonSnapshot:

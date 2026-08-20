@@ -136,8 +136,8 @@ func _initialize() -> void:
 		quit(1)
 		return
 	var kernel: Variant = ClassDB.instantiate("NativeDeepSearch")
-	kernel.vm_set_cards(cards)
-	kernel.simulation_set_decks(decks)
+	kernel.set_catalog(cards)
+	kernel.set_decks(decks)
 	var planner := InformationSetPUCT.new()
 	planner._native = kernel
 	var result: Dictionary = planner.decide({
@@ -161,7 +161,7 @@ func _initialize() -> void:
 		return
 
 	var selected_action := GameAction.from_dict(result.get("action", {}))
-	if selected_action == null or selected_action.action != "PLAY_TRAINER":
+	if selected_action == null or selected_action.kind != "PLAY_TRAINER":
 		push_error(
 			"native runtime fixture did not select the forced trainer: %s"
 			% JSON.stringify(result)

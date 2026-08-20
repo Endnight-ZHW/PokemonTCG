@@ -39,7 +39,6 @@ if ($LASTEXITCODE -ne 0 -or $actualPython -ne [string]$lock.python.version) {
     "numpy==$($lock.python.numpy)" `
     "scons==$($lock.python.scons)" `
     "websockets==$($lock.python.websockets)" `
-    "pygame==$($lock.python.pygame)" `
     "requests==$($lock.python.requests)" `
     "pillow==$($lock.python.pillow)" `
     "onnx==$($lock.python.onnx)" `

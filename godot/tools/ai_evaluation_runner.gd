@@ -1258,7 +1258,7 @@ func _distill_action_row(
 
 func _distill_choice_row(
 	state: GameState,
-	request: ChoiceRequest,
+	request: ChoiceView,
 	actor: int,
 	deck_key: String,
 	choice_result: Dictionary,
@@ -1310,7 +1310,7 @@ func _distill_choice_row(
 func _find_action_match_index(selected: GameAction, actions: Array[GameAction]) -> int:
 	for index in range(actions.size()):
 		var candidate := actions[index]
-		if candidate.action == selected.action and _deep_equal(candidate.params, selected.params):
+		if candidate.kind == selected.kind and _deep_equal(candidate.payload, selected.payload):
 			return index
 	return -1
 
@@ -1712,7 +1712,7 @@ func _play_match(
 			terminal_message = step.message
 			break
 		var selected_counts: Dictionary = actor_behavior["selected_action_counts"]
-		_increment_counter(selected_counts, action.action)
+		_increment_counter(selected_counts, action.kind)
 		_finalize_ai_turn_if_completed(
 			ai_turn_tracker, ai_turn_ms_samples, ai_turn_ms_samples_by_strategy, state)
 
@@ -1809,7 +1809,7 @@ func _record_legal_action_opportunities(
 	# actions of that category are legal at the same time.
 	var categories := {}
 	for action in legal:
-		categories[str(action.action)] = true
+		categories[str(action.kind)] = true
 	var opportunities: Dictionary = behavior["legal_action_opportunity_counts"]
 	for category in categories:
 		_increment_counter(opportunities, str(category))
@@ -2040,7 +2040,7 @@ func _decide_action(
 func _decide_choice(
 	worker: Variant,
 	state: GameState,
-	request: ChoiceRequest,
+	request: ChoiceView,
 	actor: int,
 	deck_key: String,
 	strategy: Dictionary,
@@ -2137,7 +2137,7 @@ func _not_cancelled() -> bool:
 	return false
 
 
-func _choice_actor(state: GameState, request: ChoiceRequest) -> int:
+func _choice_actor(state: GameState, request: ChoiceView) -> int:
 	if request.player in [0, 1]:
 		return request.player
 	return _current_actor(state)
@@ -2362,9 +2362,9 @@ func _pokemon_strength(pokemon: PokemonState, catalog: CardCatalog) -> float:
 func _action_matches_legal(action: GameAction, legal: Array[GameAction]) -> bool:
 	for candidate in legal:
 		if (
-			candidate.action == action.action
+			candidate.kind == action.kind
 			and candidate.actor == action.actor
-			and _deep_equal(candidate.params, action.params)
+			and _deep_equal(candidate.payload, action.payload)
 			and _ref_equal(candidate.source, action.source)
 			and _ref_equal(candidate.target, action.target)
 		):
@@ -2436,12 +2436,16 @@ func _run_golden_scenarios(catalog: CardCatalog, engine: GameEngine, worker: Nat
 	ko_state.players[1].active = PokemonState.new("sv2-delib")
 	ko_state.players[1].active.placed_this_turn = false
 	var ko_action := _golden_decision_for_actions(worker, engine, ko_state, 0, "lightning", [
-		GameAction.new("END_TURN", {}, true, 0),
-		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		GameAction.create("END_TURN", {}, 0),
+		GameAction.create(
+			"DECLARE_ATTACK", {"attack_index": 0}, 0,
+			EntityRef.new(
+				"pokemon", 0, "", "active", -1, "",
+				ko_state.players[0].active.card_id)),
 	], "golden-ko")
 	cases.append(_golden_case(
 		"immediate_ko_before_pass",
-		ko_action != null and ko_action.action == "DECLARE_ATTACK",
+		ko_action != null and ko_action.kind == "DECLARE_ATTACK",
 		ko_action,
 		"DECLARE_ATTACK",
 	))
@@ -2461,15 +2465,26 @@ func _run_golden_scenarios(catalog: CardCatalog, engine: GameEngine, worker: Nat
 	energy_state.players[1].active.energy_card_ids.assign(["sv1-ener-4"])
 	energy_state.players[1].hand = ["sv1-ener-4"]
 	var energy_action := _golden_decision_for_actions(worker, engine, energy_state, 1, "lightning", [
-		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 1),
-		GameAction.new("ATTACH_ENERGY", {"hand_idx": 0, "target_slot": "active"}, false, 1),
-		GameAction.new("END_TURN", {}, true, 1),
+		GameAction.create(
+			"DECLARE_ATTACK", {"attack_index": 0}, 1,
+			EntityRef.new(
+				"pokemon", 1, "", "active", -1, "",
+				energy_state.players[1].active.card_id)),
+		GameAction.create(
+			"ATTACH_ENERGY", {}, 1,
+			EntityRef.new(
+				"card", 1, "hand", "", 0, "",
+				str(energy_state.players[1].hand[0])),
+			EntityRef.new(
+				"pokemon", 1, "", "active", -1, "",
+				energy_state.players[1].active.card_id)),
+		GameAction.create("END_TURN", {}, 1),
 	], "golden-energy")
 	cases.append(_golden_case(
 		"weak_attack_waits_for_core_energy",
 		energy_action != null
-		and energy_action.action == "ATTACH_ENERGY"
-		and str(energy_action.params.get("target_slot", "")) == "active",
+		and energy_action.kind == "ATTACH_ENERGY"
+		and str(energy_action.target_slot()) == "active",
 		energy_action,
 		"ATTACH_ENERGY active",
 	))
@@ -2493,13 +2508,21 @@ func _run_golden_scenarios(catalog: CardCatalog, engine: GameEngine, worker: Nat
 		"sv1-ener-5", "sv1-ener-5", "sv1-ener-5", "sv1-ener-5",
 	]
 	var draw_action := _golden_decision_for_actions(worker, engine, draw_state, 1, "psychic", [
-		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 1),
-		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 1),
-		GameAction.new("END_TURN", {}, true, 1),
+		GameAction.create(
+			"DECLARE_ATTACK", {"attack_index": 0}, 1,
+			EntityRef.new(
+				"pokemon", 1, "", "active", -1, "",
+				draw_state.players[1].active.card_id)),
+		GameAction.create(
+			"PLAY_TRAINER", {}, 1,
+			EntityRef.new(
+				"card", 1, "hand", "", 0, "",
+				str(draw_state.players[1].hand[0]))),
+		GameAction.create("END_TURN", {}, 1),
 	], "golden-draw")
 	cases.append(_golden_case(
 		"weak_attack_waits_for_productive_draw",
-		draw_action != null and draw_action.action == "PLAY_TRAINER",
+		draw_action != null and draw_action.kind == "PLAY_TRAINER",
 		draw_action,
 		"PLAY_TRAINER",
 	))
@@ -2537,10 +2560,7 @@ func _golden_decision_for_actions(
 ) -> GameAction:
 	var rows: Array = []
 	for action in actions:
-		var strict_action: GameAction = action
-		if action.is_legacy_constructed():
-			strict_action = engine._canonicalize_action(state, action, actor)
-		rows.append(strict_action.to_dict())
+		rows.append((action as GameAction).to_dict())
 	var result := worker.decide({
 		"kind": "action",
 		"state": state.snapshot(),
@@ -2575,7 +2595,7 @@ func _golden_case(name: String, passed: bool, action: GameAction, expected: Stri
 func _action_summary(action: GameAction) -> String:
 	if action == null:
 		return "null"
-	return "%s %s" % [action.action, JSON.stringify(action.params)]
+	return "%s %s" % [action.kind, JSON.stringify(action.payload)]
 
 
 func _strategy_fingerprint_summary(

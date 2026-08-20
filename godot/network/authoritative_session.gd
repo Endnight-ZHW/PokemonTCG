@@ -2,17 +2,27 @@ class_name AuthoritativeSession
 extends RefCounted
 
 var catalog: CardCatalog
-var engine: GameEngine
 var state: GameState
 var rng := PortableRandomSource.new(1)
 var room_id := ""
 var deck_keys: Array[String] = ["", ""]
+var native_rules: NativeRulesSessionAdapter
 
 
 func _init(p_room_id: String = "", p_catalog: CardCatalog = null) -> void:
 	room_id = p_room_id
 	catalog = p_catalog if p_catalog != null else CardCatalog.shared()
-	engine = GameEngine.new(catalog)
+	native_rules = NativeRulesSessionAdapter.new(catalog)
+
+
+func set_native_rules_enabled(enabled: bool) -> bool:
+	if state != null:
+		return false
+	return enabled and native_rules.is_available()
+
+
+func match_journal() -> Dictionary:
+	return native_rules.journal()
 
 
 func start_match(
@@ -32,22 +42,27 @@ func start_match(
 			false,
 			"invalid_deck",
 		)
+	if not native_rules.is_available():
+		return StepResult.new(
+			false,
+			"原生规则会话不可用。",
+			null,
+			[],
+			-1,
+			false,
+			"native_rules_unavailable",
+		)
 	deck_keys = [host_deck, client_deck]
-	state = GameState.new()
-	state.public_deck_keys = deck_keys.duplicate()
-	state.set_type_matchups_enabled(bool(rules_options.get(
-		"apply_type_matchups", false)))
-	rng = PortableRandomSource.new(seed)
-	var result := engine.setup_game(
-		state,
-		catalog.expand_deck(host_deck),
-		catalog.expand_deck(client_deck),
-		rng,
+	var result := native_rules.start_match(
+		host_deck,
+		client_deck,
+		seed,
 		forced_first,
+		rules_options,
 	)
-	if result.success:
-		state.players[0].name = "房主"
-		state.players[1].name = "挑战者"
+	state = native_rules.state
+	if state != null:
+		rng = PortableRandomSource.new(native_rules.rng_state)
 	return result
 
 
@@ -74,15 +89,20 @@ func submit_action(player_idx: int, action_data: Dictionary) -> StepResult:
 		return StepResult.new(false, "动作玩家与连接身份不匹配。", null, [], state.winner, false, "unauthorized_actor")
 	if action.action_id.is_empty():
 		return StepResult.new(false, "动作缺少唯一 ID。", null, [], state.winner, false, "missing_action_id")
-	return engine.apply_action(state, action, rng)
+	var native_result := native_rules.apply_action(action_data)
+	state = native_rules.state
+	if state != null:
+		rng.set_state(native_rules.rng_state)
+	return native_result
 
 
 func submit_choice(player_idx: int, response_data: Dictionary) -> StepResult:
 	if state == null:
 		return StepResult.new(false, "对局尚未开始。", null, [], -1, false, "not_started")
-	var request := engine.query_pending_choice(state, player_idx)
+	var request := native_rules.pending_choice(player_idx)
 	if request == null:
-		if engine.query_pending_choice(state, 1 - player_idx) != null:
+		var other_request := native_rules.pending_choice(1 - player_idx)
+		if other_request != null:
 			return StepResult.new(false, "该选择不属于当前玩家。", null, [], state.winner, false, "wrong_actor")
 		return StepResult.new(false, "当前没有待处理选择。", null, [], state.winner, false, "stale_choice")
 	var schema := ProtocolV6.validate_payload(
@@ -98,7 +118,11 @@ func submit_choice(player_idx: int, response_data: Dictionary) -> StepResult:
 			"invalid_choice",
 		)
 	var response := ChoiceResponse.from_dict(response_data)
-	return engine.apply_choice_response(state, response, rng)
+	var native_result := native_rules.apply_choice(response.to_dict())
+	state = native_rules.state
+	if state != null:
+		rng.set_state(native_rules.rng_state)
+	return native_result
 
 
 func surrender(player_idx: int) -> StepResult:
@@ -114,17 +138,11 @@ func surrender(player_idx: int) -> StepResult:
 			true,
 			"game_over",
 		)
-	state.revision += 1
-	state.set_win(1 - player_idx, "surrender")
-	state.log_action("%s 投降。" % state.players[player_idx].name)
-	return StepResult.new(true, "玩家投降。", null, [{
-		"event_type": "game_over",
-		"actor": state.winner,
-		"data": {
-			"winner": state.winner,
-			"reason": "surrender",
-		},
-	}], state.winner, true)
+	var native_result := native_rules.surrender(player_idx)
+	state = native_rules.state
+	if state != null:
+		rng.set_state(native_rules.rng_state)
+	return native_result
 
 
 func view_for(
@@ -133,39 +151,35 @@ func view_for(
 ) -> Dictionary:
 	if state == null:
 		return {}
-	var public_view := engine.query_state_view(state, player_idx)
-	var pending := engine.query_pending_choice(state, player_idx)
-	var hide_cancellable_transaction := bool(public_view.get(
-		"hides_provisional_action", false))
-	var legal_groups: Array = []
-	var legal_query := LegalActionQueryResult.ok(state.revision, [])
-	if (
-		public_view.get("choice_request") == null
-		and public_view.get("wait_context") == null
-		and _current_actor() == player_idx
-	):
-		legal_query = engine.query_legal_action_groups(state, player_idx)
-		if legal_query.success:
-			for group in legal_query.groups:
-				legal_groups.append(group.to_dict())
+	var native_state_view := native_rules.view_for(player_idx)
+	var native_pending := native_rules.pending_choice(player_idx)
+	var waiting := native_rules.pending_choice(1 - player_idx)
+	var native_query := LegalActionQueryResult.ok(state.revision, [])
+	if native_pending == null and waiting == null and _current_actor() == player_idx:
+		native_query = native_rules.legal_actions(player_idx)
 	var visible_events: Array[Dictionary] = []
-	if not hide_cancellable_transaction:
-		var normalized := PresentationEvent.normalize_all(
-			presentation_events,
-			state.revision,
-			state.active_player_idx,
-		)
-		for event in normalized:
-			var visible := PresentationEvent.for_player(event, player_idx)
-			if not visible.is_empty():
-				visible_events.append(visible)
+	for event in PresentationEvent.normalize_all(
+		presentation_events, state.revision, state.active_player_idx):
+		var visible := PresentationEvent.for_player(event, player_idx)
+		if not visible.is_empty():
+			visible_events.append(visible)
+	var group_rows: Array = []
+	if native_query.success:
+		for group in native_query.groups:
+			group_rows.append(group.to_dict())
 	return {
-		"state": public_view.get("state", {}),
-		"legal_action_groups": legal_groups,
-		"legal_action_error": legal_query.code,
+		"state": native_state_view,
+		"legal_action_groups": group_rows,
+		"legal_action_error": native_query.code,
 		"presentation_events": visible_events,
-		"choice_request": public_view.get("choice_request"),
-		"wait_context": public_view.get("wait_context"),
+		"choice_request": native_pending.to_dict() if native_pending != null else null,
+		"wait_context": (
+			{
+				"waiting_for_player": 1 - player_idx,
+				"choice_kind": _coarse_native_choice_kind(waiting),
+			}
+			if waiting != null else null
+		),
 	}
 
 
@@ -177,3 +191,24 @@ func _current_actor() -> int:
 	if state.phase == "SETUP":
 		return state.setup_actor_idx
 	return state.active_player_idx
+
+
+static func _coarse_native_choice_kind(request: ChoiceView) -> String:
+	if request == null:
+		return ""
+	if request.request_type == "select_attachment":
+		return "attachment"
+	if request.request_type in [
+		"distribute_energy", "select_energy_source", "select_energy_target",
+		"select_own_bench_energy",
+	]:
+		return "energy"
+	if request.request_type == "coin_flip":
+		return "coin"
+	if "trigger" in request.request_type:
+		return "trigger"
+	if request.request_type == "select_prize":
+		return "prize"
+	if request.request_type in ["choose_turn_order", "choose_mulligan_draw_count"]:
+		return "setup"
+	return "choice"

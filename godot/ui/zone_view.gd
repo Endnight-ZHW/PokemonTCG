@@ -161,7 +161,7 @@ func set_action(row: Dictionary = {}) -> void:
 	if action == null:
 		action_button.set_meta("action", null)
 		return
-	action_button.text = str(row.get("label", action.action))
+	action_button.text = str(row.get("label", action.kind))
 	action_button.set_meta("action", action)
 
 
@@ -532,8 +532,22 @@ func _finish_pointer_interaction(release_position: Vector2) -> void:
 
 
 func _prize_index_at_point(point: Vector2) -> int:
-	var step_x := maxf(1.0, absf(_stack_step().x))
-	return clampi(int(floor(maxf(0.0, point.x) / step_x)), 0, maxi(0, count - 1))
+	if count <= 0:
+		return -1
+	var step := _stack_step()
+	var face_size := _stack_face_size()
+	# Prize cards overlap. Index 0 is the real Frame and is painted above every
+	# CanvasItem layer; the remaining layers are painted from high to low, so the
+	# first rectangle hit in ascending index order is the card the player sees.
+	# Dividing x by the fan step selected a covered card underneath that face.
+	for index in range(count):
+		if Rect2(step * float(index), face_size).has_point(point):
+			return index
+	return clampi(
+		int(round(maxf(0.0, point.x) / maxf(1.0, absf(step.x)))),
+		0,
+		count - 1,
+	)
 
 
 func _on_action_pressed() -> void:

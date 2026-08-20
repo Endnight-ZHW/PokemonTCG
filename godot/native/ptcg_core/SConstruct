@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+import os
+import sys
+from SCons.Script import Default, Environment
+
+
+env = Environment(ENV=os.environ)
+env.Append(CPPPATH=["src"])
+if sys.platform == "win32":
+    env.Append(CXXFLAGS=["/EHsc", "/std:c++17", "/O2", "/utf-8"])
+else:
+    env.Append(CXXFLAGS=["-std=c++17", "-O2", "-pthread"])
+    env.Append(LINKFLAGS=["-pthread"])
+
+core_objects = [
+    env.Object(
+        os.path.join("build", "core", name),
+        os.path.join("src", name + ".cpp"),
+    )[0]
+    for name in (
+        "ptcg_random",
+        "ptcg_rules",
+        "ptcg_game",
+        "ptcg_rules_session",
+    )
+]
+program = env.Program(
+    os.path.join("bin", "ptcg_core_tests"),
+    source=[
+        "tests/ptcg_rules_session_test.cpp",
+        *core_objects,
+    ],
+)
+env.NoCache(program)
+Default(program)

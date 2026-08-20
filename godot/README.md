@@ -8,7 +8,8 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 - 本地双人和 Challenge AI；信息集 AlphaZero v2 尚未产生可晋升模型，Deep 入口停用并回退 Challenge。
 - 10 套预组卡组；Deep v2 启用时使用一个 universal ONNX 和十项牌组路由，当前发布未捆绑模型。
 - ENet LAN 与 WebSocket Relay Protocol v6 联机；旧 Protocol 5 房间明确拒绝且不提供桥接。
-- 原生 GDScript 规则引擎和 C++ GDExtension ONNX Runtime 推理。
+- Native ABI 2 `ptcg_core` 是唯一规则引擎；GDScript 只负责会话绑定、UI、网络和表现，
+  同一 C++ 核心也通过 pybind 服务训练工具与原生搜索。
 - 响应式实体牌桌、卡图、动画、音频和移动端画质分档。
 - 深色“午夜竞技场”全屏标题页，使用深海军蓝、青蓝舞台光、金色点缀和八种基础能量；
   首页只保留本地对战、挑战 AI、联机对战三个主入口，LAN/Relay 在网络大厅中选择。
@@ -85,7 +86,8 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   `apply_type_matchups`。地址、端口和房间码只有在
   点击或轻触文本框后才接收文字输入，页面不提供 Tab、方向键或手柄焦点导航。房主还会在
   开局前锁定弱点/抗性选项，挑战者只读确认。
-- 页面仍通过 `configure(...)` 接收数据、通过既有信号报告意图；规则与网络权威校验留在 `Main`。
+- 页面仍通过 `configure(...)` 接收数据、通过既有信号报告意图；规则权威校验在
+  `NativeRulesSession`，网络房主通过同一会话执行动作与玩家视图投影。
 
 ## 测试与构建
 
@@ -105,7 +107,8 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 ```
 
 `test_godot.ps1` 包含标题页三档布局、前台多分辨率、四边安全区、鼠标/触控专用输入契约、
-弹窗历史、Android 系统返回、Theme 隔离和交互 contract，并验证五种实际对战路径仍可到达。
+弹窗历史、Android 系统返回、Theme 隔离、原生会话/搜索和交互 contract。本地、Challenge、
+LAN 与 Relay 另有完整实战回归；Deep 模型未晋升时入口保持关闭，不虚构模型对局。
 截图输出到 `build/ui-preview/`，其中 `title.png`、`title-1280x720.png`、
 `title-compact.png`、`title-portrait.png` 覆盖午夜竞技场的 Wide/Compact/Dense 布局，
 `title-hover.png` 检查鼠标悬停，`title-rotated.png` 检查动态展示卡，
@@ -128,8 +131,8 @@ Toast 等基线，用于人工检查全屏背景、视觉层级、溢出和长�
 
 ## 数据来源
 
-`data/` 和 `assets/cards/` 由 Python 权威数据生成。不要直接手工维护生成的
-卡牌规则数据；修改 Python 数据后执行：
+`data/` 和 `assets/cards/` 由 Python 类型化卡牌 DSL 与导入数据生成。不要直接手工维护
+生成的 Card IR/卡牌数据；Python 只编译描述，权威执行仍在 `ptcg_core`。修改作者源后执行：
 
 ```powershell
 .\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py

@@ -95,19 +95,18 @@ static func promotion_state(seed: int = DEFAULT_SEED) -> GameState:
 static func setup_action_rows(state: GameState) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
 	rows.append({
-		"action": GameAction.new("SETUP_DONE", {}, false, 0),
+		"action": GameAction.create("SETUP_DONE", {}, 0),
 		"label": "完成准备",
 	})
 	for bench_index in range(3):
 		var slot := "bench_%d" % bench_index
 		rows.append({
-			"action": GameAction.new(
+			"action": GameAction.create(
 				"PLAY_BASIC",
-				{"hand_idx": 0, "target": slot},
-				false,
+				{},
 				0,
 				_hand_ref(state, 0),
-				_pokemon_ref(0, slot, ""),
+				_slot_ref(0, slot),
 			),
 			"label": "放置到备战区",
 		})
@@ -117,14 +116,13 @@ static func setup_action_rows(state: GameState) -> Array[Dictionary]:
 static func action_rows(state: GameState) -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
 	rows.append({
-		"action": GameAction.new("END_TURN", {}, true, 0),
+		"action": GameAction.create("END_TURN", {}, 0),
 		"label": "结束回合",
 	})
 	rows.append({
-		"action": GameAction.new(
+		"action": GameAction.create(
 			"ATTACH_ENERGY",
-			{"hand_idx": 0, "target_slot": "active"},
-			false,
+			{},
 			0,
 			_hand_ref(state, 0),
 			_pokemon_ref(0, "active", state.players[0].active.card_id),
@@ -132,23 +130,20 @@ static func action_rows(state: GameState) -> Array[Dictionary]:
 		"label": "附能到战斗宝可梦",
 	})
 	rows.append({
-		"action": GameAction.new(
+		"action": GameAction.create(
 			"PLAY_TRAINER",
-			{"hand_idx": 1},
-			false,
+			{},
 			0,
 			_hand_ref(state, 1),
 		),
 		"label": "使用 博士的研究",
 	})
 	rows.append({
-		"action": GameAction.new(
+		"action": GameAction.create(
 			"DECLARE_ATTACK",
-			{"attack_idx": 0},
-			false,
+			{"attack_index": 0},
 			0,
 			_pokemon_ref(0, "active", state.players[0].active.card_id),
-			_pokemon_ref(1, "active", state.players[1].active.card_id),
 		),
 		"label": "高温冲撞 · 100",
 	})
@@ -158,10 +153,9 @@ static func action_rows(state: GameState) -> Array[Dictionary]:
 		if target == null:
 			continue
 		rows.append({
-			"action": GameAction.new(
+			"action": GameAction.create(
 				"RETREAT",
-				{"bench_idx": bench_index},
-				false,
+				{},
 				0,
 				_pokemon_ref(0, "active", state.players[0].active.card_id),
 				_pokemon_ref(0, slot, target.card_id),
@@ -179,13 +173,12 @@ static func promotion_action_rows(state: GameState) -> Array[Dictionary]:
 			continue
 		var slot := "bench_%d" % bench_index
 		rows.append({
-			"action": GameAction.new(
+			"action": GameAction.create(
 				"PROMOTE",
-				{"bench_idx": bench_index},
-				false,
+				{},
 				0,
+				null,
 				_pokemon_ref(0, slot, pokemon.card_id),
-				_pokemon_ref(0, "active", ""),
 			),
 			"label": "晋升为战斗宝可梦",
 		})
@@ -197,6 +190,10 @@ static func _hand_ref(state: GameState, hand_index: int) -> EntityRef:
 	if hand_index >= 0 and hand_index < state.players[0].hand.size():
 		card_id = state.players[0].hand[hand_index]
 	return EntityRef.new("card", 0, "hand", "", hand_index, "", card_id)
+
+
+static func _slot_ref(player: int, slot: String) -> EntityRef:
+	return EntityRef.new("slot", player, "", slot)
 
 
 static func _pokemon_ref(player: int, slot: String, card_id: String) -> EntityRef:

@@ -59,7 +59,10 @@ EFFECTS = {
         "attacks": {
             "突击": {
                 "effects": [
-                    {"effect_type": "damage_counter_self", "params": {"amount": 10}}
+                    {
+                        "effect_type": "damage_counter_self",
+                        "params": {"amount": 10, "damage_kind": "self_damage"},
+                    }
                 ]
             }
         }
@@ -174,7 +177,7 @@ EFFECTS = {
             "effect_type": "attach_from_discard",
             "params": {
                 "amount": 1,
-                "energy_type": "Darkness",
+                "energy_type": "basic_darkness",
                 "target": "bench",
                 "target_pokemon_type": "Darkness",
             },
