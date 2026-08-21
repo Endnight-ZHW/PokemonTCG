@@ -3,11 +3,11 @@ extends RefCounted
 
 const MANIFEST_PATH := "res://data/ai_models_runtime.json"
 const RELEASE_MANIFEST_PATH := "res://data/release_manifest.json"
-const RUNTIME_FORMAT_VERSION := 3
-const ENCODER_VERSION := 7
-const CHECKPOINT_VERSION := 12
-const PLANNER_VERSION := 2
-const MODEL_VARIANT := "universal_infoset_transformer_v2"
+const RUNTIME_FORMAT_VERSION := 4
+const ENCODER_VERSION := 8
+const CHECKPOINT_VERSION := 13
+const PLANNER_VERSION := 3
+const MODEL_VARIANT := "universal_infoset_transformer_v3"
 
 var manifest: Dictionary = {}
 var release_manifest: Dictionary = {}
@@ -70,26 +70,25 @@ func load_for_deck(deck_key: String) -> bool:
 	):
 		last_error = "runtime_onnx_contract_mismatch"
 		return false
-	var bridge_value: Variant = manifest.get("compatibility_bridge", {})
-	if not bridge_value is Dictionary:
-		last_error = "compatibility_bridge_invalid"
+	var source_schemas_value: Variant = manifest.get("source_schemas", {})
+	if not source_schemas_value is Dictionary:
+		last_error = "source_schemas_invalid"
 		return false
-	var bridge: Dictionary = bridge_value
+	var source_schemas: Dictionary = source_schemas_value
 	var schemas: Dictionary = release_manifest.get("schemas", {})
 	if (
-		int(bridge.get("version", 0)) != 2
-		or int(bridge.get("python_rules_version", 0))
+		int(source_schemas.get("python_rules_version", 0))
 		!= int(schemas.get("python_rules", 0))
-		or int(bridge.get("python_action_version", 0))
+		or int(source_schemas.get("python_action_version", 0))
 		!= int(schemas.get("python_actions", 0))
-		or int(bridge.get("python_encoder_version", 0))
+		or int(source_schemas.get("python_encoder_version", 0))
 		!= ENCODER_VERSION
 	):
-		last_error = "compatibility_bridge_mismatch"
+		last_error = "source_schemas_mismatch"
 		return false
 	var contract_value: Variant = manifest.get("contract", {})
 	if not contract_value is Dictionary:
-		last_error = "v2_contract_missing"
+		last_error = "v3_contract_missing"
 		return false
 	var contract: Dictionary = contract_value
 	if (
@@ -98,7 +97,7 @@ func load_for_deck(deck_key: String) -> bool:
 		or int(contract.get("deep_planner_version", 0)) != PLANNER_VERSION
 		or str(contract.get("model_variant", "")) != MODEL_VARIANT
 	):
-		last_error = "v2_contract_mismatch"
+		last_error = "v3_contract_mismatch"
 		return false
 	if not _planner_matches():
 		return false
@@ -139,12 +138,12 @@ func load_for_deck(deck_key: String) -> bool:
 		"format_version": RUNTIME_FORMAT_VERSION,
 		"opset": int(manifest.get("opset", 0)),
 		"model_variant": MODEL_VARIANT,
-		"state_global_size": 128,
-		"entity_slots": 128,
-		"entity_numeric_size": 16,
+		"state_global_size": 192,
+		"entity_slots": 160,
+		"entity_numeric_size": 24,
 		"entity_type_fields": 4,
-		"candidate_numeric_size": 32,
-		"candidate_ref_fields": 4,
+		"candidate_numeric_size": 48,
+		"candidate_ref_fields": 8,
 		"onnx_sha256": str(row.get("onnx_sha256", "")),
 	}
 	if not backend.call(

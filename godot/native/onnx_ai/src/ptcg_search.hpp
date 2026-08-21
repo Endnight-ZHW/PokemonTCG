@@ -2,7 +2,7 @@
 
 #include "ptcg_ai_core.hpp"
 #include "ptcg_determinizer.hpp"
-#include "ptcg_encoder.hpp"
+#include "ptcg_encoder_v3.hpp"
 #include "ptcg_game.hpp"
 #include "ptcg_value.hpp"
 
@@ -23,9 +23,6 @@ struct NativeSearchConfig {
     float dirichlet_epsilon = 0.25F;
     float temperature = 1.0F;
     bool training = true;
-    // Benchmark-only switch for comparing the pre-COW recursive copy path.
-    // Production callers leave this false.
-    bool force_deep_state_copy = false;
     // Test/audit switch. Production reuses candidates by information-set key;
     // this mode regenerates them and fails if an infoset is not invariant.
     bool verify_candidate_cache = false;
@@ -34,6 +31,8 @@ struct NativeSearchConfig {
     // of one preserves strictly sequential PUCT; production training and
     // clients use a small wave with virtual visits to fill shared batches.
     std::uint32_t max_inflight_leaves = 1;
+    // Routes actor/champion/history requests through one shared GPU broker.
+    std::int32_t model_slot = 0;
 };
 
 struct NativeSearchResult {
@@ -143,7 +142,7 @@ private:
 
     NativeGameKernel game_;
     NativeDeterminizer determinizer_;
-    NativeInformationSetEncoder encoder_;
+    NativeInformationSetEncoderV3 encoder_;
     std::shared_ptr<NativeSelfPlayBatch> batch_;
     std::shared_ptr<NativeSearchLimiter> limiter_;
     std::thread worker_;

@@ -1,8 +1,7 @@
 """DTO conversion for the authoritative C++ rules core.
 
-This module contains no legality or settlement logic.  It only maps the
-historical Python training objects to Snapshot 3 and adopts native snapshots
-back into those mutable DTOs while training callers migrate to session handles.
+This module contains no legality or settlement logic. It maps Python rule DTOs
+to Snapshot 3 and adopts native snapshots back into those mutable DTOs.
 """
 from __future__ import annotations
 
@@ -15,6 +14,7 @@ from typing import Any, Mapping
 from data.card_registry import CardRegistry
 from engine.enums import StatusType, TurnPhase
 from engine.player_state import PokemonInPlay
+from engine.snapshot import canonical_state_payload
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -36,11 +36,73 @@ def native_catalog_payload() -> dict[str, Any]:
 
 
 def state_to_native_snapshot(state: Any) -> dict[str, Any]:
-    # Keep the mature, strictly bounded DTO converter used by native search.
-    # It has no execution dependency and remains the Actions-3 read adapter.
-    from engine.ai.dl.native_bridge_v2 import game_state_to_native_wire
-
-    payload = game_state_to_native_wire(state)
+    snapshot = canonical_state_payload(state)
+    rules_options = dict(snapshot.get("rules_options", {}))
+    apply_type_matchups = bool(snapshot.get("apply_type_matchups", False))
+    rules_options["apply_type_matchups"] = apply_type_matchups
+    mulligan_value = snapshot.get("mulligan_bonus_max", (0, 0))
+    mulligan_bonus_max = (
+        max((int(value) for value in mulligan_value), default=0)
+        if isinstance(mulligan_value, (list, tuple))
+        else int(mulligan_value or 0)
+    )
+    payload = {
+        "players": [
+            _native_player_payload(snapshot["p1"]),
+            _native_player_payload(snapshot["p2"]),
+        ],
+        "active_player_idx": int(snapshot["active_player_idx"]),
+        "phase": str(snapshot["phase"]),
+        "turn_number": int(snapshot["turn_number"]),
+        "first_player_idx": int(snapshot["first_player_idx"]),
+        "stadium_card_id": str(snapshot.get("stadium_card_id") or ""),
+        "stadium_owner_idx": int(snapshot.get("stadium_owner_idx", -1)),
+        "winner": (
+            -1 if snapshot.get("winner") is None else int(snapshot["winner"])
+        ),
+        "result_status": str(snapshot.get("result_status", "ONGOING")),
+        "result_reason": str(snapshot.get("result_reason", "")),
+        "result_conditions": _json_value(
+            snapshot.get("result_conditions", [[], []])
+        ),
+        "revision": int(snapshot.get("revision", 0)),
+        "choice_sequence": int(snapshot.get("choice_sequence", 0)),
+        "public_deck_keys": [
+            str(value or "")
+            for value in snapshot.get("public_deck_keys", ("", ""))
+        ],
+        "apply_type_matchups": apply_type_matchups,
+        "rules_profile_id": str(
+            snapshot.get("rules_profile_id", "CN_MAINLAND_3_1_0")
+        ),
+        "rules_options": _json_value(rules_options),
+        "action_log": [str(value) for value in snapshot.get("action_log", [])],
+        "mulligan_count": list(snapshot.get("mulligan_count", (0, 0))),
+        "extra_draws": list(snapshot.get("extra_draws", (0, 0))),
+        "setup_ready": [
+            bool(value)
+            for value in snapshot.get("setup_initial_done", (False, False))
+        ],
+        "setup_stage": str(snapshot.get("setup_stage", "TURN_ORDER")),
+        "setup_actor_idx": int(snapshot.get("setup_actor_idx", -1)),
+        "opening_coin_winner_idx": int(
+            snapshot.get("opening_coin_winner_idx", -1)
+        ),
+        "mulligan_bonus_max": mulligan_bonus_max,
+        "setup_bonus_card_ids": [
+            list(row)
+            for row in snapshot.get("setup_bonus_card_ids", ([], []))
+        ],
+        "pending_promotions": list(snapshot.get("pending_promotions", [])),
+        "processed_action_ids": [
+            str(value)
+            for value in getattr(state, "_native_processed_action_ids", [])
+        ],
+        "resolution_stack": _json_value(snapshot.get("resolution_stack", {})),
+        "turn_fact_book": _native_turn_fact_book(
+            snapshot.get("turn_fact_book", {})
+        ),
+    }
     payload["snapshot_version"] = 3
     payload["action_log"] = [
         str(value) for value in getattr(state, "action_log", ())
@@ -60,6 +122,208 @@ def state_to_native_snapshot(state: Any) -> dict[str, Any]:
         "context": copy.deepcopy(dict(stack.get("context", {}) or {})),
     }
     return payload
+
+
+def mask_native_snapshot(
+    wire_state: Mapping[str, Any],
+    actor: int,
+) -> dict[str, Any]:
+    """Remove private identities before a snapshot crosses the search ABI."""
+    if actor not in (0, 1):
+        raise ValueError("invalid_native_actor")
+    result = copy.deepcopy(dict(wire_state))
+    players = result.get("players")
+    if not isinstance(players, list) or len(players) != 2:
+        raise ValueError("invalid_native_players")
+    for owner, player in enumerate(players):
+        if not isinstance(player, dict):
+            raise ValueError("invalid_native_player")
+        deck = player.get("deck")
+        hand = player.get("hand")
+        prizes = player.get("prizes")
+        if not all(isinstance(zone, list) for zone in (deck, hand, prizes)):
+            raise ValueError("invalid_native_hidden_zone")
+        player["deck"] = ["__hidden_card__"] * len(deck)
+        player["prizes"] = ["__hidden_prize__"] * len(prizes)
+        if owner != actor:
+            player["hand"] = ["__hidden_card__"] * len(hand)
+    return result
+
+
+def _json_value(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("native_state_is_not_json") from exc
+
+
+def _native_pokemon_payload(
+    snapshot: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if snapshot is None:
+        return None
+    source_modifiers = [
+        row for row in snapshot.get("modifiers", []) if isinstance(row, dict)
+    ]
+    represented_attack_locks = {
+        str(
+            operation.get("attack_name")
+            or operation.get("reason")
+            or "__all__"
+        )
+        for descriptor in source_modifiers
+        if isinstance((operation := descriptor.get("operation")), dict)
+        and str(operation.get("kind", "")) == "attack_lock"
+    }
+    payload: dict[str, Any] = {
+        "card_id": str(snapshot.get("card_id", "")),
+        "damage_counters": int(snapshot.get("damage_counters", 0)),
+        "energy_card_ids": list(snapshot.get("energy_card_ids", [])),
+        "attached_tool_id": str(snapshot.get("attached_tool_id") or ""),
+        "status_conditions": sorted(snapshot.get("status_conditions", [])),
+        "evolution_stack_ids": list(snapshot.get("evolution_stack_ids", [])),
+        "can_evolve_this_turn": bool(
+            snapshot.get("can_evolve_this_turn", True)
+        ),
+        "placed_this_turn": bool(snapshot.get("placed_this_turn", True)),
+        "used_abilities": sorted(snapshot.get("used_abilities", [])),
+        "damage_prevented": bool(snapshot.get("damage_prevented", False)),
+        "all_prevented": bool(snapshot.get("all_prevented", False)),
+        "outgoing_damage_reduction": int(
+            snapshot.get("outgoing_damage_reduction", 0)
+        ),
+        "healed_this_turn": bool(snapshot.get("healed_this_turn", False)),
+        "paralyzed_since_turn": int(snapshot.get("paralyzed_since_turn", 0)),
+    }
+    if bool(snapshot.get("attack_locked", False)) and (
+        "__all__" not in represented_attack_locks
+    ):
+        payload["attack_locked"] = True
+    attack_locked_names = _json_value(snapshot.get("attack_locked_names", {}))
+    if isinstance(attack_locked_names, dict):
+        remaining = {
+            str(name): applied
+            for name, applied in attack_locked_names.items()
+            if str(name) not in represented_attack_locks
+        }
+        if remaining:
+            payload["attack_locked_names"] = remaining
+    elif attack_locked_names:
+        payload["attack_locked_names"] = attack_locked_names
+    modifiers = [_json_value(row) for row in source_modifiers]
+    for row in snapshot.get("max_hp_modifiers", []):
+        if not isinstance(row, dict):
+            continue
+        modifier_kind = str(
+            row.get("modifier_kind", row.get("effect_type", ""))
+        )
+        if not modifier_kind:
+            continue
+        if modifier_kind == "conditional_hp_boost" and any(
+            isinstance(existing, dict)
+            and (existing.get("operation") or {}).get("kind") == "hp_delta"
+            for existing in modifiers
+        ):
+            continue
+        params = dict(row.get("params", {}))
+        for key in ("energy_type", "threshold", "amount"):
+            if key in row and key not in params:
+                params[key] = row[key]
+        modifiers.append({
+            "source": str(row.get("source", modifier_kind)),
+            "source_player": int(row.get("source_player", -1)),
+            "source_slot": str(row.get("source_slot", "")),
+            "source_card_id": str(
+                row.get("source_card_id", snapshot.get("card_id", ""))
+            ),
+            "modifier_kind": modifier_kind,
+            "params": _json_value(params),
+        })
+    if modifiers:
+        payload["modifiers"] = modifiers
+    return payload
+
+
+def _native_player_payload(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    bench = [_native_pokemon_payload(row) for row in snapshot.get("bench", [])]
+    bench.extend([None] * (5 - len(bench)))
+    payload = {
+        "name": str(snapshot.get("name", "")),
+        "deck": list(snapshot.get("deck_ids", [])),
+        "hand": list(snapshot.get("hand_ids", [])),
+        "discard": list(snapshot.get("discard_ids", [])),
+        "prizes": list(snapshot.get("prize_ids", [])),
+        "active": _native_pokemon_payload(snapshot.get("active")),
+        "bench": bench[:5],
+        "supporter_played_this_turn": bool(snapshot.get("supporter_played", False)),
+        "energy_attached_this_turn": bool(snapshot.get("energy_attached", False)),
+        "retreated_this_turn": bool(snapshot.get("retreated", False)),
+        "stadium_played_this_turn": bool(snapshot.get("stadium_played", False)),
+        "stadium_used_this_turn": bool(snapshot.get("stadium_used", False)),
+        "healed_this_turn": bool(snapshot.get("healed", False)),
+        "vstar_power_used": bool(snapshot.get("vstar_used", False)),
+        "was_ko_by_attack": bool(snapshot.get("was_ko_by_attack", False)),
+    }
+    attack_locked_names = {
+        str(name): int(expires)
+        for name, expires in dict(
+            snapshot.get("attack_locked_names", {}) or {}
+        ).items()
+    }
+    if attack_locked_names:
+        payload["attack_locked_names"] = attack_locked_names
+    return payload
+
+
+def _native_knockout_fact(fact: Any) -> dict[str, Any] | None:
+    if not isinstance(fact, dict):
+        return None
+    source_kind = str(fact.get("source_kind", fact.get("cause", "rule")))
+    source_player_value = fact.get("source_player", -1)
+    source_player = int(source_player_value) if source_player_value in (0, 1) else -1
+    if source_kind == "attack_damage":
+        cause_kind = "damage"
+    elif source_kind == "direct_knockout":
+        source_kind, cause_kind = "attack_effect", "direct_knockout"
+    elif source_kind in {"damage_counter", "damage_counters"}:
+        cause_kind = "damage_counters"
+    elif source_kind == "special_condition":
+        cause_kind = "special_condition"
+    else:
+        cause_kind = "effect"
+    return {
+        "defeated_player": int(
+            fact.get("defeated_player", fact.get("owner", -1))
+        ),
+        "slot": str(fact.get("slot", "")),
+        "card_id": str(fact.get("card_id", "")),
+        "source_player": source_player,
+        "source_kind": source_kind,
+        "cause_kind": str(fact.get("cause_kind", cause_kind)),
+        "cause_detail": _json_value(
+            fact.get("cause_detail", fact.get("cause_details", ""))
+        ),
+        "turn": int(fact.get("turn", fact.get("turn_number", 0))),
+    }
+
+
+def _native_turn_fact_book(snapshot: Any) -> dict[str, Any]:
+    source = snapshot if isinstance(snapshot, dict) else {}
+
+    def window(primary: str, fallback: str) -> dict[str, Any]:
+        raw = source.get(primary, source.get(fallback, {}))
+        row = raw if isinstance(raw, dict) else {}
+        facts = [
+            mapped
+            for fact in row.get("knockouts", [])
+            if (mapped := _native_knockout_fact(fact)) is not None
+        ]
+        return {"knockouts": facts}
+
+    return {
+        "current_turn": window("current_turn", "current"),
+        "previous_turn": window("previous_turn", "previous"),
+    }
 
 
 def adopt_native_snapshot(

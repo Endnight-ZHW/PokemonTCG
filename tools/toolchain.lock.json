@@ -37,6 +37,7 @@
     "pybind11": "2.13.6",
     "websockets": "16.0",
     "requests": "2.32.3",
+    "safetensors": "0.4.5",
     "pillow": "11.3.0"
   },
   "native": {

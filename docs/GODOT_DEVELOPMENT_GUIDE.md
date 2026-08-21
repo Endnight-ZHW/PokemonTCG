@@ -1002,8 +1002,8 @@ Windows 与 Android 调试构建：
 - 开发调试包：用于自己测试，输出到 `godot/dist/windows/` 和 `godot/dist/android/`。
 - 正式发布包：用于分发，输出到 `godot/dist/release/`，并生成 ZIP、APK 和 SHA-256 清单。
 
-0.7.0 以 Godot 客户端和 Challenge AI 为运行基线。Deep AI 已重构为信息集
-AlphaZero v2，但在原生规则、安全、性能、强度和设备门槛全部完成前，
+0.7.0 以 Godot 客户端和 Challenge AI 为运行基线。Deep AI 训练基础设施已重构为
+高吞吐信息集 AlphaZero v3，但在正式强度和发布设备门槛完成前，
 manifest 仍将 `deep_runtime_enabled` 设为 false。旧模型只读保留。
 发布包不会包含 Python 运行时、PyTorch、训练脚本、测试脚本或工具链目录。
 
@@ -1049,24 +1049,24 @@ conda run -n DL python -c "import torch; assert torch.cuda.is_available(); print
 conda run -n DL python -c "import onnx, onnxruntime; print(onnx.__version__, onnxruntime.__version__)"
 ```
 
-唯一训练入口是 universal 信息集 AlphaZero v2。先校验冻结教师缓存，再执行正式长跑：
+唯一可写训练入口是 universal 信息集 AlphaZero v3。先校验冻结教师 replay，再执行：
 
 ```powershell
 $env:PYTHONNOUSERSITE = '1'
-conda run -n DL python -B .\python\scripts\train_deep_ai.py verify-cache `
-  --cache .\python\data\ai_training\bootstrap-v2.pt
-.\tools\train_deep_ai_v2.ps1 -Preset release
+conda run -n DL python -B .\python\scripts\train_deep_ai_v3.py verify-replay `
+  --replay .\python\data\ai_training\bootstrap-v3
+.\tools\train_deep_ai_v3.ps1 -Preset pilot
 ```
 
-只做 smoke 时允许 Python 规则回退，输出到 `build/`：
+只做 smoke 时仍要求原生 actor，输出到 `build/`：
 
 ```powershell
 $env:PYTHONNOUSERSITE = '1'
-.\tools\train_deep_ai_v2.ps1 -Preset smoke -AllowPythonFallback
+.\tools\train_deep_ai_v3.ps1 -Preset smoke
 ```
 
 训练器会把 checkpoint、证据、ONNX 和 runtime manifest 写入候选目录，不直接
-覆盖在线模型。详见 `deep_ai_alphazero_v2.md`。
+覆盖在线模型。详见 `deep_ai_alphazero_v3.md`；v2 run 会被明确拒绝且不支持迁移。
 
 ### 生成开发调试包
 

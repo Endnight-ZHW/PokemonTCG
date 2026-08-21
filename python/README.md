@@ -2,13 +2,14 @@
 
 The authoritative rules runtime is the shared C++ `ptcg_core`. Python retains
 the typed card DSL, import/export tools, native binding and training
-orchestration. The Deep AI training path is information-set AlphaZero v2:
+orchestration. The writable Deep AI training path is information-set AlphaZero v3:
 
-- encoder v7;
-- checkpoint v12;
-- `universal_infoset_transformer_v2`;
-- information-set PUCT planner v2;
+- encoder v8;
+- checkpoint v13;
+- `universal_infoset_transformer_v3`;
+- information-set PUCT planner v3;
 - one universal model routed to all ten release decks;
+- whole-game native actors, ragged Safetensors replay, persistent learner;
 - batched CUDA inference for training and CPU ONNX Runtime in clients.
 
 ## Environment
@@ -23,59 +24,56 @@ binding is built together with the Godot extension:
 
 ## Frozen Challenge bootstrap
 
-Teacher generation is intentionally separate from the 24-hour training
-budget. It produces 1,100 games across the 55 unordered deck matchups and
-stores source fingerprints with a game-seed-level 90/10 split.
+Teacher generation is separate from self-play. It uses deterministic bounded
+Challenge planning, publishes atomic Safetensors shards and partitions the
+train/validation set by game seed.
 
 ```powershell
-conda run -n DL python -B .\python\scripts\train_deep_ai.py bootstrap `
-  --output .\python\data\ai_training\bootstrap-v2.pt `
-  --workers 16 --seed 17
+conda run -n DL python -B .\python\scripts\train_deep_ai_v3.py bootstrap `
+  --output .\python\data\ai_training\bootstrap-v3 `
+  --workers 8 --seed 17
 
-conda run -n DL python -B .\python\scripts\train_deep_ai.py verify-cache `
-  --cache .\python\data\ai_training\bootstrap-v2.pt
+conda run -n DL python -B .\python\scripts\train_deep_ai_v3.py verify-replay `
+  --replay .\python\data\ai_training\bootstrap-v3
 ```
 
 ## Training
 
-Both smoke and release modes require the native rules ABI for self-play.
+Smoke, pilot and release modes require the native rules ABI for self-play.
 Training a candidate does not itself enable
 Deep or make the run promotable. Native technical readiness and all external
 release evidence are checked later by the finalization gate.
 
 ```powershell
-.\tools\train_deep_ai_v2.ps1 -Preset smoke -AllowPythonFallback
-.\tools\train_deep_ai_v2.ps1 -Preset release
+.\tools\train_deep_ai_v3.ps1 -Preset smoke
+.\tools\train_deep_ai_v3.ps1 -Preset pilot
+.\tools\train_deep_ai_v3.ps1 -Preset release
 ```
 
-The trainer runs warm-up, five self-play generations, candidate arenas, the
-final Challenge league, checkpoint save, ONNX export, and PyTorch/ONNX parity
-verification. Candidate artifacts are written under
-`release_staging`; they never modify the live runtime. A successful league
-leaves the run in `pending_evidence`, not `passed`.
+The pilot runs five teacher warm-up epochs and two deterministic 25,000-sample
+cycles. Learner parameters, AdamW, GradScaler, schedule and RNG continue even
+when an arena candidate is rejected; only champion changes on arena
+acceptance. A validation-selected trust-region projection keeps teacher loss
+within 10% of the best warm-up value while retaining the maximum safe fraction
+of each mixed-pass learner update; validation samples are never used for SGD.
+Candidate artifacts never modify the live runtime.
 
 ## Release safety
 
-`deep_runtime_enabled` stays false until every gate passes. After release-scale
-rules, information-set, historical performance, Windows and physical Android
-evidence exists, create the final self-contained evidence bundle:
+`deep_runtime_enabled` stays false. The v3 engineering gate covers native
+trajectories, CUDA soak, replay/restart, throughput, PyTorch/ONNX parity and
+Windows runtime behavior:
 
 ```powershell
-python .\python\scripts\finalize_alphazero_v2_evidence.py `
-  --run-dir <run> `
-  --rules-parity <rules.json> `
-  --infoset-security <infoset.json> `
-  --performance <performance.json> `
-  --windows-runtime <windows.json> `
-  --android-runtime <android.json>
+.\tools\verify_native_actor_v3.ps1 -Mode rules
+.\tools\verify_native_actor_v3.ps1 -Mode cuda-soak
+.\tools\benchmark_ai_pipeline_v3.ps1
+.\tools\export_onnx_models_v3.ps1 -Checkpoint <checkpoint-directory>
 ```
 
-The finalizer copies and hashes every input, revalidates the 6,000-game league,
-and only enables the candidate manifests inside the run directory when every
-check passes. Live files remain unchanged. Promotion through
-`promote_alphazero_v2.py` revalidates that final bundle, current native
-technical readiness, universal routes, checkpoint and ONNX hashes, then writes
-the model and both release manifests through a rollback-capable transaction.
+This iteration does not perform formal promotion or physical Android evidence.
+v2 checkpoints, replay and runs are rejected explicitly; the retired trainer,
+replay, bridge and migration entrypoints are not shipped.
 
 The Godot client keeps `DeepAIRuntime.load_for_deck(deck_key)` and routes all
 ten deck keys to `universal.onnx`. Any load, inference, deadline, non-finite

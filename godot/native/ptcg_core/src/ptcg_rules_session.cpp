@@ -3302,6 +3302,10 @@ Value RulesSession::pending_choice(std::int32_t viewer) const {
     return pending_.deep_clone();
 }
 
+Value RulesSession::search_continuation() const {
+    return continuation_.deep_clone();
+}
+
 RulesSessionResult RulesSession::apply_action(const Value &submitted_action) {
     if (!initialized_) {
         return result(false, "not_started", "not_started");
@@ -4296,6 +4300,63 @@ void RulesSession::set_pending(Value pending, Value continuation) {
             }
         }
         continuation_ = std::move(continuation);
+        const Value *vm = continuation_.find("vm");
+        if (vm != nullptr && vm->is_object()) {
+            const std::string op = string_field(*vm, "op");
+            const std::int64_t stage = integer_field(*vm, "stage", -1);
+            const std::string request_type = string_field(
+                pending_, "request_type"
+            );
+            const bool reveals_selected_deck_cards = stage == 1 && (
+                (op == "look_top_attach_energy"
+                    && request_type == "select_energy_target")
+                || (op == "look_top_deck"
+                    && request_type == "distribute_energy")
+            );
+            if (reveals_selected_deck_cards) {
+                const Value *selected = vm->find("selected_cards");
+                const std::int32_t actor = static_cast<std::int32_t>(
+                    integer_field(pending_, "player", -1)
+                );
+                if (
+                    selected == nullptr || !selected->is_array()
+                    || selected->as_array().empty()
+                    || selected->as_array().size() > 64
+                ) {
+                    throw std::invalid_argument(
+                        "invalid_revealed_selected_cards"
+                    );
+                }
+                Array revealed;
+                revealed.reserve(selected->as_array().size());
+                for (const Value &card : selected->as_array()) {
+                    const std::string card_id = string_field(card, "card_id");
+                    if (
+                        !card.is_object()
+                        || string_field(card, "kind") != "card"
+                        || integer_field(card, "player", -1) != actor
+                        || string_field(card, "zone") != "deck"
+                        || integer_field(card, "index", -1) < 0
+                        || card_id.empty()
+                    ) {
+                        throw std::invalid_argument(
+                            "invalid_revealed_selected_card"
+                        );
+                    }
+                    revealed.emplace_back(card_id);
+                }
+                Value *presentation = pending_.find("presentation");
+                if (presentation == nullptr || !presentation->is_object()) {
+                    throw std::invalid_argument(
+                        "invalid_choice_presentation"
+                    );
+                }
+                (*presentation)["revealed_card_ids"] = Value(
+                    std::move(revealed)
+                );
+                (*presentation)["source_zone"] = Value("deck");
+            }
+        }
         if (string_field(pending_, "request_type") == "coin_flip") {
             const Value *vm = continuation_.find("vm");
             const Value *flips = vm != nullptr && vm->is_object()

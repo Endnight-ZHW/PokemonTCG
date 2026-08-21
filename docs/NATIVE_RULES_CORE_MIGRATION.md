@@ -71,6 +71,7 @@ All other cutover gates passed:
 
 No physical Android device was connected during this local run, so device
 smoke is recorded as skipped rather than passed. Deep search contracts run
-against the shared core, but no AlphaZero v2 model was trained or promoted;
+against the shared core. Deep training now uses the v3 native-actor stack, but
+no v3 model has been promoted;
 the release Deep entry therefore remains disabled and falls back to Challenge,
 as required by the migration scope.

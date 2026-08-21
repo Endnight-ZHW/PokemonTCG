@@ -1,9 +1,4 @@
-"""Universal information-set AlphaZero v2 Deep AI.
-
-The package facade is intentionally lazy. Challenge teacher subprocesses
-import modules below this package but do not need PyTorch or the runtime
-controller; eagerly importing them reserved more than 1 GB per worker.
-"""
+"""Lazy public facade for Universal information-set Deep AI v3."""
 from __future__ import annotations
 
 from typing import Any
@@ -16,70 +11,47 @@ def __getattr__(name: str) -> Any:
         "ENCODER_SCHEMA_VERSION",
         "MODEL_VARIANT",
     }:
-        from engine.ai.dl import v2_contract
+        from engine.ai.dl import v3_contract
 
-        return getattr(v2_contract, name)
+        return getattr(v3_contract, name)
     if name in {
-        "EncodedCandidates",
-        "EncodedDecision",
-        "EncodedInformationSet",
-        "InformationSetEncoderV7",
+        "EncodedCandidatesV3",
+        "EncodedInformationSetV3",
+        "InformationSetEncoderV8",
     }:
-        from engine.ai.dl import infoset_encoder
+        from engine.ai.dl import encoder_v3
 
-        return getattr(infoset_encoder, name)
+        return getattr(encoder_v3, name)
     if name in {
         "TORCH_AVAILABLE",
-        "UniversalInformationSetModel",
+        "UniversalInformationSetModelV3",
     }:
-        from engine.ai.dl import model_v2
+        from engine.ai.dl import model_v3
 
-        return getattr(model_v2, name)
-    if name == "NativeBatchTorchBroker":
-        from engine.ai.dl.inference_v2 import NativeBatchTorchBroker
+        return getattr(model_v3, name)
+    if name in {"ActorConfigV3", "GameTaskV3", "NativeActorServiceV3"}:
+        from engine.ai.dl import actor_v3
 
-        return NativeBatchTorchBroker
-    if name in {
-        "NativeBridgeError",
-        "NativeModelBackend",
-        "NativeSearchService",
-        "game_state_to_native_wire",
-        "mask_native_snapshot",
-        "native_training_bridge_available",
-    }:
-        from engine.ai.dl import native_bridge_v2
+        return getattr(actor_v3, name)
+    if name == "AtomicWorkerExchangeV3":
+        from engine.ai.dl.worker_v3 import AtomicWorkerExchangeV3
 
-        return getattr(native_bridge_v2, name)
-    if name in {
-        "DeepLearningAI",
-        "DeepLearningAIConfig",
-        "is_deep_model_accepted",
-    }:
-        from engine.ai.dl import controller
-
-        return getattr(controller, name)
+        return AtomicWorkerExchangeV3
     raise AttributeError(name)
 
 
 __all__ = [
     "CHECKPOINT_VERSION",
     "DEEP_PLANNER_VERSION",
-    "DeepLearningAI",
-    "DeepLearningAIConfig",
     "ENCODER_SCHEMA_VERSION",
-    "EncodedCandidates",
-    "EncodedDecision",
-    "EncodedInformationSet",
-    "InformationSetEncoderV7",
+    "EncodedCandidatesV3",
+    "EncodedInformationSetV3",
+    "InformationSetEncoderV8",
     "MODEL_VARIANT",
-    "NativeBatchTorchBroker",
-    "NativeBridgeError",
-    "NativeModelBackend",
-    "NativeSearchService",
-    "game_state_to_native_wire",
-    "mask_native_snapshot",
-    "native_training_bridge_available",
+    "NativeActorServiceV3",
+    "ActorConfigV3",
+    "AtomicWorkerExchangeV3",
+    "GameTaskV3",
     "TORCH_AVAILABLE",
-    "UniversalInformationSetModel",
-    "is_deep_model_accepted",
+    "UniversalInformationSetModelV3",
 ]

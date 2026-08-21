@@ -65,6 +65,9 @@ public:
         std::int64_t base_damage
     ) const;
     Value pending_choice(std::int32_t viewer) const;
+    // Native AI-only continuation handoff. Bindings deliberately do not
+    // expose this value; it stays inside the C++ actor/search boundary.
+    Value search_continuation() const;
     RulesSessionResult apply_action(const Value &action);
     RulesSessionResult apply_choice(const Value &response);
     RulesSessionResult concede(std::int32_t actor);

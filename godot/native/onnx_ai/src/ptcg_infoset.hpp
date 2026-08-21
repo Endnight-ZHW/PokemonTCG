@@ -24,7 +24,7 @@ std::string validate_runtime_snapshot(
     std::int32_t actor
 );
 
-// Produces the only state representation accepted by the v2 encoder/tree.
+// Produces the only state representation accepted by the v3 encoder/tree.
 // Opponent hidden zones and both players' deck/prize identities are removed.
 InformationSetProjection project_information_set(
     const Value &snapshot,

@@ -10,6 +10,7 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -352,6 +353,43 @@ const Value *choice_option_reference(const Value &option) {
     return ref != nullptr && ref->is_object() ? ref : &option;
 }
 
+std::optional<std::pair<std::int64_t, std::string>>
+public_energy_option_identity(const Value &option) {
+    const std::string option_id = string_field(option, "option_id");
+    constexpr std::string_view prefix{"energy:"};
+    if (option_id.rfind(prefix.data(), 0) != 0) {
+        return std::nullopt;
+    }
+    const std::size_t index_end = option_id.find(':', prefix.size());
+    const std::size_t identity_end = option_id.find("->", index_end);
+    if (
+        index_end == std::string::npos
+        || identity_end == std::string::npos
+        || identity_end <= index_end + 1
+    ) {
+        return std::nullopt;
+    }
+    try {
+        std::size_t consumed = 0;
+        const std::string raw_index = option_id.substr(
+            prefix.size(), index_end - prefix.size()
+        );
+        const std::int64_t index = std::stoll(raw_index, &consumed);
+        if (consumed != raw_index.size() || index < 0) {
+            return std::nullopt;
+        }
+        return std::pair{
+            index,
+            option_id.substr(
+                index_end + 1,
+                identity_end - index_end - 1
+            ),
+        };
+    } catch (const std::exception &) {
+        return std::nullopt;
+    }
+}
+
 void condition_on_revealed_choice(
     Value &state,
     const Value &pending,
@@ -453,6 +491,114 @@ void condition_on_revealed_choice(
             integer_field(*ref, "index", -1),
             string_field(*ref, "card_id")
         );
+    }
+
+    // Multi-stage look-top operations retain stage-one card selections inside
+    // the VM continuation. Those identities are public to the actor (and are
+    // mirrored in ChoiceView presentation/energy option ids), so a later
+    // re-determinization must keep their referenced deck positions stable.
+    const Value *vm = string_field(continuation, "kind") == "vm"
+        ? continuation.find("vm") : nullptr;
+    const std::string vm_op = vm != nullptr && vm->is_object()
+        ? string_field(*vm, "op") : std::string{};
+    const std::string request_type = string_field(pending, "request_type");
+    const bool look_top_distribution = (
+        vm_op == "look_top_deck" && request_type == "distribute_energy"
+    );
+    const bool look_top_target = (
+        vm_op == "look_top_attach_energy"
+        && request_type == "select_energy_target"
+    );
+    if (
+        (look_top_distribution || look_top_target)
+        && vm != nullptr && vm->is_object()
+        && integer_field(*vm, "stage", -1) == 1
+    ) {
+        const Value *selected_cards = vm->find("selected_cards");
+        if (
+            selected_cards == nullptr || !selected_cards->is_array()
+            || selected_cards->as_array().empty()
+            || selected_cards->as_array().size() > 64
+        ) {
+            throw std::runtime_error(
+                "invalid_look_top_continuation"
+            );
+        }
+        std::unordered_map<std::int64_t, std::string> exposed_sources;
+        if (look_top_distribution) {
+            for (const Value &option : options->as_array()) {
+                const auto identity = public_energy_option_identity(option);
+                if (!identity.has_value() || identity->second.empty()) {
+                    throw std::runtime_error(
+                        "invalid_look_top_distribution_option"
+                    );
+                }
+                const auto [existing, inserted] = exposed_sources.emplace(
+                    identity->first,
+                    identity->second
+                );
+                if (!inserted && existing->second != identity->second) {
+                    throw std::runtime_error(
+                        "conflicting_look_top_distribution_option"
+                    );
+                }
+            }
+        } else {
+            const Value *presentation = pending.find("presentation");
+            if (presentation == nullptr || !presentation->is_object()) {
+                presentation = pending.find("metadata");
+            }
+            const Value *revealed = presentation != nullptr
+                ? presentation->find("revealed_card_ids") : nullptr;
+            if (
+                revealed == nullptr || !revealed->is_array()
+                || revealed->as_array().size()
+                    != selected_cards->as_array().size()
+            ) {
+                throw std::runtime_error(
+                    "invalid_look_top_target_presentation"
+                );
+            }
+            for (std::size_t index = 0; index < revealed->as_array().size(); ++index) {
+                exposed_sources.emplace(
+                    static_cast<std::int64_t>(index),
+                    revealed->as_array()[index].string_or()
+                );
+            }
+        }
+        if (exposed_sources.size() != selected_cards->as_array().size()) {
+            throw std::runtime_error(
+                    "look_top_source_count_mismatch"
+            );
+        }
+        for (
+            std::size_t ordinal = 0;
+            ordinal < selected_cards->as_array().size();
+            ++ordinal
+        ) {
+            const Value &selected = selected_cards->as_array()[ordinal];
+            const std::string card_id = string_field(selected, "card_id");
+            const auto exposed = exposed_sources.find(
+                static_cast<std::int64_t>(ordinal)
+            );
+            if (
+                !selected.is_object()
+                || string_field(selected, "kind") != "card"
+                || integer_field(selected, "player", -1) != actor
+                || string_field(selected, "zone") != "deck"
+                || exposed == exposed_sources.end()
+                || exposed->second != card_id
+            ) {
+                throw std::runtime_error(
+                    "look_top_source_mismatch"
+                );
+            }
+            add_pin(
+                "deck",
+                integer_field(selected, "index", -1),
+                card_id
+            );
+        }
     }
 
     const Value *metadata = pending.find("metadata");
@@ -587,6 +733,92 @@ void condition_on_revealed_choice(
         ) {
             throw std::runtime_error(
                 "revealed_source_option_index_gap"
+            );
+        }
+    }
+    // Native VM attach_energy requests publish the selected deck-energy
+    // multiset directly in pending metadata (or ChoiceView presentation),
+    // rather than in the compatibility continuation wrapper above.  Once the
+    // decision actor changes, re-determinization may otherwise move one of
+    // those now-public sources into prizes and make a legal choice fail.
+    const Value *distribution_context = (
+        metadata != nullptr && metadata->is_object()
+    ) ? metadata : pending.find("presentation");
+    if (
+        revealed_source_card_ids.empty()
+        && request_type == "distribute_energy"
+        && distribution_context != nullptr
+        && distribution_context->is_object()
+        && string_field(*distribution_context, "source_zone") == "deck"
+    ) {
+        if (
+            integer_field(*distribution_context, "source_player", actor)
+                != actor
+        ) {
+            throw std::runtime_error(
+                "revealed_distribution_source_actor_mismatch"
+            );
+        }
+        const Value *source_ids = distribution_context->find("card_ids");
+        if (source_ids == nullptr) {
+            source_ids = distribution_context->find("revealed_card_ids");
+        }
+        if (
+            source_ids == nullptr || !source_ids->is_array()
+            || source_ids->as_array().empty()
+            || source_ids->as_array().size() > 64
+        ) {
+            throw std::runtime_error(
+                "invalid_revealed_distribution_sources"
+            );
+        }
+        std::unordered_map<std::int64_t, std::string>
+            option_energy_by_index;
+        for (const Value &option : options->as_array()) {
+            const auto identity = public_energy_option_identity(option);
+            if (!identity.has_value() || identity->second.empty()) {
+                throw std::runtime_error(
+                    "invalid_revealed_distribution_option"
+                );
+            }
+            const auto [existing, inserted] =
+                option_energy_by_index.emplace(
+                    identity->first,
+                    identity->second
+                );
+            if (!inserted && existing->second != identity->second) {
+                throw std::runtime_error(
+                    "conflicting_revealed_distribution_option"
+                );
+            }
+        }
+        for (
+            std::size_t index = 0;
+            index < source_ids->as_array().size();
+            ++index
+        ) {
+            const std::string card_id =
+                source_ids->as_array()[index].string_or();
+            const auto option = option_energy_by_index.find(
+                static_cast<std::int64_t>(index)
+            );
+            if (
+                card_id.empty()
+                || option == option_energy_by_index.end()
+                || option->second != card_id
+            ) {
+                throw std::runtime_error(
+                    "revealed_distribution_option_mismatch"
+                );
+            }
+            revealed_source_card_ids.push_back(card_id);
+        }
+        if (
+            option_energy_by_index.size()
+                != revealed_source_card_ids.size()
+        ) {
+            throw std::runtime_error(
+                "revealed_distribution_option_index_gap"
             );
         }
     }
@@ -1082,6 +1314,129 @@ Value selected_choice_values(
     return Value(std::move(selected));
 }
 
+void condition_on_selected_candidate(
+    Value &state,
+    const Value &pending,
+    const Value &candidate
+) {
+    const Value selected = selected_choice_values(pending, candidate);
+    if (!selected.is_array()) return;
+    Value *players = state.find("players");
+    if (
+        players == nullptr || !players->is_array()
+        || players->as_array().size() != 2
+    ) {
+        throw std::runtime_error("invalid_candidate_condition_players");
+    }
+    for (const Value &option : selected.as_array()) {
+        if (!option.is_object() || string_field(option, "kind") != "card") {
+            continue;
+        }
+        const std::int64_t owner = integer_field(option, "player", -1);
+        std::string zone = string_field(option, "zone");
+        if (zone == "prize") zone = "prizes";
+        const std::int64_t raw_index = integer_field(option, "index", -1);
+        const std::string card_id = string_field(option, "card_id");
+        if (
+            owner < 0 || owner > 1 || raw_index < 0 || card_id.empty()
+            || (
+                zone != "hand" && zone != "deck"
+                && zone != "discard" && zone != "prizes"
+            )
+        ) {
+            throw std::runtime_error("invalid_selected_card_condition");
+        }
+        Value &owner_row = players->as_array().at(
+            static_cast<std::size_t>(owner)
+        );
+        Value *zone_value = owner_row.find(zone);
+        if (zone_value == nullptr || !zone_value->is_array()) {
+            throw std::runtime_error("invalid_selected_card_zone");
+        }
+        Array &cards = zone_value->as_array();
+        const std::size_t index = static_cast<std::size_t>(raw_index);
+        if (index >= cards.size()) {
+            throw std::runtime_error("selected_card_condition_out_of_range");
+        }
+        if (cards[index].string_or() == card_id) continue;
+        const auto found = std::find_if(
+            cards.begin(),
+            cards.end(),
+            [&card_id](const Value &value) {
+                return value.string_or() == card_id;
+            }
+        );
+        if (found == cards.end()) {
+            throw std::runtime_error(
+                "selected_card_condition_identity_unavailable"
+            );
+        }
+        std::swap(cards[index], *found);
+    }
+}
+
+void condition_on_action_candidate(
+    Value &state,
+    const Value &candidate
+) {
+    Value *players = state.find("players");
+    if (
+        players == nullptr || !players->is_array()
+        || players->as_array().size() != 2
+    ) {
+        throw std::runtime_error("invalid_action_condition_players");
+    }
+    for (const char *field : {"source", "target"}) {
+        const Value *reference = candidate.find(field);
+        if (
+            reference == nullptr || !reference->is_object()
+            || string_field(*reference, "kind") != "card"
+        ) {
+            continue;
+        }
+        const std::int64_t owner = integer_field(*reference, "player", -1);
+        std::string zone = string_field(*reference, "zone");
+        if (zone == "prize") zone = "prizes";
+        const std::int64_t raw_index = integer_field(*reference, "index", -1);
+        const std::string card_id = string_field(*reference, "card_id");
+        if (
+            owner < 0 || owner > 1 || raw_index < 0 || card_id.empty()
+            || (
+                zone != "hand" && zone != "deck"
+                && zone != "discard" && zone != "prizes"
+            )
+        ) {
+            continue;
+        }
+        Value &owner_row = players->as_array().at(
+            static_cast<std::size_t>(owner)
+        );
+        Value *zone_value = owner_row.find(zone);
+        if (zone_value == nullptr || !zone_value->is_array()) {
+            throw std::runtime_error("invalid_action_card_zone");
+        }
+        Array &cards = zone_value->as_array();
+        const std::size_t index = static_cast<std::size_t>(raw_index);
+        if (index >= cards.size()) {
+            throw std::runtime_error("action_card_condition_out_of_range");
+        }
+        if (cards[index].string_or() == card_id) continue;
+        const auto found = std::find_if(
+            cards.begin(),
+            cards.end(),
+            [&card_id](const Value &value) {
+                return value.string_or() == card_id;
+            }
+        );
+        if (found == cards.end()) {
+            throw std::runtime_error(
+                "action_card_condition_identity_unavailable"
+            );
+        }
+        std::swap(cards[index], *found);
+    }
+}
+
 std::optional<ObservedChanceTransition> apply_candidate(
     const NativeGameKernel &game,
     SearchWorld &world,
@@ -1094,6 +1449,11 @@ std::optional<ObservedChanceTransition> apply_candidate(
     const std::uint32_t previous_rng_state = world.rng_state;
     GameExecutionResult result;
     if (string_field(candidate, "kind") == "choice") {
+        condition_on_selected_candidate(
+            world.state,
+            world.pending,
+            candidate
+        );
         result = game.resume_choice(
             std::move(world.state),
             world.continuation,
@@ -1102,6 +1462,7 @@ std::optional<ObservedChanceTransition> apply_candidate(
             world.rng_state
         );
     } else {
+        condition_on_action_candidate(world.state, candidate);
         result = game.apply_action(
             std::move(world.state),
             candidate,
@@ -1109,8 +1470,33 @@ std::optional<ObservedChanceTransition> apply_candidate(
         );
     }
     if (!result.success) {
+        const Value *vm = world.continuation.find("vm");
         throw std::runtime_error(
             "search_transition_failed:" + result.error_code
+            + ":candidate_kind=" + string_field(candidate, "kind")
+            + ":request_type=" + string_field(
+                world.pending,
+                "request_type",
+                "action"
+            )
+            + ":continuation_kind=" + string_field(
+                world.continuation,
+                "kind",
+                "none"
+            )
+            + ":source_zone=" + string_field(
+                world.continuation,
+                "source_zone",
+                "none"
+            )
+            + ":vm_op=" + (
+                vm != nullptr && vm->is_object()
+                    ? string_field(*vm, "op", "none") : "none"
+            )
+            + ":vm_stage=" + std::to_string(
+                vm != nullptr && vm->is_object()
+                    ? integer_field(*vm, "stage", -1) : -1
+            )
         );
     }
     std::optional<ObservedChanceTransition> observed =
@@ -1697,9 +2083,7 @@ void NativeSearchJob::run(
             const SearchClock::time_point determinization_started =
                 SearchClock::now();
             Value determined = determinizer_.determinize(
-                config.force_deep_state_copy
-                    ? root_state.deep_clone()
-                    : root_state,
+                root_state,
                 root_actor,
                 seed ^ (0x9E3779B9U * (simulation + 1))
             );
@@ -1751,9 +2135,7 @@ void NativeSearchJob::run(
                         SearchClock::now();
                     world.begin_transition();
                     world.state = determinizer_.determinize(
-                        config.force_deep_state_copy
-                            ? world.state.deep_clone()
-                            : world.state,
+                        world.state,
                         actor,
                         seed
                             ^ (simulation + 1) * 0xC2B2AE35U
@@ -1955,6 +2337,7 @@ void NativeSearchJob::run(
                             candidate_rows
                         );
                     }
+                    prepared.request.model_slot = config.model_slot;
                     completed.encoding_microseconds +=
                         elapsed_microseconds(encoding_started);
                     prepared.status = PreparedStatus::inference;
@@ -2292,9 +2675,7 @@ void NativeSearchJob::run(
                 )
             );
             Value selected_state = determinizer_.determinize(
-                config.force_deep_state_copy
-                    ? root_state.deep_clone()
-                    : root_state,
+                root_state,
                 root_actor,
                 seed ^ 0x51ED270BU
             );

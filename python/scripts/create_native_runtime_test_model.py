@@ -10,11 +10,22 @@ PYTHON_ROOT = Path(__file__).resolve().parents[1]
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
-from scripts.export_onnx_models import _export, torch  # noqa: E402
+import torch  # noqa: E402
+
+from engine.ai.dl.v3_contract import (  # noqa: E402
+    CANDIDATE_NUMERIC_SIZE,
+    CANDIDATE_REF_FIELDS,
+    ENTITY_NUMERIC_SIZE,
+    ENTITY_SLOTS,
+    ENTITY_TYPE_FIELDS,
+    ONNX_INPUT_NAMES,
+    ONNX_OUTPUT_NAMES,
+    STATE_GLOBAL_SIZE,
+)
 
 
 class NativeRuntimeContractModel(torch.nn.Module):
-    """Cheap non-constant graph that keeps every v2 ABI input observable."""
+    """Cheap non-constant graph that keeps every v3 ABI input observable."""
 
     def forward(
         self,
@@ -22,6 +33,7 @@ class NativeRuntimeContractModel(torch.nn.Module):
         entity_numeric,
         entity_card_ids,
         entity_type_ids,
+        entity_mask,
         candidate_numeric,
         candidate_card_ids,
         candidate_type_ids,
@@ -35,6 +47,7 @@ class NativeRuntimeContractModel(torch.nn.Module):
             + entity_numeric[:, 0, 0]
             + entity_card_ids[:, 0].float()
             + entity_type_ids[:, 0, 0].float()
+            + entity_mask[:, 0].float()
             + actor_deck_id.float()
             + opponent_deck_id.float()
         )
@@ -58,7 +71,42 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     destination = Path(args.output).resolve()
-    _export(NativeRuntimeContractModel(), destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    batch, candidates = 2, 7
+    inputs = (
+        torch.zeros(batch, STATE_GLOBAL_SIZE),
+        torch.zeros(batch, ENTITY_SLOTS, ENTITY_NUMERIC_SIZE),
+        torch.zeros(batch, ENTITY_SLOTS, dtype=torch.long),
+        torch.zeros(batch, ENTITY_SLOTS, ENTITY_TYPE_FIELDS, dtype=torch.long),
+        torch.ones(batch, ENTITY_SLOTS, dtype=torch.bool),
+        torch.zeros(batch, candidates, CANDIDATE_NUMERIC_SIZE),
+        torch.zeros(batch, candidates, dtype=torch.long),
+        torch.ones(batch, candidates, dtype=torch.long),
+        torch.zeros(batch, candidates, CANDIDATE_REF_FIELDS, dtype=torch.long),
+        torch.ones(batch, candidates, dtype=torch.bool),
+        torch.zeros(batch, dtype=torch.long),
+        torch.ones(batch, dtype=torch.long),
+    )
+    dynamic_axes = {name: {0: "batch"} for name in ONNX_INPUT_NAMES}
+    for name in (
+        "candidate_numeric",
+        "candidate_card_ids",
+        "candidate_type_ids",
+        "candidate_refs",
+        "candidate_mask",
+    ):
+        dynamic_axes[name][1] = "candidates"
+    dynamic_axes["policy_logits"] = {0: "batch", 1: "candidates"}
+    dynamic_axes["wdl_logits"] = {0: "batch"}
+    torch.onnx.export(
+        NativeRuntimeContractModel().eval(),
+        inputs,
+        str(destination),
+        input_names=list(ONNX_INPUT_NAMES),
+        output_names=list(ONNX_OUTPUT_NAMES),
+        dynamic_axes=dynamic_axes,
+        opset_version=17,
+    )
     print(destination)
     return 0
 

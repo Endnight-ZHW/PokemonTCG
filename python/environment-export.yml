@@ -10,3 +10,5 @@ dependencies:
   - onnx=1.22.0
   - onnxruntime=1.26.0
   - pytorch=2.4.1
+  - pip:
+      - safetensors==0.4.5

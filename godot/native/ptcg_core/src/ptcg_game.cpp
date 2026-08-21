@@ -7037,6 +7037,31 @@ Value NativeGameKernel::choice_candidates(const Value &request) {
             )
         )
         : std::numeric_limits<std::int64_t>::max();
+    const bool retreat_payment = request_type == "select_retreat_payment";
+    const std::int64_t required_retreat_units = (
+        retreat_payment && constraints != nullptr
+    ) ? integer_arg(*constraints, "required_units", -1) : -1;
+    std::unordered_map<std::string, std::int64_t> retreat_units;
+    if (retreat_payment) {
+        const Value *references = constraints != nullptr
+            ? constraints->find("attachment_refs") : nullptr;
+        if (
+            required_retreat_units <= 0
+            || references == nullptr || !references->is_array()
+        ) {
+            return Value(std::move(result));
+        }
+        for (const Value &reference : references->as_array()) {
+            const std::string option_id = string_arg(reference, "option_id");
+            const std::int64_t units = integer_arg(reference, "units", 0);
+            if (
+                option_id.empty() || units <= 0
+                || !retreat_units.emplace(option_id, units).second
+            ) {
+                return Value(std::move(result));
+            }
+        }
+    }
     const auto target_key = [&request_type](const Value &option) {
         const Value *reference = option.find("ref");
         const Value &target = (
@@ -7105,6 +7130,35 @@ Value NativeGameKernel::choice_candidates(const Value &request) {
         }
         return true;
     };
+    const auto selection_completes_constraints = [
+        &selection_respects_constraints,
+        &retreat_units,
+        request_type,
+        retreat_payment,
+        required_retreat_units
+    ](const std::vector<const Value *> &rows) {
+        if (!selection_respects_constraints(rows)) return false;
+        if (!retreat_payment) return true;
+        std::int64_t paid = 0;
+        std::vector<std::int64_t> units;
+        units.reserve(rows.size());
+        for (const Value *option : rows) {
+            const auto found = retreat_units.find(
+                stable_choice_option_id(*option, request_type)
+            );
+            if (found == retreat_units.end()) return false;
+            paid += found->second;
+            units.push_back(found->second);
+        }
+        return paid >= required_retreat_units
+            && std::none_of(
+                units.begin(),
+                units.end(),
+                [paid, required_retreat_units](std::int64_t value) {
+                    return paid - value >= required_retreat_units;
+                }
+            );
+    };
     std::vector<const Value *> selected;
     std::function<void(std::size_t, std::size_t)> enumerate =
         [&](std::size_t begin, std::size_t remaining) {
@@ -7112,7 +7166,7 @@ Value NativeGameKernel::choice_candidates(const Value &request) {
                 return;
             }
             if (remaining == 0) {
-                if (!selection_respects_constraints(selected)) {
+                if (!selection_completes_constraints(selected)) {
                     return;
                 }
                 append_choice_candidate(
@@ -7370,8 +7424,9 @@ GameExecutionResult NativeGameKernel::apply_action(
                 throw std::invalid_argument("retreat_energy_missing");
             }
             Array options;
+            Array attachment_refs;
             for (std::size_t index = 0; index < energy.size(); ++index) {
-                options.emplace_back(Object{
+                Value option(Object{
                     {"kind", Value("attachment")},
                     {"player", Value(actor)},
                     {"card_id", Value(energy[index].string_or())},
@@ -7379,6 +7434,21 @@ GameExecutionResult NativeGameKernel::apply_action(
                     {"attachment_type", Value("energy")},
                     {"index", Value(static_cast<std::int64_t>(index))},
                 });
+                attachment_refs.emplace_back(Object{
+                    {
+                        "option_id",
+                        Value(stable_choice_option_id(
+                            option, "select_retreat_payment"
+                        )),
+                    },
+                    {
+                        "units",
+                        Value(energy_card_unit_count(
+                            cards_, energy[index].string_or()
+                        )),
+                    },
+                });
+                options.push_back(std::move(option));
             }
             increment(result.state, "choice_sequence");
             result.pending = action_pending(
@@ -7397,6 +7467,8 @@ GameExecutionResult NativeGameKernel::apply_action(
             // owns the value used for settlement.
             result.pending["metadata"]["required_units"] = Value(
                 retreat_cost);
+            result.pending["metadata"]["attachment_refs"] = Value(
+                std::move(attachment_refs));
             result.continuation = Value(Object{
                 {"kind", Value("retreat_payment")},
                 {"actor", Value(actor)},

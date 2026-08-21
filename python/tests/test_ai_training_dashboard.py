@@ -30,7 +30,6 @@ class DashboardAPITests(unittest.TestCase):
                 "preset": "smoke",
                 "status": "completed",
                 "pid": 0,
-                "promotable": False,
             },
         )
         writer = TrainingEventWriter(self.run_dir, "api-run")
@@ -119,43 +118,32 @@ class DashboardAPITests(unittest.TestCase):
 
 
 class DashboardReconcileTests(unittest.TestCase):
-    def test_committed_promotion_is_reattached_after_service_restart(self):
+    def test_v3_pause_resume_and_cancel_publish_cooperative_requests(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             run_dir = create_run_layout(
                 root,
-                "promoted-run",
+                "control-run",
                 run_payload={
-                    "preset": "release",
-                    "status": "promoting",
-                    "pid": 2_147_483_646,
-                    "promotable": True,
-                    "gate": {
-                        "status": "passed",
-                        "evidence_sha256": "a" * 64,
-                    },
+                    "preset": "pilot",
+                    "trainer": "infoset_alphazero_v3",
+                    "run_format": 3,
+                    "status": "running",
+                    "pid": os.getpid(),
                 },
             )
-            atomic_write_json(
-                run_dir
-                / "staging"
-                / "promotion_transactions"
-                / "attempt"
-                / "journal.json",
-                {
-                    "kind": "alphazero_v2_promotion_transaction_v1",
-                    "run_id": "promoted-run",
-                    "state": "committed",
-                    "evidence_sha256": "a" * 64,
-                },
-            )
+            state = DashboardState(Path.cwd(), root)
+            paused = state.pause("control-run")
+            self.assertEqual(paused["status"], "pausing")
+            self.assertTrue((run_dir / "pause.request").is_file())
 
-            DashboardState(Path.cwd(), root)
-            reconciled = read_json(run_dir / "run.json")
-            self.assertEqual(reconciled["status"], "promoted")
-            self.assertEqual(
-                reconciled["promotion"]["status"], "committed"
-            )
+            resumed = state.resume("control-run")
+            self.assertEqual(resumed["status"], "running")
+            self.assertFalse((run_dir / "pause.request").exists())
+
+            cancelled = state.cancel("control-run")
+            self.assertEqual(cancelled["status"], "cancelling")
+            self.assertTrue((run_dir / "cancel.request").is_file())
 
     def test_dead_process_becomes_recoverable_and_active_run_is_exclusive(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -167,7 +155,6 @@ class DashboardReconcileTests(unittest.TestCase):
                     "preset": "smoke",
                     "status": "running",
                     "pid": 2_147_483_646,
-                    "promotable": False,
                 },
             )
             state = DashboardState(Path.cwd(), root)
@@ -182,45 +169,13 @@ class DashboardReconcileTests(unittest.TestCase):
                     "preset": "smoke",
                     "status": "running",
                     "pid": os.getpid(),
-                    "promotable": False,
                 },
             )
             self.assertEqual(state.active_run()["run_id"], "active-run")
             with self.assertRaisesRegex(
-                RuntimeError, "another_training_or_promotion_is_active"
+                RuntimeError, "another_training_is_active"
             ):
                 state.create_run({"preset": "smoke", "deck": "fire"})
-
-
-class DashboardStrengthMonitorTests(unittest.TestCase):
-    def test_v2_does_not_launch_a_competing_strength_observer(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            release = create_run_layout(
-                root,
-                "release-run",
-                run_payload={
-                    "preset": "release",
-                    "status": "completed",
-                    "pid": 0,
-                    "promotable": True,
-                },
-            )
-            create_run_layout(
-                root,
-                "smoke-run",
-                run_payload={
-                    "preset": "smoke",
-                    "status": "completed",
-                    "pid": 0,
-                    "promotable": False,
-                },
-            )
-            state = DashboardState(Path.cwd(), root)
-            state._launch_strength_monitor("release-run")
-            state._launch_strength_monitor("smoke-run")
-            self.assertEqual(state.observers, {})
-            self.assertNotIn("strength_monitor", read_json(release / "run.json"))
 
 
 if __name__ == "__main__":

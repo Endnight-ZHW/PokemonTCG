@@ -5,9 +5,9 @@ const CARDS_PATH := "res://data/cards.json"
 
 
 func _initialize() -> void:
-	var model_path := OS.get_environment("PTCG_V2_TEST_ONNX")
+	var model_path := OS.get_environment("PTCG_V3_TEST_ONNX")
 	if model_path.is_empty():
-		push_error("PTCG_V2_TEST_ONNX is required")
+		push_error("PTCG_V3_TEST_ONNX is required")
 		quit(1)
 		return
 	var fixture := _read_json(FIXTURE_PATH)
@@ -120,15 +120,15 @@ func _initialize() -> void:
 
 	var backend: Variant = ClassDB.instantiate("OnnxInference")
 	var loaded: bool = backend.load_model(model_path, {
-		"format_version": 3,
+		"format_version": 4,
 		"opset": 17,
-		"model_variant": "universal_infoset_transformer_v2",
-		"state_global_size": 128,
-		"entity_slots": 128,
-		"entity_numeric_size": 16,
+		"model_variant": "universal_infoset_transformer_v3",
+		"state_global_size": 192,
+		"entity_slots": 160,
+		"entity_numeric_size": 24,
 		"entity_type_fields": 4,
-		"candidate_numeric_size": 32,
-		"candidate_ref_fields": 4,
+		"candidate_numeric_size": 48,
+		"candidate_ref_fields": 8,
 		"onnx_sha256": FileAccess.get_sha256(model_path),
 	})
 	if not loaded:

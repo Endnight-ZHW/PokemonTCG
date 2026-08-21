@@ -74,8 +74,9 @@ if deep_runtime:
         "native_deep_search.cpp",
         "onnx_inference.cpp",
         "ptcg_ai_core.cpp",
+        "ptcg_actor_v3.cpp",
         "ptcg_determinizer.cpp",
-        "ptcg_encoder.cpp",
+        "ptcg_encoder_v3.cpp",
         "ptcg_infoset.cpp",
         "ptcg_search.cpp",
     ])

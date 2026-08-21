@@ -110,7 +110,7 @@ ERROR_MESSAGES = {
     "decision_diagnostics_unbalanced": "同策略稳定性评测的 A/B 决策错因计数不平衡。",
     "deep_fallback_rate": "Deep 评测发生了回退。",
     "deep_runtime_contract": "候选评测没有完整使用正式 Deep 运行时与隐藏信息快照。",
-    "deep_planner_coverage": "候选动作决策没有全部由 infoset_puct_v2 完成。",
+    "deep_planner_coverage": "候选动作决策没有全部由 infoset_puct_v3 完成。",
     "deep_decision_timeout": "至少一个适用的 Deep 决策超过 2 秒。",
 }
 
@@ -685,7 +685,7 @@ def _deep_release_runtime_validation(
         and str(strategy_b.get("mode") or "challenge") == "challenge"
         and bool(strategy_b.get("production_runtime"))
     )
-    planner_id = "infoset_puct_v2"
+    planner_id = "infoset_puct_v3"
     planner_coverage = True
     latency_coverage = True
     decision_accounting = True
@@ -1793,7 +1793,7 @@ def validate_evaluation_gate(
             "deep_planner_coverage",
             "runtime",
             planner_ok,
-            "A 侧动作全部由 infoset_puct_v2 完成",
+            "A 侧动作全部由 infoset_puct_v3 完成",
             **deep_runtime,
         )
         if not planner_ok:

@@ -6808,17 +6808,33 @@ VmExecutionResult NativeRulesKernel::resume(
                 Value continued = continuation;
                 continued["stage"] = Value(1);
                 continued["selected_cards"] = selected_options;
+                Array revealed_card_ids;
+                for (const Value &selected : selected_options.as_array()) {
+                    revealed_card_ids.emplace_back(
+                        string_arg(selected, "card_id")
+                    );
+                }
+                Value request = pending_request(
+                    "select_energy_target",
+                    actor,
+                    1,
+                    1,
+                    false,
+                    false,
+                    std::move(look_top_targets),
+                    "look_top_attach_target"
+                );
+                request["metadata"] = Value(Object{
+                    {"domain", Value("select_energy_target")},
+                    {"purpose", Value("look_top_attach_target")},
+                    {"revealed_card_ids", Value(
+                        std::move(revealed_card_ids)
+                    )},
+                    {"source_player", Value(actor)},
+                    {"source_zone", Value("deck")},
+                });
                 next(
-                    pending_request(
-                        "select_energy_target",
-                        actor,
-                        1,
-                        1,
-                        false,
-                        false,
-                        std::move(look_top_targets),
-                        "look_top_attach_target"
-                    ),
+                    std::move(request),
                     std::move(continued)
                 );
                 result.event_types.emplace_back("cards_selected");
@@ -6864,17 +6880,37 @@ VmExecutionResult NativeRulesKernel::resume(
                         static_cast<std::int64_t>(
                             card_selection.as_array().size()
                         );
-                    next(
-                        pending_request(
-                            "distribute_energy",
-                            actor,
-                            count,
-                            count,
-                            false,
-                            false,
-                            std::move(options),
+                    Array revealed_card_ids;
+                    for (const Value &selected : card_selection.as_array()) {
+                        revealed_card_ids.emplace_back(
+                            string_arg(selected, "card_id")
+                        );
+                    }
+                    Value card_ids_value(revealed_card_ids);
+                    Value request = pending_request(
+                        "distribute_energy",
+                        actor,
+                        count,
+                        count,
+                        false,
+                        false,
+                        std::move(options),
+                        "look_top_bench_energy_distribution"
+                    );
+                    request["metadata"] = Value(Object{
+                        {"card_ids", std::move(card_ids_value)},
+                        {"domain", Value("distribute_energy")},
+                        {"purpose", Value(
                             "look_top_bench_energy_distribution"
-                        ),
+                        )},
+                        {"revealed_card_ids", Value(
+                            std::move(revealed_card_ids)
+                        )},
+                        {"source_player", Value(actor)},
+                        {"source_zone", Value("deck")},
+                    });
+                    next(
+                        std::move(request),
                         std::move(continued)
                     );
                     result.event_types.emplace_back("cards_selected");

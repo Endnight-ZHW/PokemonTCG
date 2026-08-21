@@ -14,7 +14,12 @@
   集合执行，发布 C++ 源码不按卡牌 ID 分派。
 - 新增 MatchJournal v1、确定性 replay/fork、Workbench 场景构造与首分歧诊断。
 - 本地双人、Challenge AI、原生 Deep 搜索基础、LAN 与 Relay 均消费同一 RulesSession。
-  当前没有可晋升 AlphaZero v2 模型，因此发布 UI 继续关闭 Deep 并回退 Challenge。
+  Deep 训练工程已升级为 AlphaZero v3；当前没有已晋升模型，因此发布 UI 继续关闭 Deep
+  并回退 Challenge。
+- Deep v3 使用整局 `NativeActorPoolV3`、Encoder 8、Checkpoint 13、Planner 3、
+  runtime manifest 4、动态候选和三分类 WDL；Replay 改为带指纹/去重/seed 分片的
+  Safetensors shard，learner 与 champion 分离并可从周期边界精确恢复。旧 Deep
+  trainer、replay、continuation bridge、encoder 7 与晋升脚本已删除；v2 产物拒绝加载。
 - Choice 日志按显式语义区分“从弃牌区回收”和“弃置手牌/能量”，不再根据请求名
   中的 `discard` 猜测；Challenge AI 同步使用 Native ABI 2 发布的规范转附、弃置与换位语义。
 - Challenge AI 不再执行两张同名、同状态宝可梦之间没有任何收益的撤退；若撤退能够

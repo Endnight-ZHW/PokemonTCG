@@ -19,12 +19,12 @@ class OnnxInference : public RefCounted {
     GDCLASS(OnnxInference, RefCounted)
 
 private:
-    static constexpr int64_t STATE_GLOBAL_SIZE = 128;
-    static constexpr int64_t ENTITY_SLOTS = 128;
-    static constexpr int64_t ENTITY_NUMERIC_SIZE = 16;
+    static constexpr int64_t STATE_GLOBAL_SIZE = 192;
+    static constexpr int64_t ENTITY_SLOTS = 160;
+    static constexpr int64_t ENTITY_NUMERIC_SIZE = 24;
     static constexpr int64_t ENTITY_TYPE_FIELDS = 4;
-    static constexpr int64_t CANDIDATE_NUMERIC_SIZE = 32;
-    static constexpr int64_t CANDIDATE_REF_FIELDS = 4;
+    static constexpr int64_t CANDIDATE_NUMERIC_SIZE = 48;
+    static constexpr int64_t CANDIDATE_REF_FIELDS = 8;
     static constexpr int64_t WDL_SIZE = 3;
     static constexpr int64_t MAX_BATCH_SIZE = 256;
     static constexpr int64_t MAX_CANDIDATES = 512;
@@ -61,11 +61,12 @@ public:
     bool load_model(const String &path, const Dictionary &manifest);
     void unload_model();
     bool is_loaded() const;
-    Dictionary infer_v2(
+    Dictionary infer_v3(
         const PackedFloat32Array &state_global,
         const PackedFloat32Array &entity_numeric,
         const PackedInt64Array &entity_card_ids,
         const PackedInt64Array &entity_type_ids,
+        const PackedByteArray &entity_mask,
         const PackedFloat32Array &candidate_numeric,
         const PackedInt64Array &candidate_card_ids,
         const PackedInt64Array &candidate_type_ids,

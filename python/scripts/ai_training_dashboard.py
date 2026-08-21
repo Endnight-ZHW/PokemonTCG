@@ -23,10 +23,9 @@ REPO_ROOT = PYTHON_ROOT.parent
 STATIC_ROOT = REPO_ROOT / "tools" / "ai_training_dashboard"
 sys.path.insert(0, str(PYTHON_ROOT))
 
-from engine.ai.dl.alphazero_v2 import AlphaZeroV2Config  # noqa: E402
+from engine.ai.dl.trainer_v3 import AlphaZeroV3Config  # noqa: E402
 from engine.ai.dl.run_store import (  # noqa: E402
     ACTIVE_STATUSES,
-    TERMINAL_STATUSES,
     atomic_write_bytes,
     atomic_write_json,
     create_run_layout,
@@ -34,7 +33,6 @@ from engine.ai.dl.run_store import (  # noqa: E402
     read_events,
     read_json,
     resolve_within,
-    sha256_file,
     update_run,
     utc_now,
     validate_run_id,
@@ -55,9 +53,6 @@ class DashboardState:
         self.lock = threading.RLock()
         self.children: dict[str, subprocess.Popen[Any]] = {}
         self.log_handles: dict[str, tuple[Any, Any]] = {}
-        self.observers: dict[str, subprocess.Popen[Any]] = {}
-        self.observer_log_handles: dict[str, tuple[Any, Any]] = {}
-        self.observer_last_launch: dict[str, float] = {}
         self.reconcile()
 
     def _run_dir(self, run_id: str) -> Path:
@@ -83,43 +78,6 @@ class DashboardState:
         )
         return rows
 
-    def _committed_promotion(
-        self,
-        run_id: str,
-        run: dict[str, Any],
-    ) -> Path | None:
-        transaction_root = (
-            self._run_dir(run_id)
-            / "staging"
-            / "promotion_transactions"
-        )
-        if not transaction_root.is_dir():
-            return None
-        expected_evidence = str(
-            dict(run.get("gate") or {}).get("evidence_sha256", "")
-        ).lower()
-        for journal_path in sorted(
-            transaction_root.glob("*/journal.json"),
-            reverse=True,
-        ):
-            try:
-                journal_path.resolve().relative_to(
-                    transaction_root.resolve()
-                )
-                journal = read_json(journal_path)
-            except (OSError, ValueError, json.JSONDecodeError):
-                continue
-            if (
-                str(journal.get("kind", ""))
-                == "alphazero_v2_promotion_transaction_v1"
-                and str(journal.get("run_id", "")) == run_id
-                and str(journal.get("state", "")) == "committed"
-                and str(journal.get("evidence_sha256", "")).lower()
-                == expected_evidence
-            ):
-                return journal_path
-        return None
-
     def _poll_children(self) -> None:
         for run_id, child in list(self.children.items()):
             return_code = child.poll()
@@ -137,28 +95,6 @@ class DashboardState:
             except OSError:
                 continue
             if str(run.get("status", "")) in ACTIVE_STATUSES:
-                committed = self._committed_promotion(run_id, run)
-                if committed is not None:
-                    update_run(
-                        self._run_dir(run_id),
-                        status="promoted",
-                        pid=0,
-                        resumable=False,
-                        promotion={
-                            "status": "committed",
-                            "journal": str(
-                                committed.relative_to(
-                                    self._run_dir(run_id)
-                                ).as_posix()
-                            ),
-                            "evidence_sha256": str(
-                                dict(run.get("gate") or {}).get(
-                                    "evidence_sha256", ""
-                                )
-                            ).lower(),
-                        },
-                    )
-                    continue
                 update_run(
                     self._run_dir(run_id),
                     status="recoverable" if return_code else "completed",
@@ -167,41 +103,9 @@ class DashboardState:
                     process_exit_code=int(return_code),
                 )
 
-    def _poll_observers(self) -> None:
-        for run_id, child in list(self.observers.items()):
-            return_code = child.poll()
-            if return_code is None:
-                continue
-            self.observers.pop(run_id, None)
-            handles = self.observer_log_handles.pop(run_id, ())
-            for handle in handles:
-                try:
-                    handle.close()
-                except OSError:
-                    pass
-            try:
-                update_run(
-                    self._run_dir(run_id),
-                    strength_monitor={
-                        "status": "stopped" if return_code == 0 else "error",
-                        "pid": 0,
-                        "exit_code": int(return_code),
-                        "updated_at": utc_now(),
-                    },
-                )
-            except OSError:
-                continue
-
-    def _launch_strength_monitor(self, run_id: str) -> None:
-        # AlphaZero v2 performs its candidate arena and final Challenge league
-        # inside the trainer.  There is deliberately no second observer
-        # process competing for CPU/GPU resources.
-        del run_id
-
     def reconcile(self) -> None:
         with self.lock:
             self._poll_children()
-            self._poll_observers()
             for run in self._iter_runs():
                 status = str(run.get("status", ""))
                 pid = int(run.get("pid", 0) or 0)
@@ -210,34 +114,7 @@ class DashboardState:
                 if process_is_alive(pid):
                     # The dashboard cannot adopt a Popen object after restart,
                     # but control files and event tailing remain fully attached.
-                    if status in {"starting", "running"}:
-                        self._launch_strength_monitor(str(run["run_id"]))
                     continue
-                if status == "promoting":
-                    committed = self._committed_promotion(
-                        str(run["run_id"]), run
-                    )
-                    if committed is not None:
-                        update_run(
-                            self._run_dir(str(run["run_id"])),
-                            status="promoted",
-                            pid=0,
-                            resumable=False,
-                            promotion={
-                                "status": "committed",
-                                "journal": str(
-                                    committed.relative_to(
-                                        self._run_dir(str(run["run_id"]))
-                                    ).as_posix()
-                                ),
-                                "evidence_sha256": str(
-                                    dict(run.get("gate") or {}).get(
-                                        "evidence_sha256", ""
-                                    )
-                                ).lower(),
-                            },
-                        )
-                        continue
                 update_run(
                     self._run_dir(str(run["run_id"])),
                     status="recoverable",
@@ -251,9 +128,7 @@ class DashboardState:
         for run in self._iter_runs():
             status = str(run.get("status", ""))
             pid = int(run.get("pid", 0) or 0)
-            if status in ACTIVE_STATUSES and (
-                status == "promoting" or process_is_alive(pid)
-            ):
+            if status in ACTIVE_STATUSES and process_is_alive(pid):
                 return run
         return None
 
@@ -274,14 +149,12 @@ class DashboardState:
     def create_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         with self.lock:
             if self.active_run() is not None:
-                raise RuntimeError("another_training_or_promotion_is_active")
+                raise RuntimeError("another_training_is_active")
             preset = str(payload.get("preset", "smoke")).strip().lower()
-            if preset not in {"smoke", "release"}:
-                raise ValueError("preset must be smoke or release")
+            if preset not in {"smoke", "pilot", "release"}:
+                raise ValueError("preset must be smoke, pilot or release")
             seed = int(payload.get("seed", 17))
             smoke_deck = str(payload.get("deck", "fire"))
-            # Release is intentionally immutable.  This prevents a shortened
-            # job from inheriting the promotable flag.
             allowed = {"preset", "seed", "deck"}
             unknown = sorted(set(payload) - allowed)
             if unknown:
@@ -289,34 +162,40 @@ class DashboardState:
                     "unsupported run fields: " + ", ".join(unknown)
                 )
             run_id = self._new_run_id(preset)
-            bootstrap_cache = (
+            teacher_replay = (
                 self.repo_root
                 / "python"
                 / "data"
                 / "ai_training"
-                / "bootstrap-v2.pt"
+                / "bootstrap-v3"
             )
             factory = (
-                AlphaZeroV2Config.release
-                if preset == "release"
-                else AlphaZeroV2Config.smoke
+                AlphaZeroV3Config.smoke
+                if preset == "smoke"
+                else AlphaZeroV3Config.pilot
+                if preset == "pilot"
+                else AlphaZeroV3Config
             )
             run_dir = create_run_layout(
                 self.runs_root,
                 run_id,
                 run_payload={
-                    "trainer": "information_set_alphazero_v2",
+                    "format_version": 3,
+                    "trainer": "infoset_alphazero_v3",
                     "preset": preset,
                     "seed": seed,
                     "smoke_deck": smoke_deck,
                     "status": "created",
                     "pid": 0,
                     "resumable": False,
-                    "promotable": preset == "release",
                     "config": asdict(
                         factory(
                             str(self.runs_root / run_id),
-                            str(bootstrap_cache),
+                            teacher_replay=(
+                                str(teacher_replay)
+                                if (teacher_replay / "manifest.json").is_file()
+                                else ""
+                            ),
                             seed=seed,
                         )
                     ),
@@ -339,24 +218,32 @@ class DashboardState:
         stderr = (logs / "trainer.stderr.log").open(
             "a", encoding="utf-8", buffering=1
         )
+        run = self._read_run(run_id)
+        trainer = str(run.get("trainer", ""))
+        if trainer != "infoset_alphazero_v3":
+            stdout.close()
+            stderr.close()
+            raise RuntimeError(
+                "unsupported_v2_training_run_use_v3_fresh_run"
+            )
         command = [
             sys.executable,
-            str(PYTHON_ROOT / "scripts" / "train_deep_ai.py"),
+            str(PYTHON_ROOT / "scripts" / "train_deep_ai_v3.py"),
             "train",
             "--preset",
             preset,
             "--output-dir",
             str(run_dir),
-            "--bootstrap-cache",
-            str(
-                self.repo_root
-                / "python"
-                / "data"
-                / "ai_training"
-                / "bootstrap-v2.pt"
-            ),
         ]
-        run = self._read_run(run_id)
+        teacher = (
+            self.repo_root
+            / "python"
+            / "data"
+            / "ai_training"
+            / "bootstrap-v3"
+        )
+        if (teacher / "manifest.json").is_file():
+            command.extend(["--teacher-replay", str(teacher)])
         command.extend(["--seed", str(int(run.get("seed", 17)))])
         creationflags = (
             getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -384,7 +271,6 @@ class DashboardState:
             pid=child.pid,
             launched_at=utc_now(),
         )
-        self._launch_strength_monitor(run_id)
 
     def pause(self, run_id: str) -> dict[str, Any]:
         with self.lock:
@@ -412,7 +298,7 @@ class DashboardState:
                 raise RuntimeError("run_is_not_resumable")
             active = self.active_run()
             if active is not None and str(active.get("run_id")) != run_id:
-                raise RuntimeError("another_training_or_promotion_is_active")
+                raise RuntimeError("another_training_is_active")
             for name in ("pause.request", "cancel.request"):
                 path = run_dir / name
                 if path.exists():
@@ -430,73 +316,8 @@ class DashboardState:
             )
             return update_run(self._run_dir(run_id), status="cancelling")
 
-    def promote(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        with self.lock:
-            run = self._read_run(run_id)
-            if self.active_run() is not None:
-                raise RuntimeError("another_training_or_promotion_is_active")
-            if not bool(run.get("promotable", False)):
-                raise RuntimeError("smoke_runs_cannot_be_promoted")
-            gate = dict(run.get("gate") or {})
-            if str(gate.get("status", "")) != "passed":
-                raise RuntimeError("evaluation_gate_has_not_passed")
-            supplied = str(payload.get("evidence_sha256", "")).lower()
-            expected = str(gate.get("evidence_sha256", "")).lower()
-            confirmation = str(payload.get("confirmation", ""))
-            if (
-                not supplied
-                or supplied != expected
-                or confirmation != f"PROMOTE {run_id}"
-            ):
-                raise RuntimeError("promotion_evidence_or_confirmation_invalid")
-            evidence_path = resolve_within(
-                self._run_dir(run_id),
-                str(gate.get("evidence_path", "")),
-            )
-            if not evidence_path.is_file() or sha256_file(evidence_path) != expected:
-                raise RuntimeError("promotion_evidence_hash_mismatch")
-
-            stdout = (
-                self._run_dir(run_id) / "logs" / "promotion.stdout.log"
-            ).open("a", encoding="utf-8", buffering=1)
-            stderr = (
-                self._run_dir(run_id) / "logs" / "promotion.stderr.log"
-            ).open("a", encoding="utf-8", buffering=1)
-            command = [
-                sys.executable,
-                str(PYTHON_ROOT / "scripts" / "promote_alphazero_v2.py"),
-                "--run-dir",
-                str(self._run_dir(run_id)),
-                "--evidence-sha256",
-                expected,
-                "--confirm-run-id",
-                run_id,
-            ]
-            creationflags = (
-                getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                if os.name == "nt"
-                else 0
-            )
-            child = subprocess.Popen(
-                command,
-                cwd=self.repo_root,
-                stdin=subprocess.DEVNULL,
-                stdout=stdout,
-                stderr=stderr,
-                creationflags=creationflags,
-            )
-            self.children[run_id] = child
-            self.log_handles[run_id] = (stdout, stderr)
-            return update_run(
-                self._run_dir(run_id),
-                status="promoting",
-                pid=child.pid,
-                promotion_started_at=utc_now(),
-            )
-
-
 class DashboardHandler(BaseHTTPRequestHandler):
-    server_version = "PokemonTCGTrainingDashboard/1"
+    server_version = "PokemonTCGTrainingDashboard/3"
 
     @property
     def state(self) -> DashboardState:
@@ -646,7 +467,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     last_seq = int(row["seq"])
                     wire = (
                         f"id: {last_seq}\n"
-                        "event: training_event_v1\n"
+                        "event: training_event_v3\n"
                         f"data: {json.dumps(row, ensure_ascii=False, sort_keys=True)}\n\n"
                     ).encode("utf-8")
                     self.wfile.write(wire)
@@ -694,8 +515,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     result = self.state.resume(run_id)
                 elif action == "cancel":
                     result = self.state.cancel(run_id)
-                elif action == "promote":
-                    result = self.state.promote(run_id, payload)
                 else:
                     self._error(HTTPStatus.NOT_FOUND, "not_found")
                     return

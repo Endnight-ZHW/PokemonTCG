@@ -33,7 +33,7 @@ func _initialize() -> void:
 	}
 	var action := GameAction.from_dict(row)
 	var expected := AIPositionEvaluator.action_signature(action)
-	var actual := str(kernel.action_signature_v2(row))
+	var actual := str(kernel.action_signature(row))
 	if actual != expected:
 		push_error("signature mismatch expected=%s actual=%s" % [expected, actual])
 		quit(1)

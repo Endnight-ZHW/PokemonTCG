@@ -1,6 +1,7 @@
 """Shared anytime information-set planner for rules and neural AI backends."""
 from __future__ import annotations
 
+import hashlib
 import math
 import random
 import time
@@ -12,13 +13,50 @@ from engine.ai.observation import fair_search_clone
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_engine import DEFAULT_GAME_ENGINE, GameEngine
 from engine.random_source import SamplingRandomSource
-from engine.ai.dl.production_contract import (
-    derive_deep_decision_seed,
-    derive_training_decision_seed,
-)
-
-
 HEURISTIC_PRIOR_TEMPERATURE = 80.0
+AI_SEED_FALLBACK = 0x6D2B79F5
+
+
+def _planner_seed(domain: str, *parts: Any) -> int:
+    wire = "|".join(
+        (domain, "infoset_puct_v3", *(str(part) for part in parts))
+    ).encode("utf-8")
+    return (
+        int.from_bytes(hashlib.sha256(wire).digest()[:8], "big")
+        & 0xFFFFFFFF
+    ) or AI_SEED_FALLBACK
+
+
+def derive_deep_decision_seed(
+    match_seed: int,
+    revision: int,
+    actor: int,
+    ordinal: int,
+) -> int:
+    return _planner_seed(
+        "deep-decision-v3",
+        int(match_seed),
+        int(revision),
+        int(actor),
+        int(ordinal),
+    )
+
+
+def derive_training_decision_seed(
+    task_seed: int,
+    revision: int,
+    actor: int,
+    decision_ordinal: int,
+    purpose: str,
+) -> int:
+    return _planner_seed(
+        "deep-training-v3",
+        int(task_seed),
+        int(revision),
+        int(actor),
+        int(decision_ordinal),
+        str(purpose),
+    )
 
 
 def terminal_outcome_value(state, perspective: int) -> float:

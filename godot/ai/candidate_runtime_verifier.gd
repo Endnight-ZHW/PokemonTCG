@@ -2,9 +2,6 @@ class_name CandidateRuntimeVerifier
 extends RefCounted
 
 const FORMAT_VERSION := 1
-const DEFAULT_ENCODER_FIXTURE := (
-	"res://tests/fixtures/ai_encoder_golden.json"
-)
 const RULES_FIXTURE := "res://tests/fixtures/rules_golden.json"
 const CARDS_PATH := "res://data/cards.json"
 const SEARCH_DEADLINE_MS := 2000.0
@@ -14,7 +11,6 @@ func verify(
 	runtime_path: String,
 	release_path: String,
 	candidate_path: String,
-	encoder_fixture_path: String = DEFAULT_ENCODER_FIXTURE,
 ) -> Dictionary:
 	var started_usec := Time.get_ticks_usec()
 	var runtime := DeepAIRuntime.new(runtime_path, release_path)
@@ -26,12 +22,9 @@ func verify(
 	)
 	var rows := {}
 	var errors: Array[String] = []
-	var encoder_golden_passed := (
-		_v2_contract_available()
-		and _encoder_golden_passed(encoder_fixture_path)
-	)
-	if not encoder_golden_passed:
-		errors.append("encoder_golden")
+	var encoder_contract_passed := _v3_contract_available()
+	if not encoder_contract_passed:
+		errors.append("encoder_contract")
 	if (
 		not runtime.runtime_enabled
 		or int(runtime.release_manifest.get("model_count", 0)) != 1
@@ -63,10 +56,8 @@ func verify(
 		var scenarios: Array = []
 		if loaded:
 			var backend: Variant = runtime.get_backend()
-			scenarios.append(_infer_scenario(
-				backend, runtime.manifest, false))
-			scenarios.append(_infer_scenario(
-				backend, runtime.manifest, true))
+			scenarios.append(_infer_scenario(backend, false))
+			scenarios.append(_infer_scenario(backend, true))
 			for scenario in scenarios:
 				if not bool(Dictionary(scenario).get("passed", false)):
 					errors.append("%s:inference" % deck_key)
@@ -111,11 +102,11 @@ func verify(
 	var backend_available := ClassDB.class_exists("OnnxInference")
 	return {
 		"format_version": FORMAT_VERSION,
-		"kind": "candidate_runtime_inference_v2",
+		"kind": "deep_ai_v3_candidate_runtime/1",
 		"platform": OS.get_name().to_lower(),
 		"architecture": Engine.get_architecture_name(),
 		"native_extension": backend_available,
-		"encoder_golden_passed": encoder_golden_passed,
+		"encoder_contract_passed": encoder_contract_passed,
 		"candidate_manifest_sha256": FileAccess.get_sha256(candidate_path),
 		"runtime_manifest_sha256": FileAccess.get_sha256(runtime_path),
 		"release_manifest_sha256": FileAccess.get_sha256(release_path),
@@ -429,35 +420,38 @@ func _mask_runtime_state(source: Dictionary, actor: int) -> Dictionary:
 
 func _infer_scenario(
 	backend: Variant,
-	manifest: Dictionary,
 	empty_slots: bool,
 ) -> Dictionary:
 	if backend == null:
 		return {"passed": false, "error": "backend_unavailable"}
 	var state_global := PackedFloat32Array()
-	state_global.resize(128)
+	state_global.resize(192)
 	var entity_numeric := PackedFloat32Array()
-	entity_numeric.resize(128 * 16)
+	entity_numeric.resize(160 * 24)
 	var entity_cards := PackedInt64Array()
-	entity_cards.resize(128)
+	entity_cards.resize(160)
 	var entity_types := PackedInt64Array()
-	entity_types.resize(128 * 4)
+	entity_types.resize(160 * 4)
+	var entity_mask := PackedByteArray()
+	entity_mask.resize(160)
 	if not empty_slots:
-		for index in range(128):
+		for index in range(160):
 			entity_cards[index] = 1 + index % 31
+			entity_mask[index] = 1
 	var candidate_numeric := PackedFloat32Array()
-	candidate_numeric.resize(2 * 32)
+	candidate_numeric.resize(2 * 48)
 	var candidate_cards := PackedInt64Array([1, 2])
 	var candidate_types := PackedInt64Array([1, 2])
 	var candidate_refs := PackedInt64Array()
-	candidate_refs.resize(2 * 4)
+	candidate_refs.resize(2 * 8)
 	var candidate_mask := PackedByteArray([1, 1])
 	var inferred: Dictionary = backend.call(
-		"infer_v2",
+		"infer_v3",
 		state_global,
 		entity_numeric,
 		entity_cards,
 		entity_types,
+		entity_mask,
 		candidate_numeric,
 		candidate_cards,
 		candidate_types,
@@ -492,7 +486,7 @@ func _infer_scenario(
 	}
 
 
-func _v2_contract_available() -> bool:
+func _v3_contract_available() -> bool:
 	if not ClassDB.class_exists("OnnxInference"):
 		return false
 	var probe: Variant = ClassDB.instantiate("OnnxInference")
@@ -503,91 +497,17 @@ func _v2_contract_available() -> bool:
 		return false
 	var contract: Dictionary = contract_value
 	return (
-		int(contract.get("format_version", 0)) == 3
+		int(contract.get("format_version", 0)) == 4
+		and int(contract.get("encoder_version", 0)) == 8
 		and str(contract.get("model_variant", ""))
-		== "universal_infoset_transformer_v2"
-		and int(contract.get("state_global_size", 0)) == 128
-		and int(contract.get("entity_slots", 0)) == 128
-		and int(contract.get("entity_numeric_size", 0)) == 16
-		and int(contract.get("candidate_numeric_size", 0)) == 32
-		and int(contract.get("candidate_ref_fields", 0)) == 4
+		== "universal_infoset_transformer_v3"
+		and int(contract.get("state_global_size", 0)) == 192
+		and int(contract.get("entity_slots", 0)) == 160
+		and int(contract.get("entity_numeric_size", 0)) == 24
+		and int(contract.get("candidate_numeric_size", 0)) == 48
+		and int(contract.get("candidate_ref_fields", 0)) == 8
 		and int(contract.get("wdl_size", 0)) == 3
 	)
-
-
-func _encoder_golden_passed(fixture_path: String) -> bool:
-	var fixture_file := FileAccess.open(fixture_path, FileAccess.READ)
-	if fixture_file == null:
-		return false
-	var parsed: Variant = JSON.parse_string(fixture_file.get_as_text())
-	if not parsed is Dictionary:
-		return false
-	var fixture: Dictionary = parsed
-	var catalog := CardCatalog.new()
-	var encoder := AIActionEncoder.new(catalog)
-	var observation: Dictionary = fixture.get("observation", {})
-	var encoded_state := encoder.encode_observation(
-		observation, str(fixture.get("deck_key", "")))
-	if (
-		not _deep_equal(
-			encoded_state.get("numeric", []),
-			Dictionary(fixture.get("expected", {})).get(
-				"state_numeric", []))
-		or not _deep_equal(
-			encoded_state.get("card_ids", []),
-			Dictionary(fixture.get("expected", {})).get(
-				"state_cards", []))
-	):
-		return false
-	var actions: Array = fixture.get("actions", [])
-	var expected_actions: Array = Dictionary(
-		fixture.get("expected", {})).get("actions", [])
-	if actions.size() != expected_actions.size():
-		return false
-	for index in range(actions.size()):
-		var action := GameAction.from_dict(actions[index])
-		if not _deep_equal(
-			encoder.encode_action(
-				observation, action, str(fixture.get("deck_key", ""))),
-			expected_actions[index],
-		):
-			return false
-	var choice := ChoiceView.from_dict(fixture.get("choice", {}))
-	var expected_choices: Array = Dictionary(
-		fixture.get("expected", {})).get("choices", [])
-	if choice.options.size() != expected_choices.size():
-		return false
-	for index in range(choice.options.size()):
-		if not _deep_equal(
-			encoder.encode_choice(
-				observation, choice, choice.options[index], index),
-			expected_choices[index],
-		):
-			return false
-	return true
-
-
-func _deep_equal(left: Variant, right: Variant) -> bool:
-	if (
-		(left is int or left is float)
-		and (right is int or right is float)
-	):
-		return is_equal_approx(float(left), float(right))
-	if left is Dictionary and right is Dictionary:
-		if left.size() != right.size():
-			return false
-		for key in left:
-			if not right.has(key) or not _deep_equal(left[key], right[key]):
-				return false
-		return true
-	if left is Array and right is Array:
-		if left.size() != right.size():
-			return false
-		for index in range(left.size()):
-			if not _deep_equal(left[index], right[index]):
-				return false
-		return true
-	return left == right
 
 
 func _read_json(path: String) -> Dictionary:

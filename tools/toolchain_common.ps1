@@ -56,11 +56,11 @@ function Assert-ReleaseDeepFallbackContract {
         $evidence = [string]$planner.evidence_sha256
         if (
             $modelCount -ne 1 -or
-            [int]$Manifest.format_version -ne 4 -or
-            [int]$Manifest.schemas.deep_planner -ne 2 -or
-            [int]$planner.schema_version -ne 2 -or
-            [string]$planner.planner_id -ne 'infoset_puct_v2' -or
-            [string]$Manifest.deep_model.variant -ne 'universal_infoset_transformer_v2' -or
+            [int]$Manifest.format_version -ne 5 -or
+            [int]$Manifest.schemas.deep_planner -ne 3 -or
+            [int]$planner.schema_version -ne 3 -or
+            [string]$planner.planner_id -ne 'infoset_puct_v3' -or
+            [string]$Manifest.deep_model.variant -ne 'universal_infoset_transformer_v3' -or
             -not [bool]$Manifest.deep_model.universal -or
             -not [bool]$Manifest.native_ai.production_ready -or
             $evidence -notmatch '^[0-9a-f]{64}$'

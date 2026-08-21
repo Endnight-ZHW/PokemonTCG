@@ -143,13 +143,13 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $runtimeModel)) {
         throw 'Unable to create the native runtime ONNX contract model.'
     }
-    $env:PTCG_V2_TEST_ONNX = (Resolve-Path -LiteralPath $runtimeModel).Path
+    $env:PTCG_V3_TEST_ONNX = (Resolve-Path -LiteralPath $runtimeModel).Path
     Invoke-GodotCheckedScript `
         -Script 'res://tests/native_search_runtime_contract_test.gd' `
         -SuccessMarker 'NATIVE_SEARCH_RUNTIME_CONTRACT_OK' `
         -ContractName 'Native ONNX action/choice search and deadline contract'
 } finally {
-    Remove-Item Env:\PTCG_V2_TEST_ONNX -ErrorAction SilentlyContinue
+    Remove-Item Env:\PTCG_V3_TEST_ONNX -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $runtimeModel) {
         Remove-Item -LiteralPath $runtimeModel -Force
     }
@@ -207,7 +207,7 @@ if (-not [string]::IsNullOrWhiteSpace($EvidenceOutput)) {
         'libpokemon_ai.windows.template_release.x86_64.dll'
     )
     $evidence = [ordered]@{
-        schema = 'alphazero_v2_godot_native_evidence/1'
+        schema = 'alphazero_v3_godot_native_evidence/1'
         generated_at_utc = [DateTime]::UtcNow.ToString('o')
         godot_version = [string]$lock.godot.version
         all_contracts_passed = $true

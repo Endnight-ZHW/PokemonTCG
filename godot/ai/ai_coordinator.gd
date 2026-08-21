@@ -122,7 +122,7 @@ func cancel_request() -> void:
 ## The authoritative evaluation runner is synchronous, but must exercise the
 ## exact same Deep/fallback branch as the asynchronous gameplay boundary.
 ## Keeping this thin adapter here prevents candidate evidence from silently
-## bypassing the production infoset_puct_v2 path.
+## bypassing the production infoset_puct_v3 path.
 func decide_sync_for_evaluation(
 	request: Dictionary,
 	inference: Variant = null,

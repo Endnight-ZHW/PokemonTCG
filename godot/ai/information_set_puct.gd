@@ -3,8 +3,8 @@ extends RefCounted
 
 ## Godot adapter for the native information-set PUCT implementation.
 
-const PLANNER_ID := "infoset_puct_v2"
-const SCHEMA_VERSION := 2
+const PLANNER_ID := "infoset_puct_v3"
+const SCHEMA_VERSION := 3
 const C_PUCT := 1.4
 const WATCHDOG_USEC := 2000000
 const STOP_MARGIN_USEC := 50000

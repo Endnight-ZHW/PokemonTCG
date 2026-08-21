@@ -1450,7 +1450,7 @@ class GateTests(unittest.TestCase):
             action_counts = row["action_decisions_by_strategy"]
             row["decision_engine_counts_by_strategy"] = {
                 "A": (
-                    {"infoset_puct_v2": action_counts["A"]}
+                    {"infoset_puct_v3": action_counts["A"]}
                     if action_counts["A"]
                     else {}
                 ),

@@ -30,83 +30,6 @@ std::string utf8_string(const String &source) {
     return std::string(encoded.get_data(), encoded.length());
 }
 
-Dictionary encoded_request_dictionary(
-    const ptcg::ai::InferenceRequest &request
-) {
-    Dictionary result;
-    result["success"] = true;
-    PackedFloat32Array state_global;
-    state_global.resize(request.state_global.size());
-    std::copy(
-        request.state_global.begin(),
-        request.state_global.end(),
-        state_global.ptrw()
-    );
-    PackedFloat32Array entity_numeric;
-    entity_numeric.resize(request.entity_numeric.size());
-    std::copy(
-        request.entity_numeric.begin(),
-        request.entity_numeric.end(),
-        entity_numeric.ptrw()
-    );
-    PackedInt64Array entity_card_ids;
-    entity_card_ids.resize(request.entity_card_ids.size());
-    std::copy(
-        request.entity_card_ids.begin(),
-        request.entity_card_ids.end(),
-        entity_card_ids.ptrw()
-    );
-    PackedInt64Array entity_type_ids;
-    entity_type_ids.resize(request.entity_type_ids.size());
-    std::copy(
-        request.entity_type_ids.begin(),
-        request.entity_type_ids.end(),
-        entity_type_ids.ptrw()
-    );
-    PackedFloat32Array candidate_numeric;
-    candidate_numeric.resize(request.candidate_numeric.size());
-    std::copy(
-        request.candidate_numeric.begin(),
-        request.candidate_numeric.end(),
-        candidate_numeric.ptrw()
-    );
-    PackedInt64Array candidate_card_ids;
-    candidate_card_ids.resize(request.candidate_card_ids.size());
-    std::copy(
-        request.candidate_card_ids.begin(),
-        request.candidate_card_ids.end(),
-        candidate_card_ids.ptrw()
-    );
-    PackedInt64Array candidate_type_ids;
-    candidate_type_ids.resize(request.candidate_type_ids.size());
-    std::copy(
-        request.candidate_type_ids.begin(),
-        request.candidate_type_ids.end(),
-        candidate_type_ids.ptrw()
-    );
-    PackedInt64Array candidate_refs;
-    candidate_refs.resize(request.candidate_refs.size());
-    std::copy(
-        request.candidate_refs.begin(),
-        request.candidate_refs.end(),
-        candidate_refs.ptrw()
-    );
-    result["state_global"] = state_global;
-    result["entity_numeric"] = entity_numeric;
-    result["entity_card_ids"] = entity_card_ids;
-    result["entity_type_ids"] = entity_type_ids;
-    result["candidate_numeric"] = candidate_numeric;
-    result["candidate_card_ids"] = candidate_card_ids;
-    result["candidate_type_ids"] = candidate_type_ids;
-    result["candidate_refs"] = candidate_refs;
-    result["candidate_count"] = static_cast<int64_t>(
-        request.candidate_count()
-    );
-    result["actor_deck_id"] = request.actor_deck_id;
-    result["opponent_deck_id"] = request.opponent_deck_id;
-    return result;
-}
-
 String stable_variant_signature(const Variant &value) {
     if (value.get_type() == Variant::DICTIONARY) {
         const Dictionary dictionary = value;
@@ -167,6 +90,7 @@ struct PackedInferenceBatch {
     PackedFloat32Array entity_numeric;
     PackedInt64Array entity_card_ids;
     PackedInt64Array entity_type_ids;
+    PackedByteArray entity_mask;
     PackedFloat32Array candidate_numeric;
     PackedInt64Array candidate_card_ids;
     PackedInt64Array candidate_type_ids;
@@ -186,6 +110,9 @@ PackedInferenceBatch pack_inference_requests(
     PackedInferenceBatch result;
     for (const auto &request : requests) {
         request.validate();
+        if (request.spec.encoder_version != ptcg::ai::V3_ENCODER_VERSION) {
+            throw std::invalid_argument("runtime_encoder_version_mismatch");
+        }
         result.candidate_count = std::max(
             result.candidate_count,
             request.candidate_count()
@@ -195,28 +122,31 @@ PackedInferenceBatch pack_inference_requests(
     const std::size_t candidate_rows =
         batch_size * result.candidate_count;
     result.state_global.resize(
-        batch_size * ptcg::ai::STATE_GLOBAL_SIZE
+        batch_size * ptcg::ai::V3_STATE_GLOBAL_SIZE
     );
     result.entity_numeric.resize(
         batch_size
-            * ptcg::ai::ENTITY_SLOTS
-            * ptcg::ai::ENTITY_NUMERIC_SIZE
+            * ptcg::ai::V3_ENTITY_SLOTS
+            * ptcg::ai::V3_ENTITY_NUMERIC_SIZE
     );
     result.entity_card_ids.resize(
-        batch_size * ptcg::ai::ENTITY_SLOTS
+        batch_size * ptcg::ai::V3_ENTITY_SLOTS
     );
     result.entity_type_ids.resize(
         batch_size
-            * ptcg::ai::ENTITY_SLOTS
-            * ptcg::ai::ENTITY_TYPE_FIELDS
+            * ptcg::ai::V3_ENTITY_SLOTS
+            * ptcg::ai::V3_ENTITY_TYPE_FIELDS
+    );
+    result.entity_mask.resize(
+        batch_size * ptcg::ai::V3_ENTITY_SLOTS
     );
     result.candidate_numeric.resize(
-        candidate_rows * ptcg::ai::CANDIDATE_NUMERIC_SIZE
+        candidate_rows * ptcg::ai::V3_CANDIDATE_NUMERIC_SIZE
     );
     result.candidate_card_ids.resize(candidate_rows);
     result.candidate_type_ids.resize(candidate_rows);
     result.candidate_refs.resize(
-        candidate_rows * ptcg::ai::CANDIDATE_REF_FIELDS
+        candidate_rows * ptcg::ai::V3_CANDIDATE_REF_FIELDS
     );
     result.candidate_mask.resize(candidate_rows);
     result.actor_deck_ids.resize(batch_size);
@@ -252,29 +182,35 @@ PackedInferenceBatch pack_inference_requests(
             request.state_global.begin(),
             request.state_global.end(),
             result.state_global.ptrw()
-                + row * ptcg::ai::STATE_GLOBAL_SIZE
+                + row * ptcg::ai::V3_STATE_GLOBAL_SIZE
         );
         std::copy(
             request.entity_numeric.begin(),
             request.entity_numeric.end(),
             result.entity_numeric.ptrw()
                 + row
-                    * ptcg::ai::ENTITY_SLOTS
-                    * ptcg::ai::ENTITY_NUMERIC_SIZE
+                    * ptcg::ai::V3_ENTITY_SLOTS
+                    * ptcg::ai::V3_ENTITY_NUMERIC_SIZE
         );
         std::copy(
             request.entity_card_ids.begin(),
             request.entity_card_ids.end(),
             result.entity_card_ids.ptrw()
-                + row * ptcg::ai::ENTITY_SLOTS
+                + row * ptcg::ai::V3_ENTITY_SLOTS
         );
         std::copy(
             request.entity_type_ids.begin(),
             request.entity_type_ids.end(),
             result.entity_type_ids.ptrw()
                 + row
-                    * ptcg::ai::ENTITY_SLOTS
-                    * ptcg::ai::ENTITY_TYPE_FIELDS
+                    * ptcg::ai::V3_ENTITY_SLOTS
+                    * ptcg::ai::V3_ENTITY_TYPE_FIELDS
+        );
+        std::copy(
+            request.entity_mask.begin(),
+            request.entity_mask.end(),
+            result.entity_mask.ptrw()
+                + row * ptcg::ai::V3_ENTITY_SLOTS
         );
         const std::size_t candidate_offset =
             row * result.candidate_count;
@@ -283,7 +219,7 @@ PackedInferenceBatch pack_inference_requests(
             request.candidate_numeric.end(),
             result.candidate_numeric.ptrw()
                 + candidate_offset
-                    * ptcg::ai::CANDIDATE_NUMERIC_SIZE
+                    * ptcg::ai::V3_CANDIDATE_NUMERIC_SIZE
         );
         std::copy(
             request.candidate_card_ids.begin(),
@@ -300,7 +236,7 @@ PackedInferenceBatch pack_inference_requests(
             request.candidate_refs.end(),
             result.candidate_refs.ptrw()
                 + candidate_offset
-                    * ptcg::ai::CANDIDATE_REF_FIELDS
+                    * ptcg::ai::V3_CANDIDATE_REF_FIELDS
         );
         std::fill_n(
             result.candidate_mask.ptrw() + candidate_offset,
@@ -669,12 +605,12 @@ void NativeDeepSearch::_bind_methods() {
     );
     ClassDB::bind_method(
         D_METHOD(
-            "information_set_hash_v2",
+            "information_set_hash",
             "public_words",
             "actor_private_words",
             "actor"
         ),
-        &NativeDeepSearch::information_set_hash_v2
+        &NativeDeepSearch::information_set_hash
     );
     ClassDB::bind_method(
         D_METHOD(
@@ -708,20 +644,6 @@ void NativeDeepSearch::_bind_methods() {
         &NativeDeepSearch::project_information_set
     );
     ClassDB::bind_method(
-        D_METHOD("encode_actions_v7", "state", "actor", "actions"),
-        &NativeDeepSearch::encode_actions_v7
-    );
-    ClassDB::bind_method(
-        D_METHOD(
-            "encode_choices_v7",
-            "state",
-            "actor",
-            "request",
-            "candidates"
-        ),
-        &NativeDeepSearch::encode_choices_v7
-    );
-    ClassDB::bind_method(
         D_METHOD(
             "determinize_information_set",
             "state",
@@ -731,8 +653,8 @@ void NativeDeepSearch::_bind_methods() {
         &NativeDeepSearch::determinize_information_set
     );
     ClassDB::bind_method(
-        D_METHOD("action_signature_v2", "action"),
-        &NativeDeepSearch::action_signature_v2
+        D_METHOD("action_signature", "action"),
+        &NativeDeepSearch::action_signature
     );
 }
 
@@ -745,7 +667,7 @@ Dictionary NativeDeepSearch::decide(
     Dictionary result;
     result["success"] = false;
     result["cancelled"] = false;
-    result["planner"] = "infoset_puct_v2";
+    result["planner"] = "infoset_puct_v3";
     result["request_id"] = String(request.get("request_id", ""));
     result["revision"] = int64_t(request.get("revision", -1));
     result["simulations"] = 0;
@@ -865,7 +787,7 @@ Dictionary NativeDeepSearch::decide(
                     );
                 }
                 authoritative_signatures.insert(utf8_string(
-                    action_signature_v2(
+                    action_signature(
                         Dictionary(authoritative_rows[index])
                     )
                 ));
@@ -876,7 +798,7 @@ Dictionary NativeDeepSearch::decide(
                 ++index
             ) {
                 generated_signatures.insert(utf8_string(
-                    action_signature_v2(
+                    action_signature(
                         Dictionary(generated_rows[index])
                     )
                 ));
@@ -980,7 +902,12 @@ Dictionary NativeDeepSearch::decide(
         const std::uint32_t maximum_simulations = android ? 128U : 256U;
         const std::size_t leaf_batch_size = android ? 4U : 8U;
         auto batch = std::make_shared<ptcg::ai::NativeSelfPlayBatch>();
-        ptcg::ai::NativeSearchJob job(cards_, decks_, batch);
+        ptcg::ai::NativeSearchJob job(
+            cards_,
+            decks_,
+            batch,
+            nullptr
+        );
         ptcg::ai::NativeSearchConfig config;
         config.simulations = maximum_simulations;
         config.max_depth = 128;
@@ -1038,11 +965,12 @@ Dictionary NativeDeepSearch::decide(
             PackedInferenceBatch packed = pack_inference_requests(
                 requests
             );
-            Dictionary inferred = backend->infer_v2(
+            Dictionary inferred = backend->infer_v3(
                 packed.state_global,
                 packed.entity_numeric,
                 packed.entity_card_ids,
                 packed.entity_type_ids,
+                packed.entity_mask,
                 packed.candidate_numeric,
                 packed.candidate_card_ids,
                 packed.candidate_type_ids,
@@ -1225,7 +1153,7 @@ Dictionary NativeDeepSearch::decide(
             );
         } else {
             const String selected_signature =
-                action_signature_v2(selected);
+                action_signature(selected);
             if (
                 authoritative_signatures.find(
                     utf8_string(selected_signature)
@@ -1306,7 +1234,7 @@ Dictionary NativeDeepSearch::decide(
     return result;
 }
 
-int64_t NativeDeepSearch::information_set_hash_v2(
+int64_t NativeDeepSearch::information_set_hash(
     const PackedInt32Array &public_words,
     const PackedInt32Array &actor_private_words,
     int64_t actor
@@ -1383,7 +1311,7 @@ Dictionary NativeDeepSearch::get_contract() const {
     result["native_abi_version"] = ptcg::ai::NATIVE_ABI_VERSION;
     result["rules_session_abi_version"] =
         ptcg::ai::NATIVE_RULES_SESSION_ABI_VERSION;
-    result["planner_id"] = "infoset_puct_v2";
+    result["planner_id"] = "infoset_puct_v3";
     result["schema_version"] = SCHEMA_VERSION;
     result["c_puct"] = C_PUCT;
     result["watchdog_seconds"] = 2.0;
@@ -1397,6 +1325,7 @@ Dictionary NativeDeepSearch::get_contract() const {
     result["android_max_simulations"] = 128;
     result["android_leaf_batch_size"] = 4;
     result["leaf_evaluator"] = "neural_wdl";
+    result["encoder_version"] = ptcg::ai::V3_ENCODER_VERSION;
     result["challenge_prior_weight"] = 0.0;
     result["full_turn_rollout"] = false;
     result["infoset_abi_version"] =
@@ -1409,7 +1338,7 @@ Dictionary NativeDeepSearch::get_contract() const {
     result["chance_node_gate_complete"] = true;
     result["unclassified_rng_policy"] = "fail_closed";
     result["state_storage"] =
-        "compact_metadata_cow_apply_undo_journal_v2";
+        "compact_metadata_cow_apply_undo_journal_v3";
     result["infoset_candidate_cache"] = true;
     result["candidate_cache_audit_available"] = true;
     result["compact_apply_undo_gate_complete"] = true;
@@ -1421,7 +1350,6 @@ void NativeDeepSearch::set_catalog(const Dictionary &cards) {
     ptcg::ai::Value native_cards = ptcg::ai::value_from_godot(cards);
     cards_ = native_cards;
     game_kernel_.set_cards(native_cards);
-    encoder_.set_cards(std::move(native_cards));
 }
 
 void NativeDeepSearch::set_decks(const Dictionary &decks) {
@@ -1474,54 +1402,6 @@ Dictionary NativeDeepSearch::project_information_set(
     return result;
 }
 
-Dictionary NativeDeepSearch::encode_actions_v7(
-    const Dictionary &state,
-    int64_t actor,
-    const Array &actions
-) const {
-    try {
-        const ptcg::ai::InformationSetProjection projection =
-            ptcg::ai::project_information_set(
-                ptcg::ai::value_from_godot(state),
-                static_cast<std::int32_t>(actor)
-            );
-        return encoded_request_dictionary(encoder_.encode_actions(
-            projection.observation,
-            ptcg::ai::value_from_godot(actions)
-        ));
-    } catch (const std::exception &error) {
-        Dictionary result;
-        result["success"] = false;
-        result["error"] = String::utf8(error.what());
-        return result;
-    }
-}
-
-Dictionary NativeDeepSearch::encode_choices_v7(
-    const Dictionary &state,
-    int64_t actor,
-    const Dictionary &request,
-    const Array &candidates
-) const {
-    try {
-        const ptcg::ai::InformationSetProjection projection =
-            ptcg::ai::project_information_set(
-                ptcg::ai::value_from_godot(state),
-                static_cast<std::int32_t>(actor)
-            );
-        return encoded_request_dictionary(encoder_.encode_choices(
-            projection.observation,
-            ptcg::ai::value_from_godot(request),
-            ptcg::ai::value_from_godot(candidates)
-        ));
-    } catch (const std::exception &error) {
-        Dictionary result;
-        result["success"] = false;
-        result["error"] = String::utf8(error.what());
-        return result;
-    }
-}
-
 Dictionary NativeDeepSearch::determinize_information_set(
     const Dictionary &state,
     int64_t actor,
@@ -1544,7 +1424,7 @@ Dictionary NativeDeepSearch::determinize_information_set(
     return result;
 }
 
-String NativeDeepSearch::action_signature_v2(
+String NativeDeepSearch::action_signature(
     const Dictionary &action
 ) const {
     try {

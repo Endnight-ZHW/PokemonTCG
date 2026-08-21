@@ -18,12 +18,26 @@
 namespace ptcg::ai {
 
 inline constexpr int NATIVE_ABI_VERSION = 2;
-inline constexpr std::size_t STATE_GLOBAL_SIZE = 128;
-inline constexpr std::size_t ENTITY_SLOTS = 128;
-inline constexpr std::size_t ENTITY_NUMERIC_SIZE = 16;
-inline constexpr std::size_t ENTITY_TYPE_FIELDS = 4;
-inline constexpr std::size_t CANDIDATE_NUMERIC_SIZE = 32;
-inline constexpr std::size_t CANDIDATE_REF_FIELDS = 4;
+inline constexpr int V3_ENCODER_VERSION = 8;
+inline constexpr std::size_t V3_STATE_GLOBAL_SIZE = 192;
+inline constexpr std::size_t V3_ENTITY_SLOTS = 160;
+inline constexpr std::size_t V3_ENTITY_NUMERIC_SIZE = 24;
+inline constexpr std::size_t V3_ENTITY_TYPE_FIELDS = 4;
+inline constexpr std::size_t V3_CANDIDATE_NUMERIC_SIZE = 48;
+inline constexpr std::size_t V3_CANDIDATE_REF_FIELDS = 8;
+
+struct InferenceTensorSpec {
+    int encoder_version = V3_ENCODER_VERSION;
+    std::size_t state_global_size = V3_STATE_GLOBAL_SIZE;
+    std::size_t entity_slots = V3_ENTITY_SLOTS;
+    std::size_t entity_numeric_size = V3_ENTITY_NUMERIC_SIZE;
+    std::size_t entity_type_fields = V3_ENTITY_TYPE_FIELDS;
+    std::size_t candidate_numeric_size = V3_CANDIDATE_NUMERIC_SIZE;
+    std::size_t candidate_ref_fields = V3_CANDIDATE_REF_FIELDS;
+
+    static InferenceTensorSpec v3() noexcept;
+    bool operator==(const InferenceTensorSpec &other) const noexcept;
+};
 
 struct UndoMark {
     std::size_t journal_size = 0;
@@ -109,20 +123,24 @@ private:
 };
 
 struct InferenceRequest {
+    explicit InferenceRequest(
+        InferenceTensorSpec tensor_spec = InferenceTensorSpec::v3()
+    );
+
     std::uint64_t request_id = 0;
-    std::array<float, STATE_GLOBAL_SIZE> state_global{};
-    std::array<float, ENTITY_SLOTS * ENTITY_NUMERIC_SIZE> entity_numeric{};
-    std::array<std::int64_t, ENTITY_SLOTS> entity_card_ids{};
-    std::array<
-        std::int64_t,
-        ENTITY_SLOTS * ENTITY_TYPE_FIELDS
-    > entity_type_ids{};
+    InferenceTensorSpec spec;
+    std::vector<float> state_global;
+    std::vector<float> entity_numeric;
+    std::vector<std::int64_t> entity_card_ids;
+    std::vector<std::int64_t> entity_type_ids;
+    std::vector<std::uint8_t> entity_mask;
     std::vector<float> candidate_numeric;
     std::vector<std::int64_t> candidate_card_ids;
     std::vector<std::int64_t> candidate_type_ids;
     std::vector<std::int64_t> candidate_refs;
     std::int64_t actor_deck_id = 0;
     std::int64_t opponent_deck_id = 0;
+    std::int32_t model_slot = 0;
 
     std::size_t candidate_count() const noexcept;
     void validate() const;
@@ -142,6 +160,13 @@ struct TrainingSample {
     std::array<float, 3> wdl_target{};
     std::int32_t generation = 0;
     std::int32_t actor = 0;
+    std::string game_id;
+    std::uint64_t game_seed = 0;
+    std::int32_t ply = 0;
+    std::int32_t model_version = 0;
+    std::int32_t cycle = 0;
+    std::int32_t phase_bucket = 0;
+    std::int32_t source = 0;
 };
 
 class NativeSelfPlayBatch {

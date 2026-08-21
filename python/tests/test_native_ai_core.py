@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import json
-import runpy
 import sys
 import time
 import unittest
@@ -14,21 +13,7 @@ PYTHON_ROOT = Path(__file__).resolve().parents[1]
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
-from engine.ai.dl.inference_v2 import NativeBatchTorchBroker
-from engine.ai.dl.native_bridge_v2 import (
-    NativeBridgeError,
-    NativeModelBackend,
-    NativeSearchService,
-    _native_choice_view,
-    _public_native_bench_damage_continuation,
-    _public_native_exp_share_continuation,
-    _public_native_exp_share_order_continuation,
-    _public_native_prize_continuation,
-    _public_native_trigger_continuation,
-    _public_native_vm_continuation,
-    game_state_to_native_wire,
-    mask_native_snapshot,
-)
+from engine.native_state_codec import mask_native_snapshot
 
 try:
     import ptcg_ai_core
@@ -716,28 +701,6 @@ class NativeAICoreTests(unittest.TestCase):
             "hidden_identity_exposed:players[0].deck",
         )
 
-    def test_native_infoset_security_audit_smoke(self):
-        script = (
-            Path(__file__).resolve().parents[1]
-            / "scripts"
-            / "verify_native_infoset_security_v2.py"
-        )
-        audit = runpy.run_path(str(script))["audit"]
-        report = audit(
-            games=2,
-            max_decisions=8,
-            seed=1701,
-            min_states_per_deck=0,
-            detail_limit=10,
-        )
-        self.assertTrue(report["scope_passed"], report)
-        self.assertEqual(report["states"], 16)
-        self.assertEqual(report["variants_checked"], 32)
-        self.assertEqual(report["details"], [])
-        self.assertEqual(report["invariance_status"], "passed")
-        self.assertEqual(report["mutation_coverage_status"], "passed")
-        self.assertFalse(report["release_gate_complete"])
-
     def test_native_determinizer_samples_only_from_public_deck_prior(self):
         state = copy.deepcopy(
             next(iter(self.rules_fixture["cases"].values()))[
@@ -987,184 +950,6 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertEqual(first["visits"], second["visits"])
         self.assertEqual(first["value_sums"], second["value_sums"])
         self.assertEqual(first["selected"], second["selected"])
-
-    def test_python_training_bridge_masks_hidden_ids_and_searches_action_root(
-        self,
-    ):
-        try:
-            import torch
-        except ImportError:
-            self.skipTest("torch is unavailable")
-        from engine.ai.dl.alphazero_v2 import (
-            GameTask,
-            _advance_nondecision_phase,
-            _setup_game,
-        )
-        from engine.ai.dl.puct_v2 import PythonGameEnvironment
-
-        class ZeroModel(torch.nn.Module):
-            def forward(self, *inputs):
-                candidate_numeric = inputs[4]
-                batch_size, candidate_count = candidate_numeric.shape[:2]
-                return (
-                    torch.zeros(
-                        (batch_size, candidate_count),
-                        device=candidate_numeric.device,
-                    ),
-                    torch.zeros(
-                        (batch_size, 3),
-                        device=candidate_numeric.device,
-                    ),
-                )
-
-        state = _setup_game(
-            GameTask(
-                "native-bridge-contract",
-                1,
-                "fire",
-                "water",
-                173,
-                0,
-                0,
-            )
-        )
-        while _advance_nondecision_phase(state):
-            pass
-        environment = PythonGameEnvironment()
-        actor = environment.actor(state)
-        candidates = list(environment.candidates(state, actor))
-        self.assertGreater(len(candidates), 1)
-        full_wire = game_state_to_native_wire(state)
-        masked = mask_native_snapshot(full_wire, actor)
-        changed = copy.deepcopy(full_wire)
-        for player_index, player in enumerate(changed["players"]):
-            player["deck"] = [
-                f"changed-deck-{player_index}-{index}"
-                for index in range(len(player["deck"]))
-            ]
-            player["prizes"] = [
-                f"changed-prize-{player_index}-{index}"
-                for index in range(len(player["prizes"]))
-            ]
-            if player_index != actor:
-                player["hand"] = [
-                    f"changed-hand-{index}"
-                    for index in range(len(player["hand"]))
-                ]
-        self.assertEqual(masked, mask_native_snapshot(changed, actor))
-        promotion = copy.deepcopy(full_wire)
-        promotion["phase"] = "ATTACK"
-        promotion["pending_promotions"] = [actor]
-        promotion["resolution_stack"]["context"] = {
-            "finish_attack_after_promotions": actor,
-        }
-        promotion_masked = mask_native_snapshot(promotion, actor)
-        self.assertEqual(
-            promotion_masked["resolution_stack"]["context"],
-            {},
-        )
-        private_context = copy.deepcopy(promotion)
-        private_context["resolution_stack"]["context"][
-            "private_continuation"
-        ] = "must-not-cross"
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_root_choice_continuation_unavailable",
-        ):
-            mask_native_snapshot(private_context, actor)
-        self.assertEqual(
-            ptcg_ai_core.validate_runtime_snapshot(masked, actor),
-            "",
-        )
-        with NativeSearchService(
-            ZeroModel(),
-            device="cpu",
-            target_batch_size=4,
-            max_batch_size=8,
-            coalesce_ms=2,
-        ) as service:
-            result = service.search_action(
-                state,
-                actor,
-                candidates,
-                simulations=4,
-                c_puct=1.4,
-                seed=173,
-                training=False,
-                temperature=0.0,
-                max_depth=8,
-            )
-        self.assertEqual(result.simulations, 4)
-        self.assertIn(result.selected, candidates)
-        self.assertEqual(sum(result.visits.values()), 3)
-        self.assertAlmostEqual(
-            sum(result.probabilities.values()),
-            1.0,
-            places=6,
-        )
-
-    def test_native_backend_advances_through_action_and_choice_roots(self):
-        try:
-            import torch
-        except ImportError:
-            self.skipTest("torch is unavailable")
-        from engine.ai.dl.alphazero_v2 import (
-            GameTask,
-            play_self_play_game,
-        )
-
-        class ZeroModel(torch.nn.Module):
-            def forward(self, *inputs):
-                candidate_numeric = inputs[4]
-                batch_size, candidate_count = candidate_numeric.shape[:2]
-                return (
-                    torch.zeros(
-                        (batch_size, candidate_count),
-                        device=candidate_numeric.device,
-                    ),
-                    torch.zeros(
-                        (batch_size, 3),
-                        device=candidate_numeric.device,
-                    ),
-                )
-
-        with NativeModelBackend(
-            ZeroModel(),
-            device="cpu",
-            target_batch_size=2,
-            max_batch_size=4,
-            coalesce_ms=1,
-        ) as backend:
-            result = play_self_play_game(
-                GameTask(
-                    "native-continuous-smoke",
-                    0,
-                    "fire",
-                    "water",
-                    173,
-                    0,
-                    0,
-                ),
-                backend,
-                simulations=2,
-                c_puct=1.4,
-                max_decisions=32,
-                training=True,
-            )
-            metrics = backend.native_metrics
-
-        self.assertEqual(result.decisions, 32)
-        self.assertGreaterEqual(result.simulations, 60)
-        self.assertEqual(result.invalid_actions, 0)
-        self.assertEqual(result.illegal_choices, 0)
-        self.assertEqual(result.rule_exceptions, 0)
-        self.assertTrue(result.truncated)
-        # Every decision, including the intervening search/deck choices,
-        # reached the native inference queue for both simulations.
-        self.assertEqual(metrics["inference_requests"], result.simulations)
-        self.assertGreaterEqual(metrics["search_decisions"], 30)
-        self.assertLessEqual(metrics["search_decisions"], result.decisions)
-        self.assertEqual(metrics["search_simulations"], result.simulations)
 
     def test_native_search_flips_wdl_when_actor_changes(self):
         state = copy.deepcopy(
@@ -1425,14 +1210,15 @@ class NativeAICoreTests(unittest.TestCase):
         zeros_i = np.zeros
         batch = ptcg_ai_core.NativeSelfPlayBatch()
         request_id = batch.enqueue(
-            zeros_f(128, np.float32),
-            zeros_f((128, 16), np.float32),
-            zeros_i(128, np.int64),
-            zeros_i((128, 4), np.int64),
-            zeros_f((3, 32), np.float32),
+            zeros_f(192, np.float32),
+            zeros_f((160, 24), np.float32),
+            zeros_i(160, np.int64),
+            zeros_i((160, 4), np.int64),
+            np.ones(160, np.bool_),
+            zeros_f((3, 48), np.float32),
             zeros_i(3, np.int64),
             zeros_i(3, np.int64),
-            zeros_i((3, 4), np.int64),
+            zeros_i((3, 8), np.int64),
             2,
             7,
         )
@@ -1449,14 +1235,15 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertAlmostEqual(sum(policy), 1.0, places=6)
         self.assertAlmostEqual(sum(wdl), 1.0, places=6)
         batch.append_sample(
-            zeros_f(128, np.float32),
-            zeros_f((128, 16), np.float32),
-            zeros_i(128, np.int64),
-            zeros_i((128, 4), np.int64),
-            zeros_f((3, 32), np.float32),
+            zeros_f(192, np.float32),
+            zeros_f((160, 24), np.float32),
+            zeros_i(160, np.int64),
+            zeros_i((160, 4), np.int64),
+            np.ones(160, np.bool_),
+            zeros_f((3, 48), np.float32),
             zeros_i(3, np.int64),
             zeros_i(3, np.int64),
-            zeros_i((3, 4), np.int64),
+            zeros_i((3, 8), np.int64),
             2,
             7,
             np.asarray((0.2, 0.3, 0.5), np.float32),
@@ -1472,68 +1259,6 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertTrue(
             all(value.flags.c_contiguous for value in samples.values())
         )
-
-    def test_native_torch_broker_coalesces_contiguous_leaf_batches(self):
-        try:
-            import torch
-        except ImportError:
-            self.skipTest("torch is unavailable")
-
-        class ZeroModel(torch.nn.Module):
-            def forward(self, *inputs):
-                candidates = inputs[4]
-                batch_size, candidate_count = candidates.shape[:2]
-                return (
-                    torch.zeros(
-                        (batch_size, candidate_count),
-                        device=candidates.device,
-                    ),
-                    torch.zeros((batch_size, 3), device=candidates.device),
-                )
-
-        zeros_f = np.zeros
-        zeros_i = np.zeros
-        batch = ptcg_ai_core.NativeSelfPlayBatch()
-        with NativeBatchTorchBroker(
-            batch,
-            ZeroModel(),
-            device="cpu",
-            target_batch_size=4,
-            max_batch_size=8,
-            poll_wait_ms=50,
-            amp=False,
-        ) as broker:
-            request_ids = [
-                batch.enqueue(
-                    zeros_f(128, np.float32),
-                    zeros_f((128, 16), np.float32),
-                    zeros_i(128, np.int64),
-                    zeros_i((128, 4), np.int64),
-                    zeros_f((3, 32), np.float32),
-                    zeros_i(3, np.int64),
-                    zeros_i(3, np.int64),
-                    zeros_i((3, 4), np.int64),
-                    2,
-                    7,
-                )
-                for _ in range(4)
-            ]
-            deadline = time.monotonic() + 5.0
-            responses = {}
-            while len(responses) < len(request_ids):
-                self.assertLess(time.monotonic(), deadline)
-                for request_id in request_ids:
-                    if request_id in responses:
-                        continue
-                    response = batch.take_response(request_id)
-                    if response is not None:
-                        responses[request_id] = response
-                time.sleep(0.001)
-            self.assertEqual(broker.request_count, 4)
-            self.assertEqual(broker.max_observed_batch, 4)
-            for policy, wdl in responses.values():
-                self.assertAlmostEqual(sum(policy), 1.0, places=6)
-                self.assertAlmostEqual(sum(wdl), 1.0, places=6)
 
     def test_all_80_vm_operations_match_frozen_direct_golden(self):
         fixture = self.vm_fixture
@@ -3525,7 +3250,7 @@ class NativeAICoreTests(unittest.TestCase):
         search_candidates = self.game.choice_candidates(
             suspended["pending"]
         )
-        encoded = ptcg_ai_core.NativeInformationSetEncoder(
+        encoded = ptcg_ai_core.NativeInformationSetEncoderV3(
             self.game_cards
         ).encode_choices(
             ptcg_ai_core.project_information_set(
@@ -5772,6 +5497,261 @@ class NativeAICoreTests(unittest.TestCase):
             result["simulations"] - 1,
         )
 
+    def test_native_search_pins_multistage_look_top_energy_sources(self):
+        state, _unused_decks = self._native_search_fixture()
+        owner = state["players"][0]
+        owner["hand"] = []
+        owner["deck"] = ["sv1-ener-4", "sv1-ener-5"]
+        # Put the already revealed source in a hidden permutation bucket that
+        # is not its continuation position. Search must restore the public
+        # stage-one fact before resuming the stage-two target choice.
+        owner["prizes"] = ["sv1-ener-3"]
+        bench = copy.deepcopy(owner["active"])
+        bench["card_id"] = "svi-chim"
+        bench["energy_card_ids"] = []
+        bench["evolution_stack_ids"] = []
+        owner["bench"] = [bench, None, None, None, None]
+        opponent = state["players"][1]
+        opponent["hand"] = []
+        opponent["deck"] = ["sv1-ener-1"]
+        opponent["prizes"] = ["sv1-ener-2"]
+        decks = self._submitted_decks(state)
+        wire = mask_native_snapshot(copy.deepcopy(state), 0)
+        energy_id = "sv1-ener-3"
+        target_id = bench["card_id"]
+        option_id = (
+            f"energy:0:{energy_id}->"
+            f"pokemon:0:bench_0:{target_id}"
+        )
+        pending = {
+            "schema_version": 2,
+            "request_id": "choice:look-top-energy-regression",
+            "base_revision": state.get("revision", 0),
+            "request_type": "distribute_energy",
+            "player": 0,
+            "min_select": 1,
+            "max_select": 1,
+            "allow_duplicates": False,
+            "can_cancel": False,
+            "options": [{
+                "option_id": option_id,
+                "label": "Energy",
+                "ref": {
+                    "kind": "pokemon",
+                    "player": 0,
+                    "slot": "bench_0",
+                    "card_id": target_id,
+                },
+            }],
+            "presentation": {
+                "domain": "distribute_energy",
+                "purpose": "look_top_bench_energy_distribution",
+                "card_ids": [energy_id],
+            },
+        }
+        continuation = {
+            "kind": "vm",
+            "actor": 0,
+            "finish_attack": False,
+            "vm": {
+                "op": "look_top_deck",
+                "command_spec": {
+                    "op": "look_top_deck",
+                    "args": {
+                        "count": 2,
+                        "take": 1,
+                        "filter": "basic_energy",
+                        "destination": "bench_energy",
+                        "target_pokemon_type": "",
+                    },
+                },
+                "actor": 0,
+                "source_slot": "active",
+                "stage": 1,
+                "selected_cards": [{
+                    "kind": "card",
+                    "player": 0,
+                    "zone": "deck",
+                    "index": 1,
+                    "card_id": energy_id,
+                }],
+            },
+            "context": {},
+            "remaining_effects": [],
+            "source_slot": "active",
+            "context_mode": "",
+        }
+        batch = ptcg_ai_core.NativeSelfPlayBatch()
+        job = ptcg_ai_core.NativeSearchJob(
+            self.game_cards,
+            decks,
+            batch,
+        )
+        job.start_choice(
+            wire,
+            0,
+            pending,
+            continuation,
+            4105,
+            {
+                "simulations": 4,
+                "max_depth": 8,
+                "dirichlet_epsilon": 0.0,
+                "temperature": 0.0,
+                "training": False,
+                "inference_wait_milliseconds": 10,
+            },
+        )
+        self._serve_uniform_inference(batch, [job])
+        result = job.wait()
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["selected"]["selected_options"], [option_id])
+        self.assertEqual(result["simulations"], 4)
+
+        target_option_id = f"pokemon:0:bench_0:{target_id}"
+        target_pending = {
+            **pending,
+            "request_id": "choice:look-top-target-regression",
+            "request_type": "select_energy_target",
+            "options": [{
+                "option_id": target_option_id,
+                "label": "Target",
+                "ref": {
+                    "kind": "pokemon",
+                    "player": 0,
+                    "slot": "bench_0",
+                    "card_id": target_id,
+                },
+            }],
+            "presentation": {
+                "domain": "select_energy_target",
+                "purpose": "look_top_attach_target",
+                "source_zone": "deck",
+                "revealed_card_ids": [energy_id],
+            },
+        }
+        target_continuation = copy.deepcopy(continuation)
+        target_continuation["vm"]["op"] = "look_top_attach_energy"
+        target_continuation["vm"]["command_spec"] = {
+            "op": "look_top_attach_energy",
+            "args": {
+                "count": 2,
+                "take": 1,
+                "filter": "basic_energy",
+            },
+        }
+        target_batch = ptcg_ai_core.NativeSelfPlayBatch()
+        target_job = ptcg_ai_core.NativeSearchJob(
+            self.game_cards,
+            decks,
+            target_batch,
+        )
+        target_job.start_choice(
+            wire,
+            0,
+            target_pending,
+            target_continuation,
+            4106,
+            {
+                "simulations": 4,
+                "max_depth": 8,
+                "dirichlet_epsilon": 0.0,
+                "temperature": 0.0,
+                "training": False,
+                "inference_wait_milliseconds": 10,
+            },
+        )
+        self._serve_uniform_inference(target_batch, [target_job])
+        target_result = target_job.wait()
+        self.assertTrue(target_result["success"], target_result)
+        self.assertEqual(
+            target_result["selected"]["selected_options"],
+            [target_option_id],
+        )
+
+        # Generic VM attach_energy publishes its chosen hidden-deck sources in
+        # metadata rather than the look-top continuation. Re-determinization
+        # must preserve that public multiset as well.
+        distribution_pending = {
+            **pending,
+            "request_id": "choice:deck-energy-distribution-regression",
+            "options": [{
+                "option_id": option_id,
+                "label": "Energy",
+                "ref": {
+                    "kind": "pokemon",
+                    "player": 0,
+                    "slot": "bench_0",
+                    "card_id": target_id,
+                },
+            }],
+            "metadata": {
+                "domain": "distribute_energy",
+                "purpose": "energy_attach_distribution",
+                "source_player": 0,
+                "source_zone": "deck",
+                "card_ids": [energy_id],
+            },
+        }
+        distribution_continuation = {
+            "kind": "vm",
+            "actor": 0,
+            "finish_attack": False,
+            "vm": {
+                "op": "attach_energy",
+                "command_spec": {
+                    "op": "attach_energy",
+                    "args": {
+                        "amount": 1,
+                        "filter": "basic_energy",
+                        "from_zone": "deck",
+                        "min_select": 0,
+                        "to": "any",
+                    },
+                },
+                "actor": 0,
+                "source_slot": "active",
+                "effective_amount": 1,
+                "distribution": True,
+            },
+            "context": {},
+            "remaining_effects": [],
+            "source_slot": "active",
+            "context_mode": "",
+        }
+        distribution_batch = ptcg_ai_core.NativeSelfPlayBatch()
+        distribution_job = ptcg_ai_core.NativeSearchJob(
+            self.game_cards,
+            decks,
+            distribution_batch,
+        )
+        distribution_job.start_choice(
+            wire,
+            0,
+            distribution_pending,
+            distribution_continuation,
+            4107,
+            {
+                "simulations": 4,
+                "max_depth": 8,
+                "dirichlet_epsilon": 0.0,
+                "temperature": 0.0,
+                "training": False,
+                "inference_wait_milliseconds": 10,
+            },
+        )
+        self._serve_uniform_inference(
+            distribution_batch,
+            [distribution_job],
+        )
+        distribution_result = distribution_job.wait()
+        self.assertTrue(distribution_result["success"], distribution_result)
+        self.assertEqual(
+            distribution_result["selected"]["selected_options"],
+            [option_id],
+        )
+
     def test_native_search_records_coin_results_as_chance_edges(self):
         state, decks = self._native_search_fixture()
         pending = {
@@ -5957,248 +5937,6 @@ class NativeAICoreTests(unittest.TestCase):
         ):
             self.assertNotIn(hidden_id, serialized)
 
-    def test_cow_search_matches_legacy_recursive_state_copy(self):
-        state, decks = self._native_search_fixture()
-
-        def run(force_deep_state_copy):
-            batch = ptcg_ai_core.NativeSelfPlayBatch()
-            job = ptcg_ai_core.NativeSearchJob(
-                self.game_cards,
-                decks,
-                batch,
-            )
-            job.start(
-                state,
-                0,
-                3907,
-                {
-                    "simulations": 24,
-                    "max_depth": 8,
-                    "c_puct": 1.4,
-                    "dirichlet_epsilon": 0.0,
-                    "temperature": 0.0,
-                    "training": False,
-                    "force_deep_state_copy": force_deep_state_copy,
-                    "verify_candidate_cache": force_deep_state_copy,
-                    "inference_wait_milliseconds": 10,
-                },
-            )
-            self._serve_uniform_inference(batch, [job])
-            return job.wait()
-
-        cow = run(False)
-        recursive = run(True)
-        self.assertTrue(cow["success"], cow)
-        self.assertTrue(recursive["success"], recursive)
-        for field in (
-            "selected",
-            "candidates",
-            "visits",
-            "value_sums",
-            "probabilities",
-            "root_value",
-            "simulations",
-            "tree_nodes",
-            "chance_nodes",
-            "chance_edges",
-        ):
-            with self.subTest(field=field):
-                self.assertEqual(cow[field], recursive[field])
-        self.assertGreater(cow["candidate_cache_hits"], 0)
-        self.assertGreater(recursive["candidate_cache_hits"], 0)
-        self.assertEqual(
-            cow["candidate_cache_misses"],
-            recursive["candidate_cache_misses"],
-        )
-
-    def test_native_choice_boundary_keeps_only_revealed_context(self):
-        from engine.actions import ChoiceResponse
-        from engine.ai.dl.puct_v2 import SearchCandidate
-
-        pending = {
-            "request_id": "choice:visible",
-            "request_type": "search_deck",
-            "player": 0,
-            "min_select": 1,
-            "max_select": 1,
-            "allow_duplicates": False,
-            "can_cancel": False,
-            "options": [
-                {
-                    "option_id": "card:0:deck:3:sv2-tatsu",
-                    "label": "Tatsugiri",
-                    "ref": {
-                        "kind": "card",
-                        "player": 0,
-                        "zone": "deck",
-                        "index": 3,
-                        "card_id": "sv2-tatsu",
-                    },
-                    "value": "sv2-tatsu",
-                }
-            ],
-            "metadata": {
-                "continuation": {
-                    "kind": "look_top_deck",
-                    "top_card_ids": ["sv2-tatsu", "sv1-ener-3"],
-                    "_resume": {
-                        "context": {
-                            "must_not_cross": "opponent-hidden-card",
-                        }
-                    },
-                }
-            },
-        }
-        response = ChoiceResponse(
-            "choice:visible",
-            ("card:0:deck:3:sv2-tatsu",),
-        )
-        native = _native_choice_view(
-            pending,
-            [SearchCandidate("choice:visible:only", response)],
-            0,
-        )
-        self.assertEqual(
-            native["metadata"],
-            {
-                "continuation": {
-                    "top_card_ids": [
-                        "sv2-tatsu",
-                        "sv1-ener-3",
-                    ]
-                }
-            },
-        )
-        self.assertNotIn("must_not_cross", repr(native))
-
-        leaked = copy.deepcopy(pending)
-        leaked["options"][0]["ref"]["player"] = 1
-        leaked["options"][0]["ref"]["zone"] = "hand"
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "opponent_hidden_choice_reference_rejected",
-        ):
-            _native_choice_view(
-                leaked,
-                [SearchCandidate("choice:leaked", response)],
-                0,
-            )
-
-    def test_native_bridge_auto_resolves_forced_choice_without_context(self):
-        from engine.actions import ChoiceResponse
-        from engine.ai.dl.puct_v2 import SearchCandidate
-
-        response = ChoiceResponse(
-            "choice:forced",
-            ("bench:opponent:0",),
-        )
-        candidate = SearchCandidate("choice:forced:only", response)
-        service = NativeSearchService.__new__(NativeSearchService)
-
-        result = service.search_choice(
-            object(),
-            0,
-            [candidate],
-            simulations=128,
-            c_puct=1.4,
-            seed=17,
-            training=True,
-            temperature=1.0,
-        )
-
-        self.assertIs(result.selected, candidate)
-        self.assertEqual(result.visits, {candidate.signature: 1})
-        self.assertEqual(result.probabilities, {candidate.signature: 1.0})
-        self.assertEqual(result.simulations, 0)
-
-    def test_native_bridge_rebuilds_only_public_prize_control_state(self):
-        resume = {
-            "version": 1,
-            "player_idx": 1,
-            "source_slot": "active",
-            "complete": True,
-            "frames": [
-                {"kind": "finalize_attack_turn", "actor": 1},
-                {"kind": "finalize_knockout_batch"},
-                {"kind": "prize_selection", "player_idx": 1},
-            ],
-            "unsupported_frames": [],
-            "context": {
-                "attack_resolution": {
-                    "must_not_cross": "opponent-hidden-card",
-                },
-            },
-            "attack_failed": False,
-        }
-        wire = {
-            "phase": "ATTACK",
-            "active_player_idx": 1,
-            "players": [
-                {"prizes": ["opponent-hidden-card"]},
-                {"prizes": ["svi-trea", "sv1-ener-3"]},
-            ],
-        }
-        pending = {
-            "request_id": "choice:77:1:select_prize:9",
-            "request_type": "select_prize",
-            "player": 1,
-            "options": [
-                {"option_id": "prize:0"},
-                {"option_id": "prize:1"},
-            ],
-            "metadata": {
-                "finish_attack_actor": 1,
-                "continuation": {
-                    "kind": "select_prize",
-                    "domain": "prize",
-                    "player_idx": 1,
-                    "_resume": resume,
-                },
-            },
-        }
-
-        native = _public_native_prize_continuation(wire, pending, 1)
-
-        self.assertEqual(native, {
-            "kind": "select_prize",
-            "actor": 1,
-            "remaining_prize_players": [1],
-            "finish_attack_after_prizes": True,
-            "resume_attack_actor": 1,
-        })
-        self.assertNotIn("opponent-hidden-card", repr(native))
-
-        treasure = copy.deepcopy(pending)
-        treasure["request_type"] = "select_prize_energy_target"
-        treasure["metadata"]["continuation"] = {
-            "kind": "treasure_prize_target",
-            "domain": "prize",
-            "player_idx": 1,
-            "prize_index": 0,
-            "card_id": "svi-trea",
-            "trigger_hook": "ON_PRIZE_REVEALED",
-            "trigger_op": "attach_to_benched_pokemon",
-            "_resume": copy.deepcopy(resume),
-        }
-        native_treasure = _public_native_prize_continuation(
-            wire,
-            treasure,
-            1,
-        )
-        self.assertEqual(native_treasure["prize_index"], 0)
-        self.assertEqual(native_treasure["prize_card_id"], "svi-trea")
-        self.assertNotIn("opponent-hidden-card", repr(native_treasure))
-
-        malformed = copy.deepcopy(pending)
-        malformed["metadata"]["continuation"]["_resume"]["frames"][0][
-            "private"
-        ] = "opponent-hidden-card"
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_prize_continuation_invalid",
-        ):
-            _public_native_prize_continuation(wire, malformed, 1)
-
     def test_native_public_prize_resume_finishes_attack_after_queue(self):
         state = copy.deepcopy(
             next(iter(self.rules_fixture["cases"].values()))[
@@ -6249,1910 +5987,6 @@ class NativeAICoreTests(unittest.TestCase):
         self.assertEqual(second["pending"], {})
         self.assertEqual(second["state"]["active_player_idx"], 1)
         self.assertEqual(second["state"]["phase"], "MAIN")
-
-    def test_native_bridge_rebuilds_visible_look_top_vm_continuation(self):
-        top_card_ids = [
-            "sv1-ener-3",
-            "svi-chim",
-            "sv1-ener-4",
-        ]
-        wire = {
-            "players": [
-                {"deck": []},
-                {
-                    "deck": [
-                        "sv1-ener-5",
-                        *reversed(top_card_ids),
-                    ],
-                },
-            ],
-        }
-        pending = {
-            "request_id": "choice:30:1:search_deck:4",
-            "request_type": "search_deck",
-            "player": 1,
-            "options": [],
-            "metadata": {
-                "continuation": {
-                    "kind": "look_top_deck",
-                    "player_idx": 1,
-                    "count": 3,
-                    "take": 2,
-                    "rest_bottom": True,
-                    "shuffle_rest": False,
-                    "destination": "hand",
-                    "top_card_ids": top_card_ids,
-                    "display_top_positions": [0, 2],
-                    "_resume": {
-                        "version": 1,
-                        "player_idx": 1,
-                        "source_slot": "active",
-                        "complete": True,
-                        "frames": [],
-                        "unsupported_frames": [],
-                        "context": {},
-                        "attack_failed": False,
-                    },
-                },
-            },
-        }
-
-        native = _public_native_vm_continuation(wire, pending, 1)
-
-        self.assertEqual(native["kind"], "vm")
-        self.assertEqual(native["actor"], 1)
-        self.assertFalse(native["finish_attack"])
-        self.assertEqual(
-            native["vm"]["command_spec"],
-            {
-                "op": "look_top_deck",
-                "args": {
-                    "count": 3,
-                    "take": 2,
-                    "rest_bottom": True,
-                    "shuffle_rest": False,
-                    "destination": "hand",
-                },
-            },
-        )
-        self.assertNotIn("top_card_ids", repr(native))
-
-        take_all = copy.deepcopy(pending)
-        take_all["metadata"]["continuation"]["take"] = 99
-        take_all_native = _public_native_vm_continuation(
-            wire,
-            take_all,
-            1,
-        )
-        self.assertEqual(
-            take_all_native["vm"]["command_spec"]["args"]["take"],
-            99,
-        )
-
-        unsupported_take = copy.deepcopy(pending)
-        unsupported_take["metadata"]["continuation"]["take"] = 65
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(wire, unsupported_take, 1)
-
-        malformed = copy.deepcopy(pending)
-        malformed["metadata"]["continuation"]["_resume"]["frames"] = [{
-            "kind": "command_spec",
-            "spec": {"op": "must_not_cross"},
-        }]
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(wire, malformed, 1)
-
-    def test_native_bridge_rebuilds_public_attack_switch_confirmation(self):
-        wire = copy.deepcopy(
-            next(iter(self.rules_fixture["cases"].values()))[
-                "initial_state"
-            ]
-        )
-        wire["phase"] = "ATTACK"
-        wire["turn_number"] = 3
-        wire["first_player_idx"] = 1
-        wire["active_player_idx"] = 0
-        active = wire["players"][0]["active"]
-        active["card_id"] = "sv1-114"
-        target = copy.deepcopy(active)
-        target.update({
-            "card_id": "sv2-delib",
-            "damage_counters": 0,
-            "energy_card_ids": [],
-            "evolution_stack_ids": [],
-            "attached_tool_id": "",
-            "modifiers": [],
-        })
-        wire["players"][0]["bench"] = [target, None, None, None, None]
-        wire["players"][1]["hand"] = ["opponent-hidden-card"]
-        resume = {
-            "version": 1,
-            "player_idx": 0,
-            "source_slot": "active",
-            "complete": True,
-            "frames": [
-                {"kind": "finalize_attack_turn", "actor": 0},
-                {"kind": "finalize_attack_ko_checks"},
-                {"kind": "finalize_after_damage_triggers"},
-            ],
-            "unsupported_frames": [],
-            "context": {
-                "attack_resolution": {"active": True, "player_idx": 0},
-                "pending_after_damage_trigger_specs": [],
-            },
-            "attack_failed": False,
-        }
-        pending = {
-            "request_id": "choice:7:0:confirm:1",
-            "request_type": "confirm",
-            "player": 0,
-            "min_select": 1,
-            "max_select": 1,
-            "allow_duplicates": False,
-            "can_cancel": False,
-            "options": [
-                {
-                    "option_id": "confirm:yes",
-                    "label": "yes",
-                    "ref": None,
-                    "value": True,
-                },
-                {
-                    "option_id": "confirm:no",
-                    "label": "no",
-                    "ref": None,
-                    "value": False,
-                },
-            ],
-            "metadata": {
-                "finish_attack_actor": 0,
-                "continuation": {
-                    "kind": "switch_confirm",
-                    "target_player_idx": 0,
-                    "chooser_idx": 0,
-                    "request_type": "select_bench",
-                    "request_target_player": "self",
-                    "bench_indices": [0],
-                    "_resume": resume,
-                },
-            },
-        }
-
-        native = _public_native_vm_continuation(wire, pending, 0)
-
-        self.assertEqual(native["kind"], "vm")
-        self.assertTrue(native["finish_attack"])
-        self.assertEqual(native["vm"], {
-            "op": "switch_pokemon",
-            "command_spec": {
-                "op": "switch_pokemon",
-                "args": {"target": "self", "optional": True},
-            },
-            "actor": 0,
-            "source_slot": "active",
-            "stage": 0,
-        })
-        self.assertNotIn("opponent-hidden-card", repr(native))
-
-        switched = self.game.resume_choice(
-            wire,
-            native,
-            [{"option_id": "confirm:yes"}],
-            False,
-            17,
-        )
-        self.assertTrue(switched["success"], switched)
-        self.assertEqual(
-            switched["state"]["players"][0]["active"]["card_id"],
-            "sv2-delib",
-        )
-        self.assertEqual(switched["state"]["active_player_idx"], 1)
-
-        malformed = copy.deepcopy(pending)
-        malformed["metadata"]["continuation"]["bench_indices"] = [1]
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(wire, malformed, 0)
-
-    def test_native_bridge_rebuilds_visible_search_cards_vm(self):
-        own_deck = [
-            "svg-ceto",
-            "sv1-ener-8",
-            "sv1-ener-8",
-            "sv1-ener-8",
-            "svg-tatsu",
-        ]
-        wire = {
-            "phase": "MAIN",
-            "active_player_idx": 1,
-            "players": [
-                {
-                    "deck": ["opponent-hidden-card"],
-                    "discard": [],
-                },
-                {
-                    "deck": own_deck,
-                    "discard": [],
-                    "bench": [None, None, None, None, None],
-                },
-            ],
-        }
-        pending = {
-            "request_id": "choice:142:1:search_deck:1",
-            "request_type": "search_deck",
-            "player": 1,
-            "min_select": 1,
-            "max_select": 1,
-            "allow_duplicates": False,
-            "can_cancel": False,
-            "options": [
-                {
-                    "option_id": "card:1:deck:0:svg-ceto",
-                    "label": "Cetoddle",
-                    "ref": {
-                        "kind": "card",
-                        "player": 1,
-                        "zone": "deck",
-                        "slot": "",
-                        "index": 0,
-                        "attachment_type": "",
-                        "card_id": "svg-ceto",
-                    },
-                    "value": "svg-ceto",
-                },
-                {
-                    "option_id": "card:1:deck:4:svg-tatsu",
-                    "label": "Tatsugiri",
-                    "ref": {
-                        "kind": "card",
-                        "player": 1,
-                        "zone": "deck",
-                        "slot": "",
-                        "index": 4,
-                        "attachment_type": "",
-                        "card_id": "svg-tatsu",
-                    },
-                    "value": "svg-tatsu",
-                },
-            ],
-            "metadata": {
-                "continuation": {
-                    "kind": "search_cards",
-                    "player_idx": 1,
-                    "from_zone": "deck",
-                    "destination": "hand",
-                    "count": 1,
-                    "_resume": {
-                        "version": 1,
-                        "player_idx": 1,
-                        "source_slot": "active",
-                        "complete": True,
-                        "frames": [],
-                        "unsupported_frames": [],
-                        "context": {},
-                        "attack_failed": False,
-                    },
-                },
-            },
-        }
-
-        native = _public_native_vm_continuation(wire, pending, 1)
-
-        self.assertEqual(native, {
-            "kind": "vm",
-            "actor": 1,
-            "finish_attack": False,
-            "vm": {
-                "op": "search_cards",
-                "command_spec": {
-                    "op": "search_cards",
-                    "args": {
-                        "from_zone": "deck",
-                        "destination": "hand",
-                        "count": 1,
-                    },
-                },
-                "actor": 1,
-                "source_slot": "active",
-                "stage": 0,
-            },
-            "context": {},
-            "remaining_effects": [],
-            "source_slot": "active",
-            "context_mode": "",
-        })
-        self.assertNotIn("opponent-hidden-card", repr(native))
-        self.assertNotIn("svg-ceto", repr(native))
-        self.assertNotIn("svg-tatsu", repr(native))
-
-        attack_wire = copy.deepcopy(wire)
-        attack_wire["phase"] = "ATTACK"
-        attack_pending = copy.deepcopy(pending)
-        attack_pending["metadata"]["finish_attack_actor"] = 1
-        attack_pending["metadata"]["continuation"]["_resume"].update({
-            "frames": [
-                {"kind": "finalize_attack_turn", "actor": 1},
-                {"kind": "finalize_attack_ko_checks"},
-                {"kind": "finalize_after_damage_triggers"},
-            ],
-            "context": {
-                "attack_resolution": {
-                    "active": True,
-                    "player_idx": 1,
-                },
-                "pending_after_damage_trigger_specs": [],
-            },
-        })
-        attack_native = _public_native_vm_continuation(
-            attack_wire,
-            attack_pending,
-            1,
-        )
-        self.assertTrue(attack_native["finish_attack"])
-        self.assertEqual(attack_native["context_mode"], "attack")
-        self.assertEqual(attack_native["context"], {
-            "damage_applied": True,
-            "after_damage_triggers_applied": True,
-            "reactive_thorns_applied": True,
-        })
-
-        bench_wire = copy.deepcopy(attack_wire)
-        bench_wire["players"][1]["bench"] = [
-            {"card_id": "occupied-0"},
-            {"card_id": "occupied-1"},
-            None,
-            {"card_id": "occupied-3"},
-            {"card_id": "occupied-4"},
-        ]
-        bench_pending = copy.deepcopy(attack_pending)
-        bench_continuation = bench_pending["metadata"]["continuation"]
-        bench_continuation["destination"] = "bench"
-        bench_continuation["count"] = 2
-        bench_pending["max_select"] = 1
-        bench_native = _public_native_vm_continuation(
-            bench_wire,
-            bench_pending,
-            1,
-        )
-        self.assertEqual(
-            bench_native["vm"]["command_spec"]["args"],
-            {
-                "from_zone": "deck",
-                "destination": "bench",
-                "count": 2,
-            },
-        )
-
-        malformed = copy.deepcopy(pending)
-        malformed["options"][0]["ref"]["player"] = 0
-        malformed["options"][0]["ref"]["card_id"] = (
-            "opponent-hidden-card"
-        )
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(wire, malformed, 1)
-
-    def test_native_bridge_rebuilds_discard_hand_then_draw_vm(self):
-        wire = copy.deepcopy(
-            next(iter(self.rules_fixture["cases"].values()))[
-                "initial_state"
-            ]
-        )
-        wire["phase"] = "MAIN"
-        wire["turn_number"] = 3
-        wire["first_player_idx"] = 1
-        wire["active_player_idx"] = 0
-        own = wire["players"][0]
-        own["hand"] = [
-            "sv1-ener-3",
-            "sv1-ener-4",
-            "sv1-ener-5",
-        ]
-        own["deck"] = ["sv1-ener-1", "sv1-ener-2"]
-        own["discard"] = []
-        wire["players"][1]["hand"] = ["opponent-hidden-card"]
-
-        options = []
-        for index, card_id in enumerate(own["hand"]):
-            options.append({
-                "option_id": f"card:0:hand:{index}:{card_id}",
-                "label": card_id,
-                "ref": {
-                    "kind": "card",
-                    "player": 0,
-                    "zone": "hand",
-                    "slot": "",
-                    "index": index,
-                    "attachment_type": "",
-                    "card_id": card_id,
-                },
-                "value": card_id,
-            })
-        resume = {
-            "version": 1,
-            "player_idx": 0,
-            "source_slot": "active",
-            "complete": True,
-            "frames": [],
-            "unsupported_frames": [],
-            "context": {},
-            "attack_failed": False,
-        }
-        pending = {
-            "request_id": "choice:146:0:search_deck:4",
-            "request_type": "search_deck",
-            "player": 0,
-            "min_select": 1,
-            "max_select": 1,
-            "allow_duplicates": False,
-            "can_cancel": False,
-            "options": options,
-            "metadata": {
-                "domain": "search_deck",
-                "from_zone": "hand",
-                "target_player": "",
-                "continuation": {
-                    "kind": "discard_hand_then_draw",
-                    "player_idx": 0,
-                    "discard_amount": 1,
-                    "draw_amount": 1,
-                    "_resume": resume,
-                },
-            },
-        }
-
-        native = _public_native_vm_continuation(wire, pending, 0)
-
-        self.assertEqual(native, {
-            "kind": "vm",
-            "actor": 0,
-            "finish_attack": False,
-            "vm": {
-                "op": "discard_then_draw_cards",
-                "command_spec": {
-                    "op": "discard_then_draw_cards",
-                    "args": {
-                        "discard_amount": 1,
-                        "draw_amount": 1,
-                    },
-                },
-                "actor": 0,
-                "source_slot": "active",
-                "stage": 0,
-            },
-            "context": {},
-            "remaining_effects": [],
-            "source_slot": "active",
-            "context_mode": "",
-        })
-        self.assertNotIn("opponent-hidden-card", repr(native))
-        resumed = self.game.resume_choice(
-            wire,
-            native,
-            [options[0]["ref"]],
-            False,
-            17,
-        )
-        self.assertTrue(resumed["success"], resumed)
-        self.assertEqual(
-            resumed["state"]["players"][0]["discard"],
-            ["sv1-ener-3"],
-        )
-        self.assertEqual(
-            resumed["state"]["players"][0]["hand"],
-            ["sv1-ener-4", "sv1-ener-5", "sv1-ener-2"],
-        )
-
-        attack_wire = copy.deepcopy(wire)
-        attack_wire["phase"] = "ATTACK"
-        attack_pending = copy.deepcopy(pending)
-        attack_pending["metadata"]["finish_attack_actor"] = 0
-        attack_pending["metadata"]["continuation"]["_resume"].update({
-            "frames": [
-                {"kind": "finalize_attack_turn", "actor": 0},
-                {"kind": "finalize_attack_ko_checks"},
-                {"kind": "finalize_after_damage_triggers"},
-            ],
-            "context": {
-                "attack_resolution": {
-                    "active": True,
-                    "player_idx": 0,
-                },
-                "pending_after_damage_trigger_specs": [],
-            },
-        })
-        attack_native = _public_native_vm_continuation(
-            attack_wire,
-            attack_pending,
-            0,
-        )
-        self.assertTrue(attack_native["finish_attack"])
-        self.assertEqual(attack_native["context_mode"], "attack")
-
-        changed_opponent = copy.deepcopy(wire)
-        changed_opponent["players"][1]["hand"] = [
-            "different-hidden-card",
-            "another-hidden-card",
-        ]
-        self.assertEqual(
-            _public_native_vm_continuation(
-                changed_opponent,
-                pending,
-                0,
-            ),
-            native,
-        )
-
-        malformed = copy.deepcopy(pending)
-        malformed["options"][0]["ref"]["card_id"] = (
-            "opponent-hidden-card"
-        )
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(wire, malformed, 0)
-
-    def test_native_bridge_rebuilds_visible_item_and_tool_search_vm(self):
-        wire = {
-            "phase": "MAIN",
-            "active_player_idx": 1,
-            "players": [
-                {
-                    "deck": ["opponent-hidden-card"],
-                    "discard": [],
-                },
-                {
-                    "deck": [
-                        "sv1-150",
-                        "sv1-150",
-                        "sv1-ener-8",
-                        "sv1-201",
-                    ],
-                    "discard": [],
-                    "bench": [None, None, None, None, None],
-                },
-            ],
-        }
-        options = []
-        for index, card_id, label in (
-            (0, "sv1-150", "Switch"),
-            (1, "sv1-150", "Switch"),
-            (3, "sv1-201", "Defiance Band"),
-        ):
-            options.append({
-                "option_id": f"card:1:deck:{index}:{card_id}",
-                "label": label,
-                "ref": {
-                    "kind": "card",
-                    "player": 1,
-                    "zone": "deck",
-                    "slot": "",
-                    "index": index,
-                    "attachment_type": "",
-                    "card_id": card_id,
-                },
-                "value": card_id,
-            })
-        pending = {
-            "request_id": "choice:105:1:search_deck:1",
-            "request_type": "search_deck",
-            "player": 1,
-            "min_select": 1,
-            "max_select": 2,
-            "allow_duplicates": False,
-            "can_cancel": False,
-            "options": options,
-            "metadata": {
-                "continuation": {
-                    "kind": "search_item_and_tool",
-                    "player_idx": 1,
-                    "_resume": {
-                        "version": 1,
-                        "player_idx": 1,
-                        "source_slot": "active",
-                        "complete": True,
-                        "frames": [],
-                        "unsupported_frames": [],
-                        "context": {},
-                        "attack_failed": False,
-                    },
-                },
-            },
-        }
-        card_definitions = {
-            "sv1-150": {"trainer_type": "Item"},
-            "sv1-201": {"trainer_type": "Tool"},
-            "sv1-ener-8": {"trainer_type": ""},
-        }
-
-        native = _public_native_vm_continuation(
-            wire,
-            pending,
-            1,
-            card_definitions,
-        )
-
-        self.assertEqual(native, {
-            "kind": "vm",
-            "actor": 1,
-            "finish_attack": False,
-            "vm": {
-                "op": "search_item_and_tool",
-                "command_spec": {
-                    "op": "search_item_and_tool",
-                    "args": {},
-                },
-                "actor": 1,
-                "source_slot": "active",
-                "stage": 0,
-            },
-            "context": {},
-            "remaining_effects": [],
-            "source_slot": "active",
-            "context_mode": "",
-        })
-        self.assertNotIn("opponent-hidden-card", repr(native))
-        self.assertNotIn("sv1-150", repr(native))
-        self.assertNotIn("sv1-201", repr(native))
-
-        changed_opponent = copy.deepcopy(wire)
-        changed_opponent["players"][0]["deck"] = [
-            "different-hidden-card",
-            "another-hidden-card",
-        ]
-        self.assertEqual(
-            _public_native_vm_continuation(
-                changed_opponent,
-                pending,
-                1,
-                card_definitions,
-            ),
-            native,
-        )
-
-        missing_option = copy.deepcopy(pending)
-        missing_option["options"].pop()
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(
-                wire,
-                missing_option,
-                1,
-                card_definitions,
-            )
-
-        wrong_category = copy.deepcopy(card_definitions)
-        wrong_category["sv1-201"] = {"trainer_type": "Supporter"}
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(
-                wire,
-                pending,
-                1,
-                wrong_category,
-            )
-
-    def test_native_bridge_rebuilds_attack_energy_distribution_vm(self):
-        energy_id = "sv1-ener-3"
-        targets = [
-            ("active", "sv2-tatsu", "Tatsugiri"),
-            ("bench_0", "sv2-delib", "Delibird"),
-            ("bench_2", "sv2-glast", "Glastrier"),
-            ("bench_4", "sv2-staryu", "Staryu"),
-        ]
-        owner = {
-            "deck": ["sv1-ener-5", energy_id],
-            "hand": [],
-            "active": {"card_id": targets[0][1]},
-            "bench": [
-                {"card_id": targets[1][1]},
-                None,
-                {"card_id": targets[2][1]},
-                None,
-                {"card_id": targets[3][1]},
-            ],
-        }
-        wire = {
-            "phase": "ATTACK",
-            "active_player_idx": 0,
-            "players": [
-                owner,
-                {
-                    "deck": ["opponent-hidden-card"],
-                    "hand": [],
-                    "active": {"card_id": "opponent-active"},
-                    "bench": [None, None, None, None, None],
-                },
-            ],
-        }
-        resume = {
-            "version": 1,
-            "player_idx": 0,
-            "source_slot": "active",
-            "complete": True,
-            "frames": [
-                {"kind": "finalize_attack_turn", "actor": 0},
-                {"kind": "finalize_attack_ko_checks"},
-                {"kind": "finalize_after_damage_triggers"},
-            ],
-            "unsupported_frames": [],
-            "context": {
-                "attack_resolution": {
-                    "active": True,
-                    "player_idx": 0,
-                },
-                "pending_after_damage_trigger_specs": [],
-            },
-            "attack_failed": False,
-        }
-        options = []
-        for slot, card_id, name in targets:
-            ref = {
-                "kind": "pokemon",
-                "player": 0,
-                "zone": "",
-                "slot": slot,
-                "index": -1,
-                "attachment_type": "",
-                "card_id": card_id,
-            }
-            options.append({
-                "option_id": (
-                    f"energy:0:{energy_id}"
-                    f"->pokemon:0:{slot}:{card_id}"
-                ),
-                "label": f"Water Energy -> {name}",
-                "ref": ref,
-                "value": {
-                    "slot": slot,
-                    "name": name,
-                    "energy_index": 0,
-                    "energy_card_id": energy_id,
-                },
-            })
-        pending = {
-            "request_id": "choice:82:0:distribute_energy:1",
-            "request_type": "distribute_energy",
-            "player": 0,
-            "min_select": 0,
-            "max_select": 1,
-            "allow_duplicates": False,
-            "can_cancel": True,
-            "options": options,
-            "metadata": {
-                "domain": "distribute_energy",
-                "distribute_mode": "distribute",
-                "max_per_target": 2,
-                "same_target": True,
-                "source_player": 0,
-                "source_zone": "deck",
-                "purpose": "energy_attach_distribution",
-                "pending_card_id": "",
-                "card_ids": [energy_id],
-                "card_list_ids": [energy_id],
-                "finish_attack_actor": 0,
-                "continuation": {
-                    "kind": "energy_attach_distribution",
-                    "player_idx": 0,
-                    "source_zone": "deck",
-                    "zone_name": "牌库",
-                    "max_per_target": 2,
-                    "same_target": True,
-                    "_resume": resume,
-                },
-            },
-        }
-        definitions = {
-            energy_id: {
-                "supertype": "Energy",
-                "energy_effects": [],
-            },
-        }
-
-        native = _public_native_vm_continuation(
-            wire,
-            pending,
-            0,
-            definitions,
-        )
-
-        self.assertEqual(native, {
-            "kind": "vm",
-            "actor": 0,
-            "finish_attack": True,
-            "vm": {
-                "op": "attach_energy",
-                "command_spec": {
-                    "op": "attach_energy",
-                    "args": {
-                        "amount": 1,
-                        "from_zone": "deck",
-                        "filter": "any",
-                        "to": "any",
-                        "optional": True,
-                        "select_source": True,
-                        "min_select": 0,
-                        "same_target": True,
-                        "max_per_target": 2,
-                    },
-                },
-                "actor": 0,
-                "source_slot": "active",
-                "stage": 0,
-                "effective_amount": 1,
-                "distribution": True,
-            },
-            "context": {
-                "damage_applied": True,
-                "after_damage_triggers_applied": True,
-                "reactive_thorns_applied": True,
-            },
-            "remaining_effects": [],
-            "source_slot": "active",
-            "context_mode": "attack",
-        })
-        self.assertNotIn(energy_id, repr(native))
-        self.assertNotIn("opponent-hidden-card", repr(native))
-
-        reactive_pending = copy.deepcopy(pending)
-        reactive_pending["metadata"]["continuation"]["_resume"][
-            "context"
-        ]["pending_after_damage_trigger_specs"] = [{
-            "op": "trigger_place_damage_counters",
-            "args": {
-                "player": 0,
-                "slot": "active",
-                "count": 6,
-                "source": "团结一致",
-                "target_ref": {
-                    "kind": "pokemon",
-                    "player": 0,
-                    "slot": "active",
-                    "card_id": targets[0][1],
-                },
-            },
-            "branches": {},
-        }]
-        reactive_native = _public_native_vm_continuation(
-            wire,
-            reactive_pending,
-            0,
-            definitions,
-        )
-        self.assertEqual(reactive_native["post_vm_trigger_groups"], [{
-            "owner": 0,
-            "specs": [{
-                "op": "trigger_place_damage_counters",
-                "args": {
-                    "player": 0,
-                    "slot": "active",
-                    "count": 6,
-                    "target_card_id": targets[0][1],
-                },
-            }],
-        }])
-        self.assertNotIn("团结一致", repr(reactive_native))
-
-        wrong_reactive_target = copy.deepcopy(reactive_pending)
-        wrong_reactive_target["metadata"]["continuation"]["_resume"][
-            "context"
-        ]["pending_after_damage_trigger_specs"][0]["args"][
-            "target_ref"
-        ]["card_id"] = "opponent-hidden-card"
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_trigger_queue_invalid",
-        ):
-            _public_native_vm_continuation(
-                wire,
-                wrong_reactive_target,
-                0,
-                definitions,
-            )
-
-        hand_wire = copy.deepcopy(wire)
-        hand_wire["players"][0]["deck"] = ["sv1-ener-5"]
-        hand_wire["players"][0]["hand"] = [energy_id]
-        hand_pending = copy.deepcopy(pending)
-        hand_pending["options"] = [
-            copy.deepcopy(options[1]),
-        ]
-        hand_pending["options"][0]["value"]["bench_idx"] = 0
-        hand_metadata = hand_pending["metadata"]
-        hand_metadata["source_zone"] = "hand"
-        hand_metadata["max_per_target"] = 99
-        hand_formal = hand_metadata["continuation"]
-        hand_formal["source_zone"] = "hand"
-        hand_formal["zone_name"] = "手牌"
-        hand_formal["max_per_target"] = 99
-        hand_native = _public_native_vm_continuation(
-            hand_wire,
-            hand_pending,
-            0,
-            definitions,
-        )
-        hand_args = hand_native["vm"]["command_spec"]["args"]
-        self.assertEqual(hand_args["from_zone"], "hand")
-        self.assertEqual(hand_args["to"], "bench")
-        self.assertEqual(hand_args["max_per_target"], 99)
-
-        triggered = copy.deepcopy(definitions)
-        triggered[energy_id]["energy_effects"] = [{
-            "trigger": "ON_ATTACH",
-        }]
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(
-                wire,
-                pending,
-                0,
-                triggered,
-            )
-
-    def test_native_bridge_rebuilds_attack_attach_energy_board_vm(self):
-        energy_id = "sv1-ener-5"
-        active_id = "sv1-113"
-        bench_id = "sv1-111"
-        wire = {
-            "phase": "ATTACK",
-            "active_player_idx": 0,
-            "players": [
-                {
-                    "deck": [energy_id, "svi-rese"],
-                    "hand": [],
-                    "active": {"card_id": active_id},
-                    "bench": [
-                        {"card_id": bench_id},
-                        None,
-                        None,
-                        None,
-                        None,
-                    ],
-                },
-                {
-                    "deck": ["opponent-hidden-card"],
-                    "hand": [],
-                    "active": {"card_id": "opponent-active"},
-                    "bench": [None, None, None, None, None],
-                },
-            ],
-        }
-        resume = {
-            "version": 1,
-            "player_idx": 0,
-            "source_slot": "active",
-            "complete": True,
-            "frames": [
-                {"kind": "finalize_attack_turn", "actor": 0},
-                {"kind": "finalize_attack_ko_checks"},
-                {"kind": "finalize_after_damage_triggers"},
-            ],
-            "unsupported_frames": [],
-            "context": {
-                "attack_resolution": {
-                    "active": True,
-                    "player_idx": 0,
-                },
-                "pending_after_damage_trigger_specs": [],
-            },
-            "attack_failed": False,
-        }
-
-        def target_option(slot, card_id):
-            return {
-                "option_id": f"pokemon:0:{slot}:{card_id}",
-                "label": card_id,
-                "ref": {
-                    "kind": "pokemon",
-                    "player": 0,
-                    "zone": "",
-                    "slot": slot,
-                    "index": -1,
-                    "attachment_type": "",
-                    "card_id": card_id,
-                },
-                "value": card_id,
-            }
-
-        pending = {
-            "request_id": "choice:116:0:search_deck:1",
-            "request_type": "search_deck",
-            "player": 0,
-            "min_select": 1,
-            "max_select": 1,
-            "allow_duplicates": False,
-            "can_cancel": False,
-            "options": [
-                target_option("active", active_id),
-                target_option("bench_0", bench_id),
-            ],
-            "metadata": {
-                "from_zone": "board",
-                "target_player": "self",
-                "finish_attack_actor": 0,
-                "continuation": {
-                    "kind": "attach_energy_to_board",
-                    "player_idx": 0,
-                    "source_zone": "deck",
-                    "zone_name": "牌库",
-                    "filter_type": "any",
-                    "amount": 1,
-                    "optional": False,
-                    "_resume": resume,
-                },
-            },
-        }
-        definitions = {
-            energy_id: {
-                "supertype": "Energy",
-                "subtypes": ["Basic"],
-                "provides_energy": ["Psychic"],
-                "energy_effects": [],
-            },
-            "svi-rese": {
-                "supertype": "Trainer",
-                "energy_effects": [],
-            },
-        }
-
-        native = _public_native_vm_continuation(
-            wire,
-            pending,
-            0,
-            definitions,
-        )
-
-        self.assertEqual(native, {
-            "kind": "vm",
-            "actor": 0,
-            "finish_attack": True,
-            "vm": {
-                "op": "attach_energy",
-                "command_spec": {
-                    "op": "attach_energy",
-                    "args": {
-                        "amount": 1,
-                        "from_zone": "deck",
-                        "filter": "any",
-                        "to": "any",
-                        "optional": False,
-                    },
-                },
-                "actor": 0,
-                "source_slot": "active",
-                "stage": 0,
-                "effective_amount": 1,
-                "distribution": False,
-            },
-            "context": {
-                "damage_applied": True,
-                "after_damage_triggers_applied": True,
-                "reactive_thorns_applied": True,
-            },
-            "remaining_effects": [],
-            "source_slot": "active",
-            "context_mode": "attack",
-        })
-        self.assertNotIn(energy_id, repr(native))
-        self.assertNotIn("opponent-hidden-card", repr(native))
-
-        triggered = copy.deepcopy(definitions)
-        triggered[energy_id]["energy_effects"] = [{
-            "trigger": "ON_ATTACH",
-        }]
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(
-                wire,
-                pending,
-                0,
-                triggered,
-            )
-
-    def test_native_bridge_rebuilds_attack_look_top_attach_vm(self):
-        top_card_ids = [
-            "sv3-134",
-            "sv1-ener-8",
-            "sv1-180",
-            "svm-zamazenta",
-            "sv1-ener-8",
-        ]
-        deck = [
-            "sv1-ener-5",
-            *reversed(top_card_ids),
-        ]
-        resume = {
-            "version": 1,
-            "player_idx": 0,
-            "source_slot": "active",
-            "complete": True,
-            "frames": [
-                {"kind": "finalize_attack_turn", "actor": 0},
-                {"kind": "finalize_attack_ko_checks"},
-                {"kind": "finalize_after_damage_triggers"},
-            ],
-            "unsupported_frames": [],
-            "context": {
-                "attack_resolution": {
-                    "active": True,
-                    "player_idx": 0,
-                },
-                "pending_after_damage_trigger_specs": [],
-            },
-            "attack_failed": False,
-        }
-        wire = {
-            "phase": "ATTACK",
-            "active_player_idx": 0,
-            "players": [
-                {"deck": deck},
-                {"deck": ["opponent-hidden-card"]},
-            ],
-        }
-        pending = {
-            "request_id": "choice:82:0:search_deck:1",
-            "request_type": "search_deck",
-            "player": 0,
-            "min_select": 0,
-            "max_select": 2,
-            "allow_duplicates": False,
-            "can_cancel": True,
-            "options": [
-                {
-                    "option_id": "card:0:deck:4:sv1-ener-8",
-                    "label": "energy 1",
-                    "ref": {
-                        "kind": "card",
-                        "player": 0,
-                        "zone": "deck",
-                        "slot": "",
-                        "index": 4,
-                        "attachment_type": "",
-                        "card_id": "sv1-ener-8",
-                    },
-                    "value": "sv1-ener-8",
-                },
-                {
-                    "option_id": "card:0:deck:1:sv1-ener-8",
-                    "label": "energy 2",
-                    "ref": {
-                        "kind": "card",
-                        "player": 0,
-                        "zone": "deck",
-                        "slot": "",
-                        "index": 1,
-                        "attachment_type": "",
-                        "card_id": "sv1-ener-8",
-                    },
-                    "value": "sv1-ener-8",
-                },
-            ],
-            "metadata": {
-                "finish_attack_actor": 0,
-                "continuation": {
-                    "kind": "look_top_attach_energy",
-                    "player_idx": 0,
-                    "count": 5,
-                    "take": 99,
-                    "top_card_ids": top_card_ids,
-                    "display_top_positions": [1, 4],
-                    "_resume": resume,
-                },
-            },
-        }
-
-        native = _public_native_vm_continuation(wire, pending, 0)
-
-        self.assertEqual(native, {
-            "kind": "vm",
-            "actor": 0,
-            "finish_attack": True,
-            "vm": {
-                "op": "look_top_attach_energy",
-                "command_spec": {
-                    "op": "look_top_attach_energy",
-                    "args": {
-                        "count": 5,
-                        "take": 99,
-                        "shuffle_rest": True,
-                        "target": "self_or_bench",
-                    },
-                },
-                "actor": 0,
-                "source_slot": "active",
-                "stage": 0,
-            },
-            "context": {
-                "damage_applied": True,
-                "after_damage_triggers_applied": True,
-                "reactive_thorns_applied": True,
-            },
-            "remaining_effects": [],
-            "source_slot": "active",
-            "context_mode": "attack",
-        })
-        self.assertNotIn("top_card_ids", repr(native))
-        self.assertNotIn("opponent-hidden-card", repr(native))
-
-        malformed = copy.deepcopy(pending)
-        malformed["metadata"]["continuation"]["_resume"]["context"][
-            "pending_after_damage_trigger_specs"
-        ] = [{
-            "op": "must_not_cross",
-            "args": {"private_card_id": "opponent-hidden-card"},
-            "branches": {},
-        }]
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(wire, malformed, 0)
-
-    def test_native_bridge_rebuilds_draw_attach_with_public_cancel_delta(self):
-        state, _decks = self._native_search_fixture()
-        owner = state["players"][0]
-        target = owner["bench"][0]
-        if not isinstance(target, dict):
-            target = copy.deepcopy(owner["active"])
-            target["card_id"] = "sv2-delib"
-            target["energy_card_ids"] = []
-            owner["bench"][0] = target
-        owner["hand"] = [
-            "sv1-ener-1",
-            "sv1-ener-3",
-            "sv1-ener-3",
-        ]
-        owner["deck"] = ["a-hidden-0", "a-hidden-1"]
-        owner["discard"] = ["svg2-gard"]
-        owner["supporter_played_this_turn"] = True
-        state["revision"] = 1
-        state["choice_sequence"] = 1
-        state["resolution_stack"] = {
-            "schema_version": 3,
-            "frames": [],
-            "pending_request": None,
-            "sequence": 1,
-            "context": {
-                "cancel_action_checkpoint": {
-                    "state": {
-                        "phase": "MAIN",
-                        "active_player_idx": 0,
-                        "revision": 0,
-                        "choice_sequence": 0,
-                        "p1": {
-                            "hand_ids": [
-                                "svg2-gard",
-                                "sv1-ener-1",
-                            ],
-                            "deck_ids": [
-                                "a-hidden-0",
-                                "a-hidden-1",
-                                "sv1-ener-3",
-                                "sv1-ener-3",
-                            ],
-                            "discard_ids": [],
-                            "supporter_played": False,
-                        },
-                        "p2": {
-                            "hand_ids": ["must-not-cross-opponent-hand"],
-                            "deck_ids": ["must-not-cross-opponent-deck"],
-                            "discard_ids": [],
-                            "supporter_played": False,
-                        },
-                    },
-                    "rng_state": ["must-not-cross-rng"],
-                    "action_log": ["must-not-cross-action-log"],
-                    "events": [{"must-not-cross": True}],
-                },
-            },
-        }
-        option = {
-            "option_id": (
-                "energy:0:sv1-ener-1->"
-                f"pokemon:0:bench_0:{target['card_id']}"
-            ),
-            "label": "Grass Energy",
-            "ref": {
-                "kind": "pokemon",
-                "player": 0,
-                "zone": "",
-                "slot": "bench_0",
-                "index": -1,
-                "attachment_type": "",
-                "card_id": target["card_id"],
-            },
-            "value": {
-                "slot": "bench_0",
-                "name": "target",
-                "bench_idx": 0,
-                "energy_index": 0,
-                "energy_card_id": "sv1-ener-1",
-            },
-        }
-        pending = {
-            "request_id": "choice:1:0:distribute_energy:0",
-            "request_type": "distribute_energy",
-            "player": 0,
-            "options": [option],
-            "min_select": 0,
-            "max_select": 1,
-            "allow_duplicates": False,
-            "can_cancel": True,
-            "metadata": {
-                "domain": "distribute_energy",
-                "distribute_mode": "distribute",
-                "max_per_target": 1,
-                "pending_card_id": "",
-                "card_ids": ["sv1-ener-1"],
-                "card_list_ids": ["sv1-ener-1"],
-                "purpose": "draw_and_attach_energy_distribution",
-                "source_player": 0,
-                "source_zone": "",
-                "same_target": True,
-                "continuation": {
-                    "kind": "draw_and_attach_energy_distribution",
-                    "player_idx": 0,
-                    "max_per_target": 1,
-                    "same_target": True,
-                    "energy_type": "Grass",
-                    "_resume": {
-                        "version": 1,
-                        "player_idx": 0,
-                        "source_slot": "active",
-                        "complete": True,
-                        "frames": [],
-                        "unsupported_frames": [],
-                        "context": {},
-                        "attack_failed": False,
-                    },
-                },
-            },
-        }
-
-        continuation = _public_native_vm_continuation(
-            state,
-            pending,
-            0,
-        )
-
-        self.assertEqual(continuation["kind"], "vm")
-        self.assertEqual(
-            continuation["vm"]["command_spec"],
-            {
-                "op": "draw_and_attach_energy",
-                "args": {
-                    "energy_count": 1,
-                    "energy_type": "Grass",
-                    "min_select": 0,
-                },
-            },
-        )
-        self.assertEqual(
-            continuation["cancel_rollback"],
-            {
-                "hand_before": ["svg2-gard", "sv1-ener-1"],
-                "discard_before": [],
-                "deck_top_before": [
-                    "sv1-ener-3",
-                    "sv1-ener-3",
-                ],
-                "expected_current_deck_count": 2,
-                "supporter_played_before": False,
-                "choice_sequence_before": 0,
-            },
-        )
-        self.assertNotIn("must-not-cross", repr(continuation))
-
-        cancelled = self.game.resume_choice(
-            state,
-            continuation,
-            [],
-            True,
-            991,
-        )
-        self.assertTrue(cancelled["success"], cancelled)
-        restored = cancelled["state"]
-        self.assertEqual(
-            restored["players"][0]["hand"],
-            ["svg2-gard", "sv1-ener-1"],
-        )
-        self.assertEqual(restored["players"][0]["discard"], [])
-        self.assertEqual(
-            restored["players"][0]["deck"],
-            [
-                "a-hidden-0",
-                "a-hidden-1",
-                "sv1-ener-3",
-                "sv1-ener-3",
-            ],
-        )
-        self.assertFalse(
-            restored["players"][0]["supporter_played_this_turn"]
-        )
-        self.assertEqual(restored["choice_sequence"], 0)
-        self.assertEqual(restored["revision"], 2)
-
-        flattened = {
-            **option["value"],
-            **option["ref"],
-            "option_id": option["option_id"],
-        }
-        attached = self.game.resume_choice(
-            state,
-            continuation,
-            [flattened],
-            False,
-            991,
-        )
-        self.assertTrue(attached["success"], attached)
-        self.assertEqual(
-            attached["state"]["players"][0]["hand"],
-            ["sv1-ener-3", "sv1-ener-3"],
-        )
-        self.assertEqual(
-            attached["state"]["players"][0]["bench"][0][
-                "energy_card_ids"
-            ][-1],
-            "sv1-ener-1",
-        )
-
-    def test_native_bridge_rebuilds_only_public_draw_trigger_queue(self):
-        specs = [
-            {
-                "op": "trigger_draw_cards",
-                "args": {
-                    "player": 1,
-                    "amount": 1,
-                    "source": f"public-source-{index}",
-                },
-                "branches": {},
-            }
-            for index in range(3)
-        ]
-        resume = {
-            "version": 1,
-            "player_idx": 0,
-            "source_slot": "active",
-            "complete": True,
-            "frames": [
-                {"kind": "finalize_attack_turn", "actor": 0},
-                {"kind": "finalize_attack_ko_checks"},
-            ],
-            "unsupported_frames": [],
-            "context": {
-                "attack_resolution": {
-                    "active": True,
-                    "player_idx": 0,
-                },
-            },
-            "attack_failed": False,
-        }
-        wire = {
-            "phase": "ATTACK",
-            "active_player_idx": 0,
-            "players": [
-                {
-                    "active": {"card_id": "public-active-0"},
-                    "bench": [],
-                },
-                {
-                    "active": {"card_id": "public-active-1"},
-                    "bench": [],
-                },
-            ],
-        }
-        pending = {
-            "request_id": "choice:60:1:choose_trigger_order:8",
-            "request_type": "choose_trigger_order",
-            "player": 1,
-            "metadata": {
-                "finish_attack_actor": 0,
-                "continuation": {
-                    "kind": "choose_trigger_order",
-                    "domain": "trigger",
-                    "frame_id": "trigger:order",
-                    "specs": specs,
-                    "chooser": 1,
-                    "_resume": resume,
-                },
-            },
-        }
-
-        native = _public_native_trigger_continuation(
-            wire,
-            pending,
-            1,
-        )
-
-        self.assertEqual(native, {
-            "kind": "public_trigger_order",
-            "actor": 1,
-            "attack_actor": 0,
-            "trigger_owner": 1,
-            "trigger_specs": [
-                {
-                    "op": "trigger_draw_cards",
-                    "args": {"player": 1, "amount": 1},
-                },
-                {
-                    "op": "trigger_draw_cards",
-                    "args": {"player": 1, "amount": 1},
-                },
-                {
-                    "op": "trigger_draw_cards",
-                    "args": {"player": 1, "amount": 1},
-                },
-            ],
-            "remaining_trigger_groups": [],
-            "attack_context": {
-                "damage_applied": True,
-                "after_damage_triggers_applied": True,
-                "reactive_thorns_applied": True,
-            },
-        })
-        self.assertNotIn("public-source", repr(native))
-
-        malformed = copy.deepcopy(pending)
-        malformed["metadata"]["continuation"]["specs"][0]["args"][
-            "private_card_id"
-        ] = "opponent-hidden-card"
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_trigger_continuation_invalid",
-        ):
-            _public_native_trigger_continuation(
-                wire,
-                malformed,
-                1,
-            )
-
-    def test_native_bridge_rebuilds_public_any_damage_pause(self):
-        state, _decks = self._native_search_fixture()
-        state["phase"] = "ATTACK"
-        state["turn_number"] = 3
-        state["first_player_idx"] = 1
-        state["active_player_idx"] = 0
-        defender = state["players"][1]["active"]
-        defender["damage_counters"] = 0
-        bench_target = copy.deepcopy(defender)
-        bench_target["damage_counters"] = 0
-        state["players"][1]["bench"] = [
-            bench_target,
-            None,
-            None,
-            None,
-            None,
-        ]
-        active_id = defender["card_id"]
-        bench_id = bench_target["card_id"]
-        active_option_id = f"pokemon:1:active:{active_id}"
-        bench_option_id = f"pokemon:1:bench_0:{bench_id}"
-        pending = {
-            "request_id": "choice:97:0:search_deck:1",
-            "request_type": "search_deck",
-            "player": 0,
-            "min_select": 1,
-            "max_select": 1,
-            "allow_duplicates": False,
-            "can_cancel": False,
-            "options": [
-                {
-                    "option_id": active_option_id,
-                    "label": "active",
-                    "ref": {
-                        "kind": "pokemon",
-                        "player": 1,
-                        "zone": "",
-                        "slot": "active",
-                        "index": -1,
-                        "attachment_type": "",
-                        "card_id": active_id,
-                    },
-                    "value": active_id,
-                },
-                {
-                    "option_id": bench_option_id,
-                    "label": "bench 0",
-                    "ref": {
-                        "kind": "pokemon",
-                        "player": 1,
-                        "zone": "",
-                        "slot": "bench_0",
-                        "index": -1,
-                        "attachment_type": "",
-                        "card_id": bench_id,
-                    },
-                    "value": bench_id,
-                },
-            ],
-            "metadata": {
-                "domain": "search_deck",
-                "from_zone": "board",
-                "target_player": "opponent",
-                "card_list_ids": [active_id, bench_id],
-                "finish_attack_actor": 0,
-                "continuation": {
-                    "kind": "choose_damage_target",
-                    "target_player_idx": 1,
-                    "amount": 40,
-                    "_resume": {
-                        "version": 1,
-                        "player_idx": 0,
-                        "source_slot": "active",
-                        "complete": True,
-                        "frames": [
-                            {
-                                "kind": "finalize_attack_turn",
-                                "actor": 0,
-                            },
-                            {"kind": "finalize_attack_ko_checks"},
-                            {
-                                "kind":
-                                    "finalize_after_damage_triggers",
-                            },
-                            {"kind": "finalize_attack_damage"},
-                        ],
-                        "unsupported_frames": [],
-                        "context": {
-                            "attack_damage": {
-                                "active": True,
-                                "player_idx": 0,
-                                "base_damage": 0,
-                                "attacker_type": "Water",
-                                "ignore_weakness": False,
-                                "ignore_resistance": False,
-                                "ignore_defender_damage_effects": False,
-                                "attacker_ref": {
-                                    "player": 0,
-                                    "slot": "active",
-                                    "card_id": state["players"][0][
-                                        "active"
-                                    ]["card_id"],
-                                },
-                            },
-                            "attack_resolution": {
-                                "active": True,
-                                "player_idx": 0,
-                            },
-                        },
-                        "attack_failed": False,
-                    },
-                },
-            },
-        }
-
-        continuation = _public_native_vm_continuation(
-            state,
-            pending,
-            0,
-        )
-
-        self.assertEqual(continuation["kind"], "vm")
-        self.assertEqual(
-            continuation["vm"]["command_spec"],
-            {
-                "op": "choose_damage_target",
-                "args": {"amount": 40, "player": "opponent"},
-            },
-        )
-        resumed = self.game.resume_choice(
-            state,
-            continuation,
-            [{
-                "option_id": bench_option_id,
-                "kind": "pokemon",
-                "player": 1,
-                "slot": "bench_0",
-                "card_id": bench_id,
-            }],
-            False,
-            0x44414D47,
-        )
-        self.assertTrue(resumed["success"], resumed)
-        self.assertEqual(
-            resumed["state"]["players"][1]["active"][
-                "damage_counters"
-            ],
-            0,
-        )
-        self.assertEqual(
-            resumed["state"]["players"][1]["bench"][0][
-                "damage_counters"
-            ],
-            4,
-        )
-
-        hidden = copy.deepcopy(pending)
-        hidden["options"][1]["ref"]["card_id"] = "hidden-card"
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_vm_continuation_invalid",
-        ):
-            _public_native_vm_continuation(state, hidden, 0)
-
-    def test_native_bridge_rebuilds_public_bench_damage_pause(self):
-        wire = {
-            "phase": "ATTACK",
-            "active_player_idx": 0,
-            "players": [
-                {
-                    "active": {"card_id": "public-attacker"},
-                    "bench": [None, None, None, None, None],
-                },
-                {
-                    "active": {"card_id": "public-defender"},
-                    "bench": [
-                        None,
-                        None,
-                        {"card_id": "public-bench-2"},
-                        None,
-                        {"card_id": "public-bench-4"},
-                    ],
-                },
-            ],
-        }
-        trigger_spec = {
-            "op": "trigger_draw_cards",
-            "args": {
-                "player": 1,
-                "amount": 1,
-                "source": "must-not-cross",
-            },
-            "branches": {},
-        }
-        pending = {
-            "request_id": "choice:69:0:select_bench_targets:1",
-            "request_type": "select_bench_targets",
-            "player": 0,
-            "min_select": 1,
-            "max_select": 1,
-            "allow_duplicates": False,
-            "can_cancel": False,
-            "options": [
-                {
-                    "option_id": (
-                        "pokemon:1:bench_2:public-bench-2"
-                    ),
-                    "label": "bench 2",
-                    "ref": {
-                        "kind": "pokemon",
-                        "player": 1,
-                        "zone": "",
-                        "slot": "bench_2",
-                        "index": -1,
-                        "attachment_type": "",
-                        "card_id": "public-bench-2",
-                    },
-                    "value": 2,
-                },
-                {
-                    "option_id": (
-                        "pokemon:1:bench_4:public-bench-4"
-                    ),
-                    "label": "bench 4",
-                    "ref": {
-                        "kind": "pokemon",
-                        "player": 1,
-                        "zone": "",
-                        "slot": "bench_4",
-                        "index": -1,
-                        "attachment_type": "",
-                        "card_id": "public-bench-4",
-                    },
-                    "value": 4,
-                },
-            ],
-            "metadata": {
-                "finish_attack_actor": 0,
-                "continuation": {
-                    "kind": "bench_damage_targets",
-                    "target_player_idx": 1,
-                    "amount": 30,
-                    "count": 1,
-                    "bench_indices": [2, 4],
-                    "_resume": {
-                        "version": 1,
-                        "player_idx": 0,
-                        "source_slot": "active",
-                        "complete": True,
-                        "frames": [
-                            {
-                                "kind": "finalize_attack_turn",
-                                "actor": 0,
-                            },
-                            {"kind": "finalize_attack_ko_checks"},
-                            {
-                                "kind":
-                                    "finalize_after_damage_triggers",
-                            },
-                        ],
-                        "unsupported_frames": [],
-                        "context": {
-                            "attack_resolution": {
-                                "active": True,
-                                "player_idx": 0,
-                            },
-                            "pending_after_damage_trigger_specs": [
-                                trigger_spec
-                            ],
-                        },
-                        "attack_failed": False,
-                    },
-                },
-            },
-        }
-
-        native = _public_native_bench_damage_continuation(
-            wire,
-            pending,
-            0,
-        )
-
-        self.assertEqual(native, {
-            "kind": "public_bench_damage_targets",
-            "actor": 0,
-            "attack_actor": 0,
-            "target_player": 1,
-            "amount": 30,
-            "count": 1,
-            "allowed_targets": [
-                {
-                    "option_id": (
-                        "pokemon:1:bench_2:public-bench-2"
-                    ),
-                    "target_slot": "bench_2",
-                    "target_card_id": "public-bench-2",
-                },
-                {
-                    "option_id": (
-                        "pokemon:1:bench_4:public-bench-4"
-                    ),
-                    "target_slot": "bench_4",
-                    "target_card_id": "public-bench-4",
-                },
-            ],
-            "trigger_groups": [{
-                "owner": 1,
-                "specs": [{
-                    "op": "trigger_draw_cards",
-                    "args": {"player": 1, "amount": 1},
-                }],
-            }],
-        })
-        self.assertNotIn("must-not-cross", repr(native))
-
-        hidden = copy.deepcopy(pending)
-        hidden["metadata"]["continuation"]["_resume"]["context"][
-            "private_card_id"
-        ] = "opponent-hidden-card"
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_bench_damage_continuation_invalid",
-        ):
-            _public_native_bench_damage_continuation(
-                wire,
-                hidden,
-                0,
-            )
 
     def test_native_vm_resume_consumes_public_post_damage_trigger(self):
         state = copy.deepcopy(
@@ -8350,442 +6184,6 @@ class NativeAICoreTests(unittest.TestCase):
         )
         self.assertEqual(result["state"]["active_player_idx"], 1)
         self.assertEqual(result["state"]["phase"], "MAIN")
-
-    def test_native_bridge_rebuilds_public_exp_share_chain(self):
-        wire = {
-            "phase": "ATTACK",
-            "active_player_idx": 1,
-            "players": [
-                {
-                    "active": {"card_id": "svg2-tort"},
-                    "bench": [{
-                        "card_id": "svg2-shro",
-                        "attached_tool_id": "svg2-exps",
-                    }],
-                },
-                {
-                    "active": {"card_id": "svi-ente"},
-                    "bench": [],
-                },
-            ],
-        }
-        exp_share_spec = {
-            "op": "trigger_move_basic_energy",
-            "args": {
-                "from_player": 0,
-                "from_slot": "active",
-                "to_player": 0,
-                "to_slot": "bench_0",
-                "source": "public-exp-share",
-                "select_source": True,
-                "optional": True,
-                "target_tool_id": "svg2-exps",
-            },
-            "branches": {},
-        }
-        pending = {
-            "request_id": "choice:101:0:confirm_trigger:7",
-            "request_type": "confirm_trigger",
-            "player": 0,
-            "metadata": {
-                "finish_attack_actor": 1,
-                "continuation": {
-                    "kind": "confirm_exp_share_trigger",
-                    "domain": "trigger",
-                    "frame_id": (
-                        "trigger:exp_share:0:active:0:bench_0"
-                    ),
-                    "from_player": 0,
-                    "from_slot": "active",
-                    "from_card_id": "svg2-tort",
-                    "to_player": 0,
-                    "to_slot": "bench_0",
-                    "to_card_id": "svg2-shro",
-                    "source_name": "学习装置",
-                    "target_tool_id": "svg2-exps",
-                    "_resume": {
-                        "version": 1,
-                        "player_idx": 1,
-                        "source_slot": "active",
-                        "complete": True,
-                        "frames": [
-                            {
-                                "kind": "finalize_attack_turn",
-                                "actor": 1,
-                            },
-                            {
-                                "kind": "discard_knockout_batch",
-                                "entries": [{
-                                    "player_idx": 0,
-                                    "slot": "active",
-                                    "card_id": "svg2-tort",
-                                    "prize_count": 1,
-                                }],
-                            },
-                            {
-                                "kind": "trigger_order",
-                                "specs": [exp_share_spec],
-                            },
-                        ],
-                        "unsupported_frames": [],
-                        "context": {
-                            "attack_resolution": {
-                                "active": True,
-                                "player_idx": 1,
-                            },
-                        },
-                        "attack_failed": False,
-                    },
-                },
-            },
-        }
-
-        native = _public_native_exp_share_continuation(
-            wire,
-            pending,
-            0,
-        )
-
-        self.assertEqual(native, {
-            "kind": "confirm_exp_share_trigger",
-            "actor": 0,
-            "attack_actor": 1,
-            "from_player": 0,
-            "from_slot": "active",
-            "from_card_id": "svg2-tort",
-            "to_player": 0,
-            "to_slot": "bench_0",
-            "to_card_id": "svg2-shro",
-            "target_tool_id": "svg2-exps",
-            "knockout_entries": [{
-                "player_idx": 0,
-                "slot": "active",
-                "card_id": "svg2-tort",
-                "prize_count": 1,
-            }],
-            "remaining_exp_share_triggers": 1,
-            "remaining_exp_share_requires_order": False,
-        })
-        self.assertNotIn("public-exp-share", repr(native))
-
-        double_ko = copy.deepcopy(pending)
-        double_entries = double_ko["metadata"]["continuation"][
-            "_resume"
-        ]["frames"][1]["entries"]
-        double_entries.insert(0, {
-            "player_idx": 1,
-            "slot": "active",
-            "card_id": "svi-ente",
-            "prize_count": 1,
-        })
-        double_native = _public_native_exp_share_continuation(
-            wire,
-            double_ko,
-            0,
-        )
-        self.assertEqual(
-            double_native["knockout_entries"],
-            double_entries,
-        )
-
-        malformed = copy.deepcopy(pending)
-        malformed["metadata"]["continuation"]["to_card_id"] = (
-            "opponent-hidden-card"
-        )
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_exp_share_continuation_invalid",
-        ):
-            _public_native_exp_share_continuation(
-                wire,
-                malformed,
-                0,
-            )
-
-    def test_native_bridge_rebuilds_public_exp_share_trigger_order(self):
-        wire = {
-            "phase": "ATTACK",
-            "active_player_idx": 1,
-            "players": [
-                {
-                    "active": {"card_id": "svg2-tort"},
-                    "bench": [
-                        {
-                            "card_id": "svg2-shro",
-                            "attached_tool_id": "svg2-exps",
-                        },
-                        {
-                            "card_id": "svg2-venu",
-                            "attached_tool_id": "svg2-exps",
-                        },
-                    ],
-                },
-                {
-                    "active": {"card_id": "svi-ente"},
-                    "bench": [],
-                },
-            ],
-        }
-        resume = {
-            "version": 1,
-            "player_idx": 1,
-            "source_slot": "active",
-            "complete": True,
-            "frames": [
-                {"kind": "finalize_attack_turn", "actor": 1},
-                {
-                    "kind": "discard_knockout_batch",
-                    "entries": [{
-                        "player_idx": 0,
-                        "slot": "active",
-                        "card_id": "svg2-tort",
-                        "prize_count": 1,
-                    }],
-                },
-            ],
-            "unsupported_frames": [],
-            "context": {
-                "attack_resolution": {"active": True, "player_idx": 1},
-            },
-            "attack_failed": False,
-        }
-
-        def spec(slot: str, source: str) -> dict:
-            return {
-                "op": "trigger_move_basic_energy",
-                "args": {
-                    "from_player": 0,
-                    "from_slot": "active",
-                    "to_player": 0,
-                    "to_slot": slot,
-                    "source": source,
-                    "select_source": True,
-                    "optional": True,
-                    "target_tool_id": "svg2-exps",
-                },
-                "branches": {},
-            }
-
-        pending = {
-            "request_id": "choice:80:0:choose_trigger_order:19",
-            "request_type": "choose_trigger_order",
-            "player": 0,
-            "metadata": {
-                "finish_attack_actor": 1,
-                "continuation": {
-                    "kind": "choose_trigger_order",
-                    "domain": "trigger",
-                    "frame_id": "trigger:order",
-                    "specs": [
-                        spec("bench_0", "first-public-source"),
-                        spec("bench_1", "second-public-source"),
-                    ],
-                    "chooser": 0,
-                    "_resume": resume,
-                },
-            },
-        }
-
-        native = _public_native_exp_share_order_continuation(
-            wire,
-            pending,
-            0,
-        )
-
-        self.assertEqual(native["kind"], "public_exp_share_spec_order")
-        self.assertEqual(native["attack_actor"], 1)
-        self.assertEqual(
-            [row["to_slot"] for row in native["exp_share_trigger_specs"]],
-            ["bench_0", "bench_1"],
-        )
-        self.assertNotIn("first-public-source", repr(native))
-        self.assertNotIn("second-public-source", repr(native))
-
-        state = copy.deepcopy(
-            next(iter(self.rules_fixture["cases"].values()))[
-                "initial_state"
-            ]
-        )
-        state["phase"] = "ATTACK"
-        state["active_player_idx"] = 1
-        owner = state["players"][0]
-        owner["active"]["card_id"] = "svg2-tort"
-        owner["active"]["energy_card_ids"] = ["sv1-ener-5"]
-        while len(owner["bench"]) < 2:
-            owner["bench"].append(None)
-        owner["bench"][0] = {
-            **copy.deepcopy(owner["active"]),
-            "card_id": "svg2-shro",
-            "energy_card_ids": [],
-            "attached_tool_id": "svg2-exps",
-        }
-        owner["bench"][1] = {
-            **copy.deepcopy(owner["active"]),
-            "card_id": "svg2-venu",
-            "energy_card_ids": [],
-            "attached_tool_id": "svg2-exps",
-        }
-        ordered = self.game.resume_choice(
-            state,
-            native,
-            [{"option_id": "trigger:1"}],
-            False,
-            17,
-        )
-        self.assertTrue(ordered["success"], ordered)
-        self.assertEqual(ordered["pending"]["request_type"], "confirm_trigger")
-        self.assertEqual(ordered["continuation"]["to_slot"], "bench_1")
-        skipped = self.game.resume_choice(
-            ordered["state"],
-            ordered["continuation"],
-            [{"option_id": "confirm:no"}],
-            False,
-            ordered["rng_state"],
-        )
-        self.assertTrue(skipped["success"], skipped)
-        self.assertEqual(skipped["pending"]["request_type"], "confirm_trigger")
-        self.assertEqual(skipped["continuation"]["to_slot"], "bench_0")
-
-        malformed = copy.deepcopy(pending)
-        malformed["metadata"]["continuation"]["specs"][0]["args"][
-            "target_tool_id"
-        ] = "opponent-hidden-card"
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_exp_share_order_continuation_invalid",
-        ):
-            _public_native_exp_share_order_continuation(
-                wire,
-                malformed,
-                0,
-            )
-
-    def test_native_bridge_rebuilds_public_damage_trigger_groups(self):
-        def damage_spec(player: int, card_id: str) -> dict:
-            return {
-                "op": "trigger_place_damage_counters",
-                "args": {
-                    "player": player,
-                    "slot": "active",
-                    "count": 6,
-                    "source": "public-source",
-                    "target_ref": {
-                        "kind": "pokemon",
-                        "player": player,
-                        "slot": "active",
-                        "card_id": card_id,
-                    },
-                },
-                "branches": {},
-            }
-
-        wire = {
-            "phase": "ATTACK",
-            "active_player_idx": 0,
-            "players": [
-                {
-                    "active": {"card_id": "public-active-0"},
-                    "bench": [],
-                },
-                {
-                    "active": {"card_id": "public-active-1"},
-                    "bench": [],
-                },
-            ],
-        }
-        resume = {
-            "version": 1,
-            "player_idx": 0,
-            "source_slot": "active",
-            "complete": True,
-            "frames": [
-                {"kind": "finalize_attack_turn", "actor": 0},
-                {"kind": "finalize_attack_ko_checks"},
-                {
-                    "kind": "trigger_order",
-                    "specs": [
-                        {
-                            "op": "trigger_draw_cards",
-                            "args": {
-                                "player": 1,
-                                "amount": 1,
-                                "source": "public-draw",
-                            },
-                            "branches": {},
-                        },
-                    ],
-                },
-            ],
-            "unsupported_frames": [],
-            "context": {
-                "attack_resolution": {
-                    "active": True,
-                    "player_idx": 0,
-                },
-            },
-            "attack_failed": False,
-        }
-        pending = {
-            "request_id": "choice:105:0:choose_trigger_order:1",
-            "request_type": "choose_trigger_order",
-            "player": 0,
-            "metadata": {
-                "finish_attack_actor": 0,
-                "continuation": {
-                    "kind": "choose_trigger_order",
-                    "domain": "trigger",
-                    "frame_id": "trigger:order",
-                    "specs": [
-                        damage_spec(0, "public-active-0"),
-                        damage_spec(0, "public-active-0"),
-                    ],
-                    "chooser": 0,
-                    "_resume": resume,
-                },
-            },
-        }
-
-        native = _public_native_trigger_continuation(
-            wire,
-            pending,
-            0,
-        )
-
-        self.assertEqual(native["kind"], "public_trigger_order")
-        self.assertEqual(
-            native["trigger_specs"][0],
-            {
-                "op": "trigger_place_damage_counters",
-                "args": {
-                    "player": 0,
-                    "slot": "active",
-                    "count": 6,
-                    "target_card_id": "public-active-0",
-                },
-            },
-        )
-        self.assertEqual(native["remaining_trigger_groups"], [{
-            "owner": 1,
-            "specs": [{
-                "op": "trigger_draw_cards",
-                "args": {"player": 1, "amount": 1},
-            }],
-        }])
-        self.assertNotIn("public-source", repr(native))
-
-        wrong_target = copy.deepcopy(pending)
-        wrong_target["metadata"]["continuation"]["specs"][0]["args"][
-            "target_ref"
-        ]["card_id"] = "opponent-hidden-card"
-        with self.assertRaisesRegex(
-            NativeBridgeError,
-            "native_public_trigger_continuation_invalid",
-        ):
-            _public_native_trigger_continuation(
-                wire,
-                wrong_target,
-                0,
-            )
 
     def test_native_public_draw_trigger_queue_preserves_choice_nodes(self):
         state = copy.deepcopy(
@@ -9124,309 +6522,6 @@ class NativeAICoreTests(unittest.TestCase):
                 "energy_card_ids"
             ],
         )
-
-    def test_native_encoder_v7_matches_python_contract(self):
-        from data.card_registry import CardRegistry
-        from data.deck_definitions import ALL_CARD_IDS
-        from engine.actions import (
-            AttachmentRef,
-            CardRef,
-            ChoiceOption,
-            ChoiceView,
-            GameAction,
-            PokemonRef,
-            SlotRef,
-        )
-        from engine.ai.dl.infoset_encoder import InformationSetEncoderV7
-        from engine.ai.dl.puct_v2 import _choice_responses
-        from engine.ai.observation import Observation
-
-        if not CardRegistry.is_initialized():
-            CardRegistry.initialize(ALL_CARD_IDS)
-        state = copy.deepcopy(
-            next(iter(self.rules_fixture["cases"].values()))[
-                "initial_state"
-            ]
-        )
-        state["phase"] = "MAIN"
-        state["turn_number"] = 3
-        state["first_player_idx"] = 1
-        state["active_player_idx"] = 0
-        state["public_deck_keys"] = ["psychic", "water"]
-        state["players"][0]["hand"] = [
-            "sv1-ener-3",
-            "svi-chim",
-            "sv2-cand",
-        ]
-        projection = ptcg_ai_core.project_information_set(state, 0)
-        observation_state = projection["observation"]
-        native_encoder = ptcg_ai_core.NativeInformationSetEncoder(
-            self.game_cards
-        )
-        actions = self.game.legal_actions(state, 0)
-        self.assertGreater(len(actions), 1)
-        actual = native_encoder.encode_actions(
-            observation_state,
-            actions,
-        )
-
-        def ref_from_dict(row):
-            if not isinstance(row, dict):
-                return None
-            if row["kind"] == "card":
-                return CardRef(
-                    row["player"],
-                    row["zone"],
-                    row["index"],
-                    row["card_id"],
-                )
-            if row["kind"] == "pokemon":
-                return PokemonRef(
-                    row["player"],
-                    row["slot"],
-                    row["card_id"],
-                )
-            if row["kind"] == "slot":
-                return SlotRef(row["player"], row["slot"])
-            if row["kind"] == "attachment":
-                return AttachmentRef(
-                    row["player"],
-                    row["slot"],
-                    row["attachment_type"],
-                    row["index"],
-                    row["card_id"],
-                )
-            raise AssertionError(row["kind"])
-
-        players = observation_state["players"]
-        board = []
-        for player_index, player in enumerate(players):
-            for slot_index, pokemon in enumerate(
-                [player["active"], *player["bench"]]
-            ):
-                slot = "active" if slot_index == 0 else (
-                    f"bench_{slot_index - 1}"
-                )
-                if not isinstance(pokemon, dict):
-                    board.append(
-                        (player_index, slot, "", 0, (), (), "")
-                    )
-                    continue
-                board.append(
-                    (
-                        player_index,
-                        slot,
-                        pokemon["card_id"],
-                        pokemon["damage_counters"],
-                        tuple(pokemon["energy_card_ids"]),
-                        tuple(pokemon["status_conditions"]),
-                        pokemon["attached_tool_id"],
-                    )
-                )
-        python_observation = Observation(
-            perspective=0,
-            turn_number=observation_state["turn_number"],
-            phase=observation_state["phase"],
-            active_player=observation_state["active_player_idx"],
-            winner=(
-                None
-                if observation_state["winner"] == -1
-                else observation_state["winner"]
-            ),
-            own_hand=tuple(players[0]["hand"]),
-            own_discard=tuple(players[0]["discard"]),
-            own_deck_count=len(players[0]["deck"]),
-            own_prize_count=len(players[0]["prizes"]),
-            opponent_hand_count=len(players[1]["hand"]),
-            opponent_discard=tuple(players[1]["discard"]),
-            opponent_deck_count=len(players[1]["deck"]),
-            opponent_prize_count=len(players[1]["prizes"]),
-            board=tuple(board),
-            stadium_id=observation_state["stadium_card_id"],
-            public_deck_keys=tuple(
-                observation_state["public_deck_keys"]
-            ),
-            apply_type_matchups=observation_state[
-                "apply_type_matchups"
-            ],
-        )
-        python_actions = [
-            GameAction(
-                kind=row["kind"],
-                payload=row["payload"],
-                actor=row["actor"],
-                source=ref_from_dict(row["source"]),
-                target=ref_from_dict(row["target"]),
-                base_revision=row["base_revision"],
-            )
-            for row in actions
-        ]
-        encoder = InformationSetEncoderV7()
-        expected_info = encoder.encode_information_set(
-            python_observation,
-            "psychic",
-        )
-        expected_candidates = encoder.encode_actions(
-            python_observation,
-            python_actions,
-        )
-        comparisons = {
-            "state_global": expected_info.state_global,
-            "entity_numeric": expected_info.entity_numeric,
-            "entity_card_ids": expected_info.entity_card_ids,
-            "entity_type_ids": expected_info.entity_type_ids,
-            "candidate_numeric": expected_candidates.numeric,
-            "candidate_card_ids": expected_candidates.card_ids,
-            "candidate_type_ids": expected_candidates.type_ids,
-            "candidate_refs": expected_candidates.refs,
-        }
-        for field, expected in comparisons.items():
-            with self.subTest(field=field):
-                self.assertTrue(
-                    np.array_equal(actual[field][0], expected),
-                    (
-                        f"{field}: actual={actual[field][0].tolist()} "
-                        f"expected={expected.tolist()}"
-                    ),
-                )
-        self.assertEqual(
-            actual["actor_deck_id"].tolist(),
-            [int(expected_info.actor_deck_id)],
-        )
-        self.assertEqual(
-            actual["opponent_deck_id"].tolist(),
-            [int(expected_info.opponent_deck_id)],
-        )
-
-        native_choice_request = {
-            "request_id": "encoder-choice",
-            "request_type": "select_heal_target",
-            "player": 0,
-            "min_select": 1,
-            "max_select": 1,
-            "allow_duplicates": False,
-            "can_cancel": True,
-            "options": [
-                {
-                    "option_id": "pokemon:0:active:svd-dodrio",
-                    "label": "active",
-                    "ref": {
-                        "kind": "pokemon",
-                        "player": 0,
-                        "slot": "active",
-                        "card_id": "svd-dodrio",
-                    },
-                },
-                {
-                    "option_id": "card:0:hand:1:svi-chim",
-                    "label": "hand",
-                    "ref": {
-                        "kind": "card",
-                        "player": 0,
-                        "zone": "hand",
-                        "index": 1,
-                        "card_id": "svi-chim",
-                    },
-                },
-            ],
-        }
-        native_choice_candidates = self.game.choice_candidates(
-            native_choice_request
-        )
-        actual_choices = native_encoder.encode_choices(
-            observation_state,
-            native_choice_request,
-            native_choice_candidates,
-        )
-        python_choice_request = ChoiceView(
-            request_id="encoder-choice",
-            base_revision=0,
-            request_type="select_heal_target",
-            player=0,
-            prompt="",
-            options=tuple(
-                ChoiceOption(
-                    row["option_id"],
-                    row["label"],
-                    ref_from_dict(row["ref"]),
-                )
-                for row in native_choice_request["options"]
-            ),
-            min_select=1,
-            max_select=1,
-            allow_duplicates=False,
-            can_cancel=True,
-        )
-        search_candidates = _choice_responses(python_choice_request)
-        expected_choices = encoder.encode_choices(
-            python_observation,
-            python_choice_request.request_type,
-            [candidate.choice_option for candidate in search_candidates],
-        )
-        choice_comparisons = {
-            "candidate_numeric": expected_choices.numeric,
-            "candidate_card_ids": expected_choices.card_ids,
-            "candidate_type_ids": expected_choices.type_ids,
-            "candidate_refs": expected_choices.refs,
-        }
-        for field, expected in choice_comparisons.items():
-            with self.subTest(choice_field=field):
-                self.assertTrue(
-                    np.array_equal(actual_choices[field][0], expected),
-                    (
-                        f"{field}: "
-                        f"actual={actual_choices[field][0].tolist()} "
-                        f"expected={expected.tolist()}"
-                    ),
-                )
-
-        prize_native_request = {
-            **native_choice_request,
-            "request_id": "encoder-prize-energy-target",
-            "request_type": "select_prize_energy_target",
-        }
-        prize_native_candidates = self.game.choice_candidates(
-            prize_native_request
-        )
-        actual_prize_choices = native_encoder.encode_choices(
-            observation_state,
-            prize_native_request,
-            prize_native_candidates,
-        )
-        prize_python_request = ChoiceView(
-            request_id="encoder-prize-energy-target",
-            base_revision=0,
-            request_type="select_prize_energy_target",
-            player=0,
-            prompt="",
-            options=python_choice_request.options,
-            min_select=1,
-            max_select=1,
-            allow_duplicates=False,
-            can_cancel=True,
-        )
-        prize_search_candidates = _choice_responses(prize_python_request)
-        expected_prize_choices = encoder.encode_choices(
-            python_observation,
-            prize_python_request.request_type,
-            [
-                candidate.choice_option
-                for candidate in prize_search_candidates
-            ],
-        )
-        for field, expected in {
-            "candidate_numeric": expected_prize_choices.numeric,
-            "candidate_card_ids": expected_prize_choices.card_ids,
-            "candidate_type_ids": expected_prize_choices.type_ids,
-            "candidate_refs": expected_prize_choices.refs,
-        }.items():
-            with self.subTest(prize_choice_field=field):
-                self.assertTrue(
-                    np.array_equal(
-                        actual_prize_choices[field][0],
-                        expected,
-                    )
-                )
 
     def test_native_attack_formula_post_damage_choice_and_aura_reduction(
         self,

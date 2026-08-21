@@ -28,6 +28,7 @@ pybind11==2.13.6
 pyparsing==3.3.2
 python-dateutil==2.9.0.post0
 requests==2.32.3
+safetensors==0.4.5
 six==1.17.0
 sympy==1.14.0
 torch==2.4.1+cu118

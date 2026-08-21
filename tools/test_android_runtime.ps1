@@ -591,7 +591,7 @@ if ($null -ne $candidateIdentity) {
         }).Count -eq 0
     )
     $androidEvidence = [ordered]@{
-        schema = 'alphazero_v2_android_runtime/1'
+        schema = 'deep_ai_v3_android_runtime/1'
         passed = (
             [bool]$candidatePayload.passed -and
             $onnxLoadPassed -and

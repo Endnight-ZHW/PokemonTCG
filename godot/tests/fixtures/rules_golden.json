@@ -4366,7 +4366,14 @@
           "can_cancel": true,
           "max_select": 1,
           "metadata": {
-            "continuation_kind": "retreat_payment"
+            "attachment_refs": [
+              {
+                "option_id": "retreat:energy:0",
+                "units": 2
+              }
+            ],
+            "continuation_kind": "retreat_payment",
+            "required_units": 2
           },
           "min_select": 1,
           "options": [
@@ -4573,7 +4580,14 @@
             ],
             "max_select": 1,
             "metadata": {
-              "continuation_kind": "retreat_payment"
+              "attachment_refs": [
+                {
+                  "option_id": "retreat:energy:0",
+                  "units": 2
+                }
+              ],
+              "continuation_kind": "retreat_payment",
+              "required_units": 2
             },
             "min_select": 1,
             "options": [

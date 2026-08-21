@@ -5,8 +5,8 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 
 ## 已实现
 
-- 本地双人和 Challenge AI；信息集 AlphaZero v2 尚未产生可晋升模型，Deep 入口停用并回退 Challenge。
-- 10 套预组卡组；Deep v2 启用时使用一个 universal ONNX 和十项牌组路由，当前发布未捆绑模型。
+- 本地双人和 Challenge AI；信息集 AlphaZero v3 尚未晋升模型，Deep 入口停用并回退 Challenge。
+- 10 套预组卡组；Deep v3 运行时使用一个 universal ONNX 和十项牌组路由，当前发布未捆绑模型。
 - ENet LAN 与 WebSocket Relay Protocol v6 联机；旧 Protocol 5 房间明确拒绝且不提供桥接。
 - Native ABI 2 `ptcg_core` 是唯一规则引擎；GDScript 只负责会话绑定、UI、网络和表现，
   同一 C++ 核心也通过 pybind 服务训练工具与原生搜索。

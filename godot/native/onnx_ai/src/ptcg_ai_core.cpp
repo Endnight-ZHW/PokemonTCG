@@ -288,17 +288,66 @@ std::size_t InferenceRequest::candidate_count() const noexcept {
     return candidate_card_ids.size();
 }
 
+InferenceTensorSpec InferenceTensorSpec::v3() noexcept {
+    return {};
+}
+
+bool InferenceTensorSpec::operator==(
+    const InferenceTensorSpec &other
+) const noexcept {
+    return encoder_version == other.encoder_version
+        && state_global_size == other.state_global_size
+        && entity_slots == other.entity_slots
+        && entity_numeric_size == other.entity_numeric_size
+        && entity_type_fields == other.entity_type_fields
+        && candidate_numeric_size == other.candidate_numeric_size
+        && candidate_ref_fields == other.candidate_ref_fields;
+}
+
+InferenceRequest::InferenceRequest(InferenceTensorSpec tensor_spec) :
+    spec(tensor_spec),
+    state_global(spec.state_global_size, 0.0F),
+    entity_numeric(
+        spec.entity_slots * spec.entity_numeric_size,
+        0.0F
+    ),
+    entity_card_ids(spec.entity_slots, 0),
+    entity_type_ids(
+        spec.entity_slots * spec.entity_type_fields,
+        0
+    ),
+    entity_mask(spec.entity_slots, 0) {}
+
 void InferenceRequest::validate() const {
     const std::size_t count = candidate_count();
     if (count == 0) {
         throw std::invalid_argument("candidate_set_empty");
     }
     if (
-        candidate_numeric.size() != count * CANDIDATE_NUMERIC_SIZE
+        state_global.size() != spec.state_global_size
+        || entity_numeric.size()
+            != spec.entity_slots * spec.entity_numeric_size
+        || entity_card_ids.size() != spec.entity_slots
+        || entity_type_ids.size()
+            != spec.entity_slots * spec.entity_type_fields
+        || entity_mask.size() != spec.entity_slots
+        || candidate_numeric.size()
+            != count * spec.candidate_numeric_size
         || candidate_type_ids.size() != count
-        || candidate_refs.size() != count * CANDIDATE_REF_FIELDS
+        || candidate_refs.size() != count * spec.candidate_ref_fields
     ) {
         throw std::invalid_argument("candidate_tensor_shape_mismatch");
+    }
+    if (
+        spec.encoder_version <= 0
+        || spec.state_global_size == 0
+        || spec.entity_slots == 0
+        || spec.entity_numeric_size == 0
+        || spec.entity_type_fields == 0
+        || spec.candidate_numeric_size == 0
+        || spec.candidate_ref_fields == 0
+    ) {
+        throw std::invalid_argument("invalid_inference_tensor_spec");
     }
     if (
         !std::all_of(

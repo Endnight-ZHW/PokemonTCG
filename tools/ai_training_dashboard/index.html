@@ -31,6 +31,7 @@
         </select>
       </label>
       <button id="create-smoke" class="secondary">链路 Smoke</button>
+      <button id="create-pilot" class="secondary">工程 Pilot</button>
       <button id="create-release">开始 Release</button>
     </div>
   </header>
@@ -59,7 +60,6 @@
             <button id="pause" class="secondary">暂停</button>
             <button id="resume" class="secondary">恢复</button>
             <button id="cancel" class="danger">取消</button>
-            <button id="promote" disabled>晋升</button>
           </div>
           <div
             id="progress-track"
@@ -77,67 +77,15 @@
         </section>
 
         <section class="metrics-grid">
-          <article class="metric panel"><span>局速</span><strong id="speed">—</strong></article>
-          <article class="metric panel"><span>GPU</span><strong id="gpu">—</strong></article>
-          <article class="metric panel"><span>显存</span><strong id="vram">—</strong></article>
+          <article class="metric panel"><span>Learner 吞吐</span><strong id="speed">—</strong></article>
+          <article class="metric panel"><span>平均推理批次</span><strong id="gpu">—</strong></article>
+          <article class="metric panel"><span>Loader / Learner</span><strong id="vram">—</strong></article>
           <article class="metric panel"><span>回放池</span><strong id="replay">—</strong></article>
-          <article class="metric panel"><span>历史对手</span><strong id="history">—</strong></article>
+          <article class="metric panel"><span>周期 / Global step</span><strong id="history">—</strong></article>
           <article class="metric panel"><span>Policy loss</span><strong id="policy-loss">—</strong></article>
-          <article class="metric panel"><span>Value loss</span><strong id="value-loss">—</strong></article>
-          <article class="metric panel"><span>Choice loss</span><strong id="choice-loss">—</strong></article>
-          <article class="metric panel"><span>胜 / 负 / 平</span><strong id="record">—</strong></article>
-          <article class="metric panel"><span>镜像 / 交叉点差</span><strong id="point-delta">—</strong></article>
-        </section>
-
-        <section class="strength-panel panel">
-          <div class="panel-title strength-heading">
-            <div>
-              <h2>在线强度趋势</h2>
-              <p class="muted">固定种子快速配对探针：当前策略网络 vs Challenge-fast</p>
-            </div>
-            <div class="strength-tools">
-              <label for="strength-deck">牌组</label>
-              <select id="strength-deck" aria-label="选择强度趋势牌组"></select>
-              <span id="strength-status" class="badge">等待探针</span>
-            </div>
-          </div>
-          <div class="strength-summary">
-            <div><span>最新点率差</span><strong id="strength-delta">—</strong></div>
-            <div><span>近似 95% CI</span><strong id="strength-ci">—</strong></div>
-            <div><span>相对首个探针</span><strong id="strength-change">—</strong></div>
-            <div><span>配对样本</span><strong id="strength-games">—</strong></div>
-          </div>
-          <div id="strength-empty" class="section-empty strength-empty">
-            等待首个已提交检查点完成固定种子强度探针。
-          </div>
-          <div id="strength-chart-wrap" class="strength-chart-wrap" hidden>
-            <svg
-              id="strength-chart"
-              viewBox="0 0 900 250"
-              height="250"
-              role="img"
-              aria-label="AI 对 Challenge 的点率差变化曲线"
-            ></svg>
-          </div>
-          <p id="strength-note" class="strength-note muted">
-            该曲线用于观察变化方向，小样本波动较大；最终结论以 2800 局 Godot 门禁为准。
-          </p>
-        </section>
-
-        <section class="split">
-          <article class="panel">
-            <div class="panel-title"><h2>十套牌矩阵</h2><span class="muted">点率差</span></div>
-            <div id="matrix-empty" class="section-empty">
-              完成 Godot 配对评测后显示 10×10 点率差矩阵。
-            </div>
-            <div id="matrix-wrap" class="table-wrap" hidden>
-              <table id="matrix" aria-label="十套牌点率差矩阵"></table>
-            </div>
-          </article>
-          <article class="panel">
-            <div class="panel-title"><h2>门禁</h2><span id="gate-status" class="badge">未评测</span></div>
-            <ul id="gate-list" class="checklist"></ul>
-          </article>
+          <article class="metric panel"><span>WDL loss</span><strong id="value-loss">—</strong></article>
+          <article class="metric panel"><span>归一化策略熵</span><strong id="choice-loss">—</strong></article>
+          <article class="metric panel"><span>Arena 胜 / 负 / 平</span><strong id="record">—</strong></article>
         </section>
 
         <section class="panel">

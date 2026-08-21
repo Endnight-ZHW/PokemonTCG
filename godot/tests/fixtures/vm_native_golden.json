@@ -36677,6 +36677,17 @@
               "can_cancel": false,
               "continuation_kind": "look_top_attach_target",
               "max_select": 1,
+              "metadata": {
+                "domain": "select_energy_target",
+                "purpose": "look_top_attach_target",
+                "revealed_card_ids": [
+                  "sv1-ener-1",
+                  "sv1-ener-1",
+                  "sv1-ener-3"
+                ],
+                "source_player": 0,
+                "source_zone": "deck"
+              },
               "min_select": 1,
               "options": [
                 {
@@ -37337,6 +37348,17 @@
             "can_cancel": false,
             "continuation_kind": "look_top_attach_target",
             "max_select": 1,
+            "metadata": {
+              "domain": "select_energy_target",
+              "purpose": "look_top_attach_target",
+              "revealed_card_ids": [
+                "sv1-ener-1",
+                "sv1-ener-1",
+                "sv1-ener-3"
+              ],
+              "source_player": 0,
+              "source_zone": "deck"
+            },
             "min_select": 1,
             "options": [
               {

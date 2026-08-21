@@ -36,7 +36,7 @@ if ($Tier -eq 'core') {
 		'tests.test_energy_view',
 		'tests.test_ai_strategy_definitions',
 		'tests.test_ai_evaluation_report',
-		'tests.test_release_evidence_v2',
+		'tests.test_alphazero_v3',
         'tests.test_python_tool_boundary',
 		'tests.test_relay_server'
     )

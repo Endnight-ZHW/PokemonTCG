@@ -42,15 +42,15 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(set(decks), set(DECKS))
 
     def test_release_070_metadata_and_deep_contract_are_explicit(self):
-        self.assertEqual(self.manifest["format_version"], 4)
+        self.assertEqual(self.manifest["format_version"], 5)
         self.assertEqual(self.manifest["version"], "0.7.0")
         self.assertEqual(self.manifest["android_version_code"], 8)
         self.assertEqual(self.manifest["deep_fallback"], "challenge")
         self.assertEqual(self.manifest["model_count"], 0)
         deep_planner = self.manifest["deep_planner"]
-        self.assertEqual(deep_planner["schema_version"], 2)
+        self.assertEqual(deep_planner["schema_version"], 3)
         self.assertEqual(
-            deep_planner["planner_id"], "infoset_puct_v2"
+            deep_planner["planner_id"], "infoset_puct_v3"
         )
         self.assertEqual(deep_planner["training_simulations"], 128)
         self.assertEqual(deep_planner["leaf_evaluator"], "neural_wdl")
@@ -70,11 +70,11 @@ class ReleaseManifestTests(unittest.TestCase):
             "python_rules": 5,
             "python_actions": 4,
             "snapshot": 3,
-            "encoder": 7,
-            "checkpoint": 12,
+            "encoder": 8,
+            "checkpoint": 13,
             "card_vocab": 1,
-            "planner": 2,
-            "deep_planner": 2,
+            "planner": 3,
+            "deep_planner": 3,
             "vm_ir": 3,
             "rng": 2,
             "ai_evaluation": 7,
@@ -87,13 +87,13 @@ class ReleaseManifestTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        bridge = runtime["compatibility_bridge"]
+        source_schemas = runtime["source_schemas"]
         deep_enabled = bool(self.manifest["deep_runtime_enabled"])
         self.assertEqual(
             (
-                bridge["python_rules_version"],
-                bridge["python_action_version"],
-                bridge["python_encoder_version"],
+                source_schemas["python_rules_version"],
+                source_schemas["python_action_version"],
+                source_schemas["python_encoder_version"],
             ),
             (
                 self.manifest["schemas"]["python_rules"],
@@ -101,11 +101,11 @@ class ReleaseManifestTests(unittest.TestCase):
                 self.manifest["schemas"]["encoder"],
             ),
         )
-        self.assertEqual(runtime["format_version"], 3)
+        self.assertEqual(runtime["format_version"], 4)
         self.assertEqual(len(runtime["models"]), self.manifest["model_count"])
         self.assertEqual(
             runtime["contract"]["model_variant"],
-            "universal_infoset_transformer_v2",
+            "universal_infoset_transformer_v3",
         )
         if deep_enabled:
             self.assertEqual(set(runtime["models"]), {"universal"})
@@ -379,11 +379,17 @@ class ReleaseManifestTests(unittest.TestCase):
 
     def test_deep_ai_pipeline_reads_release_decks_from_manifest(self):
         source = (
-            REPO_ROOT / "tools" / "train_deep_ai_v2.ps1"
+            REPO_ROOT / "tools" / "train_deep_ai_v3.ps1"
         ).read_text(encoding="utf-8")
-        self.assertIn("train_deep_ai.py", source)
-        self.assertIn("verify-cache", source)
-        self.assertIn("--bootstrap-cache", source)
+        self.assertIn("train_deep_ai_v3.py", source)
+        self.assertIn("bootstrap", source)
+        self.assertIn("--teacher-replay", source)
+        self.assertFalse(
+            (REPO_ROOT / "tools" / "train_deep_ai_v2.ps1").exists()
+        )
+        self.assertFalse(
+            (REPO_ROOT / "python" / "scripts" / "train_deep_ai.py").exists()
+        )
 
     def test_release_schema_consumers_do_not_redeclare_manifest_versions(self):
         deep_runtime = (
@@ -396,24 +402,21 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertIn('manifest.get("opset", 0)', deep_runtime)
         self.assertIn('manifest.get("onnx_runtime_version", "")', deep_runtime)
         self.assertNotIn("EXPECTED_PYTHON_ENCODER_VERSION", deep_runtime)
-        self.assertNotRegex(
-            deep_runtime,
-            r'bridge\.get\("python_(?:rules|action)_version", 0\)\)\s*!=\s*2',
-        )
+        self.assertNotIn("compatibility_bridge", deep_runtime)
 
         train = (
-            REPO_ROOT / "tools" / "train_deep_ai_v2.ps1"
+            REPO_ROOT / "tools" / "train_deep_ai_v3.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn("'train'", train)
         self.assertIn("'release'", train)
         self.assertNotIn("--trainer", train)
 
         onnx_export = (
-            REPO_ROOT / "python" / "scripts" / "export_onnx_models.py"
+            REPO_ROOT / "python" / "scripts" / "export_onnx_models_v3.py"
         ).read_text(encoding="utf-8")
-        self.assertIn('RELEASE_MANIFEST["schemas"]["godot_rules"]', onnx_export)
-        self.assertIn('RELEASE_MANIFEST["schemas"]["godot_actions"]', onnx_export)
-        self.assertNotRegex(onnx_export, r'"godot_(?:rules|action)_version":\s*3\b')
+        self.assertIn('RELEASE_MANIFEST["schemas"]["python_rules"]', onnx_export)
+        self.assertIn('RELEASE_MANIFEST["schemas"]["python_actions"]', onnx_export)
+        self.assertNotIn("compatibility_bridge", onnx_export)
 
         godot_export = (
             REPO_ROOT / "python" / "scripts" / "export_godot_data.py"

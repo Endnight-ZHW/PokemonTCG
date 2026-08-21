@@ -1,6 +1,7 @@
 #include "../src/ptcg_ai_core.hpp"
+#include "../src/ptcg_actor_v3.hpp"
 #include "../src/ptcg_determinizer.hpp"
-#include "../src/ptcg_encoder.hpp"
+#include "../src/ptcg_encoder_v3.hpp"
 #include "ptcg_game.hpp"
 #include "../src/ptcg_infoset.hpp"
 #include "ptcg_rules.hpp"
@@ -21,12 +22,17 @@
 namespace py = pybind11;
 using namespace pybind11::literals;
 using ptcg::ai::CompactState;
+using ptcg::ai::ActorGameResultV3;
+using ptcg::ai::ActorPoolConfigV3;
+using ptcg::ai::GameTaskV3;
 using ptcg::ai::InferenceRequest;
 using ptcg::ai::InferenceResponse;
+using ptcg::ai::InferenceTensorSpec;
 using ptcg::ai::NativeSelfPlayBatch;
+using ptcg::ai::NativeActorPoolV3;
 using ptcg::ai::NativeGameKernel;
 using ptcg::ai::NativeDeterminizer;
-using ptcg::ai::NativeInformationSetEncoder;
+using ptcg::ai::NativeInformationSetEncoderV3;
 using ptcg::ai::NativeRulesKernel;
 using ptcg::ai::RulesSession;
 using ptcg::ai::RulesSessionResult;
@@ -136,19 +142,19 @@ py::dict rules_session_result_to_python(
     return result;
 }
 
-template <typename T, std::size_t Size>
-void copy_fixed(
+template <typename T>
+void copy_sized(
     const py::array_t<T, py::array::c_style | py::array::forcecast> &source,
-    std::array<T, Size> &destination,
+    std::vector<T> &destination,
     const char *name
 ) {
-    if (source.size() != static_cast<py::ssize_t>(Size)) {
+    if (source.size() != static_cast<py::ssize_t>(destination.size())) {
         throw py::value_error(std::string(name) + "_shape_mismatch");
     }
     std::memcpy(
         destination.data(),
         source.data(),
-        Size * sizeof(T)
+        destination.size() * sizeof(T)
     );
 }
 
@@ -168,6 +174,8 @@ InferenceRequest request_from_arrays(
         &entity_card_ids,
     const py::array_t<std::int64_t, py::array::c_style | py::array::forcecast>
         &entity_type_ids,
+    const py::array_t<bool, py::array::c_style | py::array::forcecast>
+        &entity_mask,
     const py::array_t<float, py::array::c_style | py::array::forcecast>
         &candidate_numeric,
     const py::array_t<std::int64_t, py::array::c_style | py::array::forcecast>
@@ -179,11 +187,35 @@ InferenceRequest request_from_arrays(
     std::int64_t actor_deck_id,
     std::int64_t opponent_deck_id
 ) {
-    InferenceRequest request;
-    copy_fixed(state_global, request.state_global, "state_global");
-    copy_fixed(entity_numeric, request.entity_numeric, "entity_numeric");
-    copy_fixed(entity_card_ids, request.entity_card_ids, "entity_card_ids");
-    copy_fixed(entity_type_ids, request.entity_type_ids, "entity_type_ids");
+    if (
+        state_global.ndim() != 1
+        || entity_numeric.ndim() != 2
+        || entity_card_ids.ndim() != 1
+        || entity_type_ids.ndim() != 2
+        || entity_mask.ndim() != 1
+        || candidate_numeric.ndim() != 2
+        || candidate_card_ids.ndim() != 1
+        || candidate_type_ids.ndim() != 1
+        || candidate_refs.ndim() != 2
+        || entity_numeric.shape(0) != entity_card_ids.shape(0)
+        || entity_type_ids.shape(0) != entity_card_ids.shape(0)
+        || entity_mask.shape(0) != entity_card_ids.shape(0)
+        || candidate_numeric.shape(0) != candidate_card_ids.shape(0)
+        || candidate_type_ids.shape(0) != candidate_card_ids.shape(0)
+        || candidate_refs.shape(0) != candidate_card_ids.shape(0)
+    ) {
+        throw py::value_error("inference_request_rank_mismatch");
+    }
+    InferenceRequest request(InferenceTensorSpec::v3());
+    copy_sized(state_global, request.state_global, "state_global");
+    copy_sized(entity_numeric, request.entity_numeric, "entity_numeric");
+    copy_sized(entity_card_ids, request.entity_card_ids, "entity_card_ids");
+    copy_sized(entity_type_ids, request.entity_type_ids, "entity_type_ids");
+    for (std::size_t index = 0; index < request.entity_mask.size(); ++index) {
+        request.entity_mask[index] = entity_mask.at(
+            static_cast<py::ssize_t>(index)
+        ) ? 1 : 0;
+    }
     request.candidate_numeric = copy_vector(candidate_numeric);
     request.candidate_card_ids = copy_vector(candidate_card_ids);
     request.candidate_type_ids = copy_vector(candidate_type_ids);
@@ -201,8 +233,12 @@ py::dict requests_as_numpy(std::vector<InferenceRequest> requests) {
         result["request_ids"] = py::array_t<std::uint64_t>({0});
         return result;
     }
+    const InferenceTensorSpec spec = requests.front().spec;
     std::size_t max_candidates = 0;
     for (const InferenceRequest &request : requests) {
+        if (!(request.spec == spec)) {
+            throw py::value_error("mixed_inference_tensor_specs");
+        }
         max_candidates = std::max(
             max_candidates,
             request.candidate_count()
@@ -212,26 +248,30 @@ py::dict requests_as_numpy(std::vector<InferenceRequest> requests) {
     py::array_t<std::uint64_t> request_ids({count});
     py::array_t<float> state_global({
         count,
-        static_cast<py::ssize_t>(ptcg::ai::STATE_GLOBAL_SIZE),
+        static_cast<py::ssize_t>(spec.state_global_size),
     });
     py::array_t<float> entity_numeric({
         count,
-        static_cast<py::ssize_t>(ptcg::ai::ENTITY_SLOTS),
-        static_cast<py::ssize_t>(ptcg::ai::ENTITY_NUMERIC_SIZE),
+        static_cast<py::ssize_t>(spec.entity_slots),
+        static_cast<py::ssize_t>(spec.entity_numeric_size),
     });
     py::array_t<std::int64_t> entity_card_ids({
         count,
-        static_cast<py::ssize_t>(ptcg::ai::ENTITY_SLOTS),
+        static_cast<py::ssize_t>(spec.entity_slots),
     });
     py::array_t<std::int64_t> entity_type_ids({
         count,
-        static_cast<py::ssize_t>(ptcg::ai::ENTITY_SLOTS),
-        static_cast<py::ssize_t>(ptcg::ai::ENTITY_TYPE_FIELDS),
+        static_cast<py::ssize_t>(spec.entity_slots),
+        static_cast<py::ssize_t>(spec.entity_type_fields),
+    });
+    py::array_t<bool> entity_mask({
+        count,
+        static_cast<py::ssize_t>(spec.entity_slots),
     });
     py::array_t<float> candidate_numeric({
         count,
         static_cast<py::ssize_t>(max_candidates),
-        static_cast<py::ssize_t>(ptcg::ai::CANDIDATE_NUMERIC_SIZE),
+        static_cast<py::ssize_t>(spec.candidate_numeric_size),
     });
     py::array_t<std::int64_t> candidate_card_ids({
         count,
@@ -244,7 +284,7 @@ py::dict requests_as_numpy(std::vector<InferenceRequest> requests) {
     py::array_t<std::int64_t> candidate_refs({
         count,
         static_cast<py::ssize_t>(max_candidates),
-        static_cast<py::ssize_t>(ptcg::ai::CANDIDATE_REF_FIELDS),
+        static_cast<py::ssize_t>(spec.candidate_ref_fields),
     });
     py::array_t<bool> candidate_mask({
         count,
@@ -252,6 +292,8 @@ py::dict requests_as_numpy(std::vector<InferenceRequest> requests) {
     });
     py::array_t<std::int64_t> actor_deck_id({count});
     py::array_t<std::int64_t> opponent_deck_id({count});
+    py::array_t<std::int32_t> model_slots({count});
+    py::array_t<std::int32_t> encoder_versions({count});
 
     std::fill_n(
         candidate_numeric.mutable_data(),
@@ -302,6 +344,12 @@ py::dict requests_as_numpy(std::vector<InferenceRequest> requests) {
             request.entity_type_ids.data(),
             request.entity_type_ids.size() * sizeof(std::int64_t)
         );
+        for (std::size_t entity = 0; entity < spec.entity_slots; ++entity) {
+            entity_mask.mutable_at(
+                index,
+                static_cast<py::ssize_t>(entity)
+            ) = request.entity_mask[entity] != 0;
+        }
         const py::ssize_t candidate_count = static_cast<py::ssize_t>(
             request.candidate_count()
         );
@@ -332,6 +380,8 @@ py::dict requests_as_numpy(std::vector<InferenceRequest> requests) {
         );
         actor_deck_id.mutable_at(index) = request.actor_deck_id;
         opponent_deck_id.mutable_at(index) = request.opponent_deck_id;
+        model_slots.mutable_at(index) = request.model_slot;
+        encoder_versions.mutable_at(index) = spec.encoder_version;
     }
 
     result["request_ids"] = std::move(request_ids);
@@ -339,6 +389,7 @@ py::dict requests_as_numpy(std::vector<InferenceRequest> requests) {
     result["entity_numeric"] = std::move(entity_numeric);
     result["entity_card_ids"] = std::move(entity_card_ids);
     result["entity_type_ids"] = std::move(entity_type_ids);
+    result["entity_mask"] = std::move(entity_mask);
     result["candidate_numeric"] = std::move(candidate_numeric);
     result["candidate_card_ids"] = std::move(candidate_card_ids);
     result["candidate_type_ids"] = std::move(candidate_type_ids);
@@ -346,6 +397,8 @@ py::dict requests_as_numpy(std::vector<InferenceRequest> requests) {
     result["candidate_mask"] = std::move(candidate_mask);
     result["actor_deck_id"] = std::move(actor_deck_id);
     result["opponent_deck_id"] = std::move(opponent_deck_id);
+    result["model_slots"] = std::move(model_slots);
+    result["encoder_version"] = std::move(encoder_versions);
     return result;
 }
 
@@ -394,6 +447,13 @@ py::dict drain_samples_as_numpy(NativeSelfPlayBatch &batch) {
     py::array_t<float> wdl_target({count, py::ssize_t{3}});
     py::array_t<std::int32_t> generation({count});
     py::array_t<std::int32_t> actor({count});
+    py::array_t<std::uint64_t> game_seed({count});
+    py::array_t<std::int32_t> ply({count});
+    py::array_t<std::int32_t> model_version({count});
+    py::array_t<std::int32_t> cycle({count});
+    py::array_t<std::int32_t> phase_bucket({count});
+    py::array_t<std::int32_t> source({count});
+    py::list game_ids;
     std::fill_n(
         policy_target.mutable_data(),
         policy_target.size(),
@@ -415,11 +475,27 @@ py::dict drain_samples_as_numpy(NativeSelfPlayBatch &batch) {
         );
         generation.mutable_at(row) = sample.generation;
         actor.mutable_at(row) = sample.actor;
+        game_seed.mutable_at(row) = sample.game_seed;
+        ply.mutable_at(row) = sample.ply;
+        model_version.mutable_at(row) = sample.model_version;
+        cycle.mutable_at(row) = sample.cycle;
+        phase_bucket.mutable_at(row) = sample.phase_bucket;
+        source.mutable_at(row) = sample.source;
+        game_ids.append(py::str(sample.game_id));
     }
     result["policy_target"] = std::move(policy_target);
     result["wdl_target"] = std::move(wdl_target);
     result["generation"] = std::move(generation);
     result["actor"] = std::move(actor);
+    result["game_ids"] = py::module_::import("numpy").attr("asarray")(
+        std::move(game_ids)
+    );
+    result["game_seed"] = std::move(game_seed);
+    result["ply"] = std::move(ply);
+    result["model_version"] = std::move(model_version);
+    result["cycle"] = std::move(cycle);
+    result["phase_bucket"] = std::move(phase_bucket);
+    result["source"] = std::move(source);
     return result;
 }
 
@@ -449,10 +525,105 @@ std::vector<float> softmax_row(
     return result;
 }
 
+GameTaskV3 game_task_v3_from_python(const py::dict &source) {
+    GameTaskV3 result;
+    result.game_id = py::cast<std::string>(source["game_id"]);
+    result.cycle = source.contains("cycle")
+        ? py::cast<std::int32_t>(source["cycle"]) : 0;
+    result.deck_a = py::cast<std::string>(source["deck_a"]);
+    result.deck_b = py::cast<std::string>(source["deck_b"]);
+    result.seed = py::cast<std::uint32_t>(source["seed"]);
+    result.seat_a = py::cast<std::int32_t>(source["seat_a"]);
+    result.first_player = py::cast<std::int32_t>(source["first_player"]);
+    result.max_decisions = source.contains("max_decisions")
+        ? py::cast<std::uint32_t>(source["max_decisions"]) : 512;
+    if (source.contains("model_slots")) {
+        const std::vector<std::int32_t> values = py::cast<
+            std::vector<std::int32_t>
+        >(source["model_slots"]);
+        if (values.size() != 2) {
+            throw py::value_error("v3_task_model_slots_shape");
+        }
+        std::copy(values.begin(), values.end(), result.model_slots.begin());
+    }
+    if (source.contains("model_versions")) {
+        const std::vector<std::int32_t> values = py::cast<
+            std::vector<std::int32_t>
+        >(source["model_versions"]);
+        if (values.size() != 2) {
+            throw py::value_error("v3_task_model_versions_shape");
+        }
+        std::copy(values.begin(), values.end(), result.model_versions.begin());
+    }
+    return result;
+}
+
+ActorPoolConfigV3 actor_config_v3_from_python(const py::dict &source) {
+    ActorPoolConfigV3 result;
+    auto set_uint = [&source](const char *key, std::uint32_t &destination) {
+        if (source.contains(key)) {
+            destination = py::cast<std::uint32_t>(source[key]);
+        }
+    };
+    auto set_float = [&source](const char *key, float &destination) {
+        if (source.contains(key)) {
+            destination = py::cast<float>(source[key]);
+        }
+    };
+    set_uint("concurrent_games", result.concurrent_games);
+    set_uint("simulations", result.simulations);
+    set_uint("max_depth", result.max_depth);
+    set_uint("max_inflight_leaves", result.max_inflight_leaves);
+    set_uint(
+        "inference_wait_milliseconds",
+        result.inference_wait_milliseconds
+    );
+    set_float("c_puct", result.c_puct);
+    set_float("dirichlet_epsilon", result.dirichlet_epsilon);
+    if (source.contains("training")) {
+        result.training = py::cast<bool>(source["training"]);
+    }
+    if (source.contains("direct_policy")) {
+        result.direct_policy = py::cast<bool>(source["direct_policy"]);
+    }
+    return result;
+}
+
+py::dict actor_game_v3_to_python(const ActorGameResultV3 &source) {
+    return py::dict(
+        "game_id"_a=source.game_id,
+        "cycle"_a=source.cycle,
+        "deck_a"_a=source.deck_a,
+        "deck_b"_a=source.deck_b,
+        "seed"_a=source.seed,
+        "seat_a"_a=source.seat_a,
+        "first_player"_a=source.first_player,
+        "model_slots"_a=source.model_slots,
+        "model_versions"_a=source.model_versions,
+        "max_decisions"_a=source.max_decisions,
+        "success"_a=source.success,
+        "terminal"_a=source.terminal,
+        "truncated"_a=source.truncated,
+        "error"_a=source.error,
+        "winner"_a=source.winner,
+        "decisions"_a=source.decisions,
+        "simulations"_a=source.simulations,
+        "samples"_a=source.samples,
+        "state_hash"_a=source.state_hash,
+        "determinization_microseconds"_a=source.determinization_microseconds,
+        "projection_microseconds"_a=source.projection_microseconds,
+        "candidate_generation_microseconds"_a=
+            source.candidate_generation_microseconds,
+        "apply_microseconds"_a=source.apply_microseconds,
+        "encoding_microseconds"_a=source.encoding_microseconds,
+        "inference_wait_microseconds"_a=source.inference_wait_microseconds
+    );
+}
+
 } // namespace
 
 PYBIND11_MODULE(ptcg_ai_core, module) {
-    module.doc() = "PTCG AlphaZero v2 native core";
+    module.doc() = "PTCG Deep AI v3 native actor/search core";
     module.def("abi_version", []() {
         return ptcg::ai::NATIVE_ABI_VERSION;
     });
@@ -577,6 +748,8 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
                    &entity_card_ids,
                const py::array_t<std::int64_t, py::array::c_style | py::array::forcecast>
                    &entity_type_ids,
+               const py::array_t<bool, py::array::c_style | py::array::forcecast>
+                   &entity_mask,
                const py::array_t<float, py::array::c_style | py::array::forcecast>
                    &candidate_numeric,
                const py::array_t<std::int64_t, py::array::c_style | py::array::forcecast>
@@ -592,6 +765,7 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
                     entity_numeric,
                     entity_card_ids,
                     entity_type_ids,
+                    entity_mask,
                     candidate_numeric,
                     candidate_card_ids,
                     candidate_type_ids,
@@ -685,6 +859,8 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
                    &entity_card_ids,
                const py::array_t<std::int64_t, py::array::c_style | py::array::forcecast>
                    &entity_type_ids,
+               const py::array_t<bool, py::array::c_style | py::array::forcecast>
+                   &entity_mask,
                const py::array_t<float, py::array::c_style | py::array::forcecast>
                    &candidate_numeric,
                const py::array_t<std::int64_t, py::array::c_style | py::array::forcecast>
@@ -707,6 +883,7 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
                     entity_numeric,
                     entity_card_ids,
                     entity_type_ids,
+                    entity_mask,
                     candidate_numeric,
                     candidate_card_ids,
                     candidate_type_ids,
@@ -736,6 +913,64 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
         )
         .def("close", &NativeSelfPlayBatch::close)
         .def_property_readonly("closed", &NativeSelfPlayBatch::closed);
+
+    py::class_<NativeActorPoolV3>(module, "NativeActorPoolV3")
+        .def(
+            py::init([](
+                const py::dict &catalog,
+                const py::dict &decks,
+                std::shared_ptr<NativeSelfPlayBatch> batch,
+                std::shared_ptr<NativeSearchLimiter> limiter,
+                const py::dict &config
+            ) {
+                return std::make_unique<NativeActorPoolV3>(
+                    value_from_python(catalog),
+                    value_from_python(decks),
+                    std::move(batch),
+                    std::move(limiter),
+                    actor_config_v3_from_python(config)
+                );
+            }),
+            py::arg("catalog"),
+            py::arg("decks"),
+            py::arg("batch"),
+            py::arg("limiter"),
+            py::arg("config") = py::dict()
+        )
+        .def(
+            "start",
+            [](NativeActorPoolV3 &pool, const py::list &tasks) {
+                std::vector<GameTaskV3> native_tasks;
+                native_tasks.reserve(tasks.size());
+                for (const py::handle &task : tasks) {
+                    native_tasks.push_back(game_task_v3_from_python(
+                        py::cast<py::dict>(task)
+                    ));
+                }
+                py::gil_scoped_release release;
+                pool.start(std::move(native_tasks));
+            },
+            py::arg("tasks")
+        )
+        .def("pause", &NativeActorPoolV3::pause)
+        .def("resume", &NativeActorPoolV3::resume)
+        .def("cancel", &NativeActorPoolV3::cancel)
+        .def("wait", [](NativeActorPoolV3 &pool) {
+            py::gil_scoped_release release;
+            pool.wait();
+        })
+        .def("drain_games", [](NativeActorPoolV3 &pool) {
+            py::list result;
+            for (const ActorGameResultV3 &game : pool.drain_games()) {
+                result.append(actor_game_v3_to_python(game));
+            }
+            return result;
+        })
+        .def("metrics", [](const NativeActorPoolV3 &pool) {
+            return value_to_python(pool.metrics());
+        })
+        .def_property_readonly("running", &NativeActorPoolV3::running)
+        .def_property_readonly("finished", &NativeActorPoolV3::finished);
 
     py::class_<
         NativeSearchLimiter,
@@ -819,9 +1054,9 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
                         config["training"]
                     );
                 }
-                if (config.contains("force_deep_state_copy")) {
-                    native_config.force_deep_state_copy = py::cast<bool>(
-                        config["force_deep_state_copy"]
+                if (config.contains("model_slot")) {
+                    native_config.model_slot = py::cast<std::int32_t>(
+                        config["model_slot"]
                     );
                 }
                 if (config.contains("verify_candidate_cache")) {
@@ -892,9 +1127,9 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
                         config["training"]
                     );
                 }
-                if (config.contains("force_deep_state_copy")) {
-                    native_config.force_deep_state_copy = py::cast<bool>(
-                        config["force_deep_state_copy"]
+                if (config.contains("model_slot")) {
+                    native_config.model_slot = py::cast<std::int32_t>(
+                        config["model_slot"]
                     );
                 }
                 if (config.contains("verify_candidate_cache")) {
@@ -1295,33 +1530,25 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
         .def_property_readonly("revision", &RulesSession::revision)
         .def_property_readonly("initialized", &RulesSession::initialized);
 
-    py::class_<NativeInformationSetEncoder>(
+    py::class_<NativeInformationSetEncoderV3>(
         module,
-        "NativeInformationSetEncoder"
+        "NativeInformationSetEncoderV3"
     )
         .def(
             py::init([](const py::dict &cards) {
-                return NativeInformationSetEncoder(
+                return NativeInformationSetEncoderV3(
                     value_from_python(cards)
                 );
             }),
             py::arg("cards")
         )
         .def(
-            "set_cards",
-            [](NativeInformationSetEncoder &encoder,
-               const py::dict &cards) {
-                encoder.set_cards(value_from_python(cards));
-            }
-        )
-        .def(
             "build_observation",
-            [](const NativeInformationSetEncoder &encoder,
+            [](const NativeInformationSetEncoderV3 &encoder,
                const py::dict &snapshot,
                std::int32_t actor) {
                 return value_to_python(encoder.build_observation(
-                    value_from_python(snapshot),
-                    actor
+                    value_from_python(snapshot), actor
                 ));
             },
             py::arg("snapshot"),
@@ -1329,7 +1556,7 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
         )
         .def(
             "encode_actions",
-            [](const NativeInformationSetEncoder &encoder,
+            [](const NativeInformationSetEncoderV3 &encoder,
                const py::dict &observation,
                const py::list &actions) {
                 InferenceRequest request;
@@ -1338,8 +1565,7 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
                 {
                     py::gil_scoped_release release;
                     request = encoder.encode_actions(
-                        native_observation,
-                        native_actions
+                        native_observation, native_actions
                     );
                 }
                 std::vector<InferenceRequest> rows;
@@ -1351,7 +1577,7 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
         )
         .def(
             "encode_choices",
-            [](const NativeInformationSetEncoder &encoder,
+            [](const NativeInformationSetEncoderV3 &encoder,
                const py::dict &observation,
                const py::dict &request,
                const py::list &candidates) {

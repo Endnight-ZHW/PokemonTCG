@@ -14,11 +14,12 @@ namespace godot {
 
 namespace {
 
-constexpr std::array<const char *, 11> INPUT_NAMES{
+constexpr std::array<const char *, 12> INPUT_NAMES{
     "state_global",
     "entity_numeric",
     "entity_card_ids",
     "entity_type_ids",
+    "entity_mask",
     "candidate_numeric",
     "candidate_card_ids",
     "candidate_type_ids",
@@ -35,7 +36,7 @@ constexpr std::array<const char *, 2> OUTPUT_NAMES{
 } // namespace
 
 OnnxInference::OnnxInference()
-    : environment_(ORT_LOGGING_LEVEL_WARNING, "PokemonTCGAlphaZeroV2") {
+    : environment_(ORT_LOGGING_LEVEL_WARNING, "PokemonTCGAlphaZeroV3") {
     session_options_.SetIntraOpNumThreads(1);
     session_options_.SetInterOpNumThreads(1);
     session_options_.SetGraphOptimizationLevel(
@@ -58,11 +59,12 @@ void OnnxInference::_bind_methods() {
     );
     ClassDB::bind_method(
         D_METHOD(
-            "infer_v2",
+            "infer_v3",
             "state_global",
             "entity_numeric",
             "entity_card_ids",
             "entity_type_ids",
+            "entity_mask",
             "candidate_numeric",
             "candidate_card_ids",
             "candidate_type_ids",
@@ -73,7 +75,7 @@ void OnnxInference::_bind_methods() {
             "batch_size",
             "candidate_count"
         ),
-        &OnnxInference::infer_v2
+        &OnnxInference::infer_v3
     );
     ClassDB::bind_method(
         D_METHOD("get_last_error"),
@@ -117,7 +119,7 @@ bool OnnxInference::load_model(
     last_error_ = "";
     last_duration_ms_ = 0.0;
     try {
-        if (int64_t(manifest.get("format_version", 0)) != 3) {
+        if (int64_t(manifest.get("format_version", 0)) != 4) {
             last_error_ = "unsupported_runtime_manifest_format";
             return false;
         }
@@ -127,7 +129,7 @@ bool OnnxInference::load_model(
         }
         if (
             String(manifest.get("model_variant", ""))
-            != "universal_infoset_transformer_v2"
+            != "universal_infoset_transformer_v3"
         ) {
             last_error_ = "unsupported_model_variant";
             return false;
@@ -221,11 +223,12 @@ bool OnnxInference::checked_product(
     return true;
 }
 
-Dictionary OnnxInference::infer_v2(
+Dictionary OnnxInference::infer_v3(
     const PackedFloat32Array &state_global,
     const PackedFloat32Array &entity_numeric,
     const PackedInt64Array &entity_card_ids,
     const PackedInt64Array &entity_type_ids,
+    const PackedByteArray &entity_mask,
     const PackedFloat32Array &candidate_numeric,
     const PackedInt64Array &candidate_card_ids,
     const PackedInt64Array &candidate_type_ids,
@@ -297,6 +300,7 @@ Dictionary OnnxInference::infer_v2(
         || entity_numeric.size() != expected_entity_numeric
         || entity_card_ids.size() != expected_entity_cards
         || entity_type_ids.size() != expected_entity_types
+        || entity_mask.size() != expected_entity_cards
         || candidate_numeric.size() != expected_candidate_numeric
         || candidate_card_ids.size() != batch_candidates
         || candidate_type_ids.size() != batch_candidates
@@ -346,6 +350,10 @@ Dictionary OnnxInference::infer_v2(
             ENTITY_SLOTS,
             ENTITY_TYPE_FIELDS,
         };
+        std::array<int64_t, 2> entity_mask_shape{
+            batch_size,
+            ENTITY_SLOTS,
+        };
         std::array<int64_t, 3> candidate_numeric_shape{
             batch_size,
             candidate_count,
@@ -362,6 +370,13 @@ Dictionary OnnxInference::infer_v2(
         };
         std::array<int64_t, 1> deck_shape{batch_size};
 
+        std::unique_ptr<bool[]> bool_entity_mask = std::make_unique<bool[]>(
+            static_cast<std::size_t>(expected_entity_cards)
+        );
+        for (int64_t index = 0; index < expected_entity_cards; ++index) {
+            bool_entity_mask[static_cast<std::size_t>(index)]
+                = entity_mask[index] != 0;
+        }
         std::unique_ptr<bool[]> bool_mask = std::make_unique<bool[]>(
             static_cast<std::size_t>(batch_candidates)
         );
@@ -370,7 +385,7 @@ Dictionary OnnxInference::infer_v2(
                 = candidate_mask[index] != 0;
         }
 
-        std::array<Ort::Value, 11> inputs{
+        std::array<Ort::Value, 12> inputs{
             Ort::Value::CreateTensor<float>(
                 memory,
                 const_cast<float *>(state_global.ptr()),
@@ -398,6 +413,13 @@ Dictionary OnnxInference::infer_v2(
                 entity_type_ids.size(),
                 entity_type_shape.data(),
                 entity_type_shape.size()
+            ),
+            Ort::Value::CreateTensor<bool>(
+                memory,
+                bool_entity_mask.get(),
+                static_cast<std::size_t>(expected_entity_cards),
+                entity_mask_shape.data(),
+                entity_mask_shape.size()
             ),
             Ort::Value::CreateTensor<float>(
                 memory,
@@ -555,8 +577,9 @@ String OnnxInference::get_runtime_version() const {
 
 Dictionary OnnxInference::get_contract() const {
     Dictionary result;
-    result["format_version"] = 3;
-    result["model_variant"] = "universal_infoset_transformer_v2";
+    result["format_version"] = 4;
+    result["encoder_version"] = 8;
+    result["model_variant"] = "universal_infoset_transformer_v3";
     result["state_global_size"] = STATE_GLOBAL_SIZE;
     result["entity_slots"] = ENTITY_SLOTS;
     result["entity_numeric_size"] = ENTITY_NUMERIC_SIZE;

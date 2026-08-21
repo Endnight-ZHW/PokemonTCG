@@ -60,7 +60,7 @@ class AndroidReleaseGateTests(unittest.TestCase):
         self.assertIn("ANDROID_RELEASE_AI_OK", source)
         self.assertIn("ANDROID_CANDIDATE_RUNTIME_OK", source)
         self.assertIn("CANDIDATE_RUNTIME_EVIDENCE_CHUNK", source)
-        self.assertIn("alphazero_v2_android_runtime/1", source)
+        self.assertIn("deep_ai_v3_android_runtime/1", source)
         self.assertIn("AndroidEvidenceOutput", source)
         self.assertIn("search_deadline_passed", source)
         self.assertIn("minimum_simulations_passed", source)
@@ -141,20 +141,6 @@ class AndroidReleaseGateTests(unittest.TestCase):
             "Windows release staging contains unexpected non-universal ONNX",
             package,
         )
-
-        candidate_android = (
-            REPO_ROOT / "tools" / "test_alphazero_v2_candidate_android.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn("native_ai.production_ready", candidate_android)
-        self.assertIn("staged release switch remains disabled", candidate_android)
-        self.assertIn("android_candidate_release_enabled.json", candidate_android)
-        self.assertIn("-IncludeAndroidCandidateSmoke", candidate_android)
-        self.assertIn("-CandidateSmokeApkPath", candidate_android)
-        self.assertIn("-AndroidEvidenceOutput", candidate_android)
-        self.assertIn("-Target android -Configuration release", candidate_android)
-        self.assertIn("-ExpectedModels 1", candidate_android)
-        self.assertIn("-RequireDevice:$RequireDevice", candidate_android)
-        self.assertIn("finally", candidate_android)
 
     def test_nightly_ci_builds_then_verifies_the_release_pair(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "verify.yml").read_text(

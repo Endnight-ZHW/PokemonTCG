@@ -208,8 +208,7 @@ func _deep_models_load_and_infer(
 			}
 		var backend: Variant = deep_runtime.get_backend()
 		for empty_slots in [false, true]:
-			var inference := _infer_loaded_backend(
-				backend, deep_runtime.manifest, empty_slots)
+			var inference := _infer_loaded_backend(backend, empty_slots)
 			scenarios += 1
 			if not bool(inference.get("passed", false)):
 				return {
@@ -229,32 +228,35 @@ func _deep_models_load_and_infer(
 
 func _infer_loaded_backend(
 	backend: Variant,
-	_manifest: Dictionary,
 	empty_slots: bool,
 ) -> Dictionary:
 	if backend == null:
 		return {"passed": false, "error": "backend_unavailable"}
 	var state_global := PackedFloat32Array()
-	state_global.resize(128)
+	state_global.resize(192)
 	var entity_numeric := PackedFloat32Array()
-	entity_numeric.resize(128 * 16)
+	entity_numeric.resize(160 * 24)
 	var entity_cards := PackedInt64Array()
-	entity_cards.resize(128)
+	entity_cards.resize(160)
 	var entity_types := PackedInt64Array()
-	entity_types.resize(128 * 4)
+	entity_types.resize(160 * 4)
+	var entity_mask := PackedByteArray()
+	entity_mask.resize(160)
 	if not empty_slots:
 		for index in range(entity_cards.size()):
 			entity_cards[index] = 1 + index % 31
+			entity_mask[index] = 1
 	var candidate_numeric := PackedFloat32Array()
-	candidate_numeric.resize(2 * 32)
+	candidate_numeric.resize(2 * 48)
 	var candidate_refs := PackedInt64Array()
-	candidate_refs.resize(2 * 4)
+	candidate_refs.resize(2 * 8)
 	var inferred: Dictionary = backend.call(
-		"infer_v2",
+		"infer_v3",
 		state_global,
 		entity_numeric,
 		entity_cards,
 		entity_types,
+		entity_mask,
 		candidate_numeric,
 		PackedInt64Array([1, 2]),
 		PackedInt64Array([1, 2]),
