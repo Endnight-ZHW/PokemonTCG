@@ -6,6 +6,7 @@ signal stack_index_activated(index: int)
 signal inspected(context: Dictionary)
 signal detail_requested(card_id: String)
 signal action_requested(action: GameAction)
+signal action_menu_requested(context: Dictionary)
 signal card_dropped(
 	hand_index: int,
 	card_id: String,
@@ -53,6 +54,8 @@ var _press_position := Vector2.ZERO
 var fallback_back_panel: Panel
 var fallback_back_label: Label
 var _pending_action_row: Dictionary = {}
+var _action_menu_enabled := false
+var _action_menu_label := "可用操作"
 var _presentation_hidden := false
 var _stack_presentation_hidden := false
 var _presentation_tween: Tween
@@ -66,7 +69,7 @@ func _ready() -> void:
 	resized.connect(_on_resized)
 	_ensure_fallback_card_back()
 	_refresh()
-	set_action(_pending_action_row)
+	_refresh_action_button()
 
 
 func set_catalog(value: CardCatalog) -> void:
@@ -156,13 +159,27 @@ func set_action(row: Dictionary = {}) -> void:
 	_pending_action_row = row.duplicate()
 	if not is_node_ready() or action_button == null:
 		return
-	var action: GameAction = row.get("action")
-	action_button.visible = action != null
-	if action == null:
-		action_button.set_meta("action", null)
+	_refresh_action_button()
+
+
+func set_action_menu(enabled: bool, label: String = "可用操作") -> void:
+	_action_menu_enabled = enabled
+	_action_menu_label = label
+	if not is_node_ready() or action_button == null:
 		return
-	action_button.text = str(row.get("label", action.kind))
-	action_button.set_meta("action", action)
+	_refresh_action_button()
+
+
+func _refresh_action_button() -> void:
+	var action: GameAction = _pending_action_row.get("action") as GameAction
+	action_button.visible = action != null or _action_menu_enabled
+	if action != null:
+		action_button.text = str(_pending_action_row.get("label", action.kind))
+		action_button.set_meta("action", action)
+		return
+	action_button.set_meta("action", null)
+	if _action_menu_enabled:
+		action_button.text = _action_menu_label
 
 
 func set_actionable(value: bool) -> void:
@@ -551,9 +568,14 @@ func _prize_index_at_point(point: Vector2) -> int:
 
 
 func _on_action_pressed() -> void:
-	var action: GameAction = action_button.get_meta("action") as GameAction
+	var action: GameAction = null
+	if action_button.has_meta("action"):
+		action = action_button.get_meta("action") as GameAction
 	if action:
 		action_requested.emit(action)
+		return
+	if _action_menu_enabled and not inspect_context.is_empty():
+		action_menu_requested.emit(inspect_context.duplicate(true))
 
 
 func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:

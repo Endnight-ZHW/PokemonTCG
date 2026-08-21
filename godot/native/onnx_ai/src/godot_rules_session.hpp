@@ -52,6 +52,11 @@ public:
     Dictionary snapshot() const;
     bool restore(const Dictionary &snapshot, int64_t rng_state);
     Ref<NativeRulesSession> fork() const;
+    Ref<NativeRulesSession> fork_for_search(int64_t rng_state) const;
+    Dictionary fork_apply_action_for_search(
+        const Dictionary &action,
+        int64_t rng_state
+    ) const;
     Dictionary journal() const;
     Dictionary get_contract() const;
     String state_hash() const;

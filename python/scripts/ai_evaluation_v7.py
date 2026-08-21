@@ -237,7 +237,10 @@ def search_depth_sample_error(
         return "requested_depth"
     if reached > requested or completed > reached:
         return "reached_depth"
-    if reached != max_path_depth:
+    # Frozen v1 predates max_path_depth telemetry and historically emitted 0
+    # while preserving its actual partial depth in `reached`. v2 is the only
+    # engine whose complete-layer depth contract is release-gated.
+    if engine_id == "turn_beam_v2" and reached != max_path_depth:
         return "max_path_depth"
     if layers_completed > requested or max_path_depth < completed:
         return "completed_depth"
@@ -474,6 +477,7 @@ def _is_clean_match(row: dict[str, Any]) -> bool:
         and _int(row.get("invalid_actions")) == 0
         and _int(row.get("choice_failures")) == 0
         and _int(row.get("rule_exceptions")) == 0
+        and _int(row.get("emergency_fallbacks")) == 0
         and not bool(row.get("max_actions_exhausted"))
     )
 
@@ -1319,6 +1323,9 @@ def summarize_observed(matches: Sequence[dict[str, Any]]) -> dict[str, Any]:
             _int(row.get("time_capped_decisions")) for row in matches
         ),
         "deep_fallbacks": sum(_int(row.get("deep_fallbacks")) for row in matches),
+        "emergency_fallbacks": sum(
+            _int(row.get("emergency_fallbacks")) for row in matches
+        ),
         "max_actions_exhaustions": sum(
             bool(row.get("max_actions_exhausted")) for row in matches
         ),
@@ -2191,8 +2198,11 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                         or _int(sample.get("reached"), -1) < 0
                         or _int(sample.get("reached"), -1)
                         > requested
-                        or _int(sample.get("reached"), -1)
-                        != _int(sample.get("max_path_depth"), -2)
+                        or (
+                            engine_id == "turn_beam_v2"
+                            and _int(sample.get("reached"), -1)
+                            != _int(sample.get("max_path_depth"), -2)
+                        )
                         or completed < 0
                         or completed > requested
                         or layers < 0

@@ -1,6 +1,8 @@
 class_name CandidateRuntimeVerifier
 extends RefCounted
 
+const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
+
 const FORMAT_VERSION := 1
 const RULES_FIXTURE := "res://tests/fixtures/rules_golden.json"
 const CARDS_PATH := "res://data/cards.json"
@@ -366,22 +368,63 @@ func _native_search_probe(backend: Variant) -> Dictionary:
 
 
 func _fallback_probe() -> Dictionary:
+	var catalog := CardCatalog.new(true)
+	var engine := GameEngine.new(catalog)
+	var state := GameState.new()
+	state.phase = "MAIN"
+	state.setup_stage = GameState.SETUP_COMPLETE
+	state.setup_ready = [true, true]
+	state.setup_actor_idx = -1
+	state.turn_number = 3
+	state.first_player_idx = 1
+	state.active_player_idx = 0
+	state.revision = 9
+	state.public_deck_keys = ["fire", "water"]
+	state.set_type_matchups_enabled(false)
+	state.players[0].active = PokemonState.new("svi-ente")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].hand = ["sv1-ener-2"]
+	state.players[0].deck = ["svi-chim", "svi-monf", "svi-infr"]
+	state.players[0].prizes = ["svi-hrot", "svi-chiy"]
+	state.players[1].active = PokemonState.new("sv2-38")
+	state.players[1].active.placed_this_turn = false
+	state.players[1].hand = ["sv1-ener-3"]
+	state.players[1].deck = ["sv2-39", "sv2-grex"]
+	state.players[1].prizes = ["sv2-keldeo", "sv2-tatsu"]
+	var legal_query := engine.query_legal_action_groups(state, 0)
+	var action_rows: Array = []
+	var legal_signatures: Array[String] = []
+	if legal_query.success:
+		for action in legal_query.concrete_actions():
+			action_rows.append(action.to_dict())
+			legal_signatures.append(AIPositionEvaluator.action_signature(action))
 	var fallback := AICoordinator.new().decide_sync_for_evaluation(
 		{
 			"kind": "action",
 			"mode": "deep",
 			"engine": "turn_beam_v2",
-			"state": GameState.new().to_dict(),
+			"state": RuntimeStateProjection.project(state, 0),
 			"actor": 0,
-			"revision": 0,
+			"revision": state.revision,
 			"request_id": "candidate-runtime-fallback",
+			"match_instance_id": "candidate-runtime-fallback",
 			"deck_key": "fire",
-			"actions": [],
+			"seed": 918275,
+			"internal_evaluation_smoke": true,
+			"actions": action_rows,
 		},
 		null,
 	)
+	var selected_signature := ""
+	if fallback.get("action") is Dictionary:
+		selected_signature = AIPositionEvaluator.action_signature(
+			GameAction.from_dict(fallback["action"]))
 	var passed := (
-		bool(fallback.get("deep_fallback", false))
+		legal_query.success
+		and not action_rows.is_empty()
+		and bool(fallback.get("success", false))
+		and selected_signature in legal_signatures
+		and bool(fallback.get("deep_fallback", false))
 		and str(fallback.get("fallback_reason", ""))
 		== "runtime_unavailable"
 		and str(Dictionary(fallback.get("deep_failure", {})).get(
@@ -392,30 +435,13 @@ func _fallback_probe() -> Dictionary:
 		"fallback_reason": str(fallback.get("fallback_reason", "")),
 		"planner": str(Dictionary(fallback.get(
 			"deep_failure", {})).get("planner", "")),
+		"decision_origin": str(fallback.get("decision_origin", "")),
+		"selected_legal": selected_signature in legal_signatures,
 	}
 
 
 func _mask_runtime_state(source: Dictionary, actor: int) -> Dictionary:
-	var runtime_state := source.duplicate(true)
-	runtime_state.erase("resolution_stack")
-	var players: Array = runtime_state.get("players", [])
-	for player_index in range(players.size()):
-		var player: Dictionary = players[player_index]
-		var hidden_deck: Array[String] = []
-		hidden_deck.resize(Array(player.get("deck", [])).size())
-		hidden_deck.fill("__hidden_card__")
-		player["deck"] = hidden_deck
-		var hidden_prizes: Array[String] = []
-		hidden_prizes.resize(Array(player.get("prizes", [])).size())
-		hidden_prizes.fill("__hidden_prize__")
-		player["prizes"] = hidden_prizes
-		if player_index != actor:
-			var hidden_hand: Array[String] = []
-			hidden_hand.resize(Array(player.get("hand", [])).size())
-			hidden_hand.fill("__hidden_card__")
-			player["hand"] = hidden_hand
-	runtime_state["players"] = players
-	return runtime_state
+	return RuntimeStateProjection.project(GameState.from_dict(source), actor)
 
 
 func _infer_scenario(

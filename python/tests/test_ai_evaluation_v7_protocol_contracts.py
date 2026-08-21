@@ -440,6 +440,29 @@ class DecisionAndDepthContractTests(unittest.TestCase):
             },
         }))
 
+    def test_frozen_v1_legacy_max_path_telemetry_is_accepted(self):
+        row = _decision_row()
+        sample = row["search_depth_samples_by_strategy"]["B"][0]
+        sample.update({
+            "engine_id": "turn_beam_v1",
+            "requested": 6,
+            "reached": 5,
+            "completed": 0,
+            "max_path_depth": 0,
+            "layers_completed": 0,
+            "reply_requested": 3,
+            "reply_completed": 0,
+            "reply_applicable": False,
+            "reply_completion_reason": "not_applicable",
+            "completion_reason": "deadline",
+            "stop_reason": "deadline",
+        })
+        self.assertIsNone(match_decision_contract_error(
+            row,
+            {"A": "turn_beam_v2", "B": "turn_beam_v1"},
+            strict_v2_depth=True,
+        ))
+
     def test_information_set_puct_decisions_are_not_misclassified_as_beam_depth(self):
         row = _deep_decision_row()
         modes = {"A": "deep", "B": "challenge"}

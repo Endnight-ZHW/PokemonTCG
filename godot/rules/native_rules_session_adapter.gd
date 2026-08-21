@@ -5,17 +5,56 @@ var catalog: CardCatalog
 var native: Variant
 var state: GameState
 var rng_state := 0
+var _catalog_ready := false
+var _availability_checked := false
+var _available := false
+var _supports_search_fork := false
+var _supports_search_fork_apply := false
 
 
-func _init(p_catalog: CardCatalog = null) -> void:
+func _init(
+	p_catalog: CardCatalog = null,
+	p_native: Variant = null,
+	p_catalog_ready: bool = false,
+	p_search_methods_ready: bool = false,
+) -> void:
 	catalog = p_catalog if p_catalog != null else CardCatalog.shared()
-	if ClassDB.class_exists("NativeRulesSession"):
+	if p_native != null:
+		native = p_native
+		_catalog_ready = p_catalog_ready
+		_availability_checked = true
+		_available = true
+		_supports_search_fork = (
+			p_search_methods_ready or native.has_method("fork_for_search"))
+		_supports_search_fork_apply = (
+			p_search_methods_ready
+			or native.has_method("fork_apply_action_for_search")
+		)
+	elif ClassDB.class_exists("NativeRulesSession"):
 		native = ClassDB.instantiate("NativeRulesSession")
 
 
 func is_available() -> bool:
-	return native != null and int(native.get_contract().get(
-		"native_abi_version", 0)) == 2
+	if native == null:
+		return false
+	if not _availability_checked:
+		_availability_checked = true
+		_available = int(native.get_contract().get(
+			"native_abi_version", 0)) == 2
+		_supports_search_fork = (
+			_available and native.has_method("fork_for_search"))
+		_supports_search_fork_apply = (
+			_available and native.has_method("fork_apply_action_for_search"))
+	return _available
+
+
+func prepare_catalog() -> bool:
+	if not is_available():
+		return false
+	if _catalog_ready:
+		return true
+	_catalog_ready = bool(native.set_catalog(catalog.native_rules_catalog()))
+	return _catalog_ready
 
 
 func start_match(
@@ -45,6 +84,8 @@ func start_match(
 		},
 		seed,
 	)
+	if bool(result.get("success", false)):
+		_catalog_ready = true
 	return _adopt(result)
 
 
@@ -62,12 +103,15 @@ func start_match_from_decks(
 	config["rules_profile_id"] = GameState.RULES_PROFILE_ID
 	if not config.has("rules_options"):
 		config["rules_options"] = {"apply_type_matchups": false}
-	return _adopt(native.create(
+	var created: Dictionary = native.create(
 		catalog.native_rules_catalog(),
 		[deck_one.duplicate(), deck_two.duplicate()],
 		config,
 		seed,
-	))
+	)
+	if bool(created.get("success", false)):
+		_catalog_ready = true
+	return _adopt(created)
 
 
 func legal_actions(actor: int) -> LegalActionQueryResult:
@@ -113,20 +157,79 @@ func snapshot() -> Dictionary:
 	return native.snapshot() if is_available() else {}
 
 
-func restore(snapshot_value: Dictionary, p_rng_state: int) -> bool:
-	if not ClassDB.class_exists("NativeRulesSession"):
+func restore(
+	snapshot_value: Dictionary,
+	p_rng_state: int,
+	hydrate_state: bool = true,
+) -> bool:
+	if not is_available() or not prepare_catalog():
 		return false
-	var replacement: Variant = ClassDB.instantiate("NativeRulesSession")
-	if replacement == null or not replacement.set_catalog(
-		catalog.native_rules_catalog()
-	):
+	# RulesSession::restore validates into temporary values and commits only after
+	# the complete snapshot succeeds, so reusing this adapter is fail-closed while
+	# avoiding a second GDExtension allocation and catalog copy.
+	if not native.restore(snapshot_value, p_rng_state):
 		return false
-	if not replacement.restore(snapshot_value, p_rng_state):
-		return false
-	native = replacement
 	rng_state = native.rng_state()
-	state = GameState.from_snapshot(native.snapshot())
-	return state != null
+	state = GameState.from_snapshot(native.snapshot()) if hydrate_state else null
+	return not hydrate_state or state != null
+
+
+func fork_for_search(p_rng_state: int) -> NativeRulesSessionAdapter:
+	if not is_available():
+		return null
+	if not _catalog_ready and not prepare_catalog():
+		return null
+	var forked_native: Variant = null
+	if _supports_search_fork:
+		forked_native = native.call("fork_for_search", p_rng_state)
+	elif native.has_method("fork"):
+		# Compatibility for a stale editor binary; release builds are required to
+		# expose fork_for_search and never take this slower restore path.
+		forked_native = native.call("fork")
+	if forked_native == null:
+		return null
+	var result := NativeRulesSessionAdapter.new(
+		catalog, forked_native, true, _supports_search_fork_apply)
+	if _supports_search_fork:
+		result.rng_state = int(forked_native.call("rng_state"))
+		# The fork is immutable until its first apply. Sharing this DTO reference is
+		# safe and avoids cloning every candidate's parent state; _adopt replaces it
+		# with the native result before the branch is returned to the planner.
+		result.state = state
+		if result.state == null:
+			result.state = GameState.from_snapshot(native.snapshot())
+		return result if result.state != null else null
+	if state == null or not result.restore(state.snapshot(), p_rng_state):
+		return null
+	return result
+
+
+func fork_apply_action_for_search(
+	action: Dictionary,
+	p_rng_state: int,
+) -> Dictionary:
+	if not is_available():
+		return {"adapter": null, "step": null}
+	if not _catalog_ready and not prepare_catalog():
+		return {"adapter": null, "step": null}
+	if not _supports_search_fork_apply:
+		var fallback := fork_for_search(p_rng_state)
+		return {
+			"adapter": fallback,
+			"step": fallback.apply_action(action) if fallback != null else null,
+		}
+	var payload: Dictionary = native.call(
+		"fork_apply_action_for_search", action, p_rng_state)
+	var forked_native: Variant = payload.get("search_session")
+	payload.erase("search_session")
+	if forked_native == null:
+		return {"adapter": null, "step": null}
+	var branch := NativeRulesSessionAdapter.new(
+		catalog, forked_native, true, true)
+	branch.rng_state = int(payload.get("rng_state", p_rng_state))
+	branch.state = state
+	var step := branch._adopt(payload)
+	return {"adapter": branch, "step": step}
 
 
 func journal() -> Dictionary:

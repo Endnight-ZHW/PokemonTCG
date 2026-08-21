@@ -254,6 +254,15 @@ class NativeRulesSessionTests(unittest.TestCase):
         self.assertEqual(forked.rng_state, session.rng_state)
         self.assertEqual(forked.snapshot(), session.snapshot())
 
+        search_fork = session.fork_for_search(424242)
+        self.assertEqual(search_fork.state_hash, session.state_hash)
+        self.assertEqual(search_fork.snapshot(), session.snapshot())
+        self.assertEqual(search_fork.rng_state, 424242)
+        self.assertEqual(
+            (session.state_hash, session.rng_state),
+            (stable[0], stable[1]),
+        )
+
         restored = ptcg_ai_core.NativeRulesSession()
         restored.set_catalog(self.cards)
         restored_result = restored.restore(session.snapshot(), session.rng_state)
@@ -1333,8 +1342,157 @@ class NativeRulesSessionTests(unittest.TestCase):
         self.assertEqual(discarded["data"]["source_zone"], "hand")
         self.assertEqual(discarded["data"]["target_zone"], "discard")
         self.assertEqual(discarded["amount"], 1)
+        self.assertEqual(discarded["source"]["zone"], "hand")
+        self.assertEqual(discarded["target"]["zone"], "discard")
         self.assertEqual(drawn["data"]["card_ids"][0], "svi-chim")
         self.assertEqual(drawn["amount"], 3)
+        self.assertEqual(drawn["source"]["zone"], "deck")
+        self.assertEqual(drawn["target"]["zone"], "hand")
+
+    def test_professors_research_same_ids_keep_physical_event_endpoints(self):
+        fixture = _load_json("godot/tests/fixtures/rules_golden.json")
+        snapshot = copy.deepcopy(
+            fixture["cases"]["potion_heal_choice"]["initial_state"]
+        )
+        snapshot["snapshot_version"] = 3
+        snapshot["resolution_stack"]["schema_version"] = 3
+        snapshot.update({
+            "setup_stage": "COMPLETE",
+            "setup_actor_idx": -1,
+            "phase": "MAIN",
+            "turn_number": 3,
+            "active_player_idx": 0,
+            "first_player_idx": 1,
+        })
+        owner = snapshot["players"][0]
+        owner["hand"] = ["sv1-189", "sv1-ener-2", "svi-chim"]
+        owner["deck"] = [
+            "sv1-150",
+            "sv1-189",
+            "sv1-153",
+            "sv1-176",
+            "sv1-151",
+            "sv1-ener-2",
+            "svf-potion",
+        ]
+        owner["discard"] = []
+
+        session = ptcg_ai_core.NativeRulesSession()
+        session.set_catalog(self.cards)
+        loaded = session.load_scenario(
+            snapshot,
+            0x50524F46,
+            {"scenario": "professors_research_same_ids"},
+        )
+        self.assertTrue(loaded["success"], loaded)
+        query = session.legal_actions(0)
+        group = next(
+            row for row in query["groups"]
+            if row["kind"] == "PLAY_TRAINER"
+            and row["source"]["card_id"] == "sv1-189"
+        )
+        result = session.apply_action({
+            "schema_version": 4,
+            "action_id": "test:professors-research:same-ids",
+            "base_revision": query["base_revision"],
+            "actor": 0,
+            "kind": "PLAY_TRAINER",
+            "source": group["source"],
+            "target": None,
+            "payload": group["payload"],
+        })
+        self.assertTrue(result["success"], result)
+        trainer = next(
+            event for event in result["events"]
+            if event["event_type"] == "trainer_played"
+        )
+        discarded = next(
+            event for event in result["events"]
+            if event["event_type"] == "cards_discarded"
+        )
+        drawn = next(
+            event for event in result["events"]
+            if event["event_type"] == "cards_drawn"
+        )
+
+        self.assertEqual(trainer["card_id"], "sv1-189")
+        self.assertEqual(trainer["source"]["zone"], "hand")
+        self.assertEqual(trainer["source"]["index"], 0)
+        self.assertEqual(trainer["target"]["zone"], "discard")
+        self.assertEqual(
+            discarded["data"]["card_ids"],
+            ["sv1-ener-2", "svi-chim"],
+        )
+        self.assertEqual(discarded["source"]["zone"], "hand")
+        self.assertEqual(discarded["target"]["zone"], "discard")
+        self.assertEqual(discarded["amount"], 2)
+        self.assertIn("sv1-189", drawn["data"]["card_ids"])
+        self.assertIn("sv1-ener-2", drawn["data"]["card_ids"])
+        self.assertEqual(drawn["source"]["zone"], "deck")
+        self.assertEqual(drawn["target"]["zone"], "hand")
+        self.assertEqual(drawn["amount"], 7)
+
+    def test_empty_hand_discard_zone_ability_is_published_and_applies(self):
+        fixture = _load_json("godot/tests/fixtures/rules_golden.json")
+        snapshot = copy.deepcopy(
+            fixture["cases"]["potion_heal_choice"]["initial_state"]
+        )
+        snapshot["snapshot_version"] = 3
+        snapshot["resolution_stack"]["schema_version"] = 3
+        snapshot.update({
+            "setup_stage": "COMPLETE",
+            "setup_actor_idx": -1,
+            "phase": "MAIN",
+            "turn_number": 3,
+            "active_player_idx": 0,
+            "first_player_idx": 1,
+        })
+        owner = snapshot["players"][0]
+        owner["hand"] = []
+        owner["discard"] = ["sv1-151", "svg2-empo"]
+        owner["deck"] = ["sv1-150", "sv1-153", "sv1-176"]
+        owner["bench"] = [None, None, None, None, None]
+
+        session = ptcg_ai_core.NativeRulesSession()
+        session.set_catalog(self.cards)
+        loaded = session.load_scenario(
+            snapshot,
+            0x454D504F,
+            {"scenario": "empoleon_empty_hand"},
+        )
+        self.assertTrue(loaded["success"], loaded)
+        query = session.legal_actions(0)
+        group = next(
+            row for row in query["groups"]
+            if row["kind"] == "USE_ABILITY"
+            and row["source"]["card_id"] == "svg2-empo"
+            and row["source"]["zone"] == "discard"
+        )
+        self.assertEqual(group["source"]["index"], 1)
+        result = session.apply_action({
+            "schema_version": 4,
+            "action_id": "test:empoleon:empty-hand",
+            "base_revision": query["base_revision"],
+            "actor": 0,
+            "kind": "USE_ABILITY",
+            "source": group["source"],
+            "target": None,
+            "payload": group["payload"],
+        })
+        self.assertTrue(result["success"], result)
+        final_owner = result["state"]["players"][0]
+        self.assertEqual(final_owner["discard"], ["sv1-151"])
+        self.assertEqual(final_owner["bench"][0]["card_id"], "svg2-empo")
+        self.assertEqual(
+            final_owner["hand"],
+            ["sv1-176", "sv1-153", "sv1-150"],
+        )
+        self.assertIn("card_moved", [
+            event["event_type"] for event in result["events"]
+        ])
+        self.assertIn("cards_drawn", [
+            event["event_type"] for event in result["events"]
+        ])
 
 
 if __name__ == "__main__":

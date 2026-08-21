@@ -1514,6 +1514,11 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
         )
         .def("fork", &RulesSession::fork)
         .def(
+            "fork_for_search",
+            &RulesSession::fork_for_search,
+            py::arg("rng_state")
+        )
+        .def(
             "journal",
             [](const RulesSession &session) {
                 return value_to_python(session.journal());

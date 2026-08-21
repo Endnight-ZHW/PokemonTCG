@@ -553,6 +553,12 @@ func visible_card_source_keys() -> Array[String]:
 	var stadium := zones.get("stadium") as ZoneView
 	if stadium and stadium.visible and not stadium.card_id.is_empty():
 		result.append("stadium")
+	for scene_key in ["own_discard", "opponent_discard"]:
+		var discard := zones.get(scene_key) as ZoneView
+		if discard == null or not discard.visible or discard.count <= 0:
+			continue
+		var player := view_player if scene_key == "own_discard" else 1 - view_player
+		result.append(CardInteractionRouter.zone_key(player, "discard"))
 	return result
 
 
@@ -1246,6 +1252,7 @@ func _bind_scene_nodes() -> void:
 		zone.inspected.connect(_on_zone_inspected)
 		zone.detail_requested.connect(_on_detail_requested)
 		zone.action_requested.connect(action_requested.emit)
+		zone.action_menu_requested.connect(_on_zone_action_menu_requested)
 		zone.card_dropped.connect(_on_card_dropped)
 	(zones["own_prizes"] as ZoneView).stack_index_activated.connect(
 		_on_prize_index_activated.bind(true))
@@ -1831,8 +1838,21 @@ func _refresh_actions() -> void:
 		)
 
 	var stadium_zone := zones["stadium"] as ZoneView
+	var stadium_actionable := interaction_router.has_source("stadium")
 	stadium_zone.set_action({})
-	stadium_zone.set_actionable(interaction_router.has_source("stadium"))
+	stadium_zone.set_action_menu(stadium_actionable)
+	stadium_zone.set_actionable(stadium_actionable)
+	for scene_key in ["own_discard", "opponent_discard"]:
+		var discard_zone := zones[scene_key] as ZoneView
+		var discard_player := (
+			view_player if scene_key == "own_discard" else 1 - view_player
+		)
+		var discard_actionable := interaction_router.has_source(
+			CardInteractionRouter.zone_key(discard_player, "discard"),
+		)
+		discard_zone.set_action({})
+		discard_zone.set_action_menu(discard_actionable)
+		discard_zone.set_actionable(discard_actionable)
 	_refresh_action_popover()
 
 
@@ -3195,6 +3215,11 @@ func _disabled_reason_for_source(source_key: String) -> String:
 		return "当前没有可用招式、特性或撤退动作"
 	if source_key == "stadium":
 		return "该竞技场没有可主动发动的效果"
+	if source_key.begins_with("zone:"):
+		var parts := source_key.split(":")
+		if parts.size() >= 3 and int(parts[1]) != view_player:
+			return "对手的区域不能由你操作"
+		return "该区域当前没有可主动发动的卡牌效果"
 	return "当前没有合法卡牌动作"
 
 
@@ -3397,6 +3422,13 @@ func _source_control_for_key(source_key: String) -> Control:
 			return get_slot_view(int(parts[1]), str(parts[2]))
 	if source_key == "stadium":
 		return zones.get("stadium") as Control
+	if source_key.begins_with("zone:"):
+		var parts := source_key.split(":")
+		if parts.size() >= 3:
+			return _zone_view_for_endpoint({
+				"player": int(parts[1]),
+				"zone": str(parts[2]),
+			})
 	return null
 
 
@@ -3703,18 +3735,26 @@ func _on_menu_pressed() -> void:
 
 
 func _on_zone_inspected(context: Dictionary) -> void:
-	if str(context.get("zone", "")) == "stadium" and interaction_router.has_source("stadium"):
-		if action_popover and action_popover.visible and _popover_source_key == "stadium":
-			action_popover.dismiss()
-		else:
-			_popover_dismissed_source_key = ""
-			_present_popover_rows(
-				"stadium",
-				interaction_router.rows_for_source("stadium"),
-				"竞技场操作",
-			)
-		return
 	inspect_zone_requested.emit(context)
+
+
+func _on_zone_action_menu_requested(context: Dictionary) -> void:
+	var zone_name := str(context.get("zone", ""))
+	var zone_player := int(context.get("player", -1))
+	var source_key := CardInteractionRouter.zone_key(zone_player, zone_name)
+	if source_key.is_empty() or not interaction_router.has_source(source_key):
+		return
+	if action_popover and action_popover.visible and _popover_source_key == source_key:
+		action_popover.dismiss()
+	else:
+		_popover_dismissed_source_key = ""
+		_present_popover_rows(
+			source_key,
+			interaction_router.rows_for_source(source_key),
+			"竞技场操作" if zone_name == "stadium" else "%s操作" % str(
+				context.get("title", "区域"),
+			),
+		)
 
 
 func _on_card_dropped(

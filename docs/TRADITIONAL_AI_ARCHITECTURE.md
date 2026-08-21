@@ -4,7 +4,11 @@
 
 ## 信息与规则边界
 
-`AIInformationSet` 是规划器和牌组策略的唯一观察入口。它保留己方手牌、双方公开场面、弃牌区、隐藏区数量、公开历史、合法动作、公开牌组 key 和比赛种子；对手手牌、双方牌库/奖赏卡身份、结算栈和私有日志均被移除。信念状态只根据发行牌表和公开信息重建。
+`AIRuntimeStateProjection` 是主场景、评测器、候选运行时验证器以及 Deep→Challenge 回退共用的唯一请求投影。它保留己方手牌、双方已公开场面、弃牌区、隐藏区数量、公开日志、公开牌组 key、revision 和比赛种子；对手手牌、双方牌库/奖赏卡身份、未公开开局场面、结算栈、Choice 序号、开局奖励牌身份和幂等记录均被移除。投影带有 `ai_public_state_v1` 边界标记，并在 worker 入口再次验证；缺少标记或重新混入任一隐藏身份/私有字段的请求会整批拒绝。该字典保留 GameState 外形仅用于观察编码，明确不是可恢复的 Snapshot 3。
+
+动作请求必须携带调用方从权威 `RulesSession` 取得的完整 `actions` 集合。Challenge worker 不再从公开观察调用 `query_legal_action_groups()`；它逐条验证 Action v4、actor、base revision、公开实体引用和去除 action ID 后的规范签名，缺失、过期、格式错误、隐藏引用或重复动作都会返回明确错误。规划结果仍由主原生会话按当前 revision 重新核对并应用。开局场面尚未公开时，唯一动作直接执行；多动作只使用既有静态策略评分，不尝试恢复不完整局面。
+
+`AIInformationSet` 是规划器和牌组策略内部的唯一观察入口。信念状态只根据发行牌表和上述公开信息重建。
 
 Challenge 与 Deep 回退固定 `apply_type_matchups=false`。策略语义目录不导出弱点、抗性或属性对位字段；卡牌 VM 明示的属性条件仍由规则引擎执行。
 
@@ -32,7 +36,9 @@ Challenge 与 Deep 回退固定 `apply_type_matchups=false`。策略语义目录
 6. 语义计划缓存保存动作意图和公开状态前置条件。每次结算后重新核对 revision、actor、phase、公开指纹和当前合法动作；失效后重新运行完全相同的固定搜索，不降级为局部搜索。
 7. `AICoordinator` 只负责异步执行、代际校验、取消和回收，不设置 1100ms 超时。异常回退使用统一战术排序器，不按动作名称排序。
 
-每次适用搜索统一报告 `engine_id`、`requested_depth`、`completed_depth`、`max_path_depth`、`reply_completed_depth`、`layers_completed`、`nodes_expanded` 和 `completion_reason`。耗时仍记录为诊断数据，但不影响动作或门禁。
+`GameEngine` 在每次传统 AI 决策开始/结束时建立搜索 epoch。epoch 内按 GameState 实例、revision 和内容指纹缓存原生会话；父节点合法动作只查询一次，每个 v2 候选通过 `RulesSession.fork_for_search(seed)` 建立确定性分支，连续 Choice 在同一分支会话结算，父会话状态/RNG 保持不变。卡牌目录和规则 kernel 作为只读上下文由分支共享，搜索分支不写 MatchJournal。普通动作路径也只恢复一次并在同一会话完成合法性核对；恢复热路径按需构造 GDScript DTO，冻结 v1 因而无需修改评分、预算或源码即可恢复工作量。
+
+每次适用搜索统一报告 `engine_id`、`requested_depth`、`completed_depth`、`max_path_depth`、`reply_completed_depth`、`layers_completed`、`nodes_expanded`、`completion_reason`、`decision_origin` 和 `failure_stage`。主场景紧急动作/Choice fallback 另有逐局计数；评测器记录 origin/stage 分布并将任何紧急 fallback 视为非干净对局。耗时仍记录为诊断数据，但不影响动作或门禁。
 
 ## 卡组策略
 
@@ -60,6 +66,8 @@ Challenge 与 Deep 回退固定 `apply_type_matchups=false`。策略语义目录
 
 schema v7 使用固定 `protocol_id`，明确记录 A/B 引擎，并拒绝把 schema v6 或更早结果用于新门禁。`simulation_fingerprint` 绑定 AI、冻结 v1、规则、卡牌、策略、Godot 可执行文件精确哈希、赛程和执行配置；`analysis_fingerprint` 只绑定聚合、校验和报告代码，所以分析代码变化只需重新聚合。Nightly 固定分为 500 个两局镜像单元和 450 个四局跨牌组单元；每个单元原子写入不可变 checkpoint，重启及 CI workflow 重试只补齐缺失或校验失败单元，`-NoResume` 会同时禁止读取和写入 checkpoint。镜像记录必须恰好包含席位 0/1，跨牌组记录必须恰好包含两个相反方向各自的席位 0/1，重复席位或缺失方向均按损坏记录处理。调度前的内容检查器会复核模拟指纹、任务/分片身份、证据单元身份、干净终局和规范化比赛 SHA-256；损坏或过期记录按缺失处理并允许重新生成，但同一证据单元若出现内容不同且各自校验有效的冲突记录，整次运行立即 fail-closed，绝不选择其中任一份继续。聚合结果保留排序后的完整证据单元清单及其 SHA-256；最终 Nightly 校验器会将这 950 个身份逐一与主矩阵中重新构建的完整单元交叉核对，因此仅伪造正确计数不能通过。50 个逻辑分片始终保持证据单元完整，本机使用固定代表性前缀估算成本，再按实际缺失单元做确定性 LPT 分配；正式本机配置最多 12 个 worker，CI 使用 25 个 job、每个 job 2 个 worker。
 
+本次公开投影、搜索实现和原生二进制均进入 `simulation_fingerprint`，因此旧 checkpoint 不可复用；只有以新指纹重新生成的结构预检、固定 280 和完整 2800 局证据有效。
+
 本机完整 Nightly 会先运行固定 280 局结构预检；预检只能因非法动作、规则异常、Choice 失败、动作上限或金标失败，不能根据胜率或置信区间提前通过或拒绝。其 checkpoint 会由随后的完整矩阵直接复用。CI 的每个 runner 在正式分片前并发运行两份固定的两局 v1 工作量校准，以模拟正式的双 worker 负载；任一结果低于冻结工作量下限都会拒绝该 runner，避免时间门禁型基线因资源争抢被削弱。
 
 权威聚合器是 `python/scripts/ai_evaluation_v7.py`；固定产物为 `results.json`、`validation.json`、`report.html`、`provenance.json`、`task_manifest.json`、`simulation_config.json`、`shards/` 和 `checkpoints/`。结果同时记录 `gate_depth_source=main_matches`、checkpoint 汇总、执行配置和墙钟统计作用域；CI 未记录统一分布式墙钟时明确写 `not_recorded`。本机计时从 280 局预检之前开始，同次预检生成再由主矩阵读取的 checkpoint 仍属于 `full_evidence_stage`；只有启动前已存在可恢复记录时才标为 `current_attempt_only`。只有 `full_evidence_stage` 的同机证据可以进入性能对比。需要观察单进程延迟时可显式增加 `-PerformanceBenchmark`；它运行 20 局预热和 40 局测量，只写入诊断字段，不参与强度或深度门禁。
@@ -81,6 +89,8 @@ schema v7 使用固定 `protocol_id`，明确记录 A/B 引擎，并拒绝把 sc
 ```
 
 完整 2800 局是发布门禁，不应以本地小样本替代。
+
+本轮修复的本机定向验收中，生产 v2 火系镜像 2/2 干净结束，36 个适用搜索样本共展开 15,904 节点；加权 `planner_ms / nodes_expanded` 为 2.3901ms，中位数 2.3555ms，低于迁移前 4.603ms/node 的 1.25 倍上限。冻结 v1 校准在原阈值下通过：2/2 干净结束、simulation sum 7,897、full-budget decisions 14、deadline decisions 68。另一个 fire/water 镜像与交叉矩阵 8/8 正常 `game_over`，覆盖 v2 347 次和 v1 309 次动作决策，未出现 `native_restore_failed`、`no_simulatable_action`、非法动作、Choice/规则失败或紧急 fallback。该定向结果用于回归和性能定位，不替代新指纹下的固定 280 等价证据或完整 2800 局 Nightly。
 
 本次热路径优化可用固定 280 局 v2 对 v2 语料做等价与性能验收；它必须逐局、逐决策保持规范化结果和 v2 轨迹完全一致，并在同一主机、相同 worker 数下同时达到节点单位规划耗时中位数下降 25% 和完整证据阶段墙钟下降 20%。该语料只验证实现等价和性能，不代替下一次正常 Nightly 的 2800 局强度门禁。
 

@@ -212,6 +212,21 @@ int main() {
         const Value snapshot = session.snapshot();
         auto forked = session.fork();
         require(forked->snapshot() == snapshot, "fork snapshot mismatch");
+        const std::string parent_hash_before_search_fork = session.state_hash();
+        const std::uint32_t parent_rng_before_search_fork = session.rng_state();
+        auto search_fork = session.fork_for_search(424242U);
+        require(search_fork->snapshot() == snapshot,
+            "search fork snapshot mismatch");
+        require(search_fork->rng_state() == 424242U,
+            "search fork did not install branch RNG");
+        Value search_query = search_fork->legal_actions(setup_actor(*search_fork));
+        const auto search_step = search_fork->apply_action(bind_action(
+            search_query, "SETUP_DONE", "cpp:search-fork:setup-done"));
+        require(search_step.success, "search fork action failed");
+        require(session.state_hash() == parent_hash_before_search_fork,
+            "search fork mutated parent state");
+        require(session.rng_state() == parent_rng_before_search_fork,
+            "search fork mutated parent RNG");
         RulesSession restored(cards);
         std::string restore_error;
         require(restored.restore(snapshot, session.rng_state(), &restore_error),

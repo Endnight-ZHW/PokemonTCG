@@ -1,5 +1,7 @@
 extends SceneTree
 
+const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
+
 const DEFAULT_DECK_KEYS := [
 	"colorless",
 	"darkness",
@@ -1417,6 +1419,8 @@ func _play_match(
 	}
 	var action_decisions_by_strategy := {"A": 0, "B": 0}
 	var decision_engine_counts_by_strategy := {"A": {}, "B": {}}
+	var decision_origin_counts_by_strategy := {"A": {}, "B": {}}
+	var failure_stage_counts_by_strategy := {"A": {}, "B": {}}
 	var search_depth_decision_counts_by_strategy := {
 		"A": {"applicable": 0, "not_applicable": 0, "reasons": {}},
 		"B": {"applicable": 0, "not_applicable": 0, "reasons": {}},
@@ -1425,6 +1429,7 @@ func _play_match(
 	var time_capped_decisions := 0
 	var dynamic_budget_stop_reasons := {}
 	var deep_fallbacks := 0
+	var emergency_fallbacks := 0
 	var invalid_actions := 0
 	var choice_failures := 0
 	var rule_exceptions := 0
@@ -1451,6 +1456,13 @@ func _play_match(
 				choice_strategy, seed, match_instance_id, actions_taken + choices,
 				_perf_enabled(performance_profile), disable_ai_cache, disable_native_math)
 			var choice_elapsed_ms := maxf(0.0, float(choice_result.get("elapsed_ms", 0.0)))
+			var choice_origin := str(choice_result.get("decision_origin", "unknown"))
+			_increment_counter(
+				decision_origin_counts_by_strategy[choice_strategy_label],
+				choice_origin,
+			)
+			if choice_origin == "emergency_fallback":
+				emergency_fallbacks += 1
 			total_decision_ms += choice_elapsed_ms
 			decision_ms_samples.append(choice_elapsed_ms)
 			var choice_cache_hit := bool(choice_result.get("turn_plan_cache_hit", false))
@@ -1469,6 +1481,10 @@ func _play_match(
 			if bool(choice_result.get("deep_fallback", false)):
 				deep_fallbacks += 1
 			if not bool(choice_result.get("success", false)):
+				_increment_counter(
+					failure_stage_counts_by_strategy[choice_strategy_label],
+					str(choice_result.get("failure_stage", "unknown")),
+				)
 				choice_failures += 1
 				terminal_reason = "choice_failed"
 				terminal_message = str(choice_result.get("error", "choice_failed"))
@@ -1548,6 +1564,13 @@ func _play_match(
 				actor_strategy.get("engine", DEFAULT_ENGINE),
 			)),
 		)
+		var decision_origin := str(decision.get("decision_origin", "unknown"))
+		_increment_counter(
+			decision_origin_counts_by_strategy[actor_strategy_label],
+			decision_origin,
+		)
+		if decision_origin == "emergency_fallback":
+			emergency_fallbacks += 1
 		var strategy_depth_counts: Dictionary = (
 			search_depth_decision_counts_by_strategy[actor_strategy_label])
 		if bool(decision.get("search_depth_applicable", false)):
@@ -1644,6 +1667,10 @@ func _play_match(
 			time_capped_decisions += 1
 		var planner_error := str(decision.get("planner_error", ""))
 		if not bool(decision.get("success", false)) or not planner_error.is_empty():
+			_increment_counter(
+				failure_stage_counts_by_strategy[actor_strategy_label],
+				str(decision.get("failure_stage", "unknown")),
+			)
 			rule_exceptions += 1
 			terminal_reason = (
 				"planner_failed"
@@ -1774,6 +1801,8 @@ func _play_match(
 		"behavior_by_strategy": behavior_by_strategy,
 		"action_decisions_by_strategy": action_decisions_by_strategy,
 		"decision_engine_counts_by_strategy": decision_engine_counts_by_strategy,
+		"decision_origin_counts_by_strategy": decision_origin_counts_by_strategy,
+		"failure_stage_counts_by_strategy": failure_stage_counts_by_strategy,
 		"search_depth_decision_counts_by_strategy":
 			search_depth_decision_counts_by_strategy,
 		"search_depth_samples_by_strategy": search_depth_samples_by_strategy,
@@ -1783,6 +1812,7 @@ func _play_match(
 		"time_capped_decisions": time_capped_decisions,
 		"dynamic_budget_stop_reasons": dynamic_budget_stop_reasons,
 		"deep_fallbacks": deep_fallbacks,
+		"emergency_fallbacks": emergency_fallbacks,
 		"max_actions_exhausted": terminal_reason == "max_actions",
 	}
 
@@ -1968,6 +1998,8 @@ func _failed_match_row(
 			"B": _empty_behavior_counts(),
 		},
 		"action_decisions_by_strategy": {"A": 0, "B": 0},
+		"decision_origin_counts_by_strategy": {"A": {}, "B": {}},
+		"failure_stage_counts_by_strategy": {"A": {}, "B": {}},
 		"search_depth_decision_counts_by_strategy": {
 			"A": {"applicable": 0, "not_applicable": 0, "reasons": {}},
 			"B": {"applicable": 0, "not_applicable": 0, "reasons": {}},
@@ -1979,6 +2011,7 @@ func _failed_match_row(
 		"time_capped_decisions": 0,
 		"dynamic_budget_stop_reasons": {},
 		"deep_fallbacks": 0,
+		"emergency_fallbacks": 0,
 		"max_actions_exhausted": false,
 	}
 
@@ -2090,47 +2123,16 @@ func _evaluation_action_params(
 func _evaluation_state_snapshot(
 	state: GameState,
 	player_idx: int,
-	strategy: Dictionary,
+	_strategy: Dictionary,
 ) -> Dictionary:
-	if not bool(strategy.get("production_runtime", false)):
-		return state.snapshot()
-	return _current_production_state_snapshot(state, player_idx)
+	# Evaluation must exercise the same non-restorable observation boundary as
+	# gameplay regardless of whether the strategy uses production or evaluator
+	# budget controls.
+	return RuntimeStateProjection.project(state, player_idx)
 
 
 func _current_production_state_snapshot(state: GameState, player_idx: int) -> Dictionary:
-	var snapshot := state.snapshot()
-	snapshot.erase("resolution_stack")
-	var player_rows: Array = snapshot.get("players", [])
-	for row_index in range(player_rows.size()):
-		var row: Dictionary = player_rows[row_index]
-		var hidden_prizes: Array[String] = []
-		hidden_prizes.resize(Array(row.get("prizes", [])).size())
-		hidden_prizes.fill("__hidden_prize__")
-		row["prizes"] = hidden_prizes
-		var hidden_deck: Array[String] = []
-		hidden_deck.resize(Array(row.get("deck", [])).size())
-		hidden_deck.fill("__hidden_card__")
-		row["deck"] = hidden_deck
-		if player_idx in [0, 1] and row_index != player_idx:
-			var hidden_hand: Array[String] = []
-			hidden_hand.resize(Array(row.get("hand", [])).size())
-			hidden_hand.fill("__hidden_card__")
-			row["hand"] = hidden_hand
-	if (
-		str(snapshot.get("setup_stage", GameState.SETUP_COMPLETE))
-		!= GameState.SETUP_COMPLETE
-		and player_idx in [0, 1]
-		and player_rows.size() == 2
-	):
-		var opponent: Dictionary = player_rows[1 - player_idx]
-		opponent["active"] = null
-		opponent["bench"] = []
-		var bonus_ids: Array = snapshot.get("setup_bonus_card_ids", [[], []])
-		if bonus_ids.size() == 2:
-			bonus_ids[1 - player_idx] = []
-			snapshot["setup_bonus_card_ids"] = bonus_ids
-	snapshot["players"] = player_rows
-	return snapshot
+	return RuntimeStateProjection.project(state, player_idx)
 
 
 func _not_cancelled() -> bool:
@@ -2563,7 +2565,7 @@ func _golden_decision_for_actions(
 		rows.append((action as GameAction).to_dict())
 	var result := worker.decide({
 		"kind": "action",
-		"state": state.snapshot(),
+		"state": RuntimeStateProjection.project(state, actor),
 		"actor": actor,
 		"revision": state.revision,
 		"request_id": request_id,
@@ -3001,6 +3003,7 @@ func _match_has_fatal_error(row: Dictionary) -> bool:
 		or int(row.get("invalid_actions", 0)) > 0
 		or int(row.get("choice_failures", 0)) > 0
 		or int(row.get("rule_exceptions", 0)) > 0
+		or int(row.get("emergency_fallbacks", 0)) > 0
 		or bool(row.get("max_actions_exhausted", false))
 	)
 

@@ -1,6 +1,7 @@
 class_name NativeChallengeAI
 extends RefCounted
 
+const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
 const STRONGEST_DIFFICULTY := "strongest"
 const HEURISTIC_VARIANT_SEMANTIC_V2 := "semantic_v2"
 const DEFAULT_HEURISTIC_VARIANT := HEURISTIC_VARIANT_SEMANTIC_V2
@@ -299,21 +300,48 @@ func decide(
 ) -> Dictionary:
 	var started := Time.get_ticks_usec()
 	var profile := _new_decision_profile() if bool(request.get("profile", false)) else {}
-	var previous_disable_native_math := _disable_native_math
-	_disable_native_math = bool(request.get("disable_native_math", false))
 	var context_started := _profile_start(profile)
 	var disable_cache := bool(request.get("disable_cache", false))
 	var catalog := CardCatalog.new(true) if disable_cache else _cached_catalog()
 	var engine := GameEngine.new(catalog) if disable_cache else _cached_engine(catalog)
-	var state := GameState.from_dict(request["state"])
+	var actor_value: Variant = request.get("actor")
+	if not actor_value is int or int(actor_value) not in [0, 1]:
+		return _request_failure(request, "invalid_actor", "request_decode")
+	var revision_value: Variant = request.get("revision")
+	if not revision_value is int or int(revision_value) < 0:
+		return _request_failure(
+			request, "invalid_request_revision", "request_decode")
+	var state_value: Variant = request.get("state")
+	if not state_value is Dictionary:
+		return _request_failure(request, "invalid_runtime_state", "request_decode")
+	var state_payload: Dictionary = state_value
+	var actor := int(actor_value)
+	var projection_error: String = RuntimeStateProjection.validate(
+		state_payload, actor)
+	if not projection_error.is_empty():
+		return _request_failure(
+			request,
+			"invalid_runtime_projection:%s" % projection_error,
+			"runtime_projection",
+		)
+	var state := GameState.from_dict(state_payload)
+	if state == null:
+		return _request_failure(request, "invalid_runtime_state", "request_decode")
+	var request_kind := str(request.get("kind", "action"))
+	if request_kind not in ["action", "choice"]:
+		return _request_failure(request, "invalid_request_kind", "request_decode")
+	if request_kind == "choice" and int(revision_value) != state.revision:
+		return _request_failure(
+			request, "stale_choice_revision", "request_decode")
+	var previous_disable_native_math := _disable_native_math
+	_disable_native_math = bool(request.get("disable_native_math", false))
 	# Challenge and its disabled-Deep fallback are a fixed no-matchup ruleset.
 	# Canonicalize again at the worker boundary so an internal/test caller cannot
 	# accidentally re-enable global Weakness or Resistance calculations.
 	state.set_type_matchups_enabled(false)
-	var actor := int(request["actor"])
 	_profile_add_elapsed(profile, "request_context_ms", context_started)
 	var result: Dictionary
-	if str(request.get("kind", "action")) == "choice":
+	if request_kind == "choice":
 		var choice_started := _profile_start(profile)
 		var decoded := _decode_choice_view(request.get("choice"))
 		if not bool(decoded.get("ok", false)):
@@ -341,6 +369,7 @@ func decide(
 			)
 		_profile_add_elapsed(profile, "choice_ms", choice_started)
 	else:
+		engine.begin_search_epoch()
 		result = _search_action(
 			request,
 			state,
@@ -352,7 +381,18 @@ func decide(
 			profile,
 			started,
 		)
+		engine.end_search_epoch()
 		_record_action_cycle_selection(request, state, actor, result)
+	if bool(result.get("success", false)):
+		if not result.has("decision_origin"):
+			result["decision_origin"] = (
+				"choice_policy" if request_kind == "choice" else "search")
+		result["failure_stage"] = ""
+	else:
+		result["decision_origin"] = "failure"
+		if str(result.get("failure_stage", "")).is_empty():
+			result["failure_stage"] = (
+				"choice_policy" if request_kind == "choice" else "search")
 	result["revision"] = int(request["revision"])
 	result["request_id"] = str(request.get("request_id", ""))
 	result["elapsed_ms"] = (Time.get_ticks_usec() - started) / 1000.0
@@ -361,6 +401,22 @@ func decide(
 		result["profile"] = _public_decision_profile(profile)
 	_disable_native_math = previous_disable_native_math
 	return result
+
+
+static func _request_failure(
+	request: Dictionary,
+	error: String,
+	stage: String,
+) -> Dictionary:
+	var revision_value: Variant = request.get("revision")
+	return {
+		"success": false,
+		"error": error,
+		"failure_stage": stage,
+		"decision_origin": "failure",
+		"revision": int(revision_value) if revision_value is int else -1,
+		"request_id": str(request.get("request_id", "")),
+	}
 
 
 func _search_action(
@@ -376,23 +432,19 @@ func _search_action(
 ) -> Dictionary:
 	var decode_started := _profile_start(profile)
 	state.set_type_matchups_enabled(false)
-	var query := engine.query_legal_action_groups(state, actor)
-	if not query.success:
-		return {"success": false, "error": "legal_query_failed:%s" % query.code}
-	var authoritative: Array[GameAction] = []
-	authoritative.assign(query.concrete_actions())
-	var supplied: Array[GameAction] = []
-	for row in request.get("actions", []):
-		if row is Dictionary:
-			supplied.append(GameAction.from_dict(row))
-	var actions := (
-		authoritative
-		if supplied.is_empty()
-		else _authoritative_action_intersection(supplied, authoritative)
-	)
+	var decoded_actions := _decode_authoritative_actions(
+		request, state, actor)
 	_profile_add_elapsed(profile, "decode_actions_ms", decode_started)
-	if actions.is_empty():
-		return {"success": false, "error": "no_authoritative_legal_action"}
+	if not bool(decoded_actions.get("ok", false)):
+		return {
+			"success": false,
+			"error": str(decoded_actions.get(
+				"error", "invalid_authoritative_legal_actions")),
+			"failure_stage": "authoritative_actions",
+			"decision_origin": "failure",
+		}
+	var actions: Array[GameAction] = []
+	actions.assign(decoded_actions.get("actions", []))
 	if cancel_check.is_valid() and bool(cancel_check.call()):
 		return {"success": false, "cancelled": true, "error": "cancelled"}
 	var deck_key := _deck_key_for_actor(
@@ -427,6 +479,8 @@ func _search_action(
 		return {
 			"success": false,
 			"error": "invalid_information_set:%s" % information_set.validation_error(),
+			"failure_stage": "information_set",
+			"decision_origin": "failure",
 		}
 	var strategy_registry: Variant = _traditional_strategy_registry_instance(engine_id)
 	if strategy_registry == null or not strategy_registry.is_valid():
@@ -484,6 +538,50 @@ func _search_action(
 	var trusted_action_evaluator := Callable(
 		self, "_traditional_action_candidate_score").bind(deck_key, catalog)
 	var preflight_state := information_set.sample_state(int(planner_request["seed"]))
+	# Before both setup boards are revealed there is intentionally no complete
+	# restorable opponent position. Setup actions are already authoritative and
+	# are ranked from the public determinization without attempting a native
+	# rollout of that incomplete board.
+	if (
+		state.phase == "SETUP"
+		and state.setup_stage != GameState.SETUP_COMPLETE
+		and preflight_state != null
+		and actions.size() > 1
+	):
+		var setup_ranked := AIPositionEvaluator.ranked_actions(
+			preflight_state,
+			actor,
+			actions,
+			strategy,
+			CardSemanticCatalog.new(catalog),
+			catalog,
+			information_set.match_seed(),
+			cancel_check,
+			trusted_action_evaluator,
+		)
+		if setup_ranked.is_empty():
+			return {
+				"success": false,
+				"error": "no_ranked_setup_action",
+				"failure_stage": "setup_policy",
+				"decision_origin": "failure",
+			}
+		var setup_action: GameAction = Dictionary(setup_ranked[0]).get("action")
+		return _traditional_action_result(
+			request,
+			setup_action,
+			strategy,
+			information_set,
+			0,
+			"setup_public_policy",
+			false,
+			{
+				"forced_tactic": "setup_public_policy",
+				"turn_plan": [_intent_with_precondition(
+					setup_action, information_set.cache_precondition())],
+				"completion_reason": "forced_tactic",
+			},
+		)
 	var preflight := {"resolved": false, "nodes_expanded": 0, "reason": "invalid_input"}
 	if preflight_state != null:
 		preflight = AIMandatoryTactics.new().resolve(
@@ -687,6 +785,8 @@ func _search_action(
 			"success": false,
 			"error": str(planned.get("error", "turn_planner_failed")),
 			"simulations": int(planned.get("nodes_expanded", 0)),
+			"failure_stage": "turn_planner",
+			"decision_origin": "failure",
 		}
 	var selected: GameAction = planned.get("action")
 	if selected == null:
@@ -1052,24 +1152,139 @@ func _turn_plan_cache_key(
 	]
 
 
-func _authoritative_action_intersection(
-	supplied: Array[GameAction],
-	authoritative: Array[GameAction],
-) -> Array[GameAction]:
-	var result: Array[GameAction] = []
-	var used: Dictionary = {}
-	for supplied_action in supplied:
-		var matched := TraditionalTurnPlanner.find_matching_action(
-			TraditionalTurnPlanner.action_intent(supplied_action), authoritative)
-		if matched == null:
+static func _decode_authoritative_actions(
+	request: Dictionary,
+	state: GameState,
+	actor: int,
+) -> Dictionary:
+	if state == null or actor not in [0, 1]:
+		return {"ok": false, "error": "invalid_authoritative_action_context"}
+	var request_revision_value: Variant = request.get("revision")
+	if (
+		not request_revision_value is int
+		or int(request_revision_value) != state.revision
+	):
+		return {"ok": false, "error": "stale_authoritative_legal_actions"}
+	var rows_value: Variant = request.get("actions")
+	if not rows_value is Array or Array(rows_value).is_empty():
+		return {"ok": false, "error": "missing_authoritative_legal_actions"}
+	var actions: Array[GameAction] = []
+	var signatures: Dictionary = {}
+	for row_index in range(Array(rows_value).size()):
+		var row_value: Variant = Array(rows_value)[row_index]
+		if not row_value is Dictionary:
+			return {
+				"ok": false,
+				"error": "invalid_authoritative_legal_action:%d:invalid_schema"
+					% row_index,
+			}
+		var row: Dictionary = row_value
+		var validation := GameAction.validate_wire_dict(row, false)
+		if not bool(validation.get("ok", false)):
+			return {
+				"ok": false,
+				"error": "invalid_authoritative_legal_action:%d:%s" % [
+					row_index, str(validation.get("code", "invalid_schema")),
+				],
+			}
+		var action := GameAction.from_dict(row)
+		if action.actor != actor:
+			return {
+				"ok": false,
+				"error": "invalid_authoritative_legal_action:%d:actor_mismatch"
+					% row_index,
+			}
+		if action.base_revision != state.revision:
+			return {
+				"ok": false,
+				"error": "invalid_authoritative_legal_action:%d:revision_mismatch"
+					% row_index,
+			}
+		var public_ref_error := _authoritative_public_reference_error(
+			action, state, actor)
+		if not public_ref_error.is_empty():
+			return {
+				"ok": false,
+				"error": "invalid_authoritative_legal_action:%d:%s" % [
+					row_index, public_ref_error,
+				],
+			}
+		var signature_wire := action.to_dict()
+		signature_wire.erase("action_id")
+		var signature := AIPositionEvaluator.stable_variant_signature(
+			signature_wire)
+		if signatures.has(signature):
+			return {
+				"ok": false,
+				"error": "duplicate_authoritative_legal_action:%d" % row_index,
+			}
+		signatures[signature] = true
+		actions.append(action)
+	return {"ok": true, "error": "", "actions": actions}
+
+
+static func _authoritative_public_reference_error(
+	action: GameAction,
+	state: GameState,
+	actor: int,
+) -> String:
+	for ref_value in [action.source, action.target]:
+		var ref: EntityRef = ref_value
+		if ref == null:
 			continue
-		var signature := str(
-			TraditionalTurnPlanner.action_intent(matched).get("signature", ""))
-		if used.has(signature):
-			continue
-		used[signature] = true
-		result.append(matched)
-	return result
+		if ref.player != actor:
+			return "nonpublic_player_reference"
+		match ref.kind:
+			"card":
+				if ref.zone in ["deck", "prizes"]:
+					return "hidden_zone_reference"
+				var visible_cards: Array[String] = []
+				match ref.zone:
+					"hand":
+						visible_cards = state.players[actor].hand
+					"discard":
+						visible_cards = state.players[actor].discard
+					"stadium":
+						if (
+							ref.index != 0
+							or ref.card_id != state.stadium_card_id
+						):
+							return "nonpublic_card_reference"
+						continue
+					_:
+						return "nonpublic_card_reference"
+				if (
+					ref.index < 0
+					or ref.index >= visible_cards.size()
+					or visible_cards[ref.index] != ref.card_id
+				):
+					return "nonpublic_card_reference"
+			"pokemon":
+				var pokemon := state.players[actor].get_pokemon(ref.slot)
+				if pokemon == null or pokemon.card_id != ref.card_id:
+					return "nonpublic_pokemon_reference"
+			"slot":
+				pass
+			"attachment":
+				var attachment_pokemon := state.players[actor].get_pokemon(ref.slot)
+				if attachment_pokemon == null:
+					return "nonpublic_attachment_reference"
+				if ref.attachment_type == "energy":
+					if (
+						ref.index < 0
+						or ref.index >= attachment_pokemon.energy_card_ids.size()
+						or attachment_pokemon.energy_card_ids[ref.index] != ref.card_id
+					):
+						return "nonpublic_attachment_reference"
+				elif (
+					ref.attachment_type != "tool"
+					or ref.index != 0
+					or attachment_pokemon.attached_tool_id != ref.card_id
+				):
+					return "nonpublic_attachment_reference"
+			_:
+				return "nonpublic_reference"
+	return ""
 
 
 func _filter_exhausted_repeatable_abilities(
@@ -1456,6 +1671,14 @@ func _traditional_action_result(
 		"completion_reason",
 		"forced_tactic" if stop_reason == "only_legal_action" else stop_reason,
 	))
+	var reported_search_depth_reached := int(planner_result.get(
+		"search_depth_reached", planner_result.get("max_path_depth", 0)))
+	var reported_max_path_depth := int(planner_result.get(
+		"max_path_depth",
+		reported_search_depth_reached
+			if engine_id == LEGACY_EVALUATION_ENGINE_ID
+			else 0,
+	))
 	var trajectory_hash := str(planner_result.get("trajectory_hash", ""))
 	if trajectory_hash.is_empty():
 		trajectory_hash = ("%s|%s|%s" % [
@@ -1491,6 +1714,15 @@ func _traditional_action_result(
 		"deep_fallback": mode == "deep",
 		"fallback_reason": "runtime_unavailable" if mode == "deep" else "",
 		"planner": engine_id,
+		"decision_origin": (
+			"cache"
+			if cache_hit or completion_reason == "cache_hit"
+			else "forced_tactic"
+			if completion_reason == "forced_tactic"
+				or not str(planner_result.get("forced_tactic", "")).is_empty()
+			else "search"
+		),
+		"failure_stage": "",
 		"planner_score": float(planner_result.get("score", 0.0)),
 		"planner_score_milli": int(planner_result.get("score_milli", 0)),
 		"belief_samples": int(planner_result.get("belief_samples", 0)),
@@ -1501,7 +1733,7 @@ func _traditional_action_result(
 		"requested_depth": int(planner_result.get(
 			"requested_depth", GAMEPLAY_DEFAULT_DEPTH)),
 		"completed_depth": int(planner_result.get("completed_depth", 0)),
-		"max_path_depth": int(planner_result.get("max_path_depth", 0)),
+		"max_path_depth": reported_max_path_depth,
 		"reply_completed_depth": int(planner_result.get(
 			"reply_completed_depth", 0)),
 		"reply_depth_applicable": bool(planner_result.get(
@@ -1524,8 +1756,7 @@ func _traditional_action_result(
 			"search_depth_requested",
 			planner_result.get("requested_depth", GAMEPLAY_DEFAULT_DEPTH),
 		)),
-		"search_depth_reached": int(planner_result.get(
-			"search_depth_reached", planner_result.get("max_path_depth", 0))),
+		"search_depth_reached": reported_search_depth_reached,
 		"search_depth_completed": int(planner_result.get(
 			"search_depth_completed", planner_result.get("completed_depth", 0))),
 		"search_depth_stop_reason": str(
@@ -1714,6 +1945,8 @@ func _choose_request(
 		"engine_id": engine_id,
 		"planner": engine_id,
 		"completion_reason": "forced_tactic",
+		"decision_origin": "choice_policy",
+		"failure_stage": "",
 		"type_matchups": false,
 	}
 

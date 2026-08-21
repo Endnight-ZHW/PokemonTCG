@@ -115,6 +115,14 @@ void NativeRulesSession::_bind_methods() {
         &NativeRulesSession::restore
     );
     ClassDB::bind_method(D_METHOD("fork"), &NativeRulesSession::fork);
+    ClassDB::bind_method(
+        D_METHOD("fork_for_search", "rng_state"),
+        &NativeRulesSession::fork_for_search
+    );
+    ClassDB::bind_method(
+        D_METHOD("fork_apply_action_for_search", "action", "rng_state"),
+        &NativeRulesSession::fork_apply_action_for_search
+    );
     ClassDB::bind_method(D_METHOD("journal"), &NativeRulesSession::journal);
     ClassDB::bind_method(
         D_METHOD("get_contract"),
@@ -302,6 +310,36 @@ Ref<NativeRulesSession> NativeRulesSession::fork() const {
     copy.instantiate();
     copy->session_ = session_->fork();
     return copy;
+}
+
+Ref<NativeRulesSession> NativeRulesSession::fork_for_search(
+    int64_t native_rng_state
+) const {
+    Ref<NativeRulesSession> copy;
+    copy.instantiate();
+    copy->session_ = session_->fork_for_search(
+        static_cast<std::uint32_t>(native_rng_state));
+    return copy;
+}
+
+Dictionary NativeRulesSession::fork_apply_action_for_search(
+    const Dictionary &action,
+    int64_t native_rng_state
+) const {
+    Ref<NativeRulesSession> branch;
+    branch.instantiate();
+    try {
+        branch->session_ = session_->fork_for_search(
+            static_cast<std::uint32_t>(native_rng_state));
+        Dictionary payload = result_dictionary(branch->session_->apply_action(
+            ptcg::ai::value_from_godot(action)));
+        payload["search_session"] = branch;
+        return payload;
+    } catch (const std::exception &error) {
+        Dictionary payload = failure_dictionary(error.what());
+        payload["search_session"] = Variant();
+        return payload;
+    }
 }
 
 Dictionary NativeRulesSession::journal() const {

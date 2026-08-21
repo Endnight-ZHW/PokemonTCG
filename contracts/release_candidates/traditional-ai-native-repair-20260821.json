@@ -1,0 +1,57 @@
+{
+  "format": "ptcg_traditional_ai_native_repair_release_candidate/1",
+  "id": "traditional-ai-native-repair-20260821",
+  "built_on": "2026-08-21",
+  "baseline_commit": "f3b634148b61ed6c1e14b3e1e463c2b8b5041b26",
+  "native_abi_version": 2,
+  "protocol_version": 6,
+  "action_schema_version": 4,
+  "choice_view_schema_version": 2,
+  "snapshot_schema_version": 3,
+  "fast_gate": "passed",
+  "standard_gate": "passed",
+  "godot_ai_games": 10,
+  "fire_water_matrix_games": 8,
+  "fire_water_matrix_clean_games": 8,
+  "invalid_actions": 0,
+  "choice_failures": 0,
+  "rule_exceptions": 0,
+  "emergency_fallbacks": 0,
+  "windows_build": "passed",
+  "windows_release_smoke": "passed",
+  "android_build": "passed",
+  "android_static_runtime_contract": "passed",
+  "android_device_smoke": "skipped_no_connected_device",
+  "v1_calibration": {
+    "clean_games": 2,
+    "simulation_sum": 7897,
+    "full_budget_decisions": 14,
+    "deadline_decisions": 68
+  },
+  "v2_search_performance": {
+    "games": 2,
+    "samples": 36,
+    "nodes_expanded": 15904,
+    "weighted_ms_per_node": 2.3901,
+    "median_ms_per_node": 2.3555
+  },
+  "fingerprints": {
+    "simulation": "e9b822af4f867cbc6d798b48f301b94091ef78edd1422af821a9d93616f0a574",
+    "analysis": "add4d070655aeb43fa409ee7bed37e068511b1e8d036f7abcb522432b4a80780",
+    "provenance": "d261b89172c10b449d026290895171af3f3c208986a1c1d09ff39715cc55b3cc"
+  },
+  "artifacts": {
+    "windows_debug_dll_sha256": "d6c396aa260e55c945693e308300eaa05fd278e15f39d46bf26c4b9b0fd5df8e",
+    "windows_release_dll_sha256": "5f01aae832a134b7636ee142fbb6b0df6f64fdb065433c58c988baeeaa3ffbd1",
+    "android_debug_so_sha256": "69cc378b7d55d0312224c3f31bcae611fe265ac53d6540cbf5ef7e1a1d58ea1f",
+    "android_release_so_sha256": "d5ef9540820bfb75f12929536b12f226385474524ffc9b68aba54df79a2eaaba",
+    "python_binding_sha256": "12e5f99be4dc75f4f032a41af2f89eb55698b8912f05055d5858028a49e04482",
+    "windows_zip_sha256": "69aa1096ad7f7044c0bd9820f6c7fe22756702b1dcf466802bd7e44c82e6cb7b",
+    "android_test_apk_sha256": "b41b8fc0db90f96c48e743d67195e5534a6a11f947db78d7ba879aff3a93ae96",
+    "release_checksums_sha256": "928739854810f17d7e184bc5b24ae985836edb38cee5828a33a07faa442240d6"
+  },
+  "pending_release_evidence": [
+    "fixed_280_equivalence",
+    "nightly_2800"
+  ]
+}

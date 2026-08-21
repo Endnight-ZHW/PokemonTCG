@@ -1558,25 +1558,35 @@ public:
                     event_value["amount"] = Value(declared_count);
                 }
             }
+            seed_declared_batch_endpoints(event_value);
         }
+        const bool direct_action_event = !declared_identity
+            && !action_card_id.empty()
+            && action_event_matches(action_kind, event_type);
         if (declared_identity) {
             selected = select_declared(
                 event_value, event_type, previous_type);
-        } else if (
-            !action_card_id.empty()
-            && action_event_matches(action_kind, event_type)
-        ) {
+        } else if (direct_action_event) {
             selected = select_direct(event_type, action_card_id);
         }
         if (
             selected.empty()
             && !declared_identity
             && !explicit_zero_selection
+            && !direct_action_event
         ) {
             selected = select_for_event(event_type, previous_type);
         }
         if (!selected.empty()) {
-            apply_moves(event_value, event_type, selected, previous_type);
+            const bool preserve_declared_contract = declared_card_batch
+                && selected.size() < declared_card_count(event_value);
+            apply_moves(
+                event_value,
+                event_type,
+                selected,
+                previous_type,
+                preserve_declared_contract
+            );
         } else if (action_event_matches(action_kind, event_type)) {
             apply_action_fallback(event_value, event_type);
         }
@@ -1703,6 +1713,89 @@ private:
             && !card_ids->as_array().empty();
     }
 
+    void seed_declared_batch_endpoints(Value &event_value) const {
+        Value &data = required(event_value, "data");
+        const std::int32_t owner = static_cast<std::int32_t>(
+            integer_field(data, "player", actor_hint_));
+        const auto seed_endpoint = [&event_value, &data, owner](
+            const std::string &endpoint_key,
+            const std::string &field_prefix
+        ) {
+            const std::string zone = string_field(
+                data, field_prefix + "_zone");
+            const std::string slot = string_field(
+                data, field_prefix + "_slot");
+            if (zone.empty() && slot.empty()) {
+                return;
+            }
+            const std::int32_t player = static_cast<std::int32_t>(
+                integer_field(data, field_prefix + "_player", owner));
+            Object endpoint{{"player", Value(player)}};
+            if (!zone.empty()) {
+                endpoint["zone"] = Value(zone);
+            }
+            if (!slot.empty()) {
+                endpoint["slot"] = Value(slot);
+            }
+            const std::int64_t index = integer_field(
+                data, field_prefix + "_index", -1);
+            if (index >= 0) {
+                endpoint["index"] = Value(index);
+            }
+            set_if_empty(
+                event_value,
+                endpoint_key,
+                Value(std::move(endpoint))
+            );
+        };
+        seed_endpoint("source", "source");
+        seed_endpoint("target", "target");
+    }
+
+    std::size_t declared_card_count(const Value &event_value) const {
+        const Value *data = event_value.find("data");
+        if (data == nullptr || !data->is_object()) {
+            return string_field(event_value, "card_id").empty() ? 0 : 1;
+        }
+        const Value *card_ids = data->find("card_ids");
+        if (card_ids != nullptr && card_ids->is_array()) {
+            return card_ids->as_array().size();
+        }
+        return string_field(event_value, "card_id").empty()
+            && string_field(*data, "card_id").empty() ? 0 : 1;
+    }
+
+    bool matches_declared_endpoints(
+        const CardMoveFact &move,
+        const Value *data
+    ) const {
+        if (data == nullptr || !data->is_object()) {
+            return true;
+        }
+        const std::string source_zone = string_field(*data, "source_zone");
+        const std::string target_zone = string_field(*data, "target_zone");
+        const std::string source_slot = string_field(*data, "source_slot");
+        const std::string target_slot = string_field(*data, "target_slot");
+        if (!source_zone.empty() && move.source.zone != source_zone) {
+            return false;
+        }
+        if (!target_zone.empty() && move.target.zone != target_zone) {
+            return false;
+        }
+        if (!source_slot.empty() && move.source.slot != source_slot) {
+            return false;
+        }
+        if (!target_slot.empty() && move.target.slot != target_slot) {
+            return false;
+        }
+        const std::int32_t source_player = static_cast<std::int32_t>(
+            integer_field(*data, "source_player", -1));
+        const std::int32_t target_player = static_cast<std::int32_t>(
+            integer_field(*data, "target_player", -1));
+        return (source_player < 0 || move.source.player == source_player)
+            && (target_player < 0 || move.target.player == target_player);
+    }
+
     std::vector<std::size_t> select_declared(
         const Value &event_value,
         const std::string &event_type,
@@ -1740,6 +1833,7 @@ private:
                     !moves_[index].consumed
                     && moves_[index].card_id == card_id
                     && matches_event(moves_[index], event_type, previous_type)
+                    && matches_declared_endpoints(moves_[index], data)
                     && (
                         declared_owner < 0
                         || owner_for_event(moves_[index], event_type)
@@ -1967,7 +2061,8 @@ private:
         Value &event_value,
         const std::string &event_type,
         const std::vector<std::size_t> &selected,
-        const std::string &previous_type
+        const std::string &previous_type,
+        bool preserve_declared_contract = false
     ) {
         if (selected.empty()) {
             return;
@@ -1994,13 +2089,13 @@ private:
         set_if_empty(data, "target_zone", Value(first.target.zone));
         set_if_empty(data, "source_slot", Value(first.source.slot));
         set_if_empty(data, "target_slot", Value(first.target.slot));
-        if (first.source.index >= 0) {
+        if (!preserve_declared_contract && first.source.index >= 0) {
             set_if_empty(data, "source_index", Value(first.source.index));
         }
-        if (first.target.index >= 0) {
+        if (!preserve_declared_contract && first.target.index >= 0) {
             set_if_empty(data, "target_index", Value(first.target.index));
         }
-        if (selected.size() > 1) {
+        if (!preserve_declared_contract && selected.size() > 1) {
             set_if_empty(data, "source_indices", Value(source_indices));
             set_if_empty(data, "target_indices", Value(target_indices));
         }
@@ -2018,20 +2113,22 @@ private:
         // A choice payload can identify an exact physical slot that a multiset
         // before/after diff cannot recover (notably duplicate face-down Prize
         // cards). Preserve that authoritative index in the canonical endpoint.
-        const std::int64_t declared_source_index = integer_field(
-            data, "source_index", -1);
-        if (declared_source_index >= 0) {
-            Value *source_endpoint = event_value.find("source");
-            if (source_endpoint != nullptr && source_endpoint->is_object()) {
-                (*source_endpoint)["index"] = Value(declared_source_index);
+        if (!preserve_declared_contract) {
+            const std::int64_t declared_source_index = integer_field(
+                data, "source_index", -1);
+            if (declared_source_index >= 0) {
+                Value *source_endpoint = event_value.find("source");
+                if (source_endpoint != nullptr && source_endpoint->is_object()) {
+                    (*source_endpoint)["index"] = Value(declared_source_index);
+                }
             }
-        }
-        const std::int64_t declared_target_index = integer_field(
-            data, "target_index", -1);
-        if (declared_target_index >= 0) {
-            Value *target_endpoint = event_value.find("target");
-            if (target_endpoint != nullptr && target_endpoint->is_object()) {
-                (*target_endpoint)["index"] = Value(declared_target_index);
+            const std::int64_t declared_target_index = integer_field(
+                data, "target_index", -1);
+            if (declared_target_index >= 0) {
+                Value *target_endpoint = event_value.find("target");
+                if (target_endpoint != nullptr && target_endpoint->is_object()) {
+                    (*target_endpoint)["index"] = Value(declared_target_index);
+                }
             }
         }
 
@@ -2907,11 +3004,20 @@ std::string canonical_value_hash(const Value &value) {
     return fnv1a64_hex(canonical);
 }
 
-RulesSession::RulesSession(Value cards)
-    : game_() {
+RulesSession::RulesSession(Value cards) {
     if (cards.is_object() && !cards.as_object().empty()) {
         set_cards(std::move(cards));
     }
+}
+
+const Value &RulesSession::cards() const noexcept {
+    static const Value empty_cards = Value::make_object();
+    return catalog_ ? catalog_->cards : empty_cards;
+}
+
+const NativeGameKernel &RulesSession::game() const noexcept {
+    static const NativeGameKernel empty_game;
+    return catalog_ ? catalog_->game : empty_game;
 }
 
 void RulesSession::set_cards(Value cards) {
@@ -2919,11 +3025,11 @@ void RulesSession::set_cards(Value cards) {
         throw std::logic_error("cannot_replace_cards_during_match");
     }
     CatalogPayload catalog = normalize_catalog(cards);
-    cards_ = std::move(catalog.cards);
+    catalog_ = std::make_shared<const CatalogContext>(
+        std::move(catalog.cards));
     card_ir_content_fingerprint_ = std::move(catalog.content_fingerprint);
     card_ir_contract_fingerprint_ = std::move(catalog.contract_fingerprint);
     vm_descriptor_digest_ = std::move(catalog.descriptor_digest);
-    game_.set_cards(cards_);
 }
 
 bool RulesSession::initialized() const noexcept {
@@ -2966,7 +3072,7 @@ RulesSessionResult RulesSession::create(
             "match_already_started"
         );
     }
-    if (!cards_.is_object() || cards_.as_object().empty()) {
+    if (!cards().is_object() || cards().as_object().empty()) {
         return result(false, "card_catalog_missing", "card_catalog_missing");
     }
     if (!decks.is_array() || decks.as_array().size() != 2) {
@@ -2981,10 +3087,10 @@ RulesSessionResult RulesSession::create(
         bool has_basic = false;
         for (const Value &card_value : deck_value.as_array()) {
             const std::string card_id = card_value.string_or();
-            if (card_id.empty() || cards_.find(card_id) == nullptr) {
+            if (card_id.empty() || cards().find(card_id) == nullptr) {
                 return result(false, "unknown_card", "unknown_card");
             }
-            has_basic = has_basic || is_basic_pokemon(cards_, card_id);
+            has_basic = has_basic || is_basic_pokemon(cards(), card_id);
         }
         if (!has_basic) {
             return result(false, "missing_basic_pokemon", "missing_basic_pokemon");
@@ -3103,7 +3209,7 @@ RulesSessionResult RulesSession::create(
             vm_descriptor_digest_);
     }
     match_config_["catalog_fingerprint"] = Value(
-        canonical_value_hash(cards_));
+        canonical_value_hash(cards()));
     match_config_["decks_fingerprint"] = Value(
         canonical_value_hash(decks));
     match_config_["core_contract_fingerprint"] = Value(
@@ -3143,14 +3249,14 @@ RulesSessionResult RulesSession::create(
         state_["first_player_idx"] = Value(forced_first);
         state_["active_player_idx"] = Value(forced_first);
         const std::string opening_error = prepare_opening_hands(
-            cards_, state_, rng, events);
+            cards(), state_, rng, events);
         rng_state_ = rng.state();
         if (!opening_error.empty()) {
             initialized_ = false;
             return result(false, opening_error, opening_error);
         }
     }
-    append_public_event_logs(state_, cards_, state_, events);
+    append_public_event_logs(state_, cards(), state_, events);
     append_journal_entry("create", match_config_, -1, events);
     return result(true, {}, "match_created", std::move(events));
 }
@@ -3175,7 +3281,7 @@ RulesSessionResult RulesSession::load_scenario(
             vm_descriptor_digest_);
     }
     match_config_["catalog_fingerprint"] = Value(
-        canonical_value_hash(cards_));
+        canonical_value_hash(cards()));
     match_config_["scenario_fingerprint"] = Value(
         canonical_value_hash(snapshot_value));
     match_config_["core_contract_fingerprint"] = Value(
@@ -3205,7 +3311,7 @@ Value RulesSession::legal_actions(std::int32_t actor) const {
     }
     Array groups;
     if (pending_.is_null()) {
-        const Value candidates = game_.legal_actions(state_, actor);
+        const Value candidates = game().legal_actions(state_, actor);
         if (!candidates.is_array()) {
             return failure("native_legal_action_error");
         }
@@ -3275,11 +3381,11 @@ Value RulesSession::legal_actions(std::int32_t actor) const {
 }
 
 std::int64_t RulesSession::pokemon_max_hp(const Value &pokemon) const {
-    return game_.pokemon_max_hp(pokemon);
+    return game().pokemon_max_hp(pokemon);
 }
 
 std::int64_t RulesSession::pokemon_current_hp(const Value &pokemon) const {
-    return game_.pokemon_current_hp(pokemon);
+    return game().pokemon_current_hp(pokemon);
 }
 
 std::int64_t RulesSession::estimate_public_damage(
@@ -3288,7 +3394,7 @@ std::int64_t RulesSession::estimate_public_damage(
     const Value &defender,
     std::int64_t base_damage
 ) const {
-    return initialized_ ? game_.estimate_public_damage(
+    return initialized_ ? game().estimate_public_damage(
         state_, actor, attacker, defender, base_damage) : 0;
 }
 
@@ -3334,7 +3440,7 @@ RulesSessionResult RulesSession::apply_action(const Value &submitted_action) {
     if (integer_field(submitted_action, "base_revision", -1) != revision_before) {
         return result(false, "stale_revision", "stale_revision");
     }
-    const Value candidates = game_.legal_actions(
+    const Value candidates = game().legal_actions(
         state_, static_cast<std::int32_t>(integer_field(action, "actor", -1)));
     if (
         !candidates.is_array()
@@ -3422,14 +3528,14 @@ RulesSessionResult RulesSession::apply_action(const Value &submitted_action) {
             clear_resolution_stack();
         }
         append_submitted_action_log(
-            state_, cards_, previous_state, action);
+            state_, cards(), previous_state, action);
         append_public_event_logs(
-            state_, cards_, previous_state, events);
+            state_, cards(), previous_state, events);
         append_journal_entry("action", action, revision_before, events);
         return result(true, {}, "action_applied", std::move(events));
     }
 
-    GameExecutionResult native_result = game_.apply_action(
+    GameExecutionResult native_result = game().apply_action(
         state_.deep_clone(), action, rng_state_);
     if (native_result.success) {
         Value &ids = required(native_result.state, "processed_action_ids");
@@ -3610,7 +3716,7 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
         };
         XorShift32 rng(rng_state_);
         const std::string opening_error = prepare_opening_hands(
-            cards_, next, rng, events);
+            cards(), next, rng, events);
         if (!opening_error.empty()) {
             return result(false, opening_error, opening_error);
         }
@@ -3623,7 +3729,7 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
         append_choice_action_log(
             state_, previous_state, previous_pending, response);
         append_public_event_logs(
-            state_, cards_, previous_state, events);
+            state_, cards(), previous_state, events);
         append_journal_entry("choice", response, revision_before, events);
         return result(true, {}, "choice_applied", std::move(events));
     }
@@ -3685,7 +3791,7 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
             placeable = std::any_of(
                 drawn.begin(), drawn.end(),
                 [this](const Value &entry) {
-                    return is_basic_pokemon(cards_, entry.string_or());
+                    return is_basic_pokemon(cards(), entry.string_or());
                 });
         }
         if (placeable) {
@@ -3702,7 +3808,7 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
         append_choice_action_log(
             state_, previous_state, previous_pending, response);
         append_public_event_logs(
-            state_, cards_, previous_state, events);
+            state_, cards(), previous_state, events);
         append_journal_entry("choice", response, revision_before, events);
         return result(true, {}, "choice_applied", std::move(events));
     }
@@ -3763,14 +3869,14 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
             ));
         }
         append_public_event_logs(
-            state_, cards_, previous_state, events);
+            state_, cards(), previous_state, events);
         append_journal_entry("choice", response, revision_before, events);
         return result(true, {}, "action_cancelled", events);
     }
 
     Value kernel_state = state_.deep_clone();
     kernel_state["resolution_stack"] = empty_resolution_stack();
-    GameExecutionResult native_result = game_.resume_choice(
+    GameExecutionResult native_result = game().resume_choice(
         std::move(kernel_state), continuation_, Value(raw_selected),
         cancelled, rng_state_);
     if (native_result.success && session_transaction != nullptr) {
@@ -3872,7 +3978,7 @@ RulesSessionResult RulesSession::concede(std::int32_t actor) {
     append_action_log_line(
         state_, public_player_name(previous_state, actor) + " 放弃了对战。");
     append_public_event_logs(
-        state_, cards_, previous_state, events);
+        state_, cards(), previous_state, events);
     append_journal_entry("command", input, revision_before, events);
     return result(true, {}, "player_surrendered", std::move(events));
 }
@@ -3947,7 +4053,7 @@ bool RulesSession::restore(
         }
         return false;
     };
-    if (!cards_.is_object() || cards_.as_object().empty()) {
+    if (!cards().is_object() || cards().as_object().empty()) {
         return fail("card_catalog_missing");
     }
     if (!snapshot_value.is_object()) {
@@ -3958,7 +4064,7 @@ bool RulesSession::restore(
         return fail("incompatible_snapshot");
     }
     const std::string payload_error = validate_snapshot_payload(
-        snapshot_value, cards_);
+        snapshot_value, cards());
     if (!payload_error.empty()) {
         return fail(payload_error);
     }
@@ -4071,7 +4177,7 @@ bool RulesSession::restore(
         Value checkpoint_snapshot = checkpoint->deep_clone();
         checkpoint_snapshot["snapshot_version"] = Value(SNAPSHOT_SCHEMA_VERSION);
         const std::string checkpoint_error = validate_snapshot_payload(
-            checkpoint_snapshot, cards_);
+            checkpoint_snapshot, cards());
         if (!checkpoint_error.empty()) {
             return fail("invalid_cancel_checkpoint");
         }
@@ -4094,6 +4200,26 @@ std::unique_ptr<RulesSession> RulesSession::fork() const {
     return std::make_unique<RulesSession>(*this);
 }
 
+std::unique_ptr<RulesSession> RulesSession::fork_for_search(
+    std::uint32_t rng_state
+) const {
+    auto copy = std::make_unique<RulesSession>();
+    copy->catalog_ = catalog_;
+    copy->state_ = state_;
+    copy->pending_ = pending_;
+    copy->pending_raw_ = pending_raw_;
+    copy->continuation_ = continuation_;
+    copy->match_config_ = match_config_;
+    copy->card_ir_content_fingerprint_ = card_ir_content_fingerprint_;
+    copy->card_ir_contract_fingerprint_ = card_ir_contract_fingerprint_;
+    copy->vm_descriptor_digest_ = vm_descriptor_digest_;
+    copy->initial_seed_ = initial_seed_;
+    copy->rng_state_ = rng_state == 0 ? 0x6D2B79F5U : rng_state;
+    copy->initialized_ = initialized_;
+    copy->search_mode_ = true;
+    return copy;
+}
+
 Value RulesSession::contract() const {
     return Value(Object{
         {"native_abi_version", Value(NATIVE_RULES_SESSION_ABI_VERSION)},
@@ -4112,9 +4238,9 @@ Value RulesSession::contract() const {
         {"state_owner", Value("ptcg_core")},
         {"framework_dependencies", Value::make_array()},
         {"card_count", Value(static_cast<std::int64_t>(
-            cards_.is_object() ? cards_.as_object().size() : 0))},
+            cards().is_object() ? cards().as_object().size() : 0))},
         {"implemented_op_count", Value(static_cast<std::int64_t>(
-            game_.implemented_op_count()))},
+            game().implemented_op_count()))},
         {"required_op_count", Value(static_cast<std::int64_t>(
             NativeGameKernel::required_op_count()))},
     });
@@ -4187,13 +4313,13 @@ RulesSessionResult RulesSession::commit_game_result(
         set_pending(native_result.pending, native_result.continuation);
         if (entry_kind == "action") {
             append_submitted_action_log(
-                state_, cards_, previous_state, input);
+                state_, cards(), previous_state, input);
         } else if (entry_kind == "choice") {
             append_choice_action_log(
                 state_, previous_state, previous_pending, input);
         }
         append_public_event_logs(
-            state_, cards_, previous_state, events);
+            state_, cards(), previous_state, events);
         append_journal_entry(entry_kind, input, revision_before, events);
         return result(true, {}, entry_kind + "_applied", std::move(events));
     } catch (const std::exception &) {
@@ -4381,6 +4507,9 @@ void RulesSession::append_journal_entry(
     std::int64_t revision_before,
     const std::vector<Value> &events
 ) {
+    if (search_mode_) {
+        return;
+    }
     if (!journal_entries_.is_array()) {
         journal_entries_ = Value::make_array();
     }

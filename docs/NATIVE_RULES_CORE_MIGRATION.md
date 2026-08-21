@@ -26,6 +26,36 @@ rules or mutates authoritative state/RNG directly.
   `ptcg-rules-migration-baseline-2026-08-19`; the frozen content contract lives
   in `contracts/rules_migration_baseline.json`.
 
+## Traditional AI runtime repair
+
+The post-migration traditional AI regression was caused by treating a redacted
+public observation as a restorable Snapshot 3. The runtime now has one
+`AIRuntimeStateProjection`; Challenge requires the caller's authoritative
+Action v4 set and never re-queries legality from that observation. Hidden card
+identities, unrevealed setup boards, resolution continuations and idempotency
+records are rejected at the worker boundary.
+
+`RulesSession::fork_for_search(seed)` creates an isolated deterministic branch
+without changing the parent. Forks share an immutable card catalog/rules kernel
+and omit journals. The Godot binding also exposes a combined fork/apply call so
+one candidate crosses the extension boundary once. `GameEngine` owns a
+decision-scoped, instance/revision/fingerprint-checked session cache; subsequent
+Choice resolution stays in its branch. Ordinary restore/apply uses one session
+and lazily materializes the GDScript state DTO only when a result must be
+adopted. Windows/Android Debug and Release libraries and the Python binding are
+rebuilt from the same core sources.
+
+The targeted Windows acceptance result is 2.3901ms per v2 search node weighted
+across 15,904 nodes, with zero invalid actions, Choice failures, rule exceptions
+or emergency fallbacks. Frozen v1 passes its unchanged calibration thresholds
+(2 clean games, 7,897 simulations, 14 full-budget decisions, 68 deadlines).
+Simulation fingerprints change with this repair, so prior evaluation
+checkpoints cannot be promoted.
+
+The rebuilt binary/package hashes and the exact schema-v7 provenance
+fingerprints are recorded in
+`contracts/release_candidates/traditional-ai-native-repair-20260821.json`.
+
 ## Commands
 
 ```powershell

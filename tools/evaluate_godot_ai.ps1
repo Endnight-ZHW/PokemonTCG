@@ -1323,6 +1323,7 @@ function Test-V1CalibrationOutput {
             [int]$match.invalid_actions -eq 0 -and
             [int]$match.choice_failures -eq 0 -and
             [int]$match.rule_exceptions -eq 0 -and
+            [int]$match.emergency_fallbacks -eq 0 -and
             -not [bool]$match.max_actions_exhausted
         ) {
             $cleanGames += 1

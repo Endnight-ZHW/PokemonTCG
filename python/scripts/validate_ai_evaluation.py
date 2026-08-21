@@ -665,6 +665,7 @@ def _dirty_game_count(payload: dict[str, Any]) -> int:
             "invalid_actions",
             "choice_failures",
             "rule_exceptions",
+            "emergency_fallbacks",
             "max_actions_exhaustions",
         )
     )

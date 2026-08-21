@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ptcg::ai {
@@ -80,6 +81,12 @@ public:
         std::string *error = nullptr
     );
     std::unique_ptr<RulesSession> fork() const;
+    // AI-only immutable branch operation. The parent state/RNG is untouched;
+    // the returned copy starts the next simulated action from the supplied
+    // deterministic RNG state.
+    std::unique_ptr<RulesSession> fork_for_search(
+        std::uint32_t rng_state
+    ) const;
 
     Value contract() const;
     Value journal() const;
@@ -88,8 +95,18 @@ public:
     std::int64_t revision() const noexcept;
 
 private:
-    Value cards_ = Value::make_object();
-    NativeGameKernel game_;
+    struct CatalogContext {
+        Value cards;
+        NativeGameKernel game;
+
+        explicit CatalogContext(Value value)
+            : cards(std::move(value)), game(cards) {}
+    };
+
+    // Card definitions and rule kernels are immutable after a session starts.
+    // Search forks share this context instead of copying the full catalog twice
+    // for every expanded node.
+    std::shared_ptr<const CatalogContext> catalog_;
     Value state_ = Value::make_object();
     Value pending_;
     Value pending_raw_;
@@ -102,6 +119,10 @@ private:
     std::uint32_t initial_seed_ = 0;
     std::uint32_t rng_state_ = 0;
     bool initialized_ = false;
+    bool search_mode_ = false;
+
+    const Value &cards() const noexcept;
+    const NativeGameKernel &game() const noexcept;
 
     RulesSessionResult commit_game_result(
         const GameExecutionResult &result,

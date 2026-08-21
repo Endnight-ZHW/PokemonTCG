@@ -1,6 +1,7 @@
 extends SceneTree
 
 const RELEASE_MANIFEST_PATH := "res://data/release_manifest.json"
+const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
 
 var failures: Array[String] = []
 
@@ -196,7 +197,7 @@ func _budget_contract_failures(
 	single_rows.append(legal[0].to_dict())
 	var single_decision := worker.decide({
 		"kind": "action",
-		"state": state.snapshot(),
+		"state": RuntimeStateProjection.project(state, actor),
 		"actor": actor,
 		"revision": state.revision,
 		"request_id": "budget-single",
@@ -240,7 +241,7 @@ func _budget_contract_failures(
 	)
 	var choice_result := worker.decide({
 		"kind": "choice",
-		"state": state.snapshot(),
+		"state": RuntimeStateProjection.project(state, actor),
 		"choice": choice_request.to_dict(),
 		"actor": actor,
 		"revision": state.revision,
@@ -310,7 +311,7 @@ func _new_choice_policy_contract_failures(
 		)
 		var payload := {
 			"kind": "choice",
-			"state": state.snapshot(),
+			"state": RuntimeStateProjection.project(state, 0),
 			"choice": request.to_dict(),
 			"actor": 0,
 			"revision": state.revision,
@@ -367,7 +368,7 @@ func _new_choice_policy_contract_failures(
 	)
 	var same_target_payload := {
 		"kind": "choice",
-		"state": state.snapshot(),
+		"state": RuntimeStateProjection.project(state, 0),
 		"choice": same_target_request.to_dict(),
 		"actor": 0,
 		"revision": state.revision,
@@ -414,7 +415,7 @@ func _new_choice_policy_contract_failures(
 	}
 	var legacy_result := worker.decide({
 		"kind": "choice",
-		"state": state.snapshot(),
+		"state": RuntimeStateProjection.project(state, 0),
 		"choice": legacy_request,
 		"actor": 0,
 		"revision": state.revision,
@@ -432,7 +433,7 @@ func _new_choice_policy_contract_failures(
 	private_payload["options"][0]["value"] = {"slot": "bench_0"}
 	var private_result := worker.decide({
 		"kind": "choice",
-		"state": state.snapshot(),
+		"state": RuntimeStateProjection.project(state, 0),
 		"choice": private_payload,
 		"actor": 0,
 		"revision": state.revision,
@@ -450,7 +451,7 @@ func _new_choice_policy_contract_failures(
 	private_presentation["presentation"]["continuation"] = {"op": "draw"}
 	var private_presentation_result := worker.decide({
 		"kind": "choice",
-		"state": state.snapshot(),
+		"state": RuntimeStateProjection.project(state, 0),
 		"choice": private_presentation,
 		"actor": 0,
 		"revision": state.revision,
@@ -502,7 +503,7 @@ func _play_game(
 			if pending.player == 0:
 				var choice_result := worker.decide({
 					"kind": "choice",
-					"state": state.snapshot(),
+					"state": RuntimeStateProjection.project(state, 0),
 					"choice": pending.to_dict(),
 					"actor": 0,
 					"revision": state.revision,
@@ -557,7 +558,7 @@ func _play_game(
 				rows.append(candidate.to_dict())
 			var decision := worker.decide({
 				"kind": "action",
-				"state": state.snapshot(),
+				"state": RuntimeStateProjection.project(state, 0),
 				"actor": 0,
 				"revision": state.revision,
 				"request_id": "action:%d" % actions_taken,

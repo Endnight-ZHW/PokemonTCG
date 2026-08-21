@@ -6,6 +6,7 @@ extends RefCounted
 ## Source keys deliberately match BattleTable's selection keys:
 ##   hand:<index>
 ##   pokemon:<player>:<slot>
+##   zone:<player>:<zone>
 ##   stadium
 ## Target keys use pokemon:<player>:<slot> or stadium.
 
@@ -289,6 +290,14 @@ static func pokemon_key(player: int, slot: String) -> String:
 	return "pokemon:%d:%s" % [player, slot]
 
 
+static func zone_key(player: int, zone: String) -> String:
+	if zone == "stadium":
+		return "stadium"
+	if zone.is_empty() or player not in [0, 1]:
+		return ""
+	return "zone:%d:%s" % [player, zone]
+
+
 static func target_key(player: int, slot: String) -> String:
 	if slot == "stadium":
 		return "stadium"
@@ -398,6 +407,8 @@ static func _entity_key(entity: EntityRef) -> String:
 		return hand_key(entity.index)
 	if not entity.slot.is_empty():
 		return pokemon_key(entity.player, entity.slot)
+	if not entity.zone.is_empty():
+		return zone_key(entity.player, entity.zone)
 	return ""
 
 

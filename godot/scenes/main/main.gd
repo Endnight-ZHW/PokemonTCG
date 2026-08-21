@@ -1,5 +1,7 @@
 extends Control
 
+const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
+
 const BATTLE_SCENE := preload("res://scenes/battle/components/battle_table.tscn")
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 const VICTORY_SCENE := preload("res://scenes/end/victory_screen.tscn")
@@ -51,6 +53,7 @@ var game_mode := MODE_LOCAL
 var ai_deck_key := ""
 var ai_thinking := false
 var ai_request_sequence := 0
+var ai_emergency_fallback_count := 0
 var active_ai_request_id := ""
 var ai_match_generation := 0
 var ai_match_instance_id := ""
@@ -876,6 +879,7 @@ func _start_match(
 	ai_match_generation += 1
 	ai_match_instance_id = "runtime:%d:%d" % [ai_match_generation, actual_seed]
 	ai_request_sequence = 0
+	ai_emergency_fallback_count = 0
 	native_rules = NativeRulesSessionAdapter.new(catalog)
 	if not native_rules.is_available():
 		_show_toast("原生规则会话不可用。", true)
@@ -3065,11 +3069,14 @@ func _complete_pass_overlay(confirmed: Callable) -> void:
 		_refresh_game()
 
 
-func _show_pause_overlay() -> void:
+func _show_pause_overlay(resume_choice_context: Dictionary = {}) -> void:
 	if game_mode in [MODE_CHALLENGE, MODE_DEEP]:
 		ai_coordinator.cancel_request()
 		ai_thinking = false
 		_refresh_game()
+	var field_choice_context := resume_choice_context
+	if field_choice_context.is_empty():
+		field_choice_context = _suspend_field_choice_for_auxiliary_modal()
 	var pause_spec := ModalSpec.battle(
 		Vector2(720, 400),
 		true,
@@ -3091,12 +3098,20 @@ func _show_pause_overlay() -> void:
 	)
 	pause_panel.help_requested.connect(func() -> void:
 		_play_click()
-		_close_modal()
-		_show_help(game_mode in [MODE_CHALLENGE, MODE_DEEP])
+		_show_help(
+			game_mode in [MODE_CHALLENGE, MODE_DEEP],
+			field_choice_context,
+		)
 	)
+	var resume_action := _complete_auxiliary_modal.bind(
+		field_choice_context,
+		Callable(self, "_resume_after_pause"),
+	)
+	if not field_choice_context.is_empty():
+		_modal_back_action = _close_modal.bind(resume_action)
 	modal_confirm.pressed.connect(func() -> void:
 		_play_click()
-		_close_modal(Callable(self, "_resume_after_pause"))
+		_close_modal(resume_action)
 	, CONNECT_ONE_SHOT)
 	modal_cancel.pressed.connect(func() -> void:
 		_play_click()
@@ -3229,7 +3244,13 @@ func _surrender_network_and_show_title() -> void:
 	_show_title()
 
 
-func _show_help(resume_ai_on_close: bool = false) -> void:
+func _show_help(
+	resume_ai_on_close: bool = false,
+	resume_choice_context: Dictionary = {},
+) -> void:
+	var field_choice_context := resume_choice_context
+	if field_choice_context.is_empty():
+		field_choice_context = _suspend_field_choice_for_auxiliary_modal()
 	_play_click()
 	_open_modal(
 		"规则与操作帮助",
@@ -3241,12 +3262,18 @@ func _show_help(resume_ai_on_close: bool = false) -> void:
 	var panel := HELP_PANEL_SCENE.instantiate() as HelpPanel
 	modal_body.add_child(panel)
 	panel.configure()
-	modal_confirm.pressed.connect(func() -> void:
-		_close_modal(
+	var resume_action := _complete_auxiliary_modal.bind(
+		field_choice_context,
+		(
 			Callable(self, "_resume_after_pause")
 			if resume_ai_on_close
 			else Callable()
-		)
+		),
+	)
+	if not field_choice_context.is_empty():
+		_modal_back_action = _close_modal.bind(resume_action)
+	modal_confirm.pressed.connect(func() -> void:
+		_close_modal(resume_action)
 	, CONNECT_ONE_SHOT)
 
 
@@ -3254,10 +3281,14 @@ func _show_card_inspector(
 	context: Dictionary,
 	return_action: Callable = Callable(),
 	return_label: String = "",
+	resume_choice_context: Dictionary = {},
 ) -> void:
 	var card_id := str(context.get("card_id", ""))
 	if card_id.is_empty():
 		return
+	var field_choice_context := resume_choice_context
+	if field_choice_context.is_empty():
+		field_choice_context = _suspend_field_choice_for_auxiliary_modal()
 	_play_click()
 	var card := catalog.get_card(card_id)
 	var title := str(card.get("name", card_id))
@@ -3272,16 +3303,36 @@ func _show_card_inspector(
 	var panel := CARD_INSPECTOR_PANEL_SCENE.instantiate() as CardInspectorPanel
 	modal_body.add_child(panel)
 	panel.configure(catalog, context)
-	panel.card_requested.connect(_show_card_inspector.bind(return_action, return_label))
+	panel.card_requested.connect(_show_card_inspector.bind(
+		return_action,
+		return_label,
+		field_choice_context,
+	))
 	_modal_back_action = return_action
 	if return_action.is_valid():
 		modal_confirm.text = return_label if not return_label.is_empty() else "返回上一界面"
 		modal_confirm.pressed.connect(return_action, CONNECT_ONE_SHOT)
+	elif not field_choice_context.is_empty():
+		var resume_action := _complete_auxiliary_modal.bind(
+			field_choice_context,
+			Callable(),
+		)
+		_modal_back_action = _close_modal.bind(resume_action)
+		modal_confirm.pressed.connect(
+			_close_modal.bind(resume_action),
+			CONNECT_ONE_SHOT,
+		)
 	else:
 		modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
 
 
-func _show_zone_inspector(context: Dictionary) -> void:
+func _show_zone_inspector(
+	context: Dictionary,
+	resume_choice_context: Dictionary = {},
+) -> void:
+	var field_choice_context := resume_choice_context
+	if field_choice_context.is_empty():
+		field_choice_context = _suspend_field_choice_for_auxiliary_modal()
 	_play_click()
 	var title := "%s · %s" % [
 		_player_name_for_context(int(context.get("player", -1))),
@@ -3302,8 +3353,113 @@ func _show_zone_inspector(context: Dictionary) -> void:
 	var panel := ZONE_INSPECTOR_PANEL_SCENE.instantiate() as ZoneInspectorPanel
 	modal_body.add_child(panel)
 	panel.configure(catalog, context)
-	panel.card_requested.connect(_show_card_inspector)
-	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
+	if field_choice_context.is_empty():
+		panel.card_requested.connect(_show_card_inspector)
+		modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
+		return
+	panel.card_requested.connect(_show_zone_card_inspector.bind(
+		context.duplicate(true),
+		field_choice_context,
+	))
+	var resume_action := _complete_auxiliary_modal.bind(
+		field_choice_context,
+		Callable(),
+	)
+	# The system-back path calls _modal_back_action directly. Close the inspector
+	# first so its full-screen shade cannot keep intercepting the restored field
+	# choice after the request has been re-established.
+	_modal_back_action = _close_modal.bind(resume_action)
+	modal_confirm.pressed.connect(
+		_close_modal.bind(resume_action),
+		CONNECT_ONE_SHOT,
+	)
+
+
+func _show_zone_card_inspector(
+	card_context: Dictionary,
+	zone_context: Dictionary,
+	field_choice_context: Dictionary,
+) -> void:
+	_show_card_inspector(
+		card_context,
+		_show_zone_inspector.bind(zone_context, field_choice_context),
+		"返回区域查看",
+		field_choice_context,
+	)
+
+
+func _suspend_field_choice_for_auxiliary_modal() -> Dictionary:
+	if active_request == null or active_choice_panel != null:
+		return {}
+	if _choice_field_target_options(active_request).is_empty():
+		return {}
+	var context := {
+		"request": active_request,
+		"selected_ids": selected_choice_ids.duplicate(),
+	}
+	active_request = null
+	selected_choice_ids.clear()
+	option_buttons.clear()
+	if battle_screen:
+		battle_screen.clear_choice_targets()
+	return context
+
+
+func _complete_auxiliary_modal(
+	context: Dictionary,
+	completion: Callable = Callable(),
+) -> void:
+	_resume_field_choice_after_auxiliary_modal(context)
+	if completion.is_valid():
+		completion.call()
+
+
+func _resume_field_choice_after_auxiliary_modal(context: Dictionary) -> void:
+	if context.is_empty() or current_screen != SCREEN_GAME:
+		return
+	var suspended_request := context.get("request") as ChoiceView
+	if suspended_request == null:
+		return
+	var request := suspended_request
+	if game_mode == MODE_NETWORK:
+		if network_choice_view == null:
+			_refresh_game()
+			return
+		request = network_choice_view
+	elif (
+		state != null
+		and suspended_request.base_revision >= 0
+		and state.revision != suspended_request.base_revision
+	):
+		# Local inspector modals freeze battle input, so the captured request stays
+		# authoritative while the revision is unchanged. Only a resync/lifecycle
+		# replacement needs another native pending-choice lookup.
+		var pending_request := _query_any_pending_choice()
+		if pending_request == null:
+			_refresh_game()
+			return
+		request = pending_request
+	if request.request_id != suspended_request.request_id:
+		# A network resync may replace the request while an inspector is open. Route
+		# the current authoritative request instead of reviving a stale ChoiceView.
+		_route_step_pending_choice(StepResult.new(true, "", request))
+		return
+	_show_choice_overlay(request)
+	var valid_option_ids: Dictionary = {}
+	for option in request.options:
+		valid_option_ids[str(option.get("option_id", ""))] = true
+	var restored_ids: Array[String] = []
+	for value in context.get("selected_ids", []):
+		var option_id := str(value)
+		if (
+			not valid_option_ids.has(option_id)
+			or (not request.allow_duplicates and option_id in restored_ids)
+			or restored_ids.size() >= request.max_select
+		):
+			continue
+		restored_ids.append(option_id)
+	selected_choice_ids.assign(restored_ids)
+	_refresh_choice_buttons()
 
 
 func _show_deck_details(
@@ -3355,7 +3511,10 @@ func _restore_deck_detail_modal_state(
 		modal_scroll.scroll_vertical = scroll_position
 
 
-func _show_settings() -> void:
+func _show_settings(resume_choice_context: Dictionary = {}) -> void:
+	var field_choice_context := resume_choice_context
+	if field_choice_context.is_empty():
+		field_choice_context = _suspend_field_choice_for_auxiliary_modal()
 	_play_click()
 	_open_modal(
 		"设置",
@@ -3367,14 +3526,26 @@ func _show_settings() -> void:
 	var panel := SETTINGS_PANEL_SCENE.instantiate() as SettingsPanel
 	modal_body.add_child(panel)
 	panel.configure()
-	panel.save_requested.connect(_save_settings_values)
+	panel.save_requested.connect(_save_settings_values.bind(field_choice_context))
 	# Keep the save action connected while the modal remains open so a transient
 	# filesystem failure can be corrected and retried without reopening Settings.
 	modal_confirm.pressed.connect(panel.request_save)
-	modal_cancel.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
+	var resume_action := _complete_auxiliary_modal.bind(
+		field_choice_context,
+		Callable(),
+	)
+	if not field_choice_context.is_empty():
+		_modal_back_action = _close_modal.bind(resume_action)
+	modal_cancel.pressed.connect(
+		_close_modal.bind(resume_action),
+		CONNECT_ONE_SHOT,
+	)
 
 
-func _save_settings_values(values: Dictionary) -> void:
+func _save_settings_values(
+	values: Dictionary,
+	resume_choice_context: Dictionary = {},
+) -> void:
 	AppSettings.update(
 		float(values.get("master_volume", AppSettings.master_volume)),
 		bool(values.get("muted", AppSettings.muted)),
@@ -3388,7 +3559,10 @@ func _save_settings_values(values: Dictionary) -> void:
 	if not AppSettings.save_settings():
 		_show_toast("设置保存失败。", true)
 		return
-	_close_modal()
+	_close_modal(_complete_auxiliary_modal.bind(
+		resume_choice_context,
+		Callable(),
+	))
 	Engine.max_fps = AppSettings.target_fps()
 	_show_toast("设置已保存。")
 
@@ -4035,41 +4209,7 @@ func _schedule_ai_choice(request: ChoiceView) -> void:
 
 
 func _ai_state_snapshot(player_idx: int) -> Dictionary:
-	var snapshot := state.snapshot()
-	# Challenge AI receives the same rules-facing state boundary as UI/network.
-	# Rollout-generated stacks are private to its cloned simulation thereafter.
-	snapshot.erase("resolution_stack")
-	var player_rows: Array = snapshot.get("players", [])
-	for row_index in range(player_rows.size()):
-		var row: Dictionary = player_rows[row_index]
-		var hidden_prizes: Array[String] = []
-		hidden_prizes.resize(Array(row.get("prizes", [])).size())
-		hidden_prizes.fill("__hidden_prize__")
-		row["prizes"] = hidden_prizes
-		var hidden_deck: Array[String] = []
-		hidden_deck.resize(Array(row.get("deck", [])).size())
-		hidden_deck.fill("__hidden_card__")
-		row["deck"] = hidden_deck
-		if player_idx in [0, 1] and row_index != player_idx:
-			var hidden_hand: Array[String] = []
-			hidden_hand.resize(Array(row.get("hand", [])).size())
-			hidden_hand.fill("__hidden_card__")
-			row["hand"] = hidden_hand
-	if (
-		str(snapshot.get("setup_stage", GameState.SETUP_COMPLETE))
-		!= GameState.SETUP_COMPLETE
-		and player_idx in [0, 1]
-		and player_rows.size() == 2
-	):
-		var opponent: Dictionary = player_rows[1 - player_idx]
-		opponent["active"] = null
-		opponent["bench"] = []
-		var bonus_ids: Array = snapshot.get("setup_bonus_card_ids", [[], []])
-		if bonus_ids.size() == 2:
-			bonus_ids[1 - player_idx] = []
-			snapshot["setup_bonus_card_ids"] = bonus_ids
-	snapshot["players"] = player_rows
-	return snapshot
+	return RuntimeStateProjection.project(state, player_idx)
 
 
 func _apply_ai_result(result: Dictionary) -> void:
@@ -4151,6 +4291,7 @@ func _apply_ai_result(result: Dictionary) -> void:
 func _apply_ai_fallback_action(reason: String) -> void:
 	if state == null or current_screen != SCREEN_GAME or _current_actor() != 1:
 		return
+	ai_emergency_fallback_count += 1
 	var query := _rules_legal_actions(1)
 	if not query.success:
 		_show_toast("%s 合法动作查询失败：%s" % [reason, query.code], true)
@@ -4195,6 +4336,7 @@ func _ordered_ai_fallback_actions(actions: Array[GameAction]) -> Array[GameActio
 func _apply_ai_fallback_choice(request: ChoiceView, reason: String) -> void:
 	if state == null or current_screen != SCREEN_GAME:
 		return
+	ai_emergency_fallback_count += 1
 	var response := _fallback_choice_response(request)
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase

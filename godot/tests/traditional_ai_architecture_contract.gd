@@ -1,5 +1,7 @@
 extends SceneTree
 
+const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
+
 const RELEASE_DECK_KEYS := [
 	"colorless",
 	"darkness",
@@ -23,11 +25,13 @@ func _initialize() -> void:
 	var engine := GameEngine.new(catalog)
 	_check_retired_ai_removed()
 	var state := _planner_state()
+	_check_runtime_projection_boundary(state, catalog, engine)
 	var information_set := _check_information_set(state, catalog)
 	var semantic_count := _check_semantic_catalog(catalog)
 	_check_choice_constraints(catalog)
 	_check_information_context_and_cache(state, catalog, engine)
 	_check_search_hot_path_contract(state, catalog)
+	_check_native_search_fork_equivalence(state, catalog)
 	_check_hot_path_string_wire_equivalence()
 	_check_trace_format_wire_equivalence()
 	_check_stable_variant_signature_wire_equivalence()
@@ -83,6 +87,284 @@ func _check_retired_ai_removed() -> void:
 			"AI evaluation runner does not fail closed for unknown engines")
 	_check(NativeChallengeAI.heuristic_variants() == ["semantic_v2"],
 		"NativeChallengeAI still exposes a retired heuristic variant")
+
+
+func _check_runtime_projection_boundary(
+	state: GameState,
+	catalog: CardCatalog,
+	engine: GameEngine,
+) -> void:
+	var projected := RuntimeStateProjection.project(state, 0)
+	_check(
+		not projected.is_empty()
+		and RuntimeStateProjection.validate(projected, 0).is_empty()
+		and not projected.has("resolution_stack")
+		and not projected.has("processed_action_ids")
+		and not projected.has("choice_sequence")
+		and not projected.has("setup_bonus_card_ids"),
+		"Canonical AI runtime projection is invalid",
+	)
+	var projected_players: Array = projected.get("players", [])
+	_check(
+		projected_players.size() == 2
+		and _all_values_equal(
+			Array(Dictionary(projected_players[0]).get("deck", [])),
+			RuntimeStateProjection.HIDDEN_CARD,
+		)
+		and _all_values_equal(
+			Array(Dictionary(projected_players[1]).get("hand", [])),
+			RuntimeStateProjection.HIDDEN_CARD,
+		),
+		"Runtime projection exposed a hidden zone identity",
+	)
+	var leaked := projected.duplicate(true)
+	var leaked_players: Array = leaked.get("players", [])
+	if leaked_players.size() == 2:
+		var opponent: Dictionary = leaked_players[1]
+		opponent["hand"] = ["secret-opponent-card"]
+		leaked_players[1] = opponent
+		leaked["players"] = leaked_players
+	_check(
+		RuntimeStateProjection.validate(leaked, 0)
+			== "hidden_identity_exposed:players[1].hand",
+		"Runtime projection validator accepted an opponent hand identity",
+	)
+	for leak_case in [
+		[0, "deck", "hidden_identity_exposed:players[0].deck"],
+		[0, "prizes", "hidden_identity_exposed:players[0].prizes"],
+		[1, "deck", "hidden_identity_exposed:players[1].deck"],
+		[1, "prizes", "hidden_identity_exposed:players[1].prizes"],
+	]:
+		var hidden_zone_leak := projected.duplicate(true)
+		var hidden_zone_players: Array = hidden_zone_leak.get("players", [])
+		var hidden_zone_player: Dictionary = hidden_zone_players[int(leak_case[0])]
+		hidden_zone_player[str(leak_case[1])] = ["secret-card"]
+		hidden_zone_players[int(leak_case[0])] = hidden_zone_player
+		hidden_zone_leak["players"] = hidden_zone_players
+		_check(
+			RuntimeStateProjection.validate(hidden_zone_leak, 0)
+				== str(leak_case[2]),
+			"Runtime projection validator accepted %s" % str(leak_case[2]),
+		)
+	var private_stack := projected.duplicate(true)
+	private_stack["resolution_stack"] = {"private": true}
+	_check(
+		RuntimeStateProjection.validate(private_stack, 0)
+			== "private_field_exposed:resolution_stack",
+		"Runtime projection validator accepted a private continuation stack",
+	)
+	var setup_leak := projected.duplicate(true)
+	setup_leak["phase"] = "SETUP"
+	setup_leak["setup_stage"] = GameState.SETUP_INITIAL_PLACEMENT
+	var setup_players: Array = setup_leak.get("players", [])
+	var setup_opponent: Dictionary = setup_players[1]
+	setup_opponent["active"] = null
+	setup_opponent["bench"] = [null, null, null, null, null]
+	setup_players[1] = setup_opponent
+	setup_leak["players"] = setup_players
+	setup_leak["setup_bonus_card_ids"] = [[], ["secret-setup-card"]]
+	_check(
+		RuntimeStateProjection.validate(setup_leak, 0)
+			== "private_field_exposed:setup_bonus_card_ids",
+		"Runtime projection validator accepted a hidden setup bonus identity",
+	)
+	var choice_sequence_leak := projected.duplicate(true)
+	choice_sequence_leak["choice_sequence"] = 99
+	_check(
+		RuntimeStateProjection.validate(choice_sequence_leak, 0)
+			== "private_field_exposed:choice_sequence",
+		"Runtime projection validator accepted a private choice sequence",
+	)
+
+	var query := engine.query_legal_action_groups(state, 0)
+	var legal: Array[GameAction] = []
+	if query.success:
+		legal.assign(query.concrete_actions())
+	_check(query.success and not legal.is_empty(),
+		"Runtime projection fixture has no authoritative legal actions")
+	if legal.is_empty():
+		return
+	var action_rows: Array = []
+	for action in legal:
+		action_rows.append(action.to_dict())
+	var request := {
+		"kind": "action",
+		"engine": NativeChallengeAI.TRADITIONAL_ENGINE_ID,
+		"state": projected,
+		"actor": 0,
+		"revision": state.revision,
+		"request_id": "runtime-projection-contract",
+		"mode": "challenge",
+		"deck_key": str(state.public_deck_keys[0]),
+		"match_seed": TEST_SEED,
+		"seed": TEST_SEED,
+		"internal_evaluation_smoke": true,
+		"actions": action_rows,
+	}
+	var decision := NativeChallengeAI.new().decide(
+		request, func() -> bool: return false)
+	var selected := (
+		GameAction.from_dict(decision.get("action", {}))
+		if decision.get("action") is Dictionary
+		else null
+	)
+	_check(
+		bool(decision.get("success", false))
+		and _is_supplied_legal_action(selected, legal)
+		and str(decision.get("failure_stage", "")) == ""
+		and str(decision.get("decision_origin", "")) in [
+			"search", "forced_tactic", "cache",
+		],
+		"Traditional AI rejected the production observation boundary: %s"
+			% JSON.stringify(decision),
+	)
+	var deep_fallback_request := request.duplicate(true)
+	deep_fallback_request["mode"] = "deep"
+	deep_fallback_request["request_id"] = "runtime-projection-deep-fallback"
+	var deep_fallback := AICoordinator.new().decide_sync_for_evaluation(
+		deep_fallback_request, null)
+	var deep_fallback_action := (
+		GameAction.from_dict(deep_fallback.get("action", {}))
+		if deep_fallback.get("action") is Dictionary
+		else null
+	)
+	_check(
+		bool(deep_fallback.get("success", false))
+		and bool(deep_fallback.get("deep_fallback", false))
+		and str(deep_fallback.get("fallback_reason", ""))
+			== "runtime_unavailable"
+		and _is_supplied_legal_action(deep_fallback_action, legal),
+		"Deep-to-Challenge fallback rejected the production observation boundary",
+	)
+	var full_snapshot_request := request.duplicate(true)
+	full_snapshot_request["state"] = state.snapshot()
+	var full_snapshot_result := NativeChallengeAI.new().decide(
+		full_snapshot_request, func() -> bool: return false)
+	_check(
+		not bool(full_snapshot_result.get("success", true))
+		and str(full_snapshot_result.get("error", ""))
+			== "invalid_runtime_projection:missing_runtime_projection",
+		"Traditional AI accepted a restorable authoritative snapshot",
+	)
+	var leaked_request := request.duplicate(true)
+	leaked_request["state"] = leaked
+	var leaked_result := NativeChallengeAI.new().decide(
+		leaked_request, func() -> bool: return false)
+	_check(
+		not bool(leaked_result.get("success", true))
+		and str(leaked_result.get("failure_stage", ""))
+			== "runtime_projection",
+		"Traditional AI accepted a projected state containing hidden identities",
+	)
+	var observed_state := GameState.from_dict(projected)
+	var forbidden_query := engine.query_legal_action_groups(observed_state, 0)
+	_check(
+		not forbidden_query.success
+		and forbidden_query.code == "native_restore_failed",
+		"AI observation unexpectedly became a restorable authoritative snapshot",
+	)
+
+	var stale_request := request.duplicate(true)
+	stale_request["revision"] = state.revision + 1
+	var stale := NativeChallengeAI.new().decide(
+		stale_request, func() -> bool: return false)
+	_check(
+		not bool(stale.get("success", true))
+		and str(stale.get("error", "")) == "stale_authoritative_legal_actions",
+		"Traditional AI accepted a stale authoritative action set",
+	)
+	var missing_actions_request := request.duplicate(true)
+	missing_actions_request.erase("actions")
+	var missing_actions := NativeChallengeAI.new().decide(
+		missing_actions_request, func() -> bool: return false)
+	_check(
+		not bool(missing_actions.get("success", true))
+		and str(missing_actions.get("error", ""))
+			== "missing_authoritative_legal_actions",
+		"Traditional AI accepted an action request without authoritative actions",
+	)
+	var hidden_ref_request := request.duplicate(true)
+	var hidden_ref_action := GameAction.create(
+		"PLAY_BASIC",
+		{},
+		0,
+		EntityRef.new(
+			"card", 0, "deck", "", 0, "", state.players[0].deck[0]),
+		EntityRef.new("slot", 0, "", "bench_0"),
+		"",
+		state.revision,
+	)
+	hidden_ref_request["actions"] = [hidden_ref_action.to_dict()]
+	var hidden_ref_result := NativeChallengeAI.new().decide(
+		hidden_ref_request, func() -> bool: return false)
+	_check(
+		not bool(hidden_ref_result.get("success", true))
+		and str(hidden_ref_result.get("error", "")).ends_with(
+			":hidden_zone_reference"),
+		"Traditional AI accepted an authoritative action with a hidden reference",
+	)
+	var duplicate_request := request.duplicate(true)
+	var duplicate_rows: Array = Array(duplicate_request["actions"])
+	duplicate_rows.append(Dictionary(duplicate_rows[0]).duplicate(true))
+	duplicate_request["actions"] = duplicate_rows
+	var duplicate := NativeChallengeAI.new().decide(
+		duplicate_request, func() -> bool: return false)
+	_check(
+		not bool(duplicate.get("success", true))
+		and str(duplicate.get("error", "")).begins_with(
+			"duplicate_authoritative_legal_action:"),
+		"Traditional AI accepted a duplicate authoritative action",
+	)
+
+
+func _check_native_search_fork_equivalence(
+	state: GameState,
+	catalog: CardCatalog,
+) -> void:
+	var baseline_engine := GameEngine.new(catalog)
+	var search_engine := GameEngine.new(catalog)
+	var query := baseline_engine.query_legal_action_groups(state, 0)
+	if not query.success:
+		_check(false, "Search-fork fixture legal query failed")
+		return
+	var action: GameAction = null
+	for candidate in query.concrete_actions():
+		if candidate.kind == "END_TURN":
+			action = candidate
+			break
+	if action == null and not query.concrete_actions().is_empty():
+		action = query.concrete_actions()[0]
+	if action == null:
+		_check(false, "Search-fork fixture has no action")
+		return
+	var baseline_action := GameAction.from_dict(action.to_dict())
+	var search_action := GameAction.from_dict(action.to_dict())
+	baseline_action.action_id = "search-fork-equivalence"
+	search_action.action_id = "search-fork-equivalence"
+	var baseline_state := state.clone_state()
+	var parent_state := state.clone_state()
+	var parent_before := parent_state.snapshot()
+	var baseline_rng := PortableRandomSource.new(TEST_SEED)
+	var search_rng := PortableRandomSource.new(TEST_SEED)
+	var baseline_step := baseline_engine.apply_action(
+		baseline_state, baseline_action, baseline_rng)
+	search_engine.begin_search_epoch()
+	var applied := search_engine.apply_search_action_ephemeral(
+		parent_state, search_action, search_rng)
+	search_engine.end_search_epoch()
+	var child: GameState = applied.get("state")
+	var search_step: StepResult = applied.get("step")
+	_check(
+		baseline_step.success
+		and search_step != null
+		and search_step.success
+		and child != null
+		and parent_state.snapshot() == parent_before
+		and child.snapshot() == baseline_state.snapshot()
+		and search_rng.get_state() == baseline_rng.get_state()
+		and search_step.to_dict() == baseline_step.to_dict(),
+		"Native search fork diverged from restore/apply or mutated its parent",
+	)
 
 
 func _check_information_set(
@@ -362,6 +644,32 @@ func _check_search_hot_path_contract(
 		cached.success
 		and ephemeral.to_dict() == cached.to_dict(),
 		"Ephemeral legal-action query changed action content or ordering",
+	)
+	var cache_fingerprint_state := state.clone_state()
+	var cache_fingerprint_engine := GameEngine.new(catalog)
+	cache_fingerprint_engine.begin_search_epoch()
+	var fingerprint_first := (
+		cache_fingerprint_engine.query_legal_action_groups_ephemeral(
+			cache_fingerprint_state, 0))
+	var cache_entry_before: Dictionary = cache_fingerprint_engine._search_sessions.get(
+		int(cache_fingerprint_state.get_instance_id()), {})
+	var adapter_before: Variant = cache_entry_before.get("adapter")
+	cache_fingerprint_state.turn_number += 1
+	var fingerprint_second := (
+		cache_fingerprint_engine.query_legal_action_groups_ephemeral(
+			cache_fingerprint_state, 0))
+	var adapter_after: Variant = cache_fingerprint_engine._cached_search_adapter(
+		cache_fingerprint_state)
+	cache_fingerprint_engine.end_search_epoch()
+	_check(
+		fingerprint_first.success
+		and fingerprint_second.success
+		and adapter_before != null
+		and adapter_after != null
+		and adapter_before != adapter_after
+		and int(adapter_after.snapshot().get("turn_number", -1))
+			== cache_fingerprint_state.turn_number,
+		"Search session cache reused a same-revision state after its fingerprint changed",
 	)
 	if not ephemeral.success:
 		return
@@ -4398,7 +4706,7 @@ func _check_planner_contract(
 	var native_request := {
 		"kind": "action",
 		"engine": "turn_beam_v2",
-		"state": state.snapshot(),
+		"state": RuntimeStateProjection.project(state, 0),
 		"actor": 0,
 		"revision": state.revision,
 		"request_id": "native-determinism",

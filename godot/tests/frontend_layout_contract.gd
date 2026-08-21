@@ -128,6 +128,7 @@ func _check_main_shell_contract() -> void:
 	)
 	_check_generic_choice_category_limits(main)
 	await _check_pointer_only_input_contract(main)
+	await _check_field_choice_inspector_resume(main)
 	main.show_deck_select("challenge")
 	await _settle_layout(4)
 	var routed_deck_page := (
@@ -329,6 +330,390 @@ func _check_generic_choice_category_limits(main: Control) -> void:
 		"Generic ChoiceView category_limits were ignored by the player UI",
 	)
 	main.selected_choice_ids.clear()
+
+
+func _check_field_choice_inspector_resume(main: Control) -> void:
+	var battle_scene := load(
+		"res://scenes/battle/components/battle_table.tscn"
+	) as PackedScene
+	_check(battle_scene != null,
+		"Battle table is unavailable for field-choice inspector regression")
+	if battle_scene == null:
+		return
+	var previous_screen: String = str(main.current_screen)
+	var previous_battle: BattleTable = main.battle_screen
+	var table := battle_scene.instantiate() as BattleTable
+	root.add_child(table)
+	await _settle_layout(2)
+	main.current_screen = "game"
+	main.battle_screen = table
+	_check_discard_zone_action_reachability(table)
+	_check_same_id_hand_motion_staging(table)
+	var request := ChoiceView.new(
+		"choice:prize-inspector-resume",
+		-1,
+		"select_prize",
+		0,
+		"请选择奖励牌。",
+		[
+			{"option_id": "prize:0", "label": "奖励牌 1"},
+			{"option_id": "prize:1", "label": "奖励牌 2"},
+		],
+		1,
+		1,
+		false,
+		false,
+		{"domain": "knockout", "purpose": "select_prize"},
+	)
+	main._show_choice_overlay(request)
+	_check(
+		main.active_request == request
+		and table.choice_target_options.get("prize:0:0") == "prize:0",
+		"Prize ChoiceView did not enter field-target mode",
+	)
+
+	var discard_context := {
+		"player": 0,
+		"title": "弃牌区",
+		"zone": "discard",
+		"card_ids": ["sv1-ener-2"],
+	}
+	main._show_zone_inspector(discard_context)
+	await _settle_layout(2)
+	_check(
+		main.active_request == null
+		and table.choice_target_options.is_empty()
+		and main.modal_layer.visible,
+		"Zone inspector did not suspend the underlying field ChoiceView",
+	)
+	main.modal_confirm.pressed.emit()
+	await _settle_layout(2)
+	_check(
+		main.active_request != null
+		and main.active_request.request_id == request.request_id
+		and table.choice_target_options.get("prize:0:0") == "prize:0"
+		and not main.modal_layer.visible,
+		"Closing the discard inspector did not restore the Prize ChoiceView",
+	)
+
+	main._show_zone_inspector(discard_context)
+	await _settle_layout(2)
+	main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+	await _settle_layout(2)
+	_check(
+		main.active_request != null
+		and main.active_request.request_id == request.request_id
+		and table.choice_target_options.get("prize:0:1") == "prize:1"
+		and not main.modal_layer.visible,
+		"System Back did not restore the Prize ChoiceView after zone inspection",
+	)
+
+	main._show_zone_inspector(discard_context)
+	await _settle_layout(2)
+	var zone_cards: Array[Node] = main.modal_body.find_children(
+		"*", "CardView", true, false
+	)
+	var zone_card := zone_cards[0] as CardView if not zone_cards.is_empty() else null
+	_check(zone_card != null,
+		"Discard inspector exposes no card for nested inspector regression")
+	if zone_card:
+		zone_card.activated.emit("sv1-ener-2", -1, 0, "")
+		await _settle_layout(2)
+		_check(
+			main.active_request == null and main.modal_layer.visible,
+			"Nested card inspector prematurely restored the field ChoiceView",
+		)
+		main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+		await _settle_layout(2)
+		_check(
+			main.active_request == null
+			and "弃牌区" in main.modal_title.text,
+			"Nested card inspector did not return to its zone inspector",
+		)
+	main.modal_confirm.pressed.emit()
+	await _settle_layout(2)
+	_check(
+		main.active_request != null
+		and main.active_request.request_id == request.request_id
+		and table.choice_target_options.get("prize:0:0") == "prize:0",
+		"Nested discard-card inspection lost the Prize ChoiceView",
+	)
+
+	main._show_pause_overlay()
+	await _settle_layout(2)
+	_check(
+		main.active_request == null
+		and table.choice_target_options.is_empty()
+		and main.modal_layer.visible,
+		"Pause menu did not suspend the underlying field ChoiceView",
+	)
+	main.modal_confirm.pressed.emit()
+	await _settle_layout(2)
+	_check(
+		main.active_request != null
+		and main.active_request.request_id == request.request_id
+		and table.choice_target_options.get("prize:0:0") == "prize:0",
+		"Continuing from the pause menu lost the Prize ChoiceView",
+	)
+
+	main._show_pause_overlay()
+	await _settle_layout(2)
+	main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+	await _settle_layout(2)
+	_check(
+		main.active_request != null
+		and main.active_request.request_id == request.request_id
+		and not main.modal_layer.visible,
+		"System Back from the pause menu lost the Prize ChoiceView",
+	)
+
+	main._show_pause_overlay()
+	await _settle_layout(2)
+	var pause_help := main.modal_body.find_child(
+		"HelpButton", true, false
+	) as Button
+	_check(pause_help != null,
+		"Pause menu exposes no Help button for ChoiceView lifecycle regression")
+	if pause_help:
+		pause_help.pressed.emit()
+		await _settle_layout(2)
+		_check(
+			main.active_request == null
+			and table.choice_target_options.is_empty()
+			and main.modal_layer.visible,
+			"Pause-to-Help navigation prematurely restored the Prize ChoiceView",
+		)
+	main.modal_confirm.pressed.emit()
+	await _settle_layout(2)
+	_check(
+		main.active_request != null
+		and main.active_request.request_id == request.request_id
+		and table.choice_target_options.get("prize:0:1") == "prize:1",
+		"Closing Pause Help lost the Prize ChoiceView",
+	)
+
+	main._show_help()
+	await _settle_layout(2)
+	main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+	await _settle_layout(2)
+	_check(
+		main.active_request != null
+		and main.active_request.request_id == request.request_id
+		and not main.modal_layer.visible,
+		"System Back from direct battle Help lost the Prize ChoiceView",
+	)
+
+	main._show_settings()
+	await _settle_layout(2)
+	_check(
+		main.active_request == null
+		and table.choice_target_options.is_empty()
+		and main.modal_layer.visible,
+		"Battle Settings did not suspend the underlying field ChoiceView",
+	)
+	main.modal_cancel.pressed.emit()
+	await _settle_layout(2)
+	_check(
+		main.active_request != null
+		and main.active_request.request_id == request.request_id
+		and table.choice_target_options.get("prize:0:0") == "prize:0",
+		"Cancelling battle Settings lost the Prize ChoiceView",
+	)
+
+	main._show_settings()
+	await _settle_layout(2)
+	main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+	await _settle_layout(2)
+	_check(
+		main.active_request != null
+		and main.active_request.request_id == request.request_id
+		and not main.modal_layer.visible,
+		"System Back from battle Settings lost the Prize ChoiceView",
+	)
+
+	main.active_request = null
+	main.selected_choice_ids.clear()
+	table.clear_choice_targets()
+	main.battle_screen = previous_battle
+	main.current_screen = previous_screen
+	table.queue_free()
+	await _settle_layout(2)
+
+
+func _check_discard_zone_action_reachability(table: BattleTable) -> void:
+	var state := GameState.new()
+	state.setup_stage = GameState.SETUP_COMPLETE
+	state.phase = "MAIN"
+	state.turn_number = 3
+	state.first_player_idx = 1
+	state.active_player_idx = 0
+	state.players[0].active = PokemonState.new("svg2-pipl")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].hand = []
+	state.players[0].discard = ["sv1-151", "svg2-empo"]
+	state.players[0].deck = ["sv1-150", "sv1-153", "sv1-176"]
+	var ability := GameAction.create(
+		"USE_ABILITY",
+		{"ability_name": "紧急上浮"},
+		0,
+		EntityRef.new("card", 0, "discard", "", 1, "", "svg2-empo"),
+		null,
+		"ui:discard-ability",
+		state.revision,
+	)
+	var source_key := CardInteractionRouter.zone_key(0, "discard")
+	table.update_view(
+		state,
+		0,
+		[{"action": ability, "label": "特性 · 紧急上浮"}],
+		"",
+		false,
+		"local",
+	)
+	var discard_zone := table.zones.get("own_discard") as ZoneView
+	_check(
+		CardInteractionRouter.source_key_for_action(ability) == source_key
+		and table.interaction_router.has_source(source_key)
+		and source_key in table.visible_card_source_keys()
+		and table.all_card_actions_reachable_from_visible_cards()
+		and discard_zone != null
+		and discard_zone.is_actionable()
+		and discard_zone.action_button.visible
+		and discard_zone.action_button.text == "可用操作"
+		and table._source_control_for_key(source_key) == discard_zone,
+		"Empty-hand discard-zone Ability was not reachable from its public zone",
+	)
+	if discard_zone:
+		var inspected_contexts: Array[Dictionary] = []
+		var capture_inspection := func(context: Dictionary) -> void:
+			inspected_contexts.append(context.duplicate(true))
+		table.inspect_zone_requested.connect(capture_inspection)
+		table._on_zone_inspected(discard_zone.inspect_context)
+		_check(
+			inspected_contexts.size() == 1
+			and str(inspected_contexts[0].get("zone", "")) == "discard"
+			and (table.action_popover == null or not table.action_popover.visible),
+			"Tapping an actionable discard zone did not preserve pile inspection",
+		)
+		table.inspect_zone_requested.disconnect(capture_inspection)
+		discard_zone.action_button.pressed.emit()
+		_check(
+			table.action_popover != null
+			and table.action_popover.visible
+			and table._popover_source_key == source_key,
+			"Discard zone's independent action button did not expose Empoleon's Ability",
+		)
+		if table.action_popover:
+			table.action_popover.dismiss(false)
+
+
+func _check_same_id_hand_motion_staging(table: BattleTable) -> void:
+	var before := GameState.new()
+	before.setup_stage = GameState.SETUP_COMPLETE
+	before.phase = "MAIN"
+	before.turn_number = 3
+	before.first_player_idx = 1
+	before.active_player_idx = 0
+	before.players[0].active = PokemonState.new("svi-chim")
+	before.players[0].active.placed_this_turn = false
+	before.players[0].hand = ["sv1-189", "sv1-ener-2", "svi-chim"]
+	before.players[0].deck = [
+		"sv1-150", "sv1-189", "sv1-153", "sv1-176",
+		"sv1-151", "sv1-ener-2", "svf-potion",
+	]
+	table.update_view(before, 0, [], "", false, "local")
+	var snapshot := table.capture_presentation_snapshot()
+	var old_visual_ids: Dictionary = {}
+	for row_value in snapshot.get("hand", []):
+		var row: Dictionary = row_value
+		old_visual_ids[str(row.get("card_id", ""))] = str(
+			row.get("visual_id", ""),
+		)
+	var raw_events: Array = [
+		{
+			"event_id": "same-id:trainer",
+			"event_type": "trainer_played",
+			"actor": 0,
+			"card_id": "sv1-189",
+			"amount": 1,
+			"source": {"player": 0, "zone": "hand", "index": 0},
+			"target": {"player": 0, "zone": "discard"},
+			"data": {"player": 0, "card_ids": ["sv1-189"], "count": 1},
+		},
+		{
+			"event_id": "same-id:discard",
+			"event_type": "cards_discarded",
+			"actor": 0,
+			"amount": 2,
+			"source": {"player": 0, "zone": "hand"},
+			"target": {"player": 0, "zone": "discard"},
+			"data": {
+				"player": 0,
+				"card_ids": ["sv1-ener-2", "svi-chim"],
+				"count": 2,
+				"source_zone": "hand",
+				"target_zone": "discard",
+			},
+		},
+		{
+			"event_id": "same-id:draw",
+			"event_type": "cards_drawn",
+			"actor": 0,
+			"amount": 7,
+			"source": {"player": 0, "zone": "deck"},
+			"target": {"player": 0, "zone": "hand"},
+			"data": {
+				"player": 0,
+				"card_ids": [
+					"svf-potion", "sv1-ener-2", "sv1-151", "sv1-176",
+					"sv1-153", "sv1-189", "sv1-150",
+				],
+				"count": 7,
+				"source_zone": "deck",
+				"target_zone": "hand",
+			},
+		},
+	]
+	table.prepare_hand_identity_transition(raw_events, snapshot)
+	_check(
+		table._pending_removed_hand_visual_ids.size() == 3,
+		"Same-id replacement did not retire every physical pre-resolution hand card",
+	)
+	var after := before.clone_state()
+	after.revision += 1
+	after.players[0].hand = [
+		"svf-potion", "sv1-ener-2", "sv1-151", "sv1-176",
+		"sv1-153", "sv1-189", "sv1-150",
+	]
+	after.players[0].deck = []
+	after.players[0].discard = ["sv1-ener-2", "svi-chim", "sv1-189"]
+	table.update_view(after, 0, [], "", false, "local")
+	var replacement_ids: Dictionary = {}
+	for view in table.hand_views:
+		if view and view.visible and view.card_id in ["sv1-189", "sv1-ener-2"]:
+			replacement_ids[view.card_id] = view.local_visual_id
+	_check(
+		str(replacement_ids.get("sv1-189", ""))
+			!= str(old_visual_ids.get("sv1-189", ""))
+		and str(replacement_ids.get("sv1-ener-2", ""))
+			!= str(old_visual_ids.get("sv1-ener-2", "")),
+		"Drawn same-id cards reused discarded hand visual identities",
+	)
+	var events := PresentationEvent.normalize_all(raw_events, after.revision, 0)
+	table._stage_presentation_targets(events, snapshot)
+	_check(
+		Array(table._presentation_event_hand_sources.get(
+			"same-id:trainer", [],
+		)).size() == 1
+		and Array(table._presentation_event_hand_sources.get(
+			"same-id:discard", [],
+		)).size() == 2
+		and Array(table._presentation_event_hand_targets.get(
+			"same-id:draw", [],
+		)).size() == 7,
+		"Same-id discard/draw batch did not stage every source and landing animation",
+	)
+	table.clear_presentation_for_resync()
 
 
 func _check_pointer_only_input_contract(main: Control) -> void:

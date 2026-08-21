@@ -2,6 +2,7 @@ extends SceneTree
 
 const FIXTURE_PATH := "res://tests/fixtures/rules_golden.json"
 const CARDS_PATH := "res://data/cards.json"
+const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
 
 
 func _initialize() -> void:
@@ -98,25 +99,7 @@ func _initialize() -> void:
 		actions.append(action.to_dict())
 		expected_signatures.append(AIPositionEvaluator.action_signature(action))
 
-	var runtime_state := state.duplicate(true)
-	runtime_state.erase("resolution_stack")
-	var players: Array = runtime_state.get("players", [])
-	for player_index in range(players.size()):
-		var player: Dictionary = players[player_index]
-		var hidden_deck: Array[String] = []
-		hidden_deck.resize(Array(player.get("deck", [])).size())
-		hidden_deck.fill("__hidden_card__")
-		player["deck"] = hidden_deck
-		var hidden_prizes: Array[String] = []
-		hidden_prizes.resize(Array(player.get("prizes", [])).size())
-		hidden_prizes.fill("__hidden_prize__")
-		player["prizes"] = hidden_prizes
-		if player_index != 0:
-			var hidden_hand: Array[String] = []
-			hidden_hand.resize(Array(player.get("hand", [])).size())
-			hidden_hand.fill("__hidden_card__")
-			player["hand"] = hidden_hand
-	runtime_state["players"] = players
+	var runtime_state := RuntimeStateProjection.project(formal_state, 0)
 
 	var backend: Variant = ClassDB.instantiate("OnnxInference")
 	var loaded: bool = backend.load_model(model_path, {
@@ -181,25 +164,7 @@ func _initialize() -> void:
 		backend.unload_model()
 		quit(1)
 		return
-	var choice_runtime_state := formal_state.snapshot()
-	choice_runtime_state.erase("resolution_stack")
-	var choice_players: Array = choice_runtime_state.get("players", [])
-	for player_index in range(choice_players.size()):
-		var player: Dictionary = choice_players[player_index]
-		var hidden_deck: Array[String] = []
-		hidden_deck.resize(Array(player.get("deck", [])).size())
-		hidden_deck.fill("__hidden_card__")
-		player["deck"] = hidden_deck
-		var hidden_prizes: Array[String] = []
-		hidden_prizes.resize(Array(player.get("prizes", [])).size())
-		hidden_prizes.fill("__hidden_prize__")
-		player["prizes"] = hidden_prizes
-		if player_index != 0:
-			var hidden_hand: Array[String] = []
-			hidden_hand.resize(Array(player.get("hand", [])).size())
-			hidden_hand.fill("__hidden_card__")
-			player["hand"] = hidden_hand
-	choice_runtime_state["players"] = choice_players
+	var choice_runtime_state := RuntimeStateProjection.project(formal_state, 0)
 	var choice_result: Dictionary = planner.decide({
 		"kind": "choice",
 		"state": choice_runtime_state,
