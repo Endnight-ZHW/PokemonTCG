@@ -889,7 +889,13 @@ func _render_previews() -> void:
 		)
 	):
 		push_error(
-			"Compact battle detail did not use an unscaled 560x240 bottom surface"
+			"Compact battle detail did not use an unscaled 560x240 bottom surface: "
+			+ "detail=%s physical=%s expected=%s close=%s" % [
+				compact_detail.size if compact_detail else Vector2.ZERO,
+				_physical_control_rect(compact_detail).size if compact_detail else Vector2.ZERO,
+				BattleDetailPanel.COMPACT_PANEL_SIZE,
+				compact_detail.close_button.get_global_rect() if compact_detail else Rect2(),
+			]
 		)
 		_finish(1)
 		return
@@ -943,6 +949,45 @@ func _render_previews() -> void:
 	if not _capture("battle-attack-actions.png"):
 		_finish(1)
 		return
+	var retreat_preview_action: GameAction
+	for row_value in UIPreviewStateFactory.action_rows(demo):
+		var candidate := Dictionary(row_value).get("action") as GameAction
+		if candidate != null and candidate.kind == "RETREAT":
+			retreat_preview_action = candidate
+			break
+	if retreat_preview_action == null:
+		push_error("Battle preview exposes no retreat action for confirmation QA")
+		_finish(1)
+		return
+	ui._show_retreat_confirmation(retreat_preview_action)
+	await _settle_rendered(4)
+	var retreat_confirmation_copy := ""
+	for label_node in ui.modal_body.find_children("*", "Label", true, false):
+		retreat_confirmation_copy += (label_node as Label).text + "\n"
+	if (
+		"无需丢弃能量" in retreat_confirmation_copy
+		or "卡面撤退费用：1 点" not in retreat_confirmation_copy
+		or "下一步选择" not in retreat_confirmation_copy
+	):
+		push_error("Retreat confirmation still misrepresents deferred Energy payment")
+		_finish(1)
+		return
+	if not _capture("retreat-confirmation.png"):
+		_finish(1)
+		return
+	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
+	_update_battle_preview(
+		ui,
+		demo,
+		UIPreviewStateFactory.action_rows(demo),
+		"pokemon:0:active",
+	)
+	ui.battle_screen.show_card_detail(
+		demo.players[0].active.card_id,
+		demo.players[0].active,
+	)
+	await _settle_rendered(3)
 	var preview_source_card := ui.battle_screen.own_active as CardView
 	await _move_pointer_to_control(preview_source_card)
 	var hovered_card_control := root.gui_get_hovered_control()
@@ -1623,33 +1668,58 @@ func _render_previews() -> void:
 	ui._close_modal()
 	await _wait_until_hidden(ui.modal_layer)
 
+	var distribution_energy_ids: Array[String] = ["svi-jete", "svi-dtur"]
+	var distribution_targets: Array[Dictionary] = [
+		{
+			"player": 0,
+			"slot": "active",
+			"card_id": "svi-hrot",
+			"label": "加热洛托姆",
+		},
+		{
+			"player": 0,
+			"slot": "bench_0",
+			"card_id": "svi-chim",
+			"label": "小火焰猴",
+		},
+	]
+	var distribution_options: Array[Dictionary] = []
+	for target in distribution_targets:
+		for energy_index in range(distribution_energy_ids.size()):
+			var energy_id := distribution_energy_ids[energy_index]
+			distribution_options.append({
+				"option_id": "energy:%d:%s->pokemon:%d:%s:%s" % [
+					energy_index,
+					energy_id,
+					int(target["player"]),
+					str(target["slot"]),
+					str(target["card_id"]),
+				],
+				"label": str(target["label"]),
+				"ref": EntityRef.new(
+					"pokemon",
+					int(target["player"]),
+					"",
+					str(target["slot"]),
+					-1,
+					"",
+					str(target["card_id"]),
+				).to_dict(),
+			})
 	var energy_choice := ChoiceView.new(
 		"preview-energy-choice",
 		demo.revision,
 		"distribute_energy",
 		0,
 		"为每张能量选择附着目标。",
-		[
-			{
-				"option_id": "pokemon:0:active:svi-hrot",
-				"label": "加热洛托姆",
-				"ref": EntityRef.new(
-					"pokemon", 0, "", "active", -1, "", "svi-hrot").to_dict(),
-			},
-			{
-				"option_id": "pokemon:0:bench_0:svi-chim",
-				"label": "小火焰猴",
-				"ref": EntityRef.new(
-					"pokemon", 0, "", "bench_0", -1, "", "svi-chim").to_dict(),
-			},
-		],
+		distribution_options,
 		2,
 		2,
-		true,
+		false,
 		false,
 		{
 			"purpose": "energy_attach_distribution",
-			"card_ids": ["svi-jete", "svi-dtur"],
+			"card_ids": distribution_energy_ids,
 			"source_player": 0,
 			"source_zone": "hand",
 			"max_per_target": 2,
@@ -1659,26 +1729,66 @@ func _render_previews() -> void:
 	ui.show_choice(energy_choice)
 	await process_frame
 	await create_timer(0.25).timeout
-	if not ui.selected_choice_ids.is_empty():
-		push_error("Energy distribution preview did not start at 0/2")
+	var original_active_energy: Array[String] = []
+	original_active_energy.assign(demo.players[0].active.energy_card_ids)
+	var original_bench_energy: Array[String] = []
+	original_bench_energy.assign(demo.players[0].bench[0].energy_card_ids)
+	var energy_panel := ui.active_choice_panel as ChoicePanel
+	var active_target_tile := (
+		energy_panel._energy_target_tiles.get("0:active") as Control
+		if energy_panel
+		else null
+	)
+	if (
+		not ui.selected_choice_ids.is_empty()
+		or energy_panel == null
+		or energy_panel.card_option_count() != 2
+		or active_target_tile == null
+	):
+		push_error("Native-format energy distribution did not group into two Pokemon targets")
 		_finish(1)
 		return
 	if not _capture("choice-energy.png"):
 		_finish(1)
 		return
-	ui._toggle_choice("pokemon:0:active:svi-hrot")
+	root.size = Vector2i(1280, 720)
 	await _settle_rendered(4)
-	if ui.selected_choice_ids.size() != 1:
-		push_error("Energy distribution preview did not advance to 1/2")
+	if not _capture("choice-energy-1280x720.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(900, 540)
+	await _settle_rendered(4)
+	if not _capture("choice-energy-compact.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(4)
+	await _click_control(active_target_tile)
+	await _settle_rendered(4)
+	var first_distribution_id := str(distribution_options[0]["option_id"])
+	var second_distribution_id := str(distribution_options[1]["option_id"])
+	if (
+		ui.selected_choice_ids != [first_distribution_id]
+		or demo.players[0].active.energy_card_ids != original_active_energy
+		or demo.players[0].bench[0].energy_card_ids != original_bench_energy
+	):
+		push_error("First energy target did not emit index 0 or mutated authoritative state")
 		_finish(1)
 		return
 	if not _capture("choice-energy-progress.png"):
 		_finish(1)
 		return
-	ui._toggle_choice("pokemon:0:active:svi-hrot")
+	await _click_control(active_target_tile)
 	await _settle_rendered(4)
-	if ui.selected_choice_ids.size() != 2:
-		push_error("Energy distribution preview did not advance to 2/2")
+	var completed_status := energy_panel._energy_target_status_labels.get(
+		"0:active") as Label
+	if (
+		ui.selected_choice_ids != [first_distribution_id, second_distribution_id]
+		or completed_status == null
+		or "不可选择" in completed_status.text
+		or demo.players[0].active.energy_card_ids != original_active_energy
+	):
+		push_error("Second energy target did not emit index 1 or complete cleanly")
 		_finish(1)
 		return
 	if not _capture("choice-energy-complete.png"):

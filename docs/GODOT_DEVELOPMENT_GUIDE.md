@@ -488,8 +488,9 @@ UI 不得自行放宽目标条件。`CardActionPopover` 使用 200–260px 宽�
 
 效果结算同样优先使用牌桌对象：单选且能唯一映射到场上宝可梦的 `ChoiceView` 通过
 `BattleTable.set_choice_targets(...)` 高亮对应卡牌，轻点后仍提交原 `option_id`。隐藏区卡牌、
-同一宝可梦上无法仅靠卡牌区分的多个附着物，以及多选请求继续使用 `ChoicePanel`；能量分配保留
-专用卡牌面板，`coin_flip` 使用独立硬币翻转表现。撤退动作会要求点选本次支付所丢弃的附着能量卡，
+同一宝可梦上无法仅靠卡牌区分的多个附着物，以及多选请求继续使用 `ChoicePanel`；能量分配会把
+原生 `energy:<index>:<card>->pokemon:...` 选项按目标分组，每只宝可梦只显示一次，并同时展示
+名称、位置、已有能量和分配后只读预览。`coin_flip` 使用独立硬币翻转表现。撤退动作会要求点选本次支付所丢弃的附着能量卡，
 然后才开放确认按钮，整个过程不修改 `GameAction` schema。
 
 战斗界面最容易误解的一点：`OpponentActive`、`OwnActive`、`OpponentBench0` 等固定卡位
@@ -964,7 +965,8 @@ battle transition、Workbench transition、网络协议和前台布局 contract�
 | `battle-card-preview.png`、`battle-card-preview-1280x720.png`、`battle-card-preview-compact.png` | 己方卡牌详情固定在左侧走廊；紧凑尺寸和等比回退不侵入竞技场 |
 | `battle-card-preview-opponent.png` | 对方卡牌详情仍使用同一固定走廊，不跳到屏幕下方或中央 |
 | `battle-log-open.png`、`battle-log-closed.png` | 360px 日志从命令轨向左展开，关闭后不残留占位；输入遮挡另由交互契约验证 |
-| `battle-attack-actions.png`、`battle-promotion.png` | 动作浮层、详情、战斗位和合法目标之间的避让关系 |
+| `battle-attack-actions.png`、`battle-promotion.png`、`retreat-confirmation.png` | 动作浮层、详情、撤退费用提示、战斗位和合法目标之间的避让关系 |
+| `choice-energy.png`、`choice-energy-1280x720.png`、`choice-energy-compact.png` | 原生能量 option 按宝可梦分组；已有/分配后能量、窄屏折叠说明和固定确认栏清晰可读 |
 | `battle-ai.png`、`ai-thinking.png` | AI 等待状态、任务提示和命令轨状态，不新增规则功能 |
 | `draw.png`、`discard.png`、`shuffle.png`、`energy-attach.png`、`evolve.png` | 牌库/弃牌厚度、飞牌端点、附着与进化表现 |
 | `attack.png`、`impact.png`、`ko.png`、`end.png` | 攻击、命中、气绝和胜利表现不破坏牌桌布局 |

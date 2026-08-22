@@ -1989,6 +1989,16 @@ func _show_choice_overlay(request: ChoiceView) -> void:
 		_refresh_game()
 		return
 	var energy_cards := _choice_energy_cards(request)
+	var energy_distribution_view := _choice_energy_distribution_view(
+		request,
+		energy_cards,
+	)
+	if not energy_distribution_view.is_empty():
+		energy_cards.assign(energy_distribution_view.get("card_ids", energy_cards))
+	var energy_target_models: Array[Dictionary] = []
+	for target_value in energy_distribution_view.get("targets", []):
+		if target_value is Dictionary:
+			energy_target_models.append(Dictionary(target_value))
 	var revealed_cards := _choice_revealed_cards(request)
 	var has_card_preview := not energy_cards.is_empty() or not revealed_cards.is_empty()
 	var pure_empty_choice := (
@@ -1997,7 +2007,7 @@ func _show_choice_overlay(request: ChoiceView) -> void:
 		and revealed_cards.is_empty()
 	)
 	for option in request.options:
-		if not _choice_option_card_id(option).is_empty():
+		if not _choice_option_display_card_id(option, request).is_empty():
 			has_card_preview = true
 			break
 	var choice_spec := ModalSpec.battle(
@@ -2038,13 +2048,21 @@ func _show_choice_overlay(request: ChoiceView) -> void:
 	panel.energy_index_requested.connect(_rewind_energy_distribution)
 	panel.undo_requested.connect(_undo_energy_distribution)
 	panel.clear_requested.connect(_clear_energy_distribution)
-	if not energy_cards.is_empty():
+	if not energy_target_models.is_empty():
+		panel.configure_energy_distribution(
+			energy_cards,
+			energy_target_models,
+			catalog,
+		)
+	elif not energy_cards.is_empty():
 		panel.add_energy_preview(energy_cards, catalog)
 	elif not revealed_cards.is_empty():
 		panel.add_revealed_cards(revealed_cards, catalog)
 	for option in request.options:
+		if not energy_target_models.is_empty():
+			break
 		var option_id := str(option.get("option_id", ""))
-		var option_card_id := _choice_option_card_id(option)
+		var option_card_id := _choice_option_display_card_id(option, request)
 		if option_id.is_empty():
 			continue
 		if not option_card_id.is_empty():
@@ -2163,6 +2181,20 @@ func _choice_distribution_energy_card_id(option: Dictionary) -> String:
 	)
 
 
+func _choice_distribution_energy_index(option: Dictionary) -> int:
+	var option_id := str(option.get("option_id", ""))
+	if not option_id.begins_with("energy:"):
+		return -1
+	var index_separator := option_id.find(":", "energy:".length())
+	if index_separator < 0:
+		return -1
+	var index_text := option_id.substr(
+		"energy:".length(),
+		index_separator - "energy:".length(),
+	)
+	return index_text.to_int() if index_text.is_valid_int() else -1
+
+
 func _choice_option_card_id(option: Dictionary) -> String:
 	var distribution_energy := _choice_distribution_energy_card_id(option)
 	if not distribution_energy.is_empty():
@@ -2171,6 +2203,107 @@ func _choice_option_card_id(option: Dictionary) -> String:
 	if ref_variant is Dictionary:
 		return str(Dictionary(ref_variant).get("card_id", ""))
 	return ""
+
+
+func _choice_option_target_card_id(option: Dictionary) -> String:
+	var ref_variant: Variant = option.get("ref")
+	if ref_variant is Dictionary:
+		return str(Dictionary(ref_variant).get("card_id", ""))
+	return ""
+
+
+func _choice_option_display_card_id(
+	option: Dictionary,
+	request: ChoiceView = null,
+) -> String:
+	if request != null and request.request_type == "distribute_energy":
+		var target_card_id := _choice_option_target_card_id(option)
+		if not target_card_id.is_empty():
+			return target_card_id
+	return _choice_option_card_id(option)
+
+
+func _choice_energy_distribution_view(
+	request: ChoiceView,
+	presentation_card_ids: Array[String],
+) -> Dictionary:
+	if request == null or request.request_type != "distribute_energy":
+		return {}
+	var source_card_ids: Array[String] = []
+	source_card_ids.assign(presentation_card_ids)
+	var targets_by_key: Dictionary = {}
+	var target_order: Array[String] = []
+	for option_value in request.options:
+		var option := Dictionary(option_value)
+		var option_id := str(option.get("option_id", ""))
+		var ref_value: Variant = option.get("ref")
+		if option_id.is_empty() or not ref_value is Dictionary:
+			continue
+		var ref := Dictionary(ref_value)
+		if str(ref.get("kind", "")) != "pokemon":
+			continue
+		var player_idx := int(ref.get("player", request.player))
+		var slot := str(ref.get("slot", ""))
+		if player_idx not in [0, 1] or slot.is_empty() or state == null:
+			continue
+		var pokemon := state.get_player(player_idx).get_pokemon(slot)
+		if pokemon == null:
+			continue
+		var target_key := "%d:%s" % [player_idx, slot]
+		if not targets_by_key.has(target_key):
+			var pokemon_name := (
+				catalog.card_name(pokemon.card_id)
+				if catalog != null
+				else pokemon.card_id
+			)
+			var owner_text := "己方" if player_idx == current_view_player else "对手"
+			targets_by_key[target_key] = {
+				"target_key": target_key,
+				"player": player_idx,
+				"slot": slot,
+				"card_id": pokemon.card_id,
+				"pokemon": pokemon.clone_state(),
+				"name": pokemon_name,
+				"location": "%s · %s" % [owner_text, _slot_name(slot)],
+				"label": "%s · %s · %s" % [
+					owner_text,
+					_slot_name(slot),
+					pokemon_name,
+				],
+				"assignment_label": "%s · %s" % [
+					_slot_name(slot),
+					pokemon_name,
+				],
+				"option_ids_by_energy_index": {},
+				"fallback_option_id": "",
+			}
+			target_order.append(target_key)
+		var model: Dictionary = targets_by_key[target_key]
+		var energy_index := _choice_distribution_energy_index(option)
+		if energy_index >= 0:
+			var source_card_id := _choice_distribution_energy_card_id(option)
+			while source_card_ids.size() <= energy_index:
+				source_card_ids.append("")
+			if source_card_ids[energy_index].is_empty():
+				source_card_ids[energy_index] = source_card_id
+			var option_ids: Dictionary = model.get(
+				"option_ids_by_energy_index", {})
+			option_ids[energy_index] = option_id
+			model["option_ids_by_energy_index"] = option_ids
+		elif str(model.get("fallback_option_id", "")).is_empty():
+			model["fallback_option_id"] = option_id
+		targets_by_key[target_key] = model
+	if target_order.is_empty():
+		return {}
+	while source_card_ids.size() < request.max_select:
+		source_card_ids.append("")
+	var targets: Array[Dictionary] = []
+	for target_key in target_order:
+		targets.append(Dictionary(targets_by_key[target_key]))
+	return {
+		"card_ids": source_card_ids,
+		"targets": targets,
+	}
 
 
 func _choice_option_owner(option: Dictionary, fallback_player: int) -> int:
@@ -2218,6 +2351,14 @@ func _choice_option_caption(option: Dictionary) -> String:
 			attachment_parts.append(attachment_label)
 		if attachment_index >= 0:
 			attachment_parts.append("第%d张" % (attachment_index + 1))
+		if (
+			active_request != null
+			and active_request.request_type == "select_retreat_payment"
+		):
+			var provided_units := _retreat_payment_option_units(
+				active_request, str(option.get("option_id", "")))
+			if provided_units > 0:
+				attachment_parts.append("提供%d点" % provided_units)
 		return " · ".join(attachment_parts)
 	var option_id := str(option.get("option_id", ""))
 	if option_id.begins_with("energy:"):
@@ -2427,33 +2568,6 @@ func _show_retreat_confirmation(action: GameAction) -> void:
 	body.add_theme_color_override("font_color", DesignTokens.TEXT)
 	body.text = "\n".join(lines)
 	modal_body.add_child(body)
-	var payment_card_ids := _retreat_energy_card_ids(action)
-	if not payment_card_ids.is_empty():
-		var payment_hint := Label.new()
-		payment_hint.text = "请点选下列附着能量，确认撤退支付："
-		payment_hint.add_theme_font_size_override("font_size", 15)
-		payment_hint.add_theme_color_override("font_color", DesignTokens.CYAN)
-		modal_body.add_child(payment_hint)
-		var payment_row := HBoxContainer.new()
-		payment_row.alignment = BoxContainer.ALIGNMENT_CENTER
-		payment_row.add_theme_constant_override("separation", 10)
-		modal_body.add_child(payment_row)
-		var selected_payments: Dictionary = {}
-		for payment_position in range(payment_card_ids.size()):
-			var energy_card_id := payment_card_ids[payment_position]
-			var energy_view := CARD_SCENE.instantiate() as CardView
-			energy_view.custom_minimum_size = Vector2(92.0, 128.0)
-			energy_view.configure(energy_card_id, null, false, -1, action.actor, "", true)
-			energy_view.set_interaction_state(false)
-			payment_row.add_child(energy_view)
-			energy_view.activated.connect(_toggle_retreat_payment_card.bind(
-				payment_position,
-				energy_view,
-				selected_payments,
-				payment_card_ids.size(),
-			))
-			energy_view.detail_requested.connect(_inspect_retreat_payment_card.bind(action))
-		modal_confirm.disabled = true
 	modal_confirm.pressed.connect(func() -> void:
 		_play_click()
 		_close_modal(_execute_action_now.bind(action))
@@ -2473,7 +2587,19 @@ func _retreat_confirmation_lines(action: GameAction) -> Array[String]:
 		target_name = catalog.card_name(player.bench[bench_idx].card_id)
 	var energy_names := _retreat_energy_names(action)
 	var active_name := catalog.card_name(player.active.card_id) if player.active else "战斗宝可梦"
-	var cost_text := "无需丢弃能量" if energy_names.is_empty() else "将丢弃：%s" % "、".join(energy_names)
+	var cost_text := ""
+	if not energy_names.is_empty():
+		cost_text = "将丢弃：%s" % "、".join(energy_names)
+	elif _retreat_explicitly_requires_no_energy(action):
+		cost_text = "无需丢弃能量"
+	else:
+		var printed_cost := _retreat_printed_cost(action)
+		cost_text = (
+			"卡面撤退费用：%d 点。确认后按当前效果结算；如需支付，下一步选择要丢弃的附着能量。"
+			% printed_cost
+			if printed_cost > 0
+			else "确认后按当前效果结算撤退费用；如需支付，下一步选择要丢弃的附着能量。"
+		)
 	return [
 		"%s 将撤退，%s 将进入战斗区。" % [active_name, target_name],
 		cost_text,
@@ -2495,11 +2621,35 @@ func _retreat_energy_names(action: GameAction) -> Array[String]:
 	return result
 
 
+func _retreat_explicitly_requires_no_energy(action: GameAction) -> bool:
+	if action == null or not action.payload.has("energy_indices"):
+		return false
+	var indices: Variant = action.payload.get("energy_indices")
+	return indices is Array and Array(indices).is_empty()
+
+
+func _retreat_printed_cost(action: GameAction) -> int:
+	var actor := action.actor if action.actor != null else _current_actor()
+	if state == null or actor not in [0, 1]:
+		return -1
+	var active := state.get_player(actor).active
+	if active == null:
+		return -1
+	return maxi(0, int(catalog.get_card(active.card_id).get("retreat_cost", 0)))
+
+
 func _retreat_energy_suffix(action: GameAction) -> String:
 	var names := _retreat_energy_names(action)
-	if names.is_empty():
+	if not names.is_empty():
+		return "（丢弃：%s）" % "、".join(names)
+	if _retreat_explicitly_requires_no_energy(action):
 		return "（无需丢弃能量）"
-	return "（丢弃：%s）" % "、".join(names)
+	var printed_cost := _retreat_printed_cost(action)
+	return (
+		"（撤退费 %d，确认后结算）" % printed_cost
+		if printed_cost > 0
+		else "（确认后结算撤退费用）"
+	)
 
 
 func _choice_revealed_cards(request: ChoiceView) -> Array[String]:
@@ -2560,6 +2710,12 @@ func _choice_confirm_cta(request: ChoiceView, selected_count: int) -> String:
 		return "继续结算"
 	if request.min_select == 0 and selected_count == 0:
 		return "不选择并继续"
+	if request.request_type == "select_retreat_payment":
+		var required_units := int(_choice_presentation(request).get(
+			"required_units", 0))
+		var paid_units := _retreat_payment_selected_units(
+			request, selected_choice_ids)
+		return "确认支付（%d/%d 点）" % [paid_units, required_units]
 	if request.request_type == "confirm":
 		if selected_count == 1:
 			var selected_option := _choice_option_by_id(
@@ -2622,6 +2778,86 @@ func _choice_selected_target_count(
 	return count
 
 
+func _retreat_payment_option_units(
+	request: ChoiceView,
+	option_id: String,
+) -> int:
+	if (
+		request == null
+		or request.request_type != "select_retreat_payment"
+		or state == null
+		or request.player not in [0, 1]
+		or catalog == null
+	):
+		return 0
+	var option := _choice_option_by_id(request, option_id)
+	var ref_value: Variant = option.get("ref")
+	if not ref_value is Dictionary:
+		return 0
+	var ref := Dictionary(ref_value)
+	var active := state.get_player(request.player).active
+	var attachment_index := int(ref.get("index", -1))
+	if (
+		active == null
+		or str(ref.get("kind", "")) != "attachment"
+		or str(ref.get("attachment_type", "")) != "energy"
+		or int(ref.get("player", -1)) != request.player
+		or str(ref.get("slot", "")) != "active"
+		or attachment_index < 0
+		or attachment_index >= active.energy_card_ids.size()
+	):
+		return 0
+	var card_id := str(active.energy_card_ids[attachment_index])
+	var ref_card_id := str(ref.get("card_id", ""))
+	if not ref_card_id.is_empty() and ref_card_id != card_id:
+		return 0
+	return catalog.provides_energy(card_id).size()
+
+
+func _retreat_payment_selected_units(
+	request: ChoiceView,
+	selected_ids: Array[String],
+) -> int:
+	var result := 0
+	for option_id in selected_ids:
+		result += _retreat_payment_option_units(request, option_id)
+	return result
+
+
+func _retreat_payment_selection_is_minimal(
+	request: ChoiceView,
+	selected_ids: Array[String],
+) -> bool:
+	var required_units := int(_choice_presentation(request).get(
+		"required_units", 0))
+	if required_units <= 0:
+		return selected_ids.is_empty()
+	var paid_units := _retreat_payment_selected_units(request, selected_ids)
+	if paid_units < required_units:
+		return false
+	for option_id in selected_ids:
+		var units := _retreat_payment_option_units(request, option_id)
+		if units <= 0 or paid_units - units >= required_units:
+			return false
+	return true
+
+
+func _choice_selection_is_complete(
+	request: ChoiceView,
+	selected_ids: Array[String],
+) -> bool:
+	if request == null:
+		return false
+	if (
+		selected_ids.size() < request.min_select
+		or selected_ids.size() > request.max_select
+	):
+		return false
+	if request.request_type == "select_retreat_payment":
+		return _retreat_payment_selection_is_minimal(request, selected_ids)
+	return true
+
+
 func _choice_category_label(category: String) -> String:
 	return str({
 		"energy": "基本能量",
@@ -2647,6 +2883,23 @@ func _choice_addition_blocked_reason(request: ChoiceView, option_id: String) -> 
 
 	var category := _choice_option_category(option)
 	var presentation := _choice_presentation(request)
+	if request.request_type == "select_retreat_payment":
+		var candidate_units := _retreat_payment_option_units(request, option_id)
+		if candidate_units <= 0:
+			return "无法读取这张附着能量提供的点数"
+		var projected_ids: Array[String] = []
+		projected_ids.assign(selected_choice_ids)
+		projected_ids.append(option_id)
+		var required_units := int(presentation.get("required_units", 0))
+		var projected_units := _retreat_payment_selected_units(
+			request, projected_ids)
+		if (
+			required_units > 0
+			and projected_units >= required_units
+			and not _retreat_payment_selection_is_minimal(
+				request, projected_ids)
+		):
+			return "该组合会多丢弃能量，请先取消不必要的能量"
 	var category_limits_value: Variant = presentation.get("category_limits", {})
 	var category_limits := (
 		Dictionary(category_limits_value)
@@ -2809,10 +3062,8 @@ func _refresh_choice_buttons() -> void:
 			_choice_field_prompt(active_request),
 		)
 		battle_screen.update_choice_selection(selected_choice_ids, disabled_reasons)
-	modal_confirm.disabled = not (
-		selected_choice_ids.size() >= active_request.min_select
-		and selected_choice_ids.size() <= active_request.max_select
-	)
+	modal_confirm.disabled = not _choice_selection_is_complete(
+		active_request, selected_choice_ids)
 	modal_confirm.text = _choice_confirm_cta(active_request, selected_choice_ids.size())
 	if active_request.can_cancel:
 		modal_cancel.text = _choice_cancel_cta(active_request)
@@ -3185,51 +3436,6 @@ func _remaining_turn_action_labels() -> Array[String]:
 		if label not in result:
 			result.append(label)
 	return result
-
-
-func _retreat_energy_card_ids(action: GameAction) -> Array[String]:
-	var result: Array[String] = []
-	var actor := action.actor if action.actor != null else _current_actor()
-	if state == null or actor not in [0, 1]:
-		return result
-	var active := state.get_player(actor).active
-	if active == null:
-		return result
-	for raw_index in action.payload.get("energy_indices", []):
-		var index := int(raw_index)
-		if index >= 0 and index < active.energy_card_ids.size():
-			result.append(active.energy_card_ids[index])
-	return result
-
-
-func _toggle_retreat_payment_card(
-	_card_id: String,
-	_hand_index: int,
-	_player: int,
-	_slot: String,
-	payment_position: int,
-	energy_view: CardView,
-	selected_payments: Dictionary,
-	required_count: int,
-) -> void:
-	_play_click()
-	if selected_payments.has(payment_position):
-		selected_payments.erase(payment_position)
-	else:
-		selected_payments[payment_position] = true
-	energy_view.set_selected(selected_payments.has(payment_position))
-	modal_confirm.disabled = selected_payments.size() < required_count
-
-
-func _inspect_retreat_payment_card(
-	inspected_card_id: String,
-	action: GameAction,
-) -> void:
-	_show_card_inspector({
-		"card_id": inspected_card_id,
-		"location": "撤退支付",
-		"player": action.actor,
-	}, _show_retreat_confirmation.bind(action), "返回撤退确认")
 
 
 func _surrender_network_and_show_title() -> void:
@@ -4019,6 +4225,7 @@ func _choice_title(request: ChoiceView) -> String:
 		"select_energy_target": "选择附能目标",
 		"select_energy_source": "选择能量来源",
 		"select_attachment": "选择附着能量",
+		"select_retreat_payment": "支付撤退费用",
 		"evolve_skip_stage": "选择进化目标",
 		"select_heal_target": "选择回复目标",
 		"damage_target": "选择伤害目标",
@@ -4040,6 +4247,12 @@ func _choice_metadata_text(request: ChoiceView) -> String:
 		for result in results:
 			labels.append("正面" if bool(result) else "反面")
 		return "结果：" + "、".join(labels)
+	if request.request_type == "select_retreat_payment":
+		var required_units := int(presentation.get("required_units", 0))
+		return (
+			"需要支付 %d 点撤退费用。请选择要丢弃的附着能量；特殊能量按实际提供点数计算，界面不会允许多丢弃。"
+			% required_units
+		)
 	if request.max_select == 0:
 		return "本次无需选择，点击继续结算。"
 	if request.request_type == "distribute_energy":

@@ -113,7 +113,9 @@ LAN 与 Relay 另有完整实战回归；Deep 模型未晋升时入口保持关�
 `title-compact.png`、`title-portrait.png` 覆盖午夜竞技场的 Wide/Compact/Dense 布局，
 `title-hover.png` 检查鼠标悬停，`title-rotated.png` 检查动态展示卡，
 `title-low-reduced.png` 检查静态降级；目录还包含 LAN/Relay 概览、网络状态、设置滚动、加载和
-Toast 等基线，用于人工检查全屏背景、视觉层级、溢出和长文案。它不代替 Windows/Android
+Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
+`choice-energy-compact.png` 的逐张能量分配基线，用于人工检查全屏背景、视觉层级、目标状态、
+溢出和长文案。它不代替 Windows/Android
 调试导出与真机烟雾测试。
 
 发布包构建：

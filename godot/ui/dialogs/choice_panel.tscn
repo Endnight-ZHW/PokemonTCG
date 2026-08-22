@@ -53,7 +53,7 @@ layout_mode = 2
 theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
 text = "点击确认继续结算。"
 
-[node name="ContentRow" type="HBoxContainer" parent="."]
+[node name="ContentRow" type="BoxContainer" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -104,6 +104,16 @@ custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "清空分配"
+
+[node name="PreviewToggleButton" type="Button" parent="ContentRow/ChoiceColumn"]
+unique_name_in_owner = true
+visible = false
+focus_mode = 0
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "查看卡牌说明"
+tooltip_text = "展开当前卡牌的图片与规则说明"
+accessibility_name = "查看当前卡牌说明"
 
 [node name="CardGrid" type="HFlowContainer" parent="ContentRow/ChoiceColumn"]
 unique_name_in_owner = true

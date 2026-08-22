@@ -55,6 +55,7 @@ func _configure_label() -> void:
 	log_label.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
 	log_label.scroll_active = true
 	log_label.scroll_following = true
+	DesignTokens.style_scrollbar(log_label.get_v_scroll_bar())
 
 
 func _single_line(value: String) -> String:

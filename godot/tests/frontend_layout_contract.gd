@@ -127,6 +127,8 @@ func _check_main_shell_contract() -> void:
 		"ModalSpec semantic button-role defaults changed",
 	)
 	_check_generic_choice_category_limits(main)
+	await _check_native_energy_distribution_choice(main)
+	await _check_retreat_payment_ui(main)
 	await _check_pointer_only_input_contract(main)
 	await _check_field_choice_inspector_resume(main)
 	main.show_deck_select("challenge")
@@ -332,6 +334,215 @@ func _check_generic_choice_category_limits(main: Control) -> void:
 	main.selected_choice_ids.clear()
 
 
+func _check_native_energy_distribution_choice(main: Control) -> void:
+	var preview_state := UIPreviewStateFactory.battle_state()
+	main.state = preview_state
+	main.current_view_player = 0
+	var energy_ids: Array[String] = ["svi-jete", "svi-dtur"]
+	var target_rows: Array[Dictionary] = [
+		{"slot": "active", "card_id": "svi-hrot", "label": "加热洛托姆"},
+		{"slot": "bench_0", "card_id": "svi-chim", "label": "小火焰猴"},
+	]
+	var options: Array[Dictionary] = []
+	for target in target_rows:
+		for energy_index in range(energy_ids.size()):
+			var energy_id := energy_ids[energy_index]
+			options.append({
+				"option_id": "energy:%d:%s->pokemon:0:%s:%s" % [
+					energy_index,
+					energy_id,
+					str(target["slot"]),
+					str(target["card_id"]),
+				],
+				"label": str(target["label"]),
+				"ref": EntityRef.new(
+					"pokemon", 0, "", str(target["slot"]), -1, "",
+					str(target["card_id"]),
+				).to_dict(),
+			})
+	var request := ChoiceView.new(
+		"choice:native-energy-ui",
+		preview_state.revision,
+		"distribute_energy",
+		0,
+		"为每张能量选择附着目标。",
+		options,
+		0,
+		2,
+		false,
+		false,
+		{
+			"card_ids": energy_ids,
+			"max_per_target": 2,
+			"same_target": true,
+			"source_player": 0,
+			"source_zone": "hand",
+		},
+	)
+	var original_active_ids := preview_state.players[0].active.energy_card_ids.duplicate()
+	main._show_choice_overlay(request)
+	await _settle_layout(4)
+	var panel := main.active_choice_panel as ChoicePanel
+	var active_model := panel._energy_target_model("0:active") if panel else {}
+	_check(
+		panel != null
+		and panel.card_option_count() == 2
+		and panel._energy_option_id_for_target(active_model, 0)
+		== str(options[0]["option_id"])
+		and panel._energy_option_id_for_target(active_model, 1)
+		== str(options[1]["option_id"]),
+		"Native decorated energy options were not grouped or indexed by target",
+	)
+	main._toggle_choice(str(options[0]["option_id"]))
+	await _settle_layout(2)
+	var projected_card := panel._energy_target_cards.get("0:active") as CardView
+	_check(
+		projected_card != null
+		and projected_card.pokemon != null
+		and projected_card.pokemon.energy_card_ids.size()
+		== original_active_ids.size() + 1
+		and preview_state.players[0].active.energy_card_ids == original_active_ids,
+		"Energy target preview did not remain a read-only projected Pokemon state",
+	)
+	var fallback_options: Array[Dictionary] = [
+		{
+			"option_id": "pokemon:0:active:svi-hrot",
+			"label": "加热洛托姆",
+			"ref": EntityRef.new(
+				"pokemon", 0, "", "active", -1, "", "svi-hrot").to_dict(),
+		},
+		{
+			"option_id": "pokemon:0:bench_4:missing",
+			"label": "失效目标",
+			"ref": EntityRef.new(
+				"pokemon", 0, "", "bench_4", -1, "", "missing").to_dict(),
+		},
+	]
+	var fallback_request := ChoiceView.new(
+		"choice:legacy-energy-ui", preview_state.revision, "distribute_energy",
+		0, "选择目标", fallback_options, 0, 2, true, false, {})
+	var no_presentation_cards: Array[String] = []
+	var fallback_view: Dictionary = main._choice_energy_distribution_view(
+		fallback_request, no_presentation_cards)
+	var fallback_targets: Array = fallback_view.get("targets", [])
+	_check(
+		fallback_targets.size() == 1
+		and Array(fallback_view.get("card_ids", [])).size() == 2
+		and str(Dictionary(fallback_targets[0]).get("fallback_option_id", ""))
+		== "pokemon:0:active:svi-hrot",
+		"Legacy optional distribution fallback or stale-target filtering failed",
+	)
+	main._close_modal()
+	main._finish_modal_close(main._modal_generation)
+
+
+func _check_retreat_payment_ui(main: Control) -> void:
+	var preview_state := UIPreviewStateFactory.battle_state()
+	preview_state.players[0].active.energy_card_ids.assign([
+		"sv1-ener-2", "sv1-ener-2", "svi-dtur",
+	])
+	main.state = preview_state
+	main.current_view_player = 0
+	var retreat_action := GameAction.create(
+		"RETREAT",
+		{},
+		0,
+		EntityRef.new(
+			"pokemon", 0, "field", "active", -1, "",
+			preview_state.players[0].active.card_id,
+		),
+		EntityRef.new(
+			"pokemon", 0, "field", "bench_0", -1, "",
+			preview_state.players[0].bench[0].card_id,
+		),
+	)
+	var confirmation_text := "\n".join(
+		main._retreat_confirmation_lines(retreat_action))
+	_check(
+		"无需丢弃能量" not in confirmation_text
+		and "卡面撤退费用：1 点" in confirmation_text
+		and "下一步选择" in confirmation_text
+		and "无需丢弃能量" not in main._action_label(retreat_action),
+		"Retreat action without preselected indices was incorrectly presented as free",
+	)
+
+	var options: Array[Dictionary] = []
+	var attachment_refs: Array[Dictionary] = []
+	for index in range(preview_state.players[0].active.energy_card_ids.size()):
+		var card_id := str(preview_state.players[0].active.energy_card_ids[index])
+		var option_id := "attachment:0:active:energy:%d:%s" % [index, card_id]
+		var ref := EntityRef.new(
+			"attachment", 0, "field", "active", index, "energy", card_id,
+		).to_dict()
+		options.append({
+			"option_id": option_id,
+			"label": main.catalog.card_name(card_id),
+			"ref": ref,
+		})
+		# Native retreat requests use compact unit descriptors here. ChoiceView
+		# may omit them, so the UI must also derive units from the public ref/state.
+		attachment_refs.append({
+			"option_id": option_id,
+			"units": main.catalog.provides_energy(card_id).size(),
+		})
+	var request := ChoiceView.new(
+		"choice:retreat-payment-ui",
+		preview_state.revision,
+		"select_retreat_payment",
+		0,
+		"选择撤退支付。",
+		options,
+		1,
+		options.size(),
+		false,
+		false,
+		{
+			"domain": "retreat",
+			"purpose": "retreat_payment",
+			"required_units": 2,
+			"attachment_refs": attachment_refs,
+		},
+	)
+	main._show_choice_overlay(request)
+	await _settle_layout(3)
+	var first_id := str(options[0]["option_id"])
+	var second_id := str(options[1]["option_id"])
+	var double_id := str(options[2]["option_id"])
+	_check(
+		"需要支付 2 点" in main._choice_metadata_text(request)
+		and "提供2点" in main._choice_option_caption(options[2])
+		and main.modal_confirm.disabled,
+		"Retreat payment UI did not expose its required/provided energy units",
+	)
+	main._toggle_choice(first_id)
+	_check(
+		main.modal_confirm.disabled
+		and main.modal_confirm.text == "确认支付（1/2 点）",
+		"One energy unit incorrectly satisfied a two-unit retreat payment",
+	)
+	main._toggle_choice(second_id)
+	_check(
+		not main.modal_confirm.disabled
+		and main.modal_confirm.text == "确认支付（2/2 点）",
+		"Two basic Energy cards did not satisfy a two-unit retreat payment",
+	)
+	_check(
+		"多丢弃能量" in main._choice_addition_blocked_reason(request, double_id),
+		"Retreat payment allowed a redundant extra Energy card",
+	)
+	main._toggle_choice(first_id)
+	main._toggle_choice(second_id)
+	main._toggle_choice(double_id)
+	_check(
+		main.selected_choice_ids == [double_id]
+		and not main.modal_confirm.disabled
+		and main.modal_confirm.text == "确认支付（2/2 点）",
+		"A two-unit Special Energy did not independently satisfy retreat payment",
+	)
+	main._close_modal()
+	main._finish_modal_close(main._modal_generation)
+
+
 func _check_field_choice_inspector_resume(main: Control) -> void:
 	var battle_scene := load(
 		"res://scenes/battle/components/battle_table.tscn"
@@ -347,6 +558,7 @@ func _check_field_choice_inspector_resume(main: Control) -> void:
 	await _settle_layout(2)
 	main.current_screen = "game"
 	main.battle_screen = table
+	await _check_card_action_detail_separation(table)
 	_check_discard_zone_action_reachability(table)
 	_check_same_id_hand_motion_staging(table)
 	var request := ChoiceView.new(
@@ -538,6 +750,29 @@ func _check_field_choice_inspector_resume(main: Control) -> void:
 	main.current_screen = previous_screen
 	table.queue_free()
 	await _settle_layout(2)
+
+
+func _check_card_action_detail_separation(table: BattleTable) -> void:
+	var state := UIPreviewStateFactory.battle_state()
+	var rows := UIPreviewStateFactory.action_rows(state)
+	var source_key := "hand:1"
+	table.update_view(state, 0, rows, source_key, false, "local")
+	var card_id := str(state.players[0].hand[1])
+	table.show_card_detail(card_id)
+	await _settle_layout(2)
+	var detail := table.detail_panel as BattleDetailPanel
+	_check(
+		detail != null
+		and detail.visible
+		and detail.get_node_or_null("Content/ActionSection") == null
+		and table.action_popover != null
+		and table.action_popover.visible
+		and table.action_popover.action_buttons.get_child_count() > 0,
+		"Card actions must remain in CardActionPopover and outside the detail panel",
+	)
+	table.hide_card_detail()
+	if table.action_popover:
+		table.action_popover.dismiss(false)
 
 
 func _check_discard_zone_action_reachability(table: BattleTable) -> void:

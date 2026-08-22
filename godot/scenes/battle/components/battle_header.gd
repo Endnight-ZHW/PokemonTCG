@@ -37,6 +37,8 @@ func update_header(
 	_ai_thinking = ai_thinking
 	if state == null:
 		turn_label.text = "等待对局"
+		turn_label.tooltip_text = turn_label.text
+		turn_label.accessibility_name = turn_label.text
 		_update_task_hint("正在载入对局")
 		return
 	var display_actor := view_player if state.phase == "SETUP" else state.active_player_idx
@@ -45,6 +47,8 @@ func update_header(
 		display_actor + 1,
 		_phase_name(state.phase),
 	]
+	turn_label.tooltip_text = turn_label.text
+	turn_label.accessibility_name = "当前对局：%s" % turn_label.text
 	var effective_hint := task_hint.strip_edges()
 	if effective_hint.is_empty():
 		effective_hint = _task_hint_override
@@ -136,6 +140,7 @@ func _update_task_hint(value: String) -> void:
 		return
 	task_hint_label.text = value
 	task_hint_label.tooltip_text = value
+	task_hint_label.accessibility_name = "当前任务：%s" % value
 
 
 func _apply_responsive_layout() -> void:

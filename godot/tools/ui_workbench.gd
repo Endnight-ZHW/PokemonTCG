@@ -448,25 +448,80 @@ func _show_choice() -> void:
 
 
 func _show_energy_choice() -> void:
-	preview_caption.text = "能量分配选择 · 多张能量可重复选择同一目标"
-	var center := _centered_panel(Vector2(760, 620))
+	preview_caption.text = "能量分配选择 · 逐张目标、已有能量与分配后预览"
+	var center := _centered_panel(Vector2(980, 660))
 	var panel := CHOICE_SCENE.instantiate() as ChoicePanel
 	center.add_child(panel)
-	panel.configure("请选择 2–2 项。重复点击同一目标表示多张能量分到同一处。", true)
-	panel.add_child(_label("待分配能量", 18, DesignTokens.GOLD))
-	var energy_grid := GridContainer.new()
-	energy_grid.columns = 4
-	energy_grid.add_theme_constant_override("h_separation", 8)
-	panel.add_child(energy_grid)
-	panel.move_child(energy_grid, 2)
-	for card_id in ["sv1-ener-2", "sv1-ener-2"]:
-		energy_grid.add_child(_card_thumb(card_id, false))
-	for card_id in ["svi-hrot", "svi-chim", "svi-ente"]:
-		var button := Button.new()
-		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size.y = 48
-		button.text = catalog.card_name(card_id)
-		panel.option_list.add_child(button)
+	panel.configure(
+		"需要分配 2 张能量；点击宝可梦为当前能量选择目标。",
+		true,
+		catalog,
+		{
+			"prompt": "为每张能量选择附着目标。",
+			"min_select": 2,
+			"max_select": 2,
+			"request_type": "distribute_energy",
+		},
+	)
+	var active := PokemonState.new("svi-hrot")
+	active.damage_counters = 2
+	active.energy_card_ids.assign(["sv1-ener-2", "sv1-ener-2", "svi-dtur"])
+	var bench := PokemonState.new("svi-chim")
+	bench.energy_card_ids.assign(["sv1-ener-2"])
+	var models: Array[Dictionary] = [
+		{
+			"target_key": "0:active",
+			"player": 0,
+			"slot": "active",
+			"card_id": active.card_id,
+			"pokemon": active,
+			"name": catalog.card_name(active.card_id),
+			"location": "己方 · 战斗区",
+			"label": "己方 · 战斗区 · %s" % catalog.card_name(active.card_id),
+			"assignment_label": "战斗区 · %s" % catalog.card_name(active.card_id),
+			"option_ids_by_energy_index": {
+				0: "energy:0:svi-jete->pokemon:0:active:svi-hrot",
+				1: "energy:1:svi-dtur->pokemon:0:active:svi-hrot",
+			},
+		},
+		{
+			"target_key": "0:bench_0",
+			"player": 0,
+			"slot": "bench_0",
+			"card_id": bench.card_id,
+			"pokemon": bench,
+			"name": catalog.card_name(bench.card_id),
+			"location": "己方 · 备战区 1",
+			"label": "己方 · 备战区 1 · %s" % catalog.card_name(bench.card_id),
+			"assignment_label": "备战区 1 · %s" % catalog.card_name(bench.card_id),
+			"option_ids_by_energy_index": {
+				0: "energy:0:svi-jete->pokemon:0:bench_0:svi-chim",
+				1: "energy:1:svi-dtur->pokemon:0:bench_0:svi-chim",
+			},
+		},
+	]
+	panel.configure_energy_distribution(["svi-jete", "svi-dtur"], models, catalog)
+	var selected: Array[String] = []
+	panel.option_toggled.connect(func(option_id: String) -> void:
+		if selected.size() < 2:
+			selected.append(option_id)
+		panel.refresh_selection(selected, 2, false)
+	)
+	panel.undo_requested.connect(func() -> void:
+		if not selected.is_empty():
+			selected.pop_back()
+		panel.refresh_selection(selected, 2, false)
+	)
+	panel.clear_requested.connect(func() -> void:
+		selected.clear()
+		panel.refresh_selection(selected, 2, false)
+	)
+	panel.energy_index_requested.connect(func(index: int) -> void:
+		while selected.size() > index:
+			selected.pop_back()
+		panel.refresh_selection(selected, 2, false)
+	)
+	panel.refresh_selection(selected, 2, false)
 
 
 func _show_help() -> void:

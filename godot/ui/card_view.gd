@@ -92,8 +92,8 @@ class EnergyCountBadgeVisual:
 @export var interaction_duration := 0.12
 
 const MAXIMUM_ENERGY_BADGES := 4
-const MINIMUM_ENERGY_BADGE_SIZE := 16.0
-const DEFAULT_ENERGY_BADGE_SIZE := 24.0
+const MINIMUM_ENERGY_BADGE_SIZE := 17.0
+const DEFAULT_ENERGY_BADGE_SIZE := 25.0
 const ENERGY_BADGE_SEPARATION := 2.0
 
 var card_id := ""
