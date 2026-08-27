@@ -215,6 +215,12 @@ class ReleaseManifestTests(unittest.TestCase):
             else:
                 self.assertIn("data/ai_models/*.onnx", exclude_filter)
             self.assertIn("tools/*", exclude_filter)
+            for oracle_path in (
+                "ai/native_traditional_oracle_provider.gd",
+                "ai/new_arch/ai_turn_beam_planner.gd",
+                "ai/new_arch/traditional_turn_planner.gd",
+            ):
+                self.assertIn(oracle_path, exclude_filter, preset_name)
 
         baseline = REPO_ROOT / "godot" / "tools" / "ai_baseline"
         self.assertTrue((baseline / "ai_turn_beam_planner_v1.gd").is_file())

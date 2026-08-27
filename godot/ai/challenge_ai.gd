@@ -3,12 +3,14 @@ extends RefCounted
 
 const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
 const STRONGEST_DIFFICULTY := "strongest"
-const HEURISTIC_VARIANT_SEMANTIC_V2 := "semantic_v2"
-const DEFAULT_HEURISTIC_VARIANT := HEURISTIC_VARIANT_SEMANTIC_V2
+const DEFAULT_HEURISTIC_VARIANT := "semantic_v2"
 const TRADITIONAL_ENGINE_ID := "turn_beam_v2"
 const LEGACY_EVALUATION_ENGINE_ID := "turn_beam_v1"
 const LEGACY_STRATEGY_DATA_PATH := (
 	"res://tools/ai_baseline/ai_strategies_v1.json"
+)
+const ORACLE_TURN_PLANNER_PATH := (
+	"res://ai/new_arch/traditional_turn_planner.gd"
 )
 const GAMEPLAY_DEFAULT_DEPTH := 8
 const GAMEPLAY_ROOT_ACTIONS := 8
@@ -17,6 +19,7 @@ const GAMEPLAY_ACTIONS_PER_NODE := 8
 const GAMEPLAY_REPLY_DEPTH := 3
 const GAMEPLAY_REPLY_BEAM_WIDTH := 4
 const GAMEPLAY_REPLY_ACTIONS_PER_NODE := 4
+const ORACLE_MANDATORY_TACTIC_NODE_GUARD := 4096
 const ACTION_CYCLE_LEDGER_LIMIT := 64
 const LEGACY_FULL_REPLAN_LIMIT := 1
 const LEGACY_LOCAL_REPLAN_LIMIT := 5
@@ -39,13 +42,6 @@ const MAX_REPEATABLE_ABILITY_USES_PER_TURN := 6
 const CACHE_GUARDED_ABILITY_EFFECT_TYPES := {
 	"damage_counter_self": true,
 	"place_counters_and_self_discard": true,
-}
-const DIFFICULTIES := {
-	"strongest": {"depth": GAMEPLAY_DEFAULT_DEPTH},
-	# Compatibility aliases for older saves/tests that still send a difficulty.
-	"fast": {"depth": GAMEPLAY_DEFAULT_DEPTH},
-	"standard": {"depth": GAMEPLAY_DEFAULT_DEPTH},
-	"hard": {"depth": GAMEPLAY_DEFAULT_DEPTH},
 }
 const DIAGNOSTIC_LABELS := [
 	"missed_immediate_ko",
@@ -71,9 +67,6 @@ const DYNAMIC_BUDGET_DEFAULTS := {
 	"clear_prior_gap": 0.25,
 	"max_root_actions_for_clear": 10,
 	"single_action_simulations": 0,
-}
-const GAMEPLAY_DYNAMIC_BUDGET := {
-	"enabled": false,
 }
 const SCORE_WEIGHTS := {
 	"prize_race": 42.0,
@@ -139,10 +132,30 @@ var _turn_plan_cache: Dictionary = {}
 var _no_progress_action_ledger: Dictionary = {}
 ## Used only by the evaluator-only turn_beam_v1 baseline.
 var _legacy_replan_ledger: Dictionary = {}
+## Test-build differential bridge used while NativeTraditionalAI providers are
+## being retired one by one. Production requests never set the internal flag;
+## the bridge is removed when the callback count reaches zero.
+var _native_traditional_controller: Variant = null
+var _native_traditional_catalog_id := 0
+var _native_traditional_generation := 0
+var _native_traditional_strategy_data: Dictionary = {}
+var _native_full_oracle_reentry := false
+var _native_full_difference_reported := false
+var _native_debug_last_semantic_payload: Dictionary = {}
+var _oracle_turn_planner_script: Variant = null
+
+
+func cancel_native_request() -> void:
+	# NativeTraditionalAI owns a generation-bound atomic cancellation flag. This
+	# method is intentionally tiny so the main thread never calls back into
+	# GDScript from inside the C++ node loop.
+	var controller: Variant = _native_traditional_controller
+	if controller != null and controller.has_method("cancel"):
+		controller.cancel(_native_traditional_generation)
 
 
 static func strongest_preset() -> Dictionary:
-	return Dictionary(DIFFICULTIES[STRONGEST_DIFFICULTY]).duplicate(true)
+	return {"depth": GAMEPLAY_DEFAULT_DEPTH}
 
 
 static func ordered_tactical_fallback_actions(
@@ -191,10 +204,6 @@ static func ordered_tactical_fallback_actions(
 	return result
 
 
-static func gameplay_dynamic_budget() -> Dictionary:
-	return GAMEPLAY_DYNAMIC_BUDGET.duplicate(true)
-
-
 static func gameplay_action_budget(
 	_state: GameState,
 	_actions: Array[GameAction],
@@ -215,14 +224,6 @@ static func diagnostic_labels() -> Array:
 	return DIAGNOSTIC_LABELS.duplicate()
 
 
-static func heuristic_variants() -> Array[String]:
-	return [HEURISTIC_VARIANT_SEMANTIC_V2]
-
-
-func _semantic_v2_enabled() -> bool:
-	return true
-
-
 func _cached_catalog() -> CardCatalog:
 	if _catalog_cache == null:
 		_catalog_cache = CardCatalog.shared()
@@ -233,6 +234,30 @@ func _cached_engine(catalog: CardCatalog) -> GameEngine:
 	if _engine_cache == null or _engine_cache.catalog != catalog:
 		_engine_cache = GameEngine.new(catalog)
 	return _engine_cache
+
+
+func _oracle_turn_planner() -> Variant:
+	if _oracle_turn_planner_script == null:
+		_oracle_turn_planner_script = load(ORACLE_TURN_PLANNER_PATH)
+	return _oracle_turn_planner_script
+
+
+func _oracle_action_intent(action: GameAction) -> Dictionary:
+	var planner: Variant = _oracle_turn_planner()
+	return planner.action_intent(action) if planner != null else {}
+
+
+func _oracle_find_matching_action(
+	intent: Dictionary,
+	actions: Array[GameAction],
+	information_set: AIInformationSet,
+) -> GameAction:
+	var planner: Variant = _oracle_turn_planner()
+	return (
+		planner.find_matching_action(intent, actions, information_set)
+		if planner != null
+		else null
+	)
 
 
 func _cached_native_math() -> Variant:
@@ -330,9 +355,58 @@ func decide(
 	var request_kind := str(request.get("kind", "action"))
 	if request_kind not in ["action", "choice"]:
 		return _request_failure(request, "invalid_request_kind", "request_decode")
+	var requested_engine_id := str(request.get("engine", TRADITIONAL_ENGINE_ID))
+	if (
+		requested_engine_id != TRADITIONAL_ENGINE_ID
+		and (
+			requested_engine_id != LEGACY_EVALUATION_ENGINE_ID
+			or not OS.is_debug_build()
+		)
+	):
+		return _request_failure(
+			request,
+			"unsupported_traditional_engine:%s" % requested_engine_id,
+			"request_decode",
+		)
+	var requested_mode := str(request.get("mode", "challenge"))
+	if requested_mode != "challenge" and not OS.is_debug_build():
+		return _request_failure(
+			request,
+			"unsupported_traditional_mode:%s" % requested_mode,
+			"request_decode",
+		)
 	if request_kind == "choice" and int(revision_value) != state.revision:
 		return _request_failure(
 			request, "stale_choice_revision", "request_decode")
+	# Action v4 candidates are supplied by the authoritative rules session.
+	# Validate the complete set before the native controller sees it so stale,
+	# duplicate, missing, or hidden-reference rows fail at the request boundary.
+	var decoded_authoritative_actions: Dictionary = {}
+	if request_kind == "action":
+		decoded_authoritative_actions = _decode_authoritative_actions(
+			request, state, actor)
+		if not bool(decoded_authoritative_actions.get("ok", false)):
+			return _request_failure(
+				request,
+				str(decoded_authoritative_actions.get(
+					"error", "invalid_authoritative_legal_actions")),
+				"authoritative_actions",
+			)
+	# ChoiceView v2 is the public trust boundary. Validate it before entering the
+	# native controller so release and debug/oracle paths reject the same legacy
+	# envelopes and private continuation payloads.
+	var decoded_choice: Dictionary = {}
+	if request_kind == "choice":
+		decoded_choice = _decode_choice_view(request.get("choice"))
+		if not bool(decoded_choice.get("ok", false)):
+			var choice_failure := _request_failure(
+				request,
+				str(decoded_choice.get("error", "invalid_choice_view")),
+				"request_decode",
+			)
+			choice_failure["kind"] = "choice"
+			choice_failure["simulations"] = 0
+			return choice_failure
 	var previous_disable_native_math := _disable_native_math
 	_disable_native_math = bool(request.get("disable_native_math", false))
 	# Challenge and its disabled-Deep fallback are a fixed no-matchup ruleset.
@@ -340,33 +414,250 @@ func decide(
 	# accidentally re-enable global Weakness or Resistance calculations.
 	state.set_type_matchups_enabled(false)
 	_profile_add_elapsed(profile, "request_context_ms", context_started)
+	if (
+		not _native_full_oracle_reentry
+		and requested_engine_id == TRADITIONAL_ENGINE_ID
+		and requested_mode == "challenge"
+	):
+		var native_controller: Variant = _configured_native_traditional_controller(catalog)
+		if native_controller == null:
+			_disable_native_math = previous_disable_native_math
+			return _request_failure(
+				request, "native_traditional_controller_unavailable", "native_controller")
+		if cancel_check.is_valid() and bool(cancel_check.call()):
+			_disable_native_math = previous_disable_native_math
+			return {
+				"success": false,
+				"kind": request_kind,
+				"cancelled": true,
+				"error": "cancelled",
+				"revision": int(revision_value),
+				"request_id": str(request.get("request_id", "")),
+			}
+		_native_traditional_generation += 1
+		native_controller.reset_match(str(request.get("match_instance_id", "")))
+		var native_request: Dictionary = request
+		if OS.is_debug_build() and OS.get_environment(
+			"PTCG_INTERNAL_NATIVE_FULL_CONTROLLER_COMPARE") == "1":
+			native_request = request.duplicate(true)
+			native_request["internal_debug_decision_payload"] = true
+		var native_result: Dictionary = native_controller.decide(
+			native_request, _native_traditional_generation)
+		if OS.is_debug_build() and OS.get_environment(
+			"PTCG_INTERNAL_NATIVE_FULL_CONTROLLER_COMPARE") == "1":
+			_native_full_oracle_reentry = true
+			var oracle_result := decide(request, cancel_check, inference)
+			_native_full_oracle_reentry = false
+			if OS.is_debug_build() and OS.get_environment(
+				"PTCG_INTERNAL_NATIVE_FULL_CONTROLLER_COMPARE_PROFILE") == "1":
+				var native_profile_counters: Dictionary = native_result.get(
+					"native_performance_counters", {})
+				var oracle_profile: Dictionary = oracle_result.get("profile", {})
+				var oracle_profile_counters: Dictionary = oracle_profile.get(
+					"counts", {})
+				var native_simulated_calls := int(native_profile_counters.get(
+					"simulated_action_score_calls", 0))
+				var oracle_simulated_calls := int(oracle_profile_counters.get(
+					"simulated_action_score_calls", 0))
+				if native_simulated_calls != oracle_simulated_calls:
+					print("PTCG_NATIVE_PROFILE_COUNTER_DIFF " + JSON.stringify({
+						"revision": int(revision_value),
+						"actor": actor,
+						"kind": request_kind,
+						"native": native_simulated_calls,
+						"oracle": oracle_simulated_calls,
+						"action": native_result.get("action", {}),
+						"completion_reason": native_result.get(
+							"completion_reason", ""),
+						"cache_hit": native_result.get(
+							"turn_plan_cache_hit", false),
+					}))
+			var differences := {}
+			for field in [
+				"success", "error", "action", "choice_response",
+				"nodes_expanded", "trajectory_hash", "decision_semantic_hash",
+				"decision_origin", "planner_score_milli", "belief_samples",
+				"belief_consensus", "forced_tactic", "turn_plan_size",
+				"turn_plan_cache_hit", "requested_depth", "completed_depth",
+				"max_path_depth", "reply_completed_depth",
+				"reply_depth_applicable", "reply_requested_depth",
+				"reply_completion_reason", "opponent_strategy_id",
+				"layers_completed", "completion_reason",
+				"search_depth_applicable", "search_depth_requested",
+				"search_depth_reached", "search_depth_completed",
+				"search_depth_stop_reason", "strategy_id", "strategy_version",
+				"strategy_hash", "turn_goal",
+			]:
+				if (
+					AIPositionEvaluator.stable_variant_signature(
+						native_result.get(field))
+					!= AIPositionEvaluator.stable_variant_signature(
+						oracle_result.get(field))
+				):
+					differences[field] = {
+						"native": native_result.get(field),
+						"oracle": oracle_result.get(field),
+					}
+			if not differences.is_empty() and not _native_full_difference_reported:
+				_native_full_difference_reported = true
+				var difference_report := {
+					"actor": actor,
+					"kind": request_kind,
+					"revision": int(revision_value),
+					"request_id": str(request.get("request_id", "")),
+					"differences": differences,
+					"native_debug": native_result.get(
+						"internal_debug_decision_payload", {}),
+					"oracle_debug": oracle_result.get(
+						"internal_debug_decision_payload", {}),
+					"native_mandatory_reason": native_result.get(
+						"native_mandatory_reason", ""),
+					"native_mandatory_nodes": native_result.get(
+						"native_mandatory_nodes", 0),
+					"native_mandatory_debug_error": native_result.get(
+						"native_mandatory_debug_error", ""),
+					"native_pre_guard_action": native_result.get(
+						"native_debug_pre_guard_action", {}),
+				}
+				if OS.is_debug_build() and OS.get_environment(
+					"PTCG_INTERNAL_NATIVE_FULL_CONTROLLER_DUMP_STATE") == "1":
+					difference_report["state"] = state_payload
+					difference_report["actions"] = request.get("actions", [])
+					difference_report["choice"] = request.get("choice", {})
+					difference_report["native_mandatory_debug_state"] = (
+						native_result.get("native_mandatory_debug_state", {}))
+					var tactical_request := _fixed_traditional_planner_request(request)
+					var tactical_sample_seed := int(tactical_request.get("seed", 17))
+					var tactical_actions: Array = request.get("actions", [])
+					var tactical_match_seed := int(request.get(
+						"match_seed", request.get("seed", 0)))
+					difference_report["native_tactical_candidates_19"] = (
+						native_controller.debug_tactical_candidates(
+							state_payload,
+							actor,
+							tactical_actions,
+							tactical_sample_seed,
+							tactical_sample_seed + 700020,
+							tactical_match_seed,
+						))
+					difference_report["native_tactical_candidates_27"] = (
+						native_controller.debug_tactical_candidates(
+							state_payload,
+							actor,
+							tactical_actions,
+							tactical_sample_seed,
+							tactical_sample_seed + 700028,
+							tactical_match_seed,
+						))
+					difference_report["oracle_tactical_candidates_19"] = (
+						_debug_productive_candidates(
+							state,
+							actor,
+							tactical_actions,
+							tactical_sample_seed,
+							tactical_sample_seed + 700020,
+							tactical_match_seed,
+							catalog,
+						))
+					difference_report["oracle_tactical_candidates_27"] = (
+						_debug_productive_candidates(
+							state,
+							actor,
+							tactical_actions,
+							tactical_sample_seed,
+							tactical_sample_seed + 700028,
+							tactical_match_seed,
+							catalog,
+						))
+					difference_report["native_result_guard"] = {
+						"origin": native_result.get("decision_origin", ""),
+						"forced": native_result.get("forced_tactic", ""),
+					}
+					difference_report["oracle_result_guard"] = {
+						"origin": oracle_result.get("decision_origin", ""),
+						"forced": oracle_result.get("forced_tactic", ""),
+					}
+				print("PTCG_NATIVE_FULL_COMPARE " + JSON.stringify(difference_report))
+		if (
+			not bool(native_result.get("success", false))
+			and OS.is_debug_build()
+			and OS.get_environment(
+				"PTCG_INTERNAL_NATIVE_FULL_CONTROLLER_TRACE") == "1"
+		):
+			print("PTCG_NATIVE_FULL_FAILURE " + JSON.stringify({
+				"request": request,
+				"result": native_result,
+			}))
+		if cancel_check.is_valid() and bool(cancel_check.call()):
+			native_controller.cancel(_native_traditional_generation)
+			native_result = {
+				"success": false,
+				"kind": request_kind,
+				"cancelled": true,
+				"error": "cancelled",
+				"revision": int(revision_value),
+				"request_id": str(request.get("request_id", "")),
+			}
+		if _profile_enabled(profile):
+			var native_elapsed_ms := maxf(
+				0.0, float(native_result.get("elapsed_ms", 0.0)))
+			if request_kind == "choice":
+				_profile_add_ms(profile, "choice_ms", native_elapsed_ms)
+			else:
+				var native_counters: Dictionary = native_result.get(
+					"native_performance_counters", {})
+				_profile_count(
+					profile,
+					"root_action_count",
+					int(native_counters.get("root_actions_effective", 0)),
+				)
+				_profile_count(
+					profile,
+					"no_progress_actions_blocked",
+					int(native_counters.get("root_actions_filtered", 0)),
+				)
+				_profile_count(
+					profile,
+					"simulated_action_score_calls",
+					int(native_counters.get(
+						"simulated_action_score_calls", 0)),
+				)
+				if bool(native_result.get("turn_plan_cache_hit", false)):
+					_profile_count(profile, "turn_plan_cache_hits")
+				elif str(native_result.get(
+					"completion_reason", "")) != "forced_tactic":
+					_profile_count(profile, "turn_plan_cache_misses")
+					_profile_count(
+						profile,
+						"planner_nodes",
+						int(native_result.get("nodes_expanded", 0)),
+					)
+					_profile_add_ms(
+						profile,
+						"turn_planner_ms",
+						maxf(0.0, float(native_result.get("planner_ms", 0.0))),
+					)
+			native_result["profile"] = _public_decision_profile(profile)
+		_disable_native_math = previous_disable_native_math
+		return native_result
 	var result: Dictionary
 	if request_kind == "choice":
 		var choice_started := _profile_start(profile)
-		var decoded := _decode_choice_view(request.get("choice"))
-		if not bool(decoded.get("ok", false)):
-			result = {
-				"success": false,
-				"kind": "choice",
-				"error": str(decoded.get("error", "invalid_choice_view")),
-				"simulations": 0,
-			}
-		else:
-			result = _choose_request(
-				state,
-				decoded["view"],
-				actor,
-				str(request.get("deck_key", "")),
-				catalog,
-				engine,
-				int(request.get("seed", 17)),
-				int(request.get("match_seed", request.get("seed", 0))),
-				inference,
-				str(request.get("mode", "challenge")),
-				str(request.get("engine", TRADITIONAL_ENGINE_ID)),
-				cancel_check,
-				started,
-			)
+		result = _choose_request(
+			state,
+			decoded_choice["view"],
+			actor,
+			str(request.get("deck_key", "")),
+			catalog,
+			engine,
+			int(request.get("seed", 17)),
+			int(request.get("match_seed", request.get("seed", 0))),
+			inference,
+			str(request.get("mode", "challenge")),
+			str(request.get("engine", TRADITIONAL_ENGINE_ID)),
+			cancel_check,
+			started,
+		)
 		_profile_add_elapsed(profile, "choice_ms", choice_started)
 	else:
 		engine.begin_search_epoch()
@@ -380,6 +671,7 @@ func decide(
 			inference,
 			profile,
 			started,
+			decoded_authoritative_actions,
 		)
 		engine.end_search_epoch()
 		_record_action_cycle_selection(request, state, actor, result)
@@ -396,7 +688,7 @@ func decide(
 	result["revision"] = int(request["revision"])
 	result["request_id"] = str(request.get("request_id", ""))
 	result["elapsed_ms"] = (Time.get_ticks_usec() - started) / 1000.0
-	result["heuristic_variant"] = HEURISTIC_VARIANT_SEMANTIC_V2
+	result["heuristic_variant"] = DEFAULT_HEURISTIC_VARIANT
 	if _profile_enabled(profile):
 		result["profile"] = _public_decision_profile(profile)
 	_disable_native_math = previous_disable_native_math
@@ -429,11 +721,13 @@ func _search_action(
 	_inference: Variant,
 	profile: Dictionary = {},
 	decision_started_usec: int = 0,
+	decoded_authoritative_actions: Dictionary = {},
 ) -> Dictionary:
 	var decode_started := _profile_start(profile)
 	state.set_type_matchups_enabled(false)
-	var decoded_actions := _decode_authoritative_actions(
-		request, state, actor)
+	var decoded_actions := decoded_authoritative_actions
+	if decoded_actions.is_empty():
+		decoded_actions = _decode_authoritative_actions(request, state, actor)
 	_profile_add_elapsed(profile, "decode_actions_ms", decode_started)
 	if not bool(decoded_actions.get("ok", false)):
 		return {
@@ -526,7 +820,7 @@ func _search_action(
 				"score": _action_score(
 					tactical_state, actor, tactical_action, deck_key, catalog),
 				"forced_tactic": "deterministic_rule_tactics",
-				"turn_plan": [TraditionalTurnPlanner.action_intent(tactical_action)],
+				"turn_plan": [_oracle_action_intent(tactical_action)],
 				"completion_reason": "forced_tactic",
 			},
 		)
@@ -596,7 +890,7 @@ func _search_action(
 			int(planner_request.get("soft_deadline_usec", 0)),
 			int(planner_request.get(
 				"node_budget",
-				TraditionalTurnPlanner.MANDATORY_TACTIC_NODE_GUARD,
+				ORACLE_MANDATORY_TACTIC_NODE_GUARD,
 			)),
 			trusted_choice_resolver,
 			trusted_action_evaluator,
@@ -650,9 +944,9 @@ func _search_action(
 				profile,
 				engine_id,
 			)
-		var cached_signature := str(TraditionalTurnPlanner.action_intent(
+		var cached_signature := str(_oracle_action_intent(
 			cached_action).get("signature", ""))
-		var validated_signature := str(TraditionalTurnPlanner.action_intent(
+		var validated_signature := str(_oracle_action_intent(
 			validated_cached).get("signature", ""))
 		if validated_cached != null and validated_signature != cached_signature:
 			# Consuming one cached intent before validation is harmless only while
@@ -762,7 +1056,10 @@ func _search_action(
 		planned["turn_budget_tier"] = str(legacy_tier.get("tier", "full"))
 		planned["turn_replan_ordinal"] = int(legacy_tier.get("ordinal", 1))
 	else:
-		planned = TraditionalTurnPlanner.plan_action(
+		var oracle_planner: Variant = load(ORACLE_TURN_PLANNER_PATH)
+		if oracle_planner == null:
+			return {"success": false, "error": "oracle_planner_unavailable"}
+		planned = oracle_planner.plan_action(
 			planner_request,
 			information_set,
 			actions,
@@ -807,9 +1104,9 @@ func _search_action(
 		)
 	if (
 		validated_selected != null
-		and str(TraditionalTurnPlanner.action_intent(
+		and str(_oracle_action_intent(
 			validated_selected).get("signature", ""))
-		!= str(TraditionalTurnPlanner.action_intent(selected).get("signature", ""))
+		!= str(_oracle_action_intent(selected).get("signature", ""))
 	):
 		selected = validated_selected
 		planned["action"] = selected
@@ -830,6 +1127,125 @@ func _search_action(
 		false,
 		planned,
 	)
+
+
+func _configured_native_traditional_controller(catalog: CardCatalog) -> Variant:
+	if catalog == null or not ClassDB.class_exists("NativeTraditionalAI"):
+		return null
+	var catalog_id := int(catalog.get_instance_id())
+	if _native_traditional_strategy_data.is_empty():
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(
+			"res://data/ai_strategies.json"))
+		if parsed is Dictionary:
+			_native_traditional_strategy_data = parsed
+	if (
+		_native_traditional_controller == null
+		or _native_traditional_catalog_id != catalog_id
+	):
+		_native_traditional_controller = ClassDB.instantiate("NativeTraditionalAI")
+		_native_traditional_catalog_id = 0
+		if (
+			_native_traditional_controller == null
+			or _native_traditional_strategy_data.is_empty()
+		):
+			return null
+		var configured: Dictionary = _native_traditional_controller.configure(
+			catalog.native_rules_catalog(),
+			catalog.decks,
+			_native_traditional_strategy_data,
+		)
+		if not bool(configured.get("success", false)):
+			return null
+		_native_traditional_catalog_id = catalog_id
+	return _native_traditional_controller
+
+
+func _debug_productive_candidates(
+	public_state: GameState,
+	actor: int,
+	action_rows: Array,
+	sample_seed: int,
+	candidate_seed: int,
+	match_seed: int,
+	catalog: CardCatalog,
+) -> Dictionary:
+	var actions: Array[GameAction] = []
+	for row_value in action_rows:
+		if not row_value is Dictionary:
+			continue
+		var action := GameAction.from_dict(row_value)
+		if action != null:
+			actions.append(action)
+	var information := AIInformationSet.capture(
+		public_state, actor, catalog, actions, [], match_seed)
+	if not information.is_valid():
+		return {"success": false, "error": "debug_information_set_invalid"}
+	var sampled := information.sample_state(sample_seed)
+	if sampled == null:
+		return {"success": false, "error": "debug_determinization_failed"}
+	sampled.set_type_matchups_enabled(false)
+	var deck_key := _deck_key_for_actor(sampled, actor, "")
+	var engine := GameEngine.new(catalog)
+	var base_raw := _evaluate_raw(sampled, actor, catalog)
+	var rows: Array[Dictionary] = []
+	for action_index in range(actions.size()):
+		var action := actions[action_index]
+		var development := _development_action_value(
+			sampled, actor, action, deck_key, catalog)
+		var canonical := _canonical_action_score_milli(
+			sampled, actor, action, deck_key, catalog, candidate_seed)
+		var sim_score := _simulated_action_score(
+			sampled,
+			actor,
+			action,
+			deck_key,
+			catalog,
+			engine,
+			candidate_seed + action_index * 7919,
+		)
+		var delta := sim_score - base_raw
+		var value := development + delta * 0.45 + float(canonical) / 1000.0 * 0.04
+		if action.kind == "PLAY_BASIC" and sampled.get_player(actor).bench_count() < 2:
+			value += 45.0
+		if action.kind == "EVOLVE":
+			value += 35.0
+		elif action.kind == "ATTACH_ENERGY":
+			value += 30.0
+		rows.append({
+			"action": action.to_dict(),
+			"signature": AIPositionEvaluator.action_signature(action),
+			"major_hand_refresh": _is_major_hand_refresh_action(
+				sampled, actor, action, catalog),
+			"development": development,
+			"canonical_milli": canonical,
+			"simulated_raw": sim_score,
+			"delta": delta,
+			"productive_value": value,
+			"repeat_blocked": _should_avoid_repeating_ability(
+				sampled, actor, action, catalog),
+			"first_choice_cancelled": (
+				action.kind == "PLAY_TRAINER"
+				and _action_first_choice_cancelled(
+					sampled,
+					actor,
+					action,
+					deck_key,
+					catalog,
+					engine,
+					candidate_seed + action_index * 3917,
+				)
+			),
+		})
+	return {
+		"success": true,
+		"base_raw": base_raw,
+		"sample_seed": sample_seed,
+		"candidate_seed": candidate_seed,
+		"sample_hash": AIPositionEvaluator.stable_variant_signature(
+			sampled.to_dict()).sha256_text(),
+		"sample": sampled.to_dict(),
+		"rows": rows,
+	}
 
 
 func _traditional_strategy_registry_instance(
@@ -1505,7 +1921,7 @@ func _intent_with_precondition(
 	action: GameAction,
 	precondition: Dictionary,
 ) -> Dictionary:
-	var result := TraditionalTurnPlanner.action_intent(action)
+	var result := _oracle_action_intent(action)
 	for key in ["expected_public_fingerprint", "expected_actor", "expected_phase"]:
 		if precondition.has(key):
 			result[key] = precondition[key]
@@ -1541,7 +1957,7 @@ func _take_cached_turn_action(
 	):
 		_turn_plan_cache.erase(cache_key)
 		return null
-	var matched := TraditionalTurnPlanner.find_matching_action(
+	var matched := _oracle_find_matching_action(
 		next_intent, actions, information_set)
 	if matched == null:
 		_turn_plan_cache.erase(cache_key)
@@ -1566,7 +1982,7 @@ func _store_turn_plan(
 		return
 	var intents: Array = Array(plan_value).duplicate(true)
 	var selected_signature := str(
-		TraditionalTurnPlanner.action_intent(selected).get("signature", ""))
+		_oracle_action_intent(selected).get("signature", ""))
 	for index in range(intents.size()):
 		if str(Dictionary(intents[index]).get("signature", "")) == selected_signature:
 			intents.remove_at(index)
@@ -1596,7 +2012,8 @@ func _traditional_decision_semantic_hash(
 		planner_result.get("root_signatures_attempted", [])).duplicate()
 	if root_signatures_attempted.is_empty() and not root_sample_counts.is_empty():
 		# Dictionary insertion order is the fixed ranked-root order produced by
-		# TraditionalTurnPlanner; persist it as an array before canonicalization.
+		# The oracle planner emits insertion-ordered root counts; persist that order
+		# as an array before canonicalization.
 		root_signatures_attempted = root_sample_counts.keys()
 	var cache_preconditions: Array = Array(
 		planner_result.get("cache_preconditions", [])).duplicate(true)
@@ -1639,7 +2056,7 @@ func _traditional_decision_semantic_hash(
 		"completed_depth": int(planner_result.get("completed_depth", 0)),
 		"max_path_depth": int(planner_result.get("max_path_depth", 0)),
 		"reply_requested_depth": int(planner_result.get(
-			"reply_requested_depth", AITurnBeamPlanner.DEFAULT_REPLY_DEPTH)),
+			"reply_requested_depth", GAMEPLAY_REPLY_DEPTH)),
 		"reply_completed_depth": int(planner_result.get(
 			"reply_completed_depth", 0)),
 		"layers_completed": int(planner_result.get("layers_completed", 0)),
@@ -1648,6 +2065,9 @@ func _traditional_decision_semantic_hash(
 		"opponent_strategy_id": str(planner_result.get(
 			"opponent_strategy_id", "")),
 	}
+	if OS.get_environment(
+		"PTCG_INTERNAL_NATIVE_FULL_CONTROLLER_COMPARE") == "1":
+		_native_debug_last_semantic_payload = payload.duplicate(true)
 	return AIPositionEvaluator.stable_variant_signature(payload).sha256_text()
 
 
@@ -1739,7 +2159,7 @@ func _traditional_action_result(
 		"reply_depth_applicable": bool(planner_result.get(
 			"reply_depth_applicable", false)),
 		"reply_requested_depth": int(planner_result.get(
-			"reply_requested_depth", AITurnBeamPlanner.DEFAULT_REPLY_DEPTH)),
+			"reply_requested_depth", GAMEPLAY_REPLY_DEPTH)),
 		"reply_completion_reason": str(planner_result.get(
 			"reply_completion_reason",
 			"not_applicable"
@@ -1780,6 +2200,18 @@ func _traditional_action_result(
 			planner_result.get("turn_budget_tier", "untracked"))
 		result["turn_replan_ordinal"] = int(
 			planner_result.get("turn_replan_ordinal", 0))
+	if OS.get_environment(
+		"PTCG_INTERNAL_NATIVE_FULL_CONTROLLER_COMPARE") == "1":
+		result["internal_debug_decision_payload"] = {
+			"turn_plan": planner_result.get("turn_plan", []),
+			"cache_preconditions": planner_result.get("cache_preconditions", []),
+			"root_signatures_attempted": planner_result.get(
+				"root_signatures_attempted", []),
+			"root_sample_counts": planner_result.get("root_sample_counts", {}),
+			"belief_seed_hash": planner_result.get("belief_seed_hash", ""),
+			"score_milli": planner_result.get("score_milli", 0),
+			"semantic_payload": _native_debug_last_semantic_payload.duplicate(true),
+		}
 	return result
 
 
@@ -2746,7 +3178,7 @@ func _heuristic_choice(
 			_arven_choice_option_ids(state, request, deck_key, catalog),
 		)
 	var mode := _choice_score_mode(request, presentation)
-	if enable_lookahead and _semantic_v2_enabled() and engine != null:
+	if enable_lookahead and engine != null:
 		var lookahead := _semantic_lookahead_choice(
 			state, request, deck_key, catalog, engine, seed, mode)
 		if lookahead != null:
@@ -3330,9 +3762,8 @@ func _card_keep_value(
 			and player.bench_count() == 0
 		):
 			value += _lone_active_backup_search_bonus(state, actor, catalog)
-		if _semantic_v2_enabled():
-			value += _core_evolution_line_card_bonus(
-				state, actor, card_id, deck_key, catalog, removing_one)
+		value += _core_evolution_line_card_bonus(
+			state, actor, card_id, deck_key, catalog, removing_one)
 	if catalog.is_energy(card_id):
 		if _has_energy_target_with_missing_cost(state, actor, catalog):
 			value += 50.0
@@ -3349,8 +3780,7 @@ func _card_keep_value(
 			value += float(SCORE_WEIGHTS["last_useful_energy"])
 	if catalog.is_trainer(card_id):
 		value += 18.0
-		if _semantic_v2_enabled():
-			value += _bench_setup_search_card_bonus(state, actor, card_id, deck_key, catalog)
+		value += _bench_setup_search_card_bonus(state, actor, card_id, deck_key, catalog)
 	var duplicate_count := 0
 	for hand_card_id in player.hand:
 		if hand_card_id == card_id:
@@ -3539,7 +3969,7 @@ func _discard_choice_score(
 			and catalog.is_supporter(card_id)
 		):
 			score += 30.0
-	if _semantic_v2_enabled() and _discard_fuels_damage_plan(state, actor, card_id, catalog):
+	if _discard_fuels_damage_plan(state, actor, card_id, catalog):
 		score += float(SCORE_WEIGHTS["discard_fuel"])
 	return score
 
@@ -5050,8 +5480,7 @@ func _best_productive_nonterminal_action(
 		elif action.kind == "ATTACH_ENERGY":
 			value += 30.0
 		var semantic_pre_attack_development := (
-			_semantic_v2_enabled()
-			and excluded != null
+			excluded != null
 			and excluded.kind == "DECLARE_ATTACK"
 			and development_value >= 55.0
 			and delta >= -20.0
@@ -5341,8 +5770,7 @@ func _action_score(
 				score += trainer_development * 0.75
 			else:
 				score -= 360.0
-				if _semantic_v2_enabled():
-					score += max(-260.0, trainer_development * 0.35)
+				score += max(-260.0, trainer_development * 0.35)
 		"USE_ABILITY", "USE_STADIUM":
 			var development_value := _development_action_value(state, actor, action, deck_key, catalog)
 			if development_value > 0.0:
@@ -5505,9 +5933,8 @@ func _development_action_value(
 				evolve_value += 95.0
 			if AIDeckProfiles.contains(deck_key, "evolution", card_id):
 				evolve_value += 70.0
-			if _semantic_v2_enabled():
-				evolve_value -= _active_side_core_evolve_blocking_penalty(
-					state, actor, evolve_slot, evolve_target, card_id, deck_key, catalog)
+			evolve_value -= _active_side_core_evolve_blocking_penalty(
+				state, actor, evolve_slot, evolve_target, card_id, deck_key, catalog)
 			return evolve_value
 		"PLAY_BASIC":
 			if card_id.is_empty() or player.bench_count() >= PlayerState.MAX_BENCH_SIZE:
@@ -5791,86 +6218,8 @@ func _effects_tactical_value(
 	catalog: CardCatalog,
 	deck_key: String = "",
 ) -> float:
-	if _semantic_v2_enabled():
-		return _semantic_effects_tactical_value(
-			state, actor, effects, source_slot, catalog, deck_key)
-	var player := state.get_player(actor)
-	var opponent := state.get_player(1 - actor)
-	var profile_key := deck_key
-	if profile_key.is_empty():
-		profile_key = _deck_key_for_actor(state, actor, "")
-	var value := -_expected_self_energy_discard_cost(
-		state, actor, effects, source_slot, catalog)
-	for effect in _flatten_effects(effects):
-		var effect_type := str(effect.get("effect_type", ""))
-		var params: Dictionary = effect.get("params", {})
-		match effect_type:
-			"draw", "draw_until", "draw_until_more":
-				var amount := int(params.get("amount", params.get("target", 2)))
-				if player.deck.size() <= amount:
-					value -= 260.0
-				else:
-					var draw_value: float = min(amount, 7) * 34.0
-					if player.hand.size() >= 8:
-						draw_value -= min(amount, 7) * 22.0
-					elif player.hand.size() >= 6:
-						draw_value -= min(amount, 7) * 10.0
-					value += draw_value
-					if player.hand.size() <= 3:
-						value += 55.0
-			"discard_draw", "shuffle_draw", "judge", "hand_to_bottom_draw", "discard_then_draw":
-				var draw_count := int(params.get("draw", params.get("amount", 4)))
-				if player.deck.size() <= draw_count:
-					value -= 220.0
-				else:
-					var refresh_value: float = 95.0 + min(draw_count, 7) * 24.0
-					if player.hand.size() >= 8:
-						refresh_value -= 85.0
-					elif player.hand.size() >= 6:
-						refresh_value -= 35.0
-					value += refresh_value
-					if player.hand.size() <= 4:
-						value += 65.0
-			"search", "conditional_search_extra", "search_any_and_switch", "arven":
-				value += 125.0
-				if player.bench_count() < 2:
-					value += 35.0
-			"houb":
-				value += _semantic_houb_value(
-					state, actor, int(params.get("target_hand_size", 5)), profile_key, catalog)
-			"look_top_deck":
-				value += _semantic_look_top_deck_value(
-					state, actor, params, profile_key, catalog)
-			"clara":
-				value += _clara_recovery_value(state, actor, profile_key, catalog)
-			"energy_attach", "draw_and_attach_energy", "attach_from_discard", "look_top_attach_energy":
-				value += 145.0
-				if _has_energy_target_with_missing_cost(state, actor, catalog):
-					value += 85.0
-			"energy_relocate":
-				value += _energy_relocate_value(state, actor, params, catalog)
-			"heal", "heal_all", "potion_heal", "damage_and_self_heal":
-				value += _healing_value(state, actor)
-			"switch_self":
-				value += 65.0 if player.bench_count() > 0 else -80.0
-			"switch_opponent":
-				value += 75.0 if opponent.bench_count() > 0 else -80.0
-			"energy_discard", "coin_flip_energy_discard":
-				if str(params.get("from", "opponent")) != "self":
-					value += 90.0 if opponent.active and not opponent.active.energy_card_ids.is_empty() else -35.0
-			"discard", "discard_hand_conditional_bonus":
-				value += 55.0
-			"prevent_damage", "prevent_all", "prevent_effects":
-				value += 80.0
-			"status", "conditional_status", "dazzling_beam", "attack_lock_basic", "apply_outgoing_damage_reduction", "self_attack_lock":
-				value += 45.0
-			"damage", "any_pokemon_damage", "place_counters_and_self_discard", "bench_damage", "damage_and_self_heal":
-				value += int(params.get("amount", params.get("damage", 0))) * 1.2
-			"damage_counter_self":
-				value -= int(params.get("amount", params.get("damage", 20))) * 0.8
-			"attack_damage_formula", "conditional_damage_bonus", "discard_fighting_energy_damage", "discard_hand_conditional_bonus":
-				value += _effect_damage_estimate(state, actor, effect, catalog) * 1.1
-	return value
+	return _semantic_effects_tactical_value(
+		state, actor, effects, source_slot, catalog, deck_key)
 
 
 func _semantic_effects_tactical_value(
@@ -8038,15 +8387,6 @@ func _ability_is_repeatable(
 	return false
 
 
-func _healing_value(state: GameState, actor: int) -> float:
-	var value := 0.0
-	for row in state.get_player(actor).get_all_pokemon():
-		var pokemon: PokemonState = row["pokemon"]
-		if pokemon:
-			value += min(120.0, pokemon.damage_counters * 22.0)
-	return value
-
-
 func _find_action(actions: Array[GameAction], action_name: String) -> GameAction:
 	for action in actions:
 		if action.kind == action_name:
@@ -8285,8 +8625,7 @@ func _resource_outs_value(
 				evolution_outs += 1
 				break
 	value += min(90.0, evolution_outs * 34.0)
-	if _semantic_v2_enabled():
-		value += _core_evolution_line_progress_value(state, actor, deck_key, catalog)
+	value += _core_evolution_line_progress_value(state, actor, deck_key, catalog)
 	return value
 
 
@@ -8499,8 +8838,7 @@ func _evaluate_raw(state: GameState, perspective: int, catalog: CardCatalog) -> 
 		))
 	else:
 		base_score = _evaluate_raw_gdscript(state, perspective, catalog)
-	if _semantic_v2_enabled():
-		base_score += _strategic_evaluation_delta(state, perspective, catalog)
+	base_score += _strategic_evaluation_delta(state, perspective, catalog)
 	return base_score
 
 

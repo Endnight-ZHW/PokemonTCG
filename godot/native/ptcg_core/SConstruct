@@ -23,6 +23,8 @@ core_objects = [
         "ptcg_rules",
         "ptcg_game",
         "ptcg_rules_session",
+        "ptcg_typed_state",
+        "ptcg_typed_ir",
     )
 ]
 program = env.Program(

@@ -56,6 +56,8 @@ core_sources = [
     os.path.join(core_source_root, "ptcg_rules.cpp"),
     os.path.join(core_source_root, "ptcg_game.cpp"),
     os.path.join(core_source_root, "ptcg_rules_session.cpp"),
+    os.path.join(core_source_root, "ptcg_typed_state.cpp"),
+    os.path.join(core_source_root, "ptcg_typed_ir.cpp"),
 ]
 core_objects = [
     env.Object(

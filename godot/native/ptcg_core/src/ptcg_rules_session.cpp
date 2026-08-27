@@ -8,10 +8,12 @@
 #include <functional>
 #include <iomanip>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_set>
+#include <unordered_map>
 #include <utility>
 
 namespace ptcg::ai {
@@ -3025,8 +3027,35 @@ void RulesSession::set_cards(Value cards) {
         throw std::logic_error("cannot_replace_cards_during_match");
     }
     CatalogPayload catalog = normalize_catalog(cards);
-    catalog_ = std::make_shared<const CatalogContext>(
-        std::move(catalog.cards));
+    const std::string catalog_key = canonical_value_hash(catalog.cards);
+    static std::mutex cache_mutex;
+    static std::unordered_map<
+        std::string,
+        std::weak_ptr<const CatalogContext>
+    > cache;
+    std::shared_ptr<const CatalogContext> context;
+    {
+        const std::lock_guard<std::mutex> guard(cache_mutex);
+        const auto found = cache.find(catalog_key);
+        if (found != cache.end()) context = found->second.lock();
+        if (context && !(context->cards == catalog.cards)) context.reset();
+    }
+    if (!context) {
+        auto compiled = std::make_shared<const CatalogContext>(
+            std::move(catalog.cards));
+        if (!compiled->vm_catalog.valid()) {
+            throw std::invalid_argument(compiled->vm_catalog.error());
+        }
+        const std::lock_guard<std::mutex> guard(cache_mutex);
+        const auto found = cache.find(catalog_key);
+        context = found == cache.end() ? nullptr : found->second.lock();
+        if (context && !(context->cards == compiled->cards)) context.reset();
+        if (!context) {
+            context = std::move(compiled);
+            cache[catalog_key] = context;
+        }
+    }
+    catalog_ = std::move(context);
     card_ir_content_fingerprint_ = std::move(catalog.content_fingerprint);
     card_ir_contract_fingerprint_ = std::move(catalog.contract_fingerprint);
     vm_descriptor_digest_ = std::move(catalog.descriptor_digest);
@@ -3257,6 +3286,12 @@ RulesSessionResult RulesSession::create(
         }
     }
     append_public_event_logs(state_, cards(), state_, events);
+    std::string typed_error;
+    if (!commit_authoritative_state(&typed_error)) {
+        initialized_ = false;
+        authoritative_state_.reset();
+        return result(false, typed_error, typed_error);
+    }
     append_journal_entry("create", match_config_, -1, events);
     return result(true, {}, "match_created", std::move(events));
 }
@@ -3311,10 +3346,10 @@ Value RulesSession::legal_actions(std::int32_t actor) const {
     }
     Array groups;
     if (pending_.is_null()) {
-        const Value candidates = game().legal_actions(state_, actor);
-        if (!candidates.is_array()) {
+        if (!populate_legal_cache(actor)) {
             return failure("native_legal_action_error");
         }
+        const Value &candidates = legal_cache_candidates_;
         std::vector<std::string> signatures;
         for (const Value &candidate : candidates.as_array()) {
             if (!candidate.is_object()) {
@@ -3380,6 +3415,244 @@ Value RulesSession::legal_actions(std::int32_t actor) const {
     });
 }
 
+bool typed_action_equivalent(
+    const typed::Action &submitted,
+    const typed::Action &candidate
+) {
+    return submitted.kind == candidate.kind
+        && submitted.actor == candidate.actor
+        && submitted.base_revision == candidate.base_revision
+        && submitted.source == candidate.source
+        && submitted.target == candidate.target
+        && submitted.attack_index == candidate.attack_index
+        && submitted.ability_name == candidate.ability_name;
+}
+
+Value clone_wire_field(
+    const Value &source,
+    const char *key,
+    Value fallback
+) {
+    const Value *entry = source.find(key);
+    return entry == nullptr ? std::move(fallback) : *entry;
+}
+
+Value reply_search_pokemon_projection(const Value &source) {
+    if (!source.is_object()) return Value();
+    Value result(Object{
+        {"card_id", clone_wire_field(source, "card_id", Value(""))},
+        {"damage_counters", clone_wire_field(
+            source, "damage_counters", Value(0))},
+        {"energy_card_ids", clone_wire_field(
+            source, "energy_card_ids", Value::make_array())},
+        {"attached_tool_id", clone_wire_field(
+            source, "attached_tool_id", Value(""))},
+        {"status_conditions", clone_wire_field(
+            source, "status_conditions", Value::make_array())},
+        {"evolution_stack_ids", clone_wire_field(
+            source, "evolution_stack_ids", Value::make_array())},
+        {"can_evolve_this_turn", clone_wire_field(
+            source, "can_evolve_this_turn", Value(true))},
+        {"placed_this_turn", clone_wire_field(
+            source, "placed_this_turn", Value(true))},
+        {"used_abilities", clone_wire_field(
+            source, "used_abilities", Value::make_array())},
+        {"healed_this_turn", clone_wire_field(
+            source, "healed_this_turn", Value(false))},
+        {"paralyzed_since_turn", clone_wire_field(
+            source, "paralyzed_since_turn", Value(0))},
+    });
+    const Value *modifiers = source.find("modifiers");
+    if (modifiers != nullptr && modifiers->is_array()
+        && !modifiers->as_array().empty()) {
+        result["modifiers"] = *modifiers;
+    }
+    return result;
+}
+
+Value reply_search_player_projection(
+    const Value &source,
+    std::int32_t actor
+) {
+    Value bench = clone_wire_field(source, "bench", Value::make_array());
+    if (!bench.is_array()) bench = Value::make_array();
+    for (Value &entry : bench.as_array()) {
+        entry = reply_search_pokemon_projection(entry);
+    }
+    while (bench.as_array().size() < 5) bench.as_array().emplace_back();
+    if (bench.as_array().size() > 5) bench.as_array().resize(5);
+    Value result(Object{
+        {"name", clone_wire_field(
+            source, "name", Value("玩家" + std::to_string(actor + 1)))},
+        {"deck", clone_wire_field(source, "deck", Value::make_array())},
+        {"hand", clone_wire_field(source, "hand", Value::make_array())},
+        {"discard", clone_wire_field(
+            source, "discard", Value::make_array())},
+        {"prizes", clone_wire_field(source, "prizes", Value::make_array())},
+        {"active", reply_search_pokemon_projection(
+            clone_wire_field(source, "active", Value()))},
+        {"bench", std::move(bench)},
+        {"supporter_played_this_turn", clone_wire_field(
+            source, "supporter_played_this_turn", Value(false))},
+        {"energy_attached_this_turn", clone_wire_field(
+            source, "energy_attached_this_turn", Value(false))},
+        {"retreated_this_turn", clone_wire_field(
+            source, "retreated_this_turn", Value(false))},
+        {"stadium_played_this_turn", clone_wire_field(
+            source, "stadium_played_this_turn", Value(false))},
+        {"stadium_used_this_turn", clone_wire_field(
+            source, "stadium_used_this_turn", Value(false))},
+        {"healed_this_turn", clone_wire_field(
+            source, "healed_this_turn", Value(false))},
+        {"vstar_power_used", clone_wire_field(
+            source, "vstar_power_used", Value(false))},
+        {"was_ko_by_attack", clone_wire_field(
+            source, "was_ko_by_attack", Value(false))},
+    });
+    const Value *locked_names = source.find("attack_locked_names");
+    if (locked_names != nullptr && locked_names->is_object()
+        && !locked_names->as_object().empty()) {
+        result["attack_locked_names"] = *locked_names;
+    }
+    return result;
+}
+
+Value reply_search_state_projection(const Value &source) {
+    Value players = clone_wire_field(source, "players", Value::make_array());
+    if (!players.is_array()) players = Value::make_array();
+    while (players.as_array().size() < 2) players.as_array().emplace_back(
+        Value::make_object());
+    if (players.as_array().size() > 2) players.as_array().resize(2);
+    for (std::size_t index = 0; index < players.as_array().size(); ++index) {
+        players.as_array()[index] = reply_search_player_projection(
+            players.as_array()[index], static_cast<std::int32_t>(index));
+    }
+    Value public_deck_keys = clone_wire_field(
+        source, "public_deck_keys", Value::make_array());
+    if (!public_deck_keys.is_array()) public_deck_keys = Value::make_array();
+    while (public_deck_keys.as_array().size() < 2) {
+        public_deck_keys.as_array().emplace_back("");
+    }
+    if (public_deck_keys.as_array().size() > 2) {
+        public_deck_keys.as_array().resize(2);
+    }
+    const bool apply_type_matchups = clone_wire_field(
+        source, "apply_type_matchups", Value(false)).as_bool(false);
+    Value rules_options = clone_wire_field(
+        source, "rules_options", Value::make_object());
+    if (!rules_options.is_object()) rules_options = Value::make_object();
+    rules_options["apply_type_matchups"] = Value(apply_type_matchups);
+    return Value(Object{
+        {"players", std::move(players)},
+        {"active_player_idx", clone_wire_field(
+            source, "active_player_idx", Value(0))},
+        {"phase", clone_wire_field(source, "phase", Value("SETUP"))},
+        {"turn_number", clone_wire_field(source, "turn_number", Value(0))},
+        {"first_player_idx", clone_wire_field(
+            source, "first_player_idx", Value(0))},
+        {"stadium_card_id", clone_wire_field(
+            source, "stadium_card_id", Value(""))},
+        {"stadium_owner_idx", clone_wire_field(
+            source, "stadium_owner_idx", Value(-1))},
+        {"winner", clone_wire_field(source, "winner", Value(-1))},
+        {"result_status", clone_wire_field(
+            source, "result_status", Value("ONGOING"))},
+        {"result_reason", clone_wire_field(
+            source, "result_reason", Value(""))},
+        {"result_conditions", clone_wire_field(
+            source, "result_conditions", Value(Array{
+                Value::make_array(), Value::make_array()}))},
+        {"revision", clone_wire_field(source, "revision", Value(0))},
+        {"choice_sequence", clone_wire_field(
+            source, "choice_sequence", Value(0))},
+        {"public_deck_keys", std::move(public_deck_keys)},
+        {"apply_type_matchups", Value(apply_type_matchups)},
+        {"rules_profile_id", clone_wire_field(
+            source, "rules_profile_id", Value("CN_MAINLAND_3_1_0"))},
+        {"rules_options", std::move(rules_options)},
+        {"action_log", clone_wire_field(
+            source, "action_log", Value::make_array())},
+        {"mulligan_count", clone_wire_field(
+            source, "mulligan_count", Value(Array{Value(0), Value(0)}))},
+        {"extra_draws", clone_wire_field(
+            source, "extra_draws", Value(Array{Value(0), Value(0)}))},
+        {"setup_ready", clone_wire_field(
+            source, "setup_ready", Value(Array{Value(false), Value(false)}))},
+        {"setup_stage", clone_wire_field(
+            source, "setup_stage", Value("INITIAL_PLACEMENT"))},
+        {"setup_actor_idx", clone_wire_field(
+            source, "setup_actor_idx", Value(0))},
+        {"opening_coin_winner_idx", clone_wire_field(
+            source, "opening_coin_winner_idx", Value(0))},
+        {"mulligan_bonus_max", clone_wire_field(
+            source, "mulligan_bonus_max", Value(0))},
+        {"setup_bonus_card_ids", clone_wire_field(
+            source, "setup_bonus_card_ids", Value(Array{
+                Value::make_array(), Value::make_array()}))},
+        {"pending_promotions", clone_wire_field(
+            source, "pending_promotions", Value::make_array())},
+        {"processed_action_ids", clone_wire_field(
+            source, "processed_action_ids", Value::make_array())},
+        {"resolution_stack", clone_wire_field(
+            source, "resolution_stack", Value(Object{
+                {"schema_version", Value(3)},
+                {"frames", Value::make_array()},
+                {"context", Value::make_object()},
+                {"pending_request", Value()},
+                {"sequence", Value(0)},
+            }))},
+        {"turn_fact_book", clone_wire_field(
+            source, "turn_fact_book", Value(Object{
+                {"current_turn", Value(Object{{"knockouts", Value::make_array()}})},
+                {"previous_turn", Value(Object{{"knockouts", Value::make_array()}})},
+            }))},
+    });
+}
+
+bool RulesSession::populate_legal_cache(std::int32_t actor) const {
+    if (!initialized_ || actor < 0 || actor > 1 || !pending_.is_null()) {
+        return false;
+    }
+    if (
+        legal_cache_revision_ == revision()
+        && legal_cache_actor_ == actor
+        && legal_cache_candidates_.is_array()
+    ) {
+        return true;
+    }
+    Value candidates = game().legal_actions(state_, actor);
+    if (!candidates.is_array()) return false;
+    std::vector<typed::Action> typed_candidates;
+    typed_candidates.reserve(candidates.as_array().size());
+    for (const Value &candidate : candidates.as_array()) {
+        typed::Action typed_candidate;
+        std::string typed_error;
+        if (!catalog_->state_codec.decode_action(
+            candidate, typed_candidate, &typed_error
+        )) {
+            legal_cache_revision_ = -1;
+            legal_cache_actor_ = -1;
+            legal_cache_candidates_ = Value::make_array();
+            typed_legal_cache_.reset();
+            return false;
+        }
+        typed_candidates.push_back(std::move(typed_candidate));
+    }
+    legal_cache_revision_ = revision();
+    legal_cache_actor_ = actor;
+    legal_cache_candidates_ = std::move(candidates);
+    typed_legal_cache_ = std::make_shared<const std::vector<typed::Action>>(
+        std::move(typed_candidates));
+    return true;
+}
+
+const Value &RulesSession::search_legal_action_candidates(
+    std::int32_t actor
+) const {
+    static const Value empty = Value::make_array();
+    return populate_legal_cache(actor) ? legal_cache_candidates_ : empty;
+}
+
 std::int64_t RulesSession::pokemon_max_hp(const Value &pokemon) const {
     return game().pokemon_max_hp(pokemon);
 }
@@ -3408,11 +3681,72 @@ Value RulesSession::pending_choice(std::int32_t viewer) const {
     return pending_.deep_clone();
 }
 
+const Value &RulesSession::search_pending_choice(
+    std::int32_t viewer
+) const noexcept {
+    static const Value none;
+    if (
+        !initialized_ || viewer < 0 || viewer > 1 || pending_.is_null()
+        || integer_field(pending_, "player", -1) != viewer
+    ) {
+        return none;
+    }
+    return pending_;
+}
+
+const typed::ChoiceView *RulesSession::typed_search_pending_choice(
+    std::int32_t viewer
+) const {
+    const Value &pending = search_pending_choice(viewer);
+    if (pending.is_null()) return nullptr;
+    const std::int64_t current_revision = revision();
+    const std::string request_id = string_field(pending, "request_id");
+    if (
+        typed_pending_cache_.has_value()
+        && typed_pending_cache_revision_ == current_revision
+        && typed_pending_cache_request_id_ == request_id
+    ) return &*typed_pending_cache_;
+    typed::ChoiceView decoded;
+    std::string error;
+    if (
+        !catalog_
+        || !catalog_->state_codec.decode_choice_view(
+            pending, decoded, &error)
+    ) {
+        throw std::runtime_error(
+            error.empty() ? "typed_choice_decode_failed" : error);
+    }
+    typed_pending_cache_ = std::move(decoded);
+    typed_pending_cache_revision_ = current_revision;
+    typed_pending_cache_request_id_ = request_id;
+    return &*typed_pending_cache_;
+}
+
 Value RulesSession::search_continuation() const {
     return continuation_.deep_clone();
 }
 
 RulesSessionResult RulesSession::apply_action(const Value &submitted_action) {
+    return apply_action_impl(submitted_action, false);
+}
+
+RulesSessionResult RulesSession::apply_action_for_search(
+    const Value &submitted_action
+) {
+    if (!search_mode_) {
+        return result(
+            false,
+            "search_action_requires_search_fork",
+            "search_action_requires_search_fork"
+        );
+    }
+    return apply_action_impl(submitted_action, true);
+}
+
+RulesSessionResult RulesSession::apply_action_impl(
+    const Value &submitted_action,
+    bool use_search_candidate_cache
+) {
     if (!initialized_) {
         return result(false, "not_started", "not_started");
     }
@@ -3440,22 +3774,50 @@ RulesSessionResult RulesSession::apply_action(const Value &submitted_action) {
     if (integer_field(submitted_action, "base_revision", -1) != revision_before) {
         return result(false, "stale_revision", "stale_revision");
     }
-    const Value candidates = game().legal_actions(
-        state_, static_cast<std::int32_t>(integer_field(action, "actor", -1)));
+    const std::int32_t action_actor = static_cast<std::int32_t>(
+        integer_field(action, "actor", -1));
+    bool legal = false;
     if (
-        !candidates.is_array()
-        || std::none_of(
-            candidates.as_array().begin(), candidates.as_array().end(),
-            [&action](const Value &candidate) {
-                return action_equivalent(action, candidate);
-            })
+        use_search_candidate_cache
+        && legal_cache_revision_ == revision_before
+        && legal_cache_actor_ == action_actor
+        && legal_cache_candidates_.is_array()
+        && typed_legal_cache_
     ) {
+        typed::Action typed_action;
+        std::string typed_error;
+        if (catalog_->state_codec.decode_action(
+            action, typed_action, &typed_error)
+        ) {
+            const auto matched = std::find_if(
+                typed_legal_cache_->begin(), typed_legal_cache_->end(),
+                [&typed_action](const typed::Action &candidate) {
+                    return typed_action_equivalent(typed_action, candidate);
+                });
+            const std::size_t index = static_cast<std::size_t>(
+                std::distance(typed_legal_cache_->begin(), matched));
+            legal = matched != typed_legal_cache_->end()
+                && index < legal_cache_candidates_.as_array().size()
+                && action_equivalent(
+                    action, legal_cache_candidates_.as_array()[index]);
+        }
+    } else {
+        const Value candidates = game().legal_actions(state_, action_actor);
+        legal = candidates.is_array()
+            && std::any_of(
+                candidates.as_array().begin(), candidates.as_array().end(),
+                [&action](const Value &candidate) {
+                    return action_equivalent(action, candidate);
+                });
+    }
+    if (!legal) {
         return result(false, "illegal_action", "illegal_action");
     }
 
     if (string_field(action, "kind") == "SETUP_DONE") {
-        const Value previous_state = state_.deep_clone();
-        Value next = state_.deep_clone();
+        const Value previous_state = state_;
+        const auto previous_authoritative_state = authoritative_state_;
+        Value next = state_;
         next["revision"] = Value(revision_before + 1);
         const std::int32_t actor = static_cast<std::int32_t>(
             integer_field(action, "actor", -1));
@@ -3531,12 +3893,23 @@ RulesSessionResult RulesSession::apply_action(const Value &submitted_action) {
             state_, cards(), previous_state, action);
         append_public_event_logs(
             state_, cards(), previous_state, events);
+        std::string typed_error;
+        if (!commit_authoritative_state(&typed_error)) {
+            state_ = previous_state;
+            authoritative_state_ = previous_authoritative_state;
+            pending_ = Value();
+            pending_raw_ = Value();
+            continuation_ = Value();
+            return result(false, typed_error, typed_error);
+        }
         append_journal_entry("action", action, revision_before, events);
         return result(true, {}, "action_applied", std::move(events));
     }
 
+    // Value is recursively copy-on-write. Passing a shallow branch here keeps
+    // the parent immutable while cloning only paths the rule actually mutates.
     GameExecutionResult native_result = game().apply_action(
-        state_.deep_clone(), action, rng_state_);
+        state_, action, rng_state_);
     if (native_result.success) {
         Value &ids = required(native_result.state, "processed_action_ids");
         ids.as_array().emplace_back(action_id);
@@ -3605,7 +3978,7 @@ RulesSessionResult RulesSession::apply_action(const Value &submitted_action) {
                         action, "actor", -1))
                 );
                 native_result.continuation["session_transaction"] = Value(Object{
-                    {"state", state_.deep_clone()},
+                    {"state", state_},
                     {"rng_state", Value(static_cast<std::int64_t>(rng_state_))},
                     {"deferred_events", Value(deferred_events)},
                     {"action", action.deep_clone()},
@@ -3691,8 +4064,11 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
     const std::int64_t revision_before = revision();
     const std::string continuation_kind = string_field(continuation_, "kind");
     if (continuation_kind == "setup_turn_order") {
-        const Value previous_state = state_.deep_clone();
-        const Value previous_pending = pending_.deep_clone();
+        const Value previous_state = state_;
+        const Value previous_pending = pending_;
+        const Value previous_pending_raw = pending_raw_;
+        const Value previous_continuation = continuation_;
+        const auto previous_authoritative_state = authoritative_state_;
         if (cancelled || selected_ids.size() != 1) {
             return result(false, "choice_count", "choice_count");
         }
@@ -3700,7 +4076,7 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
         if (selected != "turn:first" && selected != "turn:second") {
             return result(false, "invalid_choice", "invalid_choice");
         }
-        Value next = state_.deep_clone();
+        Value next = state_;
         const std::int32_t coin_winner = static_cast<std::int32_t>(
             integer_field(next, "opening_coin_winner_idx"));
         const std::int32_t first = selected == "turn:first"
@@ -3730,12 +4106,24 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
             state_, previous_state, previous_pending, response);
         append_public_event_logs(
             state_, cards(), previous_state, events);
+        std::string typed_error;
+        if (!commit_authoritative_state(&typed_error)) {
+            state_ = previous_state;
+            pending_ = previous_pending;
+            pending_raw_ = previous_pending_raw;
+            continuation_ = previous_continuation;
+            authoritative_state_ = previous_authoritative_state;
+            return result(false, typed_error, typed_error);
+        }
         append_journal_entry("choice", response, revision_before, events);
         return result(true, {}, "choice_applied", std::move(events));
     }
     if (continuation_kind == "setup_mulligan_draw") {
-        const Value previous_state = state_.deep_clone();
-        const Value previous_pending = pending_.deep_clone();
+        const Value previous_state = state_;
+        const Value previous_pending = pending_;
+        const Value previous_pending_raw = pending_raw_;
+        const Value previous_continuation = continuation_;
+        const auto previous_authoritative_state = authoritative_state_;
         if (cancelled || selected_ids.size() != 1) {
             return result(false, "choice_count", "choice_count");
         }
@@ -3761,7 +4149,7 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
         ) {
             return result(false, "invalid_choice", "invalid_choice");
         }
-        Value next = state_.deep_clone();
+        Value next = state_;
         next["revision"] = Value(revision_before + 1);
         Array drawn = draw_cards(player(next, actor), static_cast<std::size_t>(amount));
         required(next, "extra_draws").as_array()[static_cast<std::size_t>(actor)] =
@@ -3809,6 +4197,15 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
             state_, previous_state, previous_pending, response);
         append_public_event_logs(
             state_, cards(), previous_state, events);
+        std::string typed_error;
+        if (!commit_authoritative_state(&typed_error)) {
+            state_ = previous_state;
+            pending_ = previous_pending;
+            pending_raw_ = previous_pending_raw;
+            continuation_ = previous_continuation;
+            authoritative_state_ = previous_authoritative_state;
+            return result(false, typed_error, typed_error);
+        }
         append_journal_entry("choice", response, revision_before, events);
         return result(true, {}, "choice_applied", std::move(events));
     }
@@ -3816,8 +4213,11 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
     const Value *session_transaction = continuation_.find(
         "session_transaction");
     if (cancelled && session_transaction != nullptr) {
-        const Value previous_state = state_.deep_clone();
-        const Value previous_pending = pending_.deep_clone();
+        const Value previous_state = state_;
+        const Value previous_pending = pending_;
+        const Value previous_pending_raw = pending_raw_;
+        const Value previous_continuation = continuation_;
+        const auto previous_authoritative_state = authoritative_state_;
         const Value *checkpoint_state = session_transaction->find("state");
         const Value *checkpoint_rng = session_transaction->find("rng_state");
         if (
@@ -3870,11 +4270,20 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
         }
         append_public_event_logs(
             state_, cards(), previous_state, events);
+        std::string typed_error;
+        if (!commit_authoritative_state(&typed_error)) {
+            state_ = previous_state;
+            pending_ = previous_pending;
+            pending_raw_ = previous_pending_raw;
+            continuation_ = previous_continuation;
+            authoritative_state_ = previous_authoritative_state;
+            return result(false, typed_error, typed_error);
+        }
         append_journal_entry("choice", response, revision_before, events);
         return result(true, {}, "action_cancelled", events);
     }
 
-    Value kernel_state = state_.deep_clone();
+    Value kernel_state = state_;
     kernel_state["resolution_stack"] = empty_resolution_stack();
     GameExecutionResult native_result = game().resume_choice(
         std::move(kernel_state), continuation_, Value(raw_selected),
@@ -3946,7 +4355,11 @@ RulesSessionResult RulesSession::concede(std::int32_t actor) {
         return result(false, "game_over", "game_over");
     }
     const std::int64_t revision_before = revision();
-    const Value previous_state = state_.deep_clone();
+    const Value previous_state = state_;
+    const Value previous_pending = pending_;
+    const Value previous_pending_raw = pending_raw_;
+    const Value previous_continuation = continuation_;
+    const auto previous_authoritative_state = authoritative_state_;
     const std::int32_t winner = 1 - actor;
     state_["revision"] = Value(revision_before + 1);
     state_["winner"] = Value(winner);
@@ -3979,6 +4392,15 @@ RulesSessionResult RulesSession::concede(std::int32_t actor) {
         state_, public_player_name(previous_state, actor) + " 放弃了对战。");
     append_public_event_logs(
         state_, cards(), previous_state, events);
+    std::string typed_error;
+    if (!commit_authoritative_state(&typed_error)) {
+        state_ = previous_state;
+        pending_ = previous_pending;
+        pending_raw_ = previous_pending_raw;
+        continuation_ = previous_continuation;
+        authoritative_state_ = previous_authoritative_state;
+        return result(false, typed_error, typed_error);
+    }
     append_journal_entry("command", input, revision_before, events);
     return result(true, {}, "player_surrendered", std::move(events));
 }
@@ -4034,10 +4456,10 @@ Value RulesSession::view_for(std::int32_t viewer) const {
 }
 
 Value RulesSession::snapshot() const {
-    if (!initialized_) {
+    if (!initialized_ || authoritative_state_ == nullptr || !catalog_) {
         return Value::make_object();
     }
-    Value result = state_.deep_clone();
+    Value result = catalog_->state_codec.encode_state(*authoritative_state_);
     result["snapshot_version"] = Value(SNAPSHOT_SCHEMA_VERSION);
     return result;
 }
@@ -4187,12 +4609,26 @@ bool RulesSession::restore(
             }
         }
     }
+    const Value previous_state = state_;
+    const auto previous_authoritative_state = authoritative_state_;
+    const bool previous_initialized = initialized_;
     state_ = std::move(next_state);
     pending_ = std::move(next_pending);
     pending_raw_ = std::move(next_pending_raw);
     continuation_ = std::move(next_continuation);
     rng_state_ = rng_state == 0 ? 0x6D2B79F5U : rng_state;
     initialized_ = true;
+    std::string typed_error;
+    if (!commit_authoritative_state(&typed_error)) {
+        state_ = previous_state;
+        authoritative_state_ = previous_authoritative_state;
+        initialized_ = previous_initialized;
+        return fail(typed_error.empty()
+            ? "typed_state_decode_failed" : typed_error);
+    }
+    typed_pending_cache_.reset();
+    typed_pending_cache_revision_ = -1;
+    typed_pending_cache_request_id_.clear();
     return true;
 }
 
@@ -4217,6 +4653,32 @@ std::unique_ptr<RulesSession> RulesSession::fork_for_search(
     copy->rng_state_ = rng_state == 0 ? 0x6D2B79F5U : rng_state;
     copy->initialized_ = initialized_;
     copy->search_mode_ = true;
+    copy->legal_cache_revision_ = legal_cache_revision_;
+    copy->legal_cache_actor_ = legal_cache_actor_;
+    copy->legal_cache_candidates_ = legal_cache_candidates_;
+    copy->typed_legal_cache_ = typed_legal_cache_;
+    copy->authoritative_state_ = authoritative_state_;
+    copy->typed_pending_cache_ = typed_pending_cache_;
+    copy->typed_pending_cache_revision_ = typed_pending_cache_revision_;
+    copy->typed_pending_cache_request_id_ = typed_pending_cache_request_id_;
+    return copy;
+}
+
+std::unique_ptr<RulesSession> RulesSession::fork_for_reply_search() const {
+    auto copy = fork_for_search(rng_state_);
+    copy->state_ = reply_search_state_projection(state_);
+    copy->legal_cache_revision_ = -1;
+    copy->legal_cache_actor_ = -1;
+    copy->legal_cache_candidates_ = Value::make_array();
+    copy->typed_legal_cache_.reset();
+    std::string typed_error;
+    if (!copy->commit_authoritative_state(&typed_error)) {
+        throw std::runtime_error(typed_error.empty()
+            ? "typed_reply_projection_failed" : typed_error);
+    }
+    copy->typed_pending_cache_.reset();
+    copy->typed_pending_cache_revision_ = -1;
+    copy->typed_pending_cache_request_id_.clear();
     return copy;
 }
 
@@ -4230,6 +4692,16 @@ Value RulesSession::contract() const {
         {"vm_ir_version", Value(3)},
         {"journal_format_version", Value(MATCH_JOURNAL_FORMAT_VERSION)},
         {"hash_algorithm", Value("fnv1a64-canonical-json")},
+        {"typed_state_codec", Value(true)},
+        {"typed_authoritative_state", Value(true)},
+        {"typed_vm_ir", Value(true)},
+        {"typed_vm_program_count", Value(static_cast<std::int64_t>(
+            catalog_ ? catalog_->vm_catalog.program_count() : 0))},
+        {"typed_vm_command_count", Value(static_cast<std::int64_t>(
+            catalog_ ? catalog_->vm_catalog.command_count() : 0))},
+        {"typed_action_cache", Value(true)},
+        {"typed_choice_cache", Value(true)},
+        {"search_candidate_cache", Value(true)},
         {"card_ir_content_fingerprint", Value(
             card_ir_content_fingerprint_)},
         {"card_ir_contract_fingerprint", Value(
@@ -4264,7 +4736,11 @@ Value RulesSession::journal() const {
 }
 
 std::string RulesSession::state_hash() const {
-    return initialized_ ? canonical_value_hash(state_) : std::string{};
+    if (!initialized_ || authoritative_state_ == nullptr || !catalog_) {
+        return {};
+    }
+    return canonical_value_hash(
+        catalog_->state_codec.encode_state(*authoritative_state_));
 }
 
 std::uint32_t RulesSession::rng_state() const noexcept {
@@ -4272,7 +4748,45 @@ std::uint32_t RulesSession::rng_state() const noexcept {
 }
 
 std::int64_t RulesSession::revision() const noexcept {
+    // During a transaction state_ contains the next working revision before
+    // the typed state is atomically committed. Internal Choice construction
+    // must bind to that new revision; the commit invariant proves it equals the
+    // authoritative typed value before any result escapes the session.
     return initialized_ ? integer_field(state_, "revision", -1) : -1;
+}
+
+const Value &RulesSession::search_state() const noexcept {
+    return state_;
+}
+
+const typed::GameState &RulesSession::typed_search_state() const {
+    return typed_state();
+}
+
+const typed::GameState &RulesSession::typed_state() const {
+    if (!initialized_ || authoritative_state_ == nullptr) {
+        throw std::runtime_error("typed_authoritative_state_unavailable");
+    }
+    return *authoritative_state_;
+}
+
+bool RulesSession::commit_authoritative_state(std::string *error) {
+    if (!catalog_) {
+        if (error != nullptr) *error = "typed_state_catalog_missing";
+        return false;
+    }
+    auto decoded = std::make_shared<typed::GameState>();
+    std::string decode_error;
+    if (!catalog_->state_codec.decode_state(state_, *decoded, &decode_error)) {
+        if (error != nullptr) {
+            *error = decode_error.empty()
+                ? "typed_state_decode_failed" : decode_error;
+        }
+        return false;
+    }
+    authoritative_state_ = std::move(decoded);
+    if (error != nullptr) error->clear();
+    return true;
 }
 
 RulesSessionResult RulesSession::commit_game_result(
@@ -4295,6 +4809,7 @@ RulesSessionResult RulesSession::commit_game_result(
     const Value previous_pending_raw = pending_raw_;
     const Value previous_continuation = continuation_;
     const Value previous_journal = journal_entries_;
+    const auto previous_authoritative_state = authoritative_state_;
     const std::uint32_t previous_rng = rng_state_;
     try {
         const std::int32_t actor_hint = entry_kind == "action"
@@ -4320,20 +4835,25 @@ RulesSessionResult RulesSession::commit_game_result(
         }
         append_public_event_logs(
             state_, cards(), previous_state, events);
+        std::string typed_error;
+        if (!commit_authoritative_state(&typed_error)) {
+            throw std::runtime_error(typed_error.empty()
+                ? "typed_state_commit_failed" : typed_error);
+        }
         append_journal_entry(entry_kind, input, revision_before, events);
         return result(true, {}, entry_kind + "_applied", std::move(events));
-    } catch (const std::exception &) {
+    } catch (const std::exception &error) {
         state_ = previous_state;
         pending_ = previous_pending;
         pending_raw_ = previous_pending_raw;
         continuation_ = previous_continuation;
         journal_entries_ = previous_journal;
+        authoritative_state_ = previous_authoritative_state;
         rng_state_ = previous_rng;
-        return result(
-            false,
-            "invalid_native_continuation",
-            "invalid_native_continuation"
-        );
+        const std::string detail = error.what();
+        const std::string code = detail.find("typed_") != std::string::npos
+            ? detail : "invalid_native_continuation";
+        return result(false, code, code);
     }
 }
 
@@ -4347,12 +4867,21 @@ RulesSessionResult RulesSession::result(
     output.success = success;
     output.error_code = std::move(error_code);
     output.message_key = std::move(message_key);
-    output.state = initialized_ ? state_.deep_clone() : Value::make_object();
-    output.pending = success ? pending_.deep_clone() : Value();
+    output.state = initialized_ && authoritative_state_ != nullptr && catalog_
+        ? (search_mode_
+            ? state_
+            : catalog_->state_codec.encode_state(*authoritative_state_))
+        : Value::make_object();
+    output.pending = success
+        ? (search_mode_ ? pending_ : pending_.deep_clone())
+        : Value();
     output.events = std::move(events);
     output.rng_state = rng_state_;
-    output.winner = initialized_ ? winner_from_state(state_) : -1;
-    output.terminal = initialized_ && terminal_from_state(state_);
+    output.winner = initialized_ && authoritative_state_ != nullptr
+        ? authoritative_state_->winner : -1;
+    output.terminal = initialized_ && authoritative_state_ != nullptr
+        && (authoritative_state_->result_status != "ONGOING"
+            || authoritative_state_->winner >= 0);
     return output;
 }
 
@@ -4387,6 +4916,9 @@ void RulesSession::clear_resolution_stack() {
 }
 
 void RulesSession::set_pending(Value pending, Value continuation) {
+    typed_pending_cache_.reset();
+    typed_pending_cache_revision_ = -1;
+    typed_pending_cache_request_id_.clear();
     pending_ = Value();
     pending_raw_ = Value();
     continuation_ = Value();

@@ -1,8 +1,11 @@
 #include "ptcg_rules_session.hpp"
+#include "ptcg_typed_ir.hpp"
+#include "ptcg_typed_state.hpp"
 
 #include <cstdint>
 #include <algorithm>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -110,6 +113,46 @@ bool log_contains(const Value &state, const std::string &needle) {
     );
 }
 
+std::string first_difference(
+    const Value &left,
+    const Value &right,
+    const std::string &path = "$"
+) {
+    if (left == right) return {};
+    if (left.type() != right.type()) return path + ":type";
+    if (left.is_array()) {
+        if (left.as_array().size() != right.as_array().size()) {
+            return path + ":array_size";
+        }
+        for (std::size_t index = 0; index < left.as_array().size(); ++index) {
+            const std::string nested = first_difference(
+                left.as_array()[index], right.as_array()[index],
+                path + "[" + std::to_string(index) + "]");
+            if (!nested.empty()) return nested;
+        }
+    } else if (left.is_object()) {
+        if (left.as_object().size() != right.as_object().size()) {
+            for (const auto &[key, ignored] : left.as_object()) {
+                (void)ignored;
+                if (!right.contains(key)) return path + ":missing_right:" + key;
+            }
+            for (const auto &[key, ignored] : right.as_object()) {
+                (void)ignored;
+                if (!left.contains(key)) return path + ":missing_left:" + key;
+            }
+            return path + ":object_size";
+        }
+        for (const auto &[key, value] : left.as_object()) {
+            const Value *other = right.find(key);
+            if (other == nullptr) return path + ":missing_right:" + key;
+            const std::string nested = first_difference(
+                value, *other, path + "." + key);
+            if (!nested.empty()) return nested;
+        }
+    }
+    return path + ":value";
+}
+
 Value choose(const Value &pending, const std::string &option_id) {
     return Value(Object{
         {"request_id", *pending.find("request_id")},
@@ -136,6 +179,35 @@ int main() {
         const auto created = session.create(cards, match_decks, config, 12345U);
         require(created.success, "create failed");
         require(session.revision() == 0, "initial revision mismatch");
+        const Value core_contract = session.contract();
+        require(core_contract.find("typed_authoritative_state")->as_bool()
+                && core_contract.find("typed_vm_ir")->as_bool(),
+            "typed authoritative state/VM IR contract is disabled");
+        ptcg::ai::typed::VmProgram typed_program;
+        std::string typed_program_error;
+        require(ptcg::ai::typed::compile_vm_program(Value(Array{Value(Object{
+                {"op", Value("deal_damage")},
+                {"args", Value(Object{{"formula_ast", Value(Object{
+                    {"op", Value("add")},
+                    {"terms", Value(Array{
+                        Value(Object{{"const", Value(30)}}),
+                        Value(Object{
+                            {"op", Value("energy_count")},
+                            {"scope", Value("self")},
+                        }),
+                    })},
+                })}})},
+                {"branches", Value::make_object()},
+            })}), *std::make_shared<ptcg::ai::typed::CardStringTable>(cards),
+            typed_program, &typed_program_error),
+            "typed VM program compilation failed");
+        require(typed_program.commands.size() == 1
+                && typed_program.commands.front().op
+                    == ptcg::ai::typed::VmOp::deal_damage
+                && typed_program.commands.front().arguments.size() == 1
+                && std::holds_alternative<ptcg::ai::typed::Formula>(
+                    typed_program.commands.front().arguments.front().value),
+            "typed VM command/formula fields diverged");
         require(session.contract().find("native_abi_version")->as_integer() == 2,
             "ABI mismatch");
         require(session.contract().find("framework_dependencies")->as_array().empty(),
@@ -210,6 +282,72 @@ int main() {
             "opponent setup log leaked the hidden Pokémon identity");
 
         const Value snapshot = session.snapshot();
+        auto typed_cards = std::make_shared<ptcg::ai::typed::CardStringTable>(cards);
+        ptcg::ai::typed::StateCodec typed_codec(typed_cards);
+        ptcg::ai::typed::GameState typed_snapshot;
+        std::string typed_error;
+        require(typed_codec.decode_state(snapshot, typed_snapshot, &typed_error),
+            "typed Snapshot 3 decode failed");
+
+        Value legacy_reply_snapshot = snapshot.deep_clone();
+        Value &legacy_active = legacy_reply_snapshot.find("players")
+            ->as_array()[0]["active"];
+        legacy_active["damage_prevented"] = Value(true);
+        legacy_active["all_prevented"] = Value(true);
+        legacy_active["outgoing_damage_reduction"] = Value(50);
+        legacy_active["modifiers"] = Value(Array{Value(Object{
+            {"condition", Value(Object{{"expires_after_turn", Value(12)}})},
+            {"conflict_policy", Value("commutative")},
+            {"controller", Value(0)},
+            {"duration", Value("until_end_of_opponents_next_turn")},
+            {"hook", Value("PREVENT_EFFECTS")},
+            {"layer", Value("prevent")},
+            {"operation", Value(Object{{"kind", Value("prevent_effects")}})},
+            {"priority", Value(0)},
+            {"scope", Value("self")},
+            {"source_ref", Value(Object{
+                {"card_id", Value("test-basic")},
+                {"kind", Value("pokemon")},
+                {"player", Value(0)},
+                {"slot", Value("active")},
+            })},
+            {"stacking", Value("replace_same_source")},
+        })});
+        RulesSession legacy_reply(cards);
+        std::string legacy_reply_error;
+        require(legacy_reply.restore(
+                legacy_reply_snapshot, 0xC10E0001U, &legacy_reply_error),
+            "legacy reply projection fixture restore failed");
+        auto projected_reply = legacy_reply.fork_for_reply_search();
+        require(projected_reply != nullptr,
+            "legacy reply projection fork failed");
+        const Value &projected_active = active_of(
+            projected_reply->search_state(), 0);
+        require(projected_active.find("damage_prevented") == nullptr
+                && projected_active.find("all_prevented") == nullptr
+                && projected_active.find("outgoing_damage_reduction") == nullptr,
+            "legacy reply projection retained DTO-excluded compatibility flags");
+        require(projected_active.find("modifiers") != nullptr
+                && projected_active.find("modifiers")->is_array()
+                && projected_active.find("modifiers")->as_array().size() == 1,
+            "legacy reply projection discarded canonical modifiers");
+        require(active_of(legacy_reply.search_state(), 0).find(
+                "all_prevented") != nullptr,
+            "legacy reply projection mutated its parent state");
+        Value snapshot_payload = snapshot.deep_clone();
+        snapshot_payload.erase("snapshot_version");
+        const Value typed_roundtrip = typed_codec.encode_state(typed_snapshot);
+        if (!(typed_roundtrip == snapshot_payload)) {
+            std::cerr << "TYPED_SNAPSHOT_DIFF "
+                << first_difference(snapshot_payload, typed_roundtrip) << '\n';
+        }
+        require(typed_roundtrip == snapshot_payload,
+            "typed Snapshot 3 roundtrip diverged");
+        ptcg::ai::typed::Action typed_play;
+        require(typed_codec.decode_action(play, typed_play, &typed_error),
+            "typed Action v4 decode failed");
+        require(typed_codec.encode_action(typed_play) == play,
+            "typed Action v4 roundtrip diverged");
         auto forked = session.fork();
         require(forked->snapshot() == snapshot, "fork snapshot mismatch");
         const std::string parent_hash_before_search_fork = session.state_hash();
@@ -220,9 +358,25 @@ int main() {
         require(search_fork->rng_state() == 424242U,
             "search fork did not install branch RNG");
         Value search_query = search_fork->legal_actions(setup_actor(*search_fork));
-        const auto search_step = search_fork->apply_action(bind_action(
-            search_query, "SETUP_DONE", "cpp:search-fork:setup-done"));
+        Value cached_setup_action = bind_action(
+            search_query, "SETUP_DONE", "cpp:search-fork:setup-done");
+        Value tampered_cached_action = cached_setup_action;
+        tampered_cached_action["payload"]["unexpected"] = Value(true);
+        const auto tampered_search_step =
+            search_fork->apply_action_for_search(tampered_cached_action);
+        require(
+            !tampered_search_step.success
+                && tampered_search_step.error_code == "illegal_action",
+            "typed candidate cache accepted altered Action v4 payload");
+        const auto search_step = search_fork->apply_action_for_search(
+            cached_setup_action);
         require(search_step.success, "search fork action failed");
+        const auto public_search_apply = session.apply_action_for_search(play);
+        require(
+            !public_search_apply.success
+                && public_search_apply.error_code
+                    == "search_action_requires_search_fork",
+            "public session accepted the AI-only action cache path");
         require(session.state_hash() == parent_hash_before_search_fork,
             "search fork mutated parent state");
         require(session.rng_state() == parent_rng_before_search_fork,
@@ -251,6 +405,23 @@ int main() {
             cards, match_decks, Value::make_object(), 8080U);
         require(choice_created.success && !choice_created.pending.is_null(),
             "turn-order choice fixture failed");
+        ptcg::ai::typed::ChoiceView typed_choice;
+        require(typed_codec.decode_choice_view(
+            choice_created.pending, typed_choice, &typed_error),
+            "typed ChoiceView v2 decode failed");
+        require(typed_choice.request_kind
+                == ptcg::ai::typed::ChoiceRequestKind::choose_turn_order
+                && typed_choice.player >= 0
+                && typed_choice.options.size() == 2,
+            "typed ChoiceView v2 fields diverged");
+        require(typed_codec.encode_choice_view(typed_choice)
+                == choice_created.pending,
+            "typed ChoiceView v2 roundtrip diverged");
+        const auto *cached_typed_choice =
+            choice_session.typed_search_pending_choice(typed_choice.player);
+        require(cached_typed_choice != nullptr
+                && cached_typed_choice->request_id == typed_choice.request_id,
+            "RulesSession typed pending Choice cache diverged");
         Value invalid_choice(Object{
             {"request_id", *choice_created.pending.find("request_id")},
             {"option_ids", Value::make_array()},
@@ -388,6 +559,11 @@ int main() {
             "checkup KO scenario restore failed");
         const auto checkup_step = checkup.apply_action(bind_action(
             checkup.legal_actions(0), "END_TURN", "cpp:checkup-ko"));
+        if (!checkup_step.success) {
+            std::cerr << "CHECKUP_TYPED_COMMIT_FAILED "
+                << checkup_step.error_code << ' ' << checkup_step.message_key
+                << '\n';
+        }
         require(checkup_step.success && !checkup_step.terminal,
             "checkup KO did not suspend for its mandatory prize");
         require(checkup_step.state.find("phase")->string_or()

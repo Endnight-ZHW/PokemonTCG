@@ -116,6 +116,7 @@ func cancel_request() -> void:
 	_cancel_requested = true
 	_active_generation = 0
 	_mutex.unlock()
+	_worker.cancel_native_request()
 	_reap_finished_task()
 
 
@@ -157,8 +158,10 @@ func _decide(
 	inference: Variant,
 ) -> Dictionary:
 	if str(request.get("mode", "challenge")) == "deep" and inference == null:
+		var fallback_request := request.duplicate(true)
+		fallback_request["mode"] = "challenge"
 		var unavailable_fallback := _worker.decide(
-			request, cancel_check, null)
+			fallback_request, cancel_check, null)
 		unavailable_fallback["deep_fallback"] = true
 		unavailable_fallback["fallback_reason"] = "runtime_unavailable"
 		unavailable_fallback["deep_failure"] = {
@@ -177,7 +180,9 @@ func _decide(
 			"deep_failure_reason",
 			deep_result.get("error", "deep_unknown_failure"),
 		))
-		var fallback := _worker.decide(request, cancel_check, null)
+		var fallback_request := request.duplicate(true)
+		fallback_request["mode"] = "challenge"
+		var fallback := _worker.decide(fallback_request, cancel_check, null)
 		fallback["deep_fallback"] = true
 		fallback["fallback_reason"] = reason
 		fallback["deep_failure"] = {

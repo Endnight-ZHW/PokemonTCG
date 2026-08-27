@@ -52,6 +52,8 @@ core_source_names = (
     "ptcg_rules.cpp",
     "ptcg_game.cpp",
     "ptcg_rules_session.cpp",
+    "ptcg_typed_state.cpp",
+    "ptcg_typed_ir.cpp",
 )
 core_sources = [
     os.path.join(core_source_root, name) for name in core_source_names
@@ -66,7 +68,16 @@ core_objects = [
 binding_source_names = [
     "challenge_ai_math.cpp",
     "godot_rules_session.cpp",
+    "native_traditional_ai.cpp",
+    "native_traditional_search_provider.cpp",
     "ptcg_godot_value.cpp",
+    "ptcg_traditional_search.cpp",
+    "ptcg_traditional_infoset.cpp",
+    "ptcg_traditional_mandatory.cpp",
+    "ptcg_traditional_evaluator.cpp",
+    "ptcg_traditional_policy.cpp",
+    "ptcg_traditional_strategy.cpp",
+    "ptcg_traditional_trusted.cpp",
     "register_types.cpp",
 ]
 if deep_runtime:

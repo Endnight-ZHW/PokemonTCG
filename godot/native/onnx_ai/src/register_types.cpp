@@ -2,6 +2,7 @@
 
 #include "challenge_ai_math.hpp"
 #include "godot_rules_session.hpp"
+#include "native_traditional_ai.hpp"
 #if defined(PTCG_ENABLE_DEEP_RUNTIME)
 #include "native_deep_search.hpp"
 #include "onnx_inference.hpp"
@@ -17,6 +18,7 @@ void initialize_onnx_ai_module(ModuleInitializationLevel level) {
         return;
     }
     GDREGISTER_CLASS(ChallengeAIMath);
+    GDREGISTER_CLASS(NativeTraditionalAI);
 #if defined(PTCG_ENABLE_DEEP_RUNTIME)
     GDREGISTER_CLASS(OnnxInference);
     GDREGISTER_CLASS(NativeDeepSearch);

@@ -85,6 +85,20 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 		cache_ok = int(Dictionary(texture_cache.call("stats")).get("entries", -1)) == 0
 	var release_decks: Array[String] = []
 	var release_manifest: Dictionary = services.get("release_manifest", {})
+	var native_ai_surface_ok := ClassDB.class_exists("NativeTraditionalAI")
+	if native_ai_surface_ok:
+		var native_ai: Variant = ClassDB.instantiate("NativeTraditionalAI")
+		native_ai_surface_ok = (
+			native_ai != null
+			and native_ai.has_method("configure")
+			and native_ai.has_method("decide")
+			and native_ai.has_method("cancel")
+			and native_ai.has_method("reset_match")
+			and native_ai.has_method("get_contract")
+			and not native_ai.has_method("decide_shadow")
+			and not native_ai.has_method("debug_decide_with_provider")
+			and not native_ai.has_method("debug_determinize")
+		)
 	release_decks.assign(release_manifest.get("release_decks", []))
 	var deep_enabled := bool(release_manifest.get(
 		"deep_runtime_enabled", false))
@@ -115,6 +129,7 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 		or not license_ok
 		or not release_ui_resources_ok
 		or not cache_ok
+		or not native_ai_surface_ok
 		or not deep_fallback_ok
 	):
 		return _failure(4, "PHASE6_EXPORT_RELEASE_FAILED")
@@ -122,7 +137,8 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 		return _success(
 			(
 				"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 "
-				+ "licenses=1 ui_resources=1 deep=enabled fallback=challenge "
+				+ "licenses=1 ui_resources=1 native_ai_surface=1 "
+				+ "deep=enabled fallback=challenge "
 				+ "models=%d onnx_assets=%d "
 				+ "inferred_models=%d scenarios=%d"
 			)
@@ -137,7 +153,8 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 	return _success(
 		(
 			"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 "
-			+ "licenses=1 ui_resources=1 deep=disabled fallback=challenge "
+			+ "licenses=1 ui_resources=1 native_ai_surface=1 "
+			+ "deep=disabled fallback=challenge "
 			+ "models=0 onnx_assets=0"
 		)
 		% [str(services.get("app_version", ""))]

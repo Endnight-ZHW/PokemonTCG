@@ -2,6 +2,7 @@
 
 #include "ptcg_godot_value.hpp"
 
+
 #include <godot_cpp/core/class_db.hpp>
 
 #include <exception>
@@ -147,6 +148,9 @@ bool NativeRulesSession::set_catalog(const Dictionary &catalog) {
     try {
         session_->set_cards(ptcg::ai::value_from_godot(catalog));
         return true;
+    } catch (const std::exception &error) {
+        (void)error;
+        return false;
     } catch (...) {
         return false;
     }
@@ -296,10 +300,13 @@ bool NativeRulesSession::restore(
     int64_t native_rng_state
 ) {
     try {
-        return session_->restore(
+        std::string error;
+        const bool restored = session_->restore(
             ptcg::ai::value_from_godot(snapshot_value),
-            static_cast<std::uint32_t>(native_rng_state)
+            static_cast<std::uint32_t>(native_rng_state),
+            &error
         );
+        return restored;
     } catch (...) {
         return false;
     }
@@ -331,7 +338,7 @@ Dictionary NativeRulesSession::fork_apply_action_for_search(
     try {
         branch->session_ = session_->fork_for_search(
             static_cast<std::uint32_t>(native_rng_state));
-        Dictionary payload = result_dictionary(branch->session_->apply_action(
+        Dictionary payload = result_dictionary(branch->session_->apply_action_for_search(
             ptcg::ai::value_from_godot(action)));
         payload["search_session"] = branch;
         return payload;

@@ -1,10 +1,14 @@
 #pragma once
 
 #include "ptcg_game.hpp"
+#include "ptcg_typed_ir.hpp"
+#include "ptcg_typed_state.hpp"
 #include "ptcg_value.hpp"
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -57,6 +61,10 @@ public:
     );
 
     Value legal_actions(std::int32_t actor) const;
+    // Ungrouped, state-bound candidates for the native search controller.
+    // The reference remains valid until this session mutates or another actor
+    // is queried. Public bindings continue to expose grouped Action v4 data.
+    const Value &search_legal_action_candidates(std::int32_t actor) const;
     std::int64_t pokemon_max_hp(const Value &pokemon) const;
     std::int64_t pokemon_current_hp(const Value &pokemon) const;
     std::int64_t estimate_public_damage(
@@ -66,10 +74,19 @@ public:
         std::int64_t base_damage
     ) const;
     Value pending_choice(std::int32_t viewer) const;
+    // Search-only borrowed view. It remains valid until the session mutates.
+    const Value &search_pending_choice(std::int32_t viewer) const noexcept;
+    const typed::ChoiceView *typed_search_pending_choice(
+        std::int32_t viewer
+    ) const;
     // Native AI-only continuation handoff. Bindings deliberately do not
     // expose this value; it stays inside the C++ actor/search boundary.
     Value search_continuation() const;
     RulesSessionResult apply_action(const Value &action);
+    // AI-only strict fast path. The action must be one of the candidates
+    // generated for this exact revision/actor. Public callers continue to use
+    // apply_action(), which always performs an independent legality query.
+    RulesSessionResult apply_action_for_search(const Value &action);
     RulesSessionResult apply_choice(const Value &response);
     RulesSessionResult concede(std::int32_t actor);
 
@@ -87,20 +104,36 @@ public:
     std::unique_ptr<RulesSession> fork_for_search(
         std::uint32_t rng_state
     ) const;
+    // Frozen turn_beam_v2 clones a DTO before searching opponent replies.
+    // This compact COW projection preserves that clone's exact field semantics
+    // without serializing or deep-copying the complete Snapshot 3 payload.
+    std::unique_ptr<RulesSession> fork_for_reply_search() const;
 
     Value contract() const;
     Value journal() const;
     std::string state_hash() const;
     std::uint32_t rng_state() const noexcept;
     std::int64_t revision() const noexcept;
+    // Read-only C++ search view. This deliberately has no binding surface:
+    // callers inside the native planner may inspect recursively-COW state
+    // without allocating a Snapshot 3 clone at every node.
+    const Value &search_state() const noexcept;
+    const typed::GameState &typed_search_state() const;
 
 private:
     struct CatalogContext {
         Value cards;
+        std::shared_ptr<const typed::CardStringTable> card_strings;
+        typed::StateCodec state_codec;
+        typed::VmCatalog vm_catalog;
         NativeGameKernel game;
 
         explicit CatalogContext(Value value)
-            : cards(std::move(value)), game(cards) {}
+            : cards(std::move(value)),
+              card_strings(std::make_shared<typed::CardStringTable>(cards)),
+              state_codec(card_strings),
+              vm_catalog(cards, card_strings),
+              game(cards) {}
     };
 
     // Card definitions and rule kernels are immutable after a session starts.
@@ -120,9 +153,27 @@ private:
     std::uint32_t rng_state_ = 0;
     bool initialized_ = false;
     bool search_mode_ = false;
+    mutable std::int64_t legal_cache_revision_ = -1;
+    mutable std::int32_t legal_cache_actor_ = -1;
+    mutable Value legal_cache_candidates_ = Value::make_array();
+    mutable std::shared_ptr<const std::vector<typed::Action>>
+        typed_legal_cache_;
+    // The typed state is authoritative after every successful transaction.
+    // state_ is a recursively-COW, byte-equivalent VM execution projection.
+    std::shared_ptr<const typed::GameState> authoritative_state_;
+    mutable std::optional<typed::ChoiceView> typed_pending_cache_;
+    mutable std::int64_t typed_pending_cache_revision_ = -1;
+    mutable std::string typed_pending_cache_request_id_;
 
     const Value &cards() const noexcept;
     const NativeGameKernel &game() const noexcept;
+    const typed::GameState &typed_state() const;
+    bool commit_authoritative_state(std::string *error = nullptr);
+    bool populate_legal_cache(std::int32_t actor) const;
+    RulesSessionResult apply_action_impl(
+        const Value &action,
+        bool use_search_candidate_cache
+    );
 
     RulesSessionResult commit_game_result(
         const GameExecutionResult &result,

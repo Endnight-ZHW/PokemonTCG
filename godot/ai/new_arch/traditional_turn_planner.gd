@@ -134,6 +134,8 @@ static func plan_action(
 	var completion_reasons: Dictionary = {}
 	var belief_seeds: Array[int] = []
 	var trajectory_hash := "traditional_turn_planner:v2:trajectory:v1".sha256_text()
+	var debug_trajectory_events: Array[String] = []
+	var debug_states_by_fingerprint: Dictionary = {}
 	for sample_index in range(belief_samples):
 		if _is_cancelled(cancel_check):
 			return _cancelled(nodes_used)
@@ -184,6 +186,14 @@ static func plan_action(
 			int(planned.get("nodes_expanded", 0)),
 			str(planned.get("completion_reason", "")),
 		]).sha256_text()
+		for debug_event_value in planned.get("debug_trajectory_events", []):
+			debug_trajectory_events.append(str(debug_event_value))
+		for fingerprint_value in Dictionary(planned.get(
+			"debug_states_by_fingerprint", {})).keys():
+			var fingerprint := str(fingerprint_value)
+			if not debug_states_by_fingerprint.has(fingerprint):
+				debug_states_by_fingerprint[fingerprint] = Dictionary(planned.get(
+					"debug_states_by_fingerprint", {}))[fingerprint_value]
 		if bool(planned.get("cancelled", false)) or _is_cancelled(cancel_check):
 			return _cancelled(nodes_used)
 		if not bool(planned.get("success", false)):
@@ -327,6 +337,9 @@ static func plan_action(
 	result["search_depth_reached"] = max_path_depth
 	result["search_depth_completed"] = completed_depth
 	result["search_depth_stop_reason"] = completion_reason
+	if bool(config.get("internal_debug_trajectory", false)):
+		result["debug_trajectory_events"] = debug_trajectory_events
+		result["debug_states_by_fingerprint"] = debug_states_by_fingerprint
 	return result
 
 
@@ -447,6 +460,9 @@ static func _planner_config_from_request(request: Dictionary) -> Dictionary:
 		result["belief_samples"] = clampi(int(request["belief_samples"]), 1, 3)
 	if request.get("skip_mandatory") is bool:
 		result["skip_mandatory"] = bool(request["skip_mandatory"])
+	if OS.is_debug_build() and bool(request.get(
+		"internal_debug_trajectory", false)):
+		result["internal_debug_trajectory"] = true
 	# A private legality-smoke profile keeps the broad regression suite quick.
 	# The release client never sends this flag and cannot alter the production
 	# depth/width profile.

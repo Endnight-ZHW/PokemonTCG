@@ -1047,8 +1047,9 @@ func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
 		return Dictionary(params_cache[deck_key]).duplicate(true)
 	var preset_name := str(strategy.get("preset", NativeChallengeAI.STRONGEST_DIFFICULTY))
 	var preset := NativeChallengeAI.strongest_preset()
-	if NativeChallengeAI.DIFFICULTIES.has(preset_name):
-		preset = Dictionary(NativeChallengeAI.DIFFICULTIES[preset_name]).duplicate(true)
+	if preset_name != NativeChallengeAI.STRONGEST_DIFFICULTY:
+		push_error("Unsupported AI evaluation preset: %s" % preset_name)
+		_had_error = true
 	var engine_id := str(strategy.get("engine", DEFAULT_ENGINE))
 	var params := {
 		"simulation_budget": (
@@ -2050,10 +2051,19 @@ func _decide_action(
 		"seed": AIDecisionSeed.derive(
 			seed, state.revision, actor, "action", request_id),
 		"profile": profile_enabled,
+		# Evaluation already parallelizes whole matches. Keep each decision on one
+		# search worker so outer worker counts remain the only concurrency knob.
+		"internal_evaluation_batch": true,
 		"disable_cache": disable_ai_cache,
 		"disable_native_math": disable_native_math,
 		"actions": rows,
 	}
+	if (
+		OS.is_debug_build()
+		and OS.get_environment(
+			"PTCG_INTERNAL_NATIVE_PARALLEL_SAMPLE_TEST") == "1"
+	):
+		request["internal_evaluation_batch"] = false
 	if bool(strategy.get("internal_evaluation_smoke", false)):
 		request["internal_evaluation_smoke"] = true
 	if str(strategy.get("engine", DEFAULT_ENGINE)) == ENGINE_TURN_BEAM_V1:
@@ -2101,6 +2111,7 @@ func _decide_choice(
 		"seed": AIDecisionSeed.derive(
 			seed, state.revision, actor, request.request_type, request_id),
 		"profile": profile_enabled,
+		"internal_evaluation_batch": true,
 		"disable_cache": disable_ai_cache,
 		"disable_native_math": disable_native_math,
 	}, _strategy_inference(strategy, deck_key))

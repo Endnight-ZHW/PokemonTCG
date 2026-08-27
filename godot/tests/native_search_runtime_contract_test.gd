@@ -90,7 +90,9 @@ func _initialize() -> void:
 	var formal_state := GameState.from_dict(state)
 	var legal := engine.query_legal_action_groups(formal_state, 0)
 	if not legal.success:
-		push_error("formal legal action query failed")
+		push_error("formal legal action query failed: %s: %s" % [
+			legal.code, legal.message,
+		])
 		quit(1)
 		return
 	var actions: Array = []

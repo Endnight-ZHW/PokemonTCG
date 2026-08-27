@@ -3,6 +3,7 @@ extends SceneTree
 const CARDS_PATH := "res://data/cards.json"
 const DECKS_PATH := "res://data/decks.json"
 const CARD_IR_PATH := "res://data/card_ir_v3.json"
+const STRATEGIES_PATH := "res://data/ai_strategies.json"
 
 var failures: Array[String] = []
 
@@ -25,6 +26,100 @@ func _run() -> void:
 	var cards := _read_json(CARDS_PATH)
 	var card_ir := _read_json(CARD_IR_PATH)
 	var deck_specs := _read_json(DECKS_PATH)
+	var strategies := _read_json(STRATEGIES_PATH)
+	_check(
+		ClassDB.class_exists("NativeTraditionalAI"),
+		"NativeTraditionalAI GDExtension class is unavailable",
+	)
+	if ClassDB.class_exists("NativeTraditionalAI"):
+		var native_traditional: Variant = ClassDB.instantiate("NativeTraditionalAI")
+		var configured: Dictionary = native_traditional.configure(
+			cards, deck_specs, strategies)
+		var traditional_contract: Dictionary = native_traditional.get_contract()
+		var required_capabilities: Array[String] = [
+			"atomic_generation_cancellation",
+			"callback_free",
+			"typed_core_state_cache",
+			"typed_authoritative_core",
+			"typed_vm_ir",
+			"native_information_set",
+			"native_action_policy",
+			"native_position_evaluator",
+			"native_strategy_hooks",
+			"native_trusted_leaf_evaluator",
+			"native_trusted_action_evaluator",
+			"native_choice_policy",
+			"native_mandatory_tactics",
+			"native_setup_public_policy",
+			"native_repeatable_ability_guard",
+			"native_no_progress_loop_guard",
+			"native_turn_plan_cache",
+			"parallel_belief_samples",
+			"performance_counters",
+			"production_ready",
+		]
+		var missing_capabilities: Array[String] = []
+		for capability in required_capabilities:
+			if not bool(traditional_contract.get(capability, false)):
+				missing_capabilities.append(capability)
+		_check(
+			bool(configured.get("success", false))
+			and str(traditional_contract.get("engine_id", "")) == "turn_beam_v2"
+			and int(traditional_contract.get("max_depth", 0)) == 8
+			and int(traditional_contract.get("belief_samples", 0)) == 3
+			and int(traditional_contract.get("reply_depth", 0)) == 3
+			and int(traditional_contract.get("search_worker_count", 0)) == 3
+			and missing_capabilities.is_empty(),
+			"native traditional contract is invalid: %s"
+				% JSON.stringify(missing_capabilities),
+		)
+		for retired_field in [
+			"callback_free_decide",
+			"callback_free_choice_decide",
+			"shadow_oracle_required",
+			"shadow_oracle_available",
+			"shadow_provider_controller",
+			"shadow_provider_debug_only",
+			"typed_vm_transaction_bridge",
+			"native_turn_beam_v2",
+			"native_strategy_choice_hooks",
+			"native_public_choice_policy",
+			"native_forced_choice_policy",
+			"native_choice_oracle_free_gate",
+			"native_mandatory_immediate_win",
+			"native_mandatory_survival_backup",
+			"native_mandatory_safe_development",
+			"native_mandatory_public_backup_out",
+			"native_turn_plan_cache_tactical_guard",
+		]:
+			_check(
+				not traditional_contract.has(retired_field),
+				"retired native contract field remains: %s" % retired_field,
+			)
+		for contract_key_value in traditional_contract:
+			var contract_key := str(contract_key_value)
+			_check(
+				not contract_key.begins_with("native_trusted_")
+				or contract_key in [
+					"native_trusted_leaf_evaluator",
+					"native_trusted_action_evaluator",
+				],
+				"granular migration capability remains: %s" % contract_key,
+			)
+		_check(
+			not native_traditional.has_method("decide_shadow"),
+			"retired callback shadow entrypoint remains registered",
+		)
+		native_traditional.cancel(9)
+		var cancelled: Dictionary = native_traditional.decide({}, 9)
+		var next_generation: Dictionary = native_traditional.decide({}, 10)
+		_check(
+			bool(cancelled.get("cancelled", false))
+			and not bool(next_generation.get("cancelled", false))
+			and str(next_generation.get("error", ""))
+				== "native_traditional_root_actions_missing",
+			"native traditional generation cancellation diverged",
+		)
 	var contract_session: Variant = ClassDB.instantiate("NativeRulesSession")
 	contract_session.set_catalog(cards)
 	var orthworm := {
@@ -45,6 +140,11 @@ func _run() -> void:
 	_check(
 		int(core_contract.get("implemented_op_count", 0)) == 80
 		and int(core_contract.get("required_op_count", 0)) == 80
+		and bool(core_contract.get("typed_authoritative_state", false))
+		and bool(core_contract.get("typed_vm_ir", false))
+		and int(core_contract.get("typed_vm_program_count", 0)) > 0
+		and int(core_contract.get("typed_vm_command_count", 0)) > 0
+		and bool(core_contract.get("typed_choice_cache", false))
 		and int(core_contract.get("native_abi_version", 0)) == 2,
 		"Native ABI 2 rules/VM contract is incomplete",
 	)

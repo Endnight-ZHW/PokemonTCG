@@ -156,6 +156,9 @@ func plan(
 		"hash": "turn_beam_v2:trajectory:v1".sha256_text(),
 		"events": 0,
 	}
+	if bool(config.get("internal_debug_trajectory", false)):
+		trajectory["debug_events"] = []
+		trajectory["debug_states_by_fingerprint"] = {}
 	var root_candidate_signatures: Array[String] = []
 	for row_value in root_candidates:
 		var row: Dictionary = row_value
@@ -175,6 +178,7 @@ func plan(
 	var seen: Dictionary = {}
 	var root_order: Array[String] = []
 	var root_fingerprint := _state_fingerprint(root_state)
+	_record_debug_state(trajectory, root_fingerprint, root_state)
 
 	for root_index in range(root_candidates.size()):
 		if _is_cancelled(cancel_check):
@@ -213,6 +217,7 @@ func plan(
 			continue
 		var child: GameState = expanded["state"]
 		var child_fingerprint := _state_fingerprint(child)
+		_record_debug_state(trajectory, child_fingerprint, child)
 		var ended := _turn_has_ended(child, actor, action)
 		if not ended and child_fingerprint == root_fingerprint:
 			continue
@@ -357,6 +362,7 @@ func plan(
 					continue
 				var child: GameState = expanded["state"]
 				var child_fingerprint := _state_fingerprint(child)
+				_record_debug_state(trajectory, child_fingerprint, child)
 				var ended := _turn_has_ended(child, actor, action)
 				if not ended and child_fingerprint == parent_fingerprint:
 					continue
@@ -496,7 +502,7 @@ func plan(
 	var best: Dictionary = root_plans[0]
 	var sequence: Array[GameAction] = []
 	sequence.assign(best.get("sequence", []))
-	return {
+	var result := {
 		"success": true,
 		"engine_id": ENGINE_ID,
 		"action": best.get("action"),
@@ -524,6 +530,12 @@ func plan(
 		"stop_reason": completion_reason,
 		"error": "",
 	}
+	if trajectory.has("debug_events"):
+		result["debug_trajectory_events"] = Array(
+			trajectory["debug_events"]).duplicate()
+		result["debug_states_by_fingerprint"] = Dictionary(
+			trajectory.get("debug_states_by_fingerprint", {})).duplicate(true)
+	return result
 
 
 static func _apply_planned_action(
@@ -645,9 +657,11 @@ static func _score_opponent_response(
 				"reply_completion_reason": "frontier_exhausted",
 			}
 		reply_root = yielded["state"]
+		var reply_root_fingerprint := _state_fingerprint(reply_root)
+		_record_debug_state(trajectory, reply_root_fingerprint, reply_root)
 		_trace_event(
 			trajectory,
-			"reply_yield|state=" + _state_fingerprint(reply_root),
+			"reply_yield|state=" + reply_root_fingerprint,
 		)
 	if reply_root.is_terminal() or _decision_actor(reply_root) != opponent:
 		return {
@@ -781,6 +795,7 @@ static func _score_opponent_response(
 					trusted_leaf_evaluator,
 				)
 				var child_fingerprint := _state_fingerprint(child)
+				_record_debug_state(trajectory, child_fingerprint, child)
 				var ended := _turn_has_ended(child, opponent, action)
 				var node := {
 					"state": child,
@@ -1306,6 +1321,21 @@ static func _trace_event(trajectory: Dictionary, event: String) -> void:
 	var previous_hash := str(trajectory.get("hash", ""))
 	trajectory["hash"] = (previous_hash + "\n" + event).sha256_text()
 	trajectory["events"] = int(trajectory.get("events", 0)) + 1
+	if trajectory.has("debug_events"):
+		var debug_events: Array = trajectory["debug_events"]
+		debug_events.append(event)
+
+
+static func _record_debug_state(
+	trajectory: Dictionary,
+	fingerprint: String,
+	state: GameState,
+) -> void:
+	if not trajectory.has("debug_states_by_fingerprint") or state == null:
+		return
+	var states: Dictionary = trajectory["debug_states_by_fingerprint"]
+	if not states.has(fingerprint):
+		states[fingerprint] = state.to_dict()
 
 
 static func _failure(
@@ -1338,7 +1368,7 @@ static func _failure(
 	}
 
 
-# Compatibility helpers retained for the existing tactical contract tests.
+# Test-only projection retained for tactical selection goldens.
 static func _diverse_top_actions(
 	ranked: Array[Dictionary],
 	count: int,
@@ -1357,20 +1387,6 @@ static func _diverse_top_actions(
 		normalized.append(row)
 	normalized.sort_custom(AIPositionEvaluator.action_row_descending)
 	return AIPositionEvaluator.diverse_top_actions(normalized, count)
-
-
-static func _terminal_candidates(candidates: Array[Dictionary]) -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	for row_value in candidates:
-		var row: Dictionary = row_value
-		var action: GameAction = row.get("action")
-		if action != null and action.terminal:
-			result.append(row)
-	return result
-
-
-static func _board_score(player: PlayerState, catalog: CardCatalog) -> float:
-	return AIPositionEvaluator.board_score(player, catalog)
 
 
 static func _public_attack_profile(

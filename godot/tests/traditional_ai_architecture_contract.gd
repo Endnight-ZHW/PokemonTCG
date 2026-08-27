@@ -1,6 +1,8 @@
 extends SceneTree
 
 const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
+const NativeTraditionalOracleProviderScript = preload(
+	"res://ai/native_traditional_oracle_provider.gd")
 
 const RELEASE_DECK_KEYS := [
 	"colorless",
@@ -85,8 +87,8 @@ func _check_retired_ai_removed() -> void:
 			"AI evaluation runner still exposes the retired UCB engine")
 		_check(source.contains("Unsupported AI evaluation engine"),
 			"AI evaluation runner does not fail closed for unknown engines")
-	_check(NativeChallengeAI.heuristic_variants() == ["semantic_v2"],
-		"NativeChallengeAI still exposes a retired heuristic variant")
+	_check(NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT == "semantic_v2",
+		"NativeChallengeAI default heuristic changed")
 
 
 func _check_runtime_projection_boundary(
@@ -2777,7 +2779,7 @@ func _check_trusted_dynamic_scoring(catalog: CardCatalog) -> void:
 	)
 
 
-func _check_no_progress_action_cycle_guard(_catalog: CardCatalog) -> void:
+func _check_no_progress_action_cycle_guard(catalog: CardCatalog) -> void:
 	var worker := NativeChallengeAI.new()
 	var state := _planner_state()
 	state.phase = "MAIN"
@@ -2815,6 +2817,57 @@ func _check_no_progress_action_cycle_guard(_catalog: CardCatalog) -> void:
 		and after_no_progress[0].kind == "END_TURN",
 		"AI did not blacklist an action after a newer revision returned to the same state",
 	)
+	if ClassDB.class_exists("NativeTraditionalAI"):
+		var native: Variant = ClassDB.instantiate("NativeTraditionalAI")
+		var strategy_data: Variant = JSON.parse_string(
+			FileAccess.get_file_as_string("res://data/ai_strategies.json"))
+		var configured := (
+			native != null
+			and strategy_data is Dictionary
+			and bool(Dictionary(native.configure(
+				catalog.native_rules_catalog(), catalog.decks, strategy_data,
+			)).get("success", false))
+		)
+		if configured:
+			native.reset_match("cycle-guard-contract")
+			var native_request := {
+				"actor": 0,
+				"seed": TEST_SEED,
+				"match_seed": TEST_SEED,
+				"belief_samples": 1,
+				"internal_evaluation_smoke": true,
+				"match_instance_id": "cycle-guard-contract",
+				"revision": 41,
+				"actions": [trainer.to_dict()],
+				"public_snapshot": state.snapshot(),
+			}
+			state.revision = 41
+			native_request["public_snapshot"] = state.snapshot()
+			var native_first: Dictionary = native.decide(native_request, 1)
+			var native_same: Dictionary = native.decide(native_request, 2)
+			state.revision = 42
+			native_request["revision"] = 42
+			native_request["actions"] = [trainer.to_dict(), end_turn.to_dict()]
+			native_request["public_snapshot"] = state.snapshot()
+			var native_blocked: Dictionary = native.decide(native_request, 3)
+			var native_blocked_action := (
+				GameAction.from_dict(native_blocked.get("action", {}))
+				if native_blocked.get("action") is Dictionary
+				else null
+			)
+			var native_blocked_counters := Dictionary(
+				native_blocked.get("native_performance_counters", {}))
+			_check(
+				bool(native_first.get("success", false))
+				and bool(native_same.get("success", false))
+				and bool(native_blocked.get("success", false))
+				and native_blocked_action != null
+				and native_blocked_action.kind == "END_TURN"
+				and int(native_blocked_counters.get(
+					"root_actions_filtered", -1)) == 1,
+				"Native no-progress ledger diverged from the oracle: %s" %
+				JSON.stringify(native_blocked),
+			)
 
 
 func _check_cancel_prediction_uses_live_choice_policy(
@@ -3456,6 +3509,61 @@ func _check_mandatory_knockout(
 ) -> void:
 	if not registry.is_valid():
 		return
+	var native_mandatory: Variant = null
+	if ClassDB.class_exists("NativeTraditionalAI"):
+		native_mandatory = ClassDB.instantiate("NativeTraditionalAI")
+		var strategy_data: Variant = JSON.parse_string(
+			FileAccess.get_file_as_string("res://data/ai_strategies.json"))
+		if (
+			native_mandatory == null
+			or not strategy_data is Dictionary
+			or not bool(Dictionary(native_mandatory.configure(
+				catalog.native_rules_catalog(), catalog.decks, strategy_data,
+			)).get("success", false))
+		):
+			native_mandatory = null
+	var compare_native := func(
+		fixture_state: GameState,
+		fixture_actions: Array[GameAction],
+		oracle_result: Dictionary,
+		fixture_seed: int,
+		fixture_node_budget: int,
+		label: String,
+	) -> void:
+		if native_mandatory == null:
+			return
+		var action_rows: Array[Dictionary] = []
+		for fixture_action in fixture_actions:
+			action_rows.append(fixture_action.to_dict())
+		var native_result: Dictionary = native_mandatory.debug_mandatory_tactics(
+			fixture_state.snapshot(),
+			0,
+			action_rows,
+			fixture_seed,
+			TEST_SEED,
+			fixture_node_budget,
+		)
+		var oracle_action: GameAction = oracle_result.get("action")
+		var native_action := (
+			GameAction.from_dict(native_result.get("action", {}))
+			if native_result.get("action") is Dictionary
+			else null
+		)
+		_check(
+			bool(native_result.get("success", false))
+			and bool(native_result.get("resolved", false))
+				== bool(oracle_result.get("resolved", false))
+			and str(native_result.get("reason", ""))
+				== str(oracle_result.get("reason", ""))
+			and int(native_result.get("nodes_expanded", -1))
+				== int(oracle_result.get("nodes_expanded", -2))
+			and _intent_signature(native_action) == _intent_signature(oracle_action),
+			"Native mandatory tactics diverged for %s: %s / %s" % [
+				label,
+				JSON.stringify(native_result),
+				JSON.stringify(oracle_result),
+			],
+		)
 	var source := _planner_state()
 	source.set_type_matchups_enabled(false)
 	source.players[0].active.energy_card_ids = [
@@ -3484,6 +3592,7 @@ func _check_mandatory_knockout(
 		192,
 	)
 	var selected: GameAction = result.get("action")
+	compare_native.call(source, legal, result, TEST_SEED, 192, "fire_ko")
 	_check(
 		bool(result.get("resolved", false))
 		and str(result.get("reason", "")) == "immediate_knockout"
@@ -3513,6 +3622,14 @@ func _check_mandatory_knockout(
 		192,
 	)
 	var safe_evolution: GameAction = colorless_safe_result.get("action")
+	compare_native.call(
+		colorless_safe_state,
+		colorless_safe_actions,
+		colorless_safe_result,
+		TEST_SEED,
+		192,
+		"colorless_safe_development",
+	)
 	var colorless_worker := NativeChallengeAI.new()
 	var safe_diagnostics := colorless_worker.diagnose_decision(
 		colorless_safe_state,
@@ -3693,6 +3810,14 @@ func _check_mandatory_knockout(
 		colorless_win_info, colorless_win_state, 0, colorless_win_actions,
 		engine, registry.strategy_for("colorless"), TEST_SEED)
 	var winning_attack: GameAction = colorless_win_result.get("action")
+	compare_native.call(
+		colorless_win_state,
+		colorless_win_actions,
+		colorless_win_result,
+		TEST_SEED,
+		192,
+		"colorless_immediate_win",
+	)
 	_check(
 		bool(colorless_win_result.get("resolved", false))
 		and str(colorless_win_result.get("reason", "")) == "immediate_match_win"
@@ -3715,6 +3840,14 @@ func _check_mandatory_knockout(
 		threshold_info, colorless_threshold_state, 0, threshold_actions,
 		engine, registry.strategy_for("colorless"), TEST_SEED)
 	var threshold_attack: GameAction = threshold_result.get("action")
+	compare_native.call(
+		colorless_threshold_state,
+		threshold_actions,
+		threshold_result,
+		TEST_SEED,
+		192,
+		"colorless_damage_threshold",
+	)
 	_check(
 		bool(threshold_result.get("resolved", false))
 		and str(threshold_result.get("reason", "")) == "immediate_knockout"
@@ -3747,6 +3880,14 @@ func _check_mandatory_knockout(
 		TEST_SEED,
 	)
 	var survival_draw_action: GameAction = survival_draw_result.get("action")
+	compare_native.call(
+		survival_draw_state,
+		survival_draw_actions,
+		survival_draw_result,
+		TEST_SEED,
+		192,
+		"fire_seek_backup",
+	)
 	_check(
 		survival_draw_query.success
 		and inferred_pool.is_read_only()
@@ -3798,6 +3939,14 @@ func _check_mandatory_knockout(
 		TEST_SEED,
 	)
 	var imminent_draw_action: GameAction = imminent_draw_result.get("action")
+	compare_native.call(
+		imminent_draw_state,
+		imminent_draw_actions,
+		imminent_draw_result,
+		TEST_SEED,
+		192,
+		"fire_imminent_lethal",
+	)
 	_check(
 		imminent_draw_query.success
 		and opponent_public_pool.is_read_only()
@@ -3872,6 +4021,14 @@ func _check_mandatory_knockout(
 		registry.strategy_for("fire"),
 		TEST_SEED,
 	)
+	compare_native.call(
+		two_attachment_state,
+		two_attachment_actions,
+		two_attachment_result,
+		TEST_SEED,
+		192,
+		"two_attachment_not_imminent",
+	)
 	_check(
 		str(two_attachment_result.get("reason", ""))
 		!= "seek_only_backup_out",
@@ -3942,6 +4099,14 @@ func _check_mandatory_knockout(
 		direct_basic_info, direct_basic_state, 0, direct_basic_actions,
 		engine, registry.strategy_for("fire"), TEST_SEED)
 	var direct_basic_action: GameAction = direct_basic_result.get("action")
+	compare_native.call(
+		direct_basic_state,
+		direct_basic_actions,
+		direct_basic_result,
+		TEST_SEED,
+		192,
+		"direct_basic_backup",
+	)
 	_check(
 		moved_direct_basic
 		and str(direct_basic_result.get("reason", "")) == "establish_only_backup"
@@ -4266,6 +4431,14 @@ func _check_mandatory_knockout(
 		1,
 	)
 	var latios_low_budget_action: GameAction = latios_low_budget_result.get("action")
+	compare_native.call(
+		latios_state,
+		latios_high_actions,
+		latios_low_budget_result,
+		TEST_SEED + 1,
+		1,
+		"low_budget_second_attack_ko",
+	)
 	_check(
 		bool(latios_low_budget_result.get("resolved", false))
 		and str(latios_low_budget_result.get("reason", "")) in [
@@ -4435,6 +4608,65 @@ func _check_repeatable_ability_turn_guard(catalog: CardCatalog) -> void:
 		and reproducible_a == reproducible_b,
 		"Repeatable-ability guard is stateful or counted a previous turn",
 	)
+	if ClassDB.class_exists("NativeTraditionalAI"):
+		var native: Variant = ClassDB.instantiate("NativeTraditionalAI")
+		var strategy_data: Variant = JSON.parse_string(
+			FileAccess.get_file_as_string("res://data/ai_strategies.json"))
+		var configured := (
+			native != null
+			and strategy_data is Dictionary
+			and bool(Dictionary(native.configure(
+				catalog.native_rules_catalog(), catalog.decks, strategy_data,
+			)).get("success", false))
+		)
+		if configured:
+			native.reset_match("repeatable-guard")
+			# Restore the sixth current-turn entry removed by the reproducibility
+			# oracle above, then prove the native request boundary keeps only END.
+			state.action_log.append("玩家1 使用了特性「金属转移」。")
+			var native_request := {
+				"actor": 0,
+				"seed": TEST_SEED,
+				"match_seed": TEST_SEED,
+				"belief_samples": 1,
+				"internal_evaluation_smoke": true,
+				"match_instance_id": "repeatable-guard",
+				"revision": state.revision,
+				"actions": [ability.to_dict(), end_turn.to_dict()],
+				"public_snapshot": state.snapshot(),
+			}
+			var native_exhausted: Dictionary = native.decide(native_request, 1)
+			var native_action := (
+				GameAction.from_dict(native_exhausted.get("action", {}))
+				if native_exhausted.get("action") is Dictionary
+				else null
+			)
+			var native_counters := Dictionary(
+				native_exhausted.get("native_performance_counters", {}))
+			state.action_log.pop_back()
+			native.reset_match("repeatable-reproducible")
+			native_request["match_instance_id"] = "repeatable-reproducible"
+			native_request["actions"] = [ability.to_dict()]
+			native_request["public_snapshot"] = state.snapshot()
+			var native_available: Dictionary = native.decide(native_request, 2)
+			var available_action := (
+				GameAction.from_dict(native_available.get("action", {}))
+				if native_available.get("action") is Dictionary
+				else null
+			)
+			_check(
+				bool(native_exhausted.get("success", false))
+				and native_action != null
+				and native_action.kind == "END_TURN"
+				and int(native_counters.get("root_actions_filtered", -1)) == 1
+				and bool(native_available.get("success", false))
+				and available_action != null
+				and available_action.kind == "USE_ABILITY",
+				"Native repeatable-ability guard diverged from the oracle: %s / %s" % [
+					JSON.stringify(native_exhausted),
+					JSON.stringify(native_available),
+				],
+			)
 
 
 func _check_planner_contract(
@@ -4468,6 +4700,7 @@ func _check_planner_contract(
 	var strategy := registry.strategy_for("fire")
 	_check_sample_zero_reuse_equivalence(
 		information_set, legal, strategy, catalog)
+	var gd_plan_started_usec := Time.get_ticks_usec()
 	var plan_a := TraditionalTurnPlanner.plan_action(
 		request,
 		information_set,
@@ -4477,6 +4710,7 @@ func _check_planner_contract(
 		engine,
 		func() -> bool: return false,
 	)
+	var gd_plan_elapsed_usec := Time.get_ticks_usec() - gd_plan_started_usec
 	var bait_request := request.duplicate(true)
 	bait_request["state"] = {
 		"players": [{"hand": ["private-bait-a"]}, {"deck": ["private-bait-b"]}],
@@ -4513,6 +4747,19 @@ func _check_planner_contract(
 		return
 	var selected_a: GameAction = plan_a.get("action")
 	var selected_b: GameAction = plan_b.get("action")
+	_check_native_controller_contract(
+		state,
+		request,
+		information_set,
+		legal,
+		strategy,
+		registry,
+		catalog,
+		engine,
+		plan_a,
+		selected_a,
+		gd_plan_elapsed_usec,
+	)
 	_check(_is_supplied_legal_action(selected_a, legal),
 		"TraditionalTurnPlanner returned an action outside the legal root set")
 	_check(
@@ -4817,6 +5064,715 @@ func _check_planner_contract(
 		and _intent_signature(attachment) == _intent_signature(revised_attachment),
 		"TraditionalTurnPlanner turn intent did not survive revision/reindexing",
 	)
+
+
+func _check_native_controller_contract(
+	state: GameState,
+	request: Dictionary,
+	information_set: AIInformationSet,
+	legal: Array[GameAction],
+	strategy: Variant,
+	registry: AIStrategyRegistry,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	plan_a: Dictionary,
+	selected_a: GameAction,
+	gd_plan_elapsed_usec: int,
+) -> void:
+	if ClassDB.class_exists("NativeTraditionalAI"):
+		var native_controller: Variant = ClassDB.instantiate("NativeTraditionalAI")
+		var native_strategy_catalog: Variant = JSON.parse_string(
+			FileAccess.get_file_as_string("res://data/ai_strategies.json"))
+		var native_configured: Dictionary = native_controller.configure(
+			catalog.native_rules_catalog(), catalog.decks,
+			native_strategy_catalog if native_strategy_catalog is Dictionary else {})
+		var action_wires: Array[Dictionary] = []
+		for action in legal:
+			action_wires.append(action.to_dict())
+		var public_choice := ChoiceView.new(
+			"choice:native-public-turn-order",
+			state.revision,
+			"choose_turn_order",
+			0,
+			"选择先后手",
+			[
+				{"option_id": "turn:second", "label": "后手"},
+				{"option_id": "turn:first", "label": "先手"},
+			],
+			1,
+			1,
+		)
+		var public_choice_request := {
+			"kind": "choice",
+			"actor": 0,
+			"revision": state.revision,
+			"request_id": "native-public-choice",
+			"seed": TEST_SEED,
+			"match_seed": TEST_SEED,
+			"mode": "challenge",
+			"engine": NativeChallengeAI.TRADITIONAL_ENGINE_ID,
+			"deck_key": "fire",
+			"state": AIRuntimeStateProjection.project(state, 0),
+			"choice": public_choice.to_dict(),
+		}
+		var oracle_public_choice := NativeChallengeAI.new().decide(
+			public_choice_request,
+			func() -> bool: return false,
+		)
+		var native_public_choice: Dictionary = native_controller.decide(
+			public_choice_request, 100)
+		var native_public_choice_counters := Dictionary(
+			native_public_choice.get("native_performance_counters", {}))
+		_check(
+			bool(native_configured.get("success", false))
+			and bool(oracle_public_choice.get("success", false))
+			and bool(native_public_choice.get("success", false))
+			and native_public_choice.get("choice_response", {})
+				== oracle_public_choice.get("choice_response", {})
+			and str(native_public_choice.get("strategy_id", ""))
+				== str(oracle_public_choice.get("strategy_id", ""))
+			and int(native_public_choice.get("strategy_version", -1))
+				== int(oracle_public_choice.get("strategy_version", -2))
+			and str(native_public_choice.get("strategy_hash", ""))
+				== str(oracle_public_choice.get("strategy_hash", ""))
+			and int(native_public_choice_counters.get("provider_callbacks", -1)) == 0
+			and int(native_public_choice_counters.get("choice_callbacks", -1)) == 0,
+			"Callback-free public Choice diverged from the oracle: %s / %s" % [
+				JSON.stringify(native_public_choice),
+				JSON.stringify(oracle_public_choice),
+			],
+		)
+		var full_native_request := {
+			"kind": "action",
+			"actor": 0,
+			"revision": state.revision,
+			"request_id": "native-full-action-contract",
+			"match_instance_id": "native-full-action-contract",
+			"seed": TEST_SEED,
+			"match_seed": information_set.match_seed(),
+			"mode": "challenge",
+			"engine": NativeChallengeAI.TRADITIONAL_ENGINE_ID,
+			"deck_key": "fire",
+			"internal_evaluation_smoke": true,
+			"actions": action_wires,
+			"state": AIRuntimeStateProjection.project(state, 0),
+		}
+		var oracle_full_worker := NativeChallengeAI.new()
+		var oracle_full_action := oracle_full_worker.decide(
+			full_native_request,
+			func() -> bool: return false,
+		)
+		native_controller.reset_match("native-full-action-contract")
+		var native_full_action: Dictionary = native_controller.decide(
+			full_native_request, 200)
+		var full_action_fields := [
+			"action",
+			"nodes_expanded",
+			"trajectory_hash",
+			"decision_semantic_hash",
+			"decision_origin",
+			"planner_score_milli",
+			"belief_samples",
+			"belief_consensus",
+			"forced_tactic",
+			"turn_plan_size",
+			"turn_plan_cache_hit",
+			"requested_depth",
+			"completed_depth",
+			"max_path_depth",
+			"reply_completed_depth",
+			"reply_depth_applicable",
+			"reply_requested_depth",
+			"reply_completion_reason",
+			"opponent_strategy_id",
+			"layers_completed",
+			"completion_reason",
+			"search_depth_applicable",
+			"search_depth_requested",
+			"search_depth_reached",
+			"search_depth_completed",
+			"search_depth_stop_reason",
+			"strategy_id",
+			"strategy_version",
+			"strategy_hash",
+			"turn_goal",
+		]
+		var full_action_differences := {}
+		for field in full_action_fields:
+			if (
+				AIPositionEvaluator.stable_variant_signature(
+					native_full_action.get(field))
+				!= AIPositionEvaluator.stable_variant_signature(
+					oracle_full_action.get(field))
+			):
+				full_action_differences[field] = {
+					"native": native_full_action.get(field),
+					"oracle": oracle_full_action.get(field),
+				}
+		_check(
+			bool(oracle_full_action.get("success", false))
+			and bool(native_full_action.get("success", false))
+			and full_action_differences.is_empty(),
+			"Callback-free full Challenge action diverged: %s" %
+			JSON.stringify(full_action_differences),
+		)
+		var cached_state := GameState.from_dict(state.snapshot())
+		var cached_first_action := (
+			GameAction.from_dict(oracle_full_action.get("action", {}))
+			if oracle_full_action.get("action") is Dictionary
+			else null
+		)
+		var cached_step := (
+			engine.apply_action(
+				cached_state,
+				cached_first_action,
+				PortableRandomSource.new(TEST_SEED),
+			)
+			if cached_first_action != null
+			else null
+		)
+		var cached_query := engine.query_legal_action_groups(cached_state, 0)
+		var cached_action_rows: Array[Dictionary] = []
+		if cached_query.success:
+			for cached_action_value in cached_query.concrete_actions():
+				cached_action_rows.append(cached_action_value.to_dict())
+		var cached_request := full_native_request.duplicate(true)
+		cached_request["revision"] = cached_state.revision
+		cached_request["request_id"] = "native-full-action-cache-contract"
+		cached_request["actions"] = cached_action_rows
+		cached_request["state"] = AIRuntimeStateProjection.project(cached_state, 0)
+		var oracle_cached_action := oracle_full_worker.decide(
+			cached_request,
+			func() -> bool: return false,
+		)
+		var native_cached_action: Dictionary = native_controller.decide(
+			cached_request, 201)
+		var cached_differences := {}
+		for field in full_action_fields:
+			if (
+				AIPositionEvaluator.stable_variant_signature(
+					native_cached_action.get(field))
+				!= AIPositionEvaluator.stable_variant_signature(
+					oracle_cached_action.get(field))
+			):
+				cached_differences[field] = {
+					"native": native_cached_action.get(field),
+					"oracle": oracle_cached_action.get(field),
+				}
+		_check(
+			cached_step != null
+			and cached_step.success
+			and cached_query.success
+			and bool(oracle_cached_action.get("success", false))
+			and bool(native_cached_action.get("success", false))
+			and cached_differences.is_empty(),
+			"Callback-free native follow-up diverged: %s / %s / %s" % [
+				JSON.stringify(cached_differences),
+				JSON.stringify(native_cached_action),
+				JSON.stringify(oracle_cached_action),
+			],
+		)
+		var plan_cache_state := _planner_state()
+		plan_cache_state.players[0].bench[0] = PokemonState.new("svi-chim")
+		plan_cache_state.players[0].bench[0].placed_this_turn = false
+		plan_cache_state.players[0].deck.erase("svi-chim")
+		plan_cache_state.players[0].hand.append("svi-hrot")
+		plan_cache_state.players[0].prizes.erase("svi-hrot")
+		var plan_cache_query := engine.query_legal_action_groups(plan_cache_state, 0)
+		var plan_cache_rows: Array[Dictionary] = []
+		if plan_cache_query.success:
+			for plan_cache_action in plan_cache_query.concrete_actions():
+				plan_cache_rows.append(plan_cache_action.to_dict())
+		var plan_cache_request := full_native_request.duplicate(true)
+		plan_cache_request.erase("internal_evaluation_smoke")
+		plan_cache_request["match_instance_id"] = "native-plan-cache-contract"
+		plan_cache_request["request_id"] = "native-plan-cache-first"
+		plan_cache_request["revision"] = plan_cache_state.revision
+		plan_cache_request["actions"] = plan_cache_rows
+		plan_cache_request["state"] = AIRuntimeStateProjection.project(
+			plan_cache_state, 0)
+		var plan_cache_oracle_worker := NativeChallengeAI.new()
+		var plan_cache_oracle_first := plan_cache_oracle_worker.decide(
+			plan_cache_request,
+			func() -> bool: return false,
+		)
+		native_controller.reset_match("native-plan-cache-contract")
+		var plan_cache_native_first: Dictionary = native_controller.decide(
+			plan_cache_request, 300)
+		var plan_cache_first_action := (
+			GameAction.from_dict(plan_cache_oracle_first.get("action", {}))
+			if plan_cache_oracle_first.get("action") is Dictionary
+			else null
+		)
+		var plan_cache_first_step := (
+			engine.apply_action(
+				plan_cache_state,
+				plan_cache_first_action,
+				PortableRandomSource.new(TEST_SEED),
+			)
+			if plan_cache_first_action != null
+			else null
+		)
+		var plan_cache_next_query := engine.query_legal_action_groups(
+			plan_cache_state, 0)
+		var plan_cache_next_rows: Array[Dictionary] = []
+		if plan_cache_next_query.success:
+			for plan_cache_action in plan_cache_next_query.concrete_actions():
+				plan_cache_next_rows.append(plan_cache_action.to_dict())
+		plan_cache_request["request_id"] = "native-plan-cache-second"
+		plan_cache_request["revision"] = plan_cache_state.revision
+		plan_cache_request["actions"] = plan_cache_next_rows
+		plan_cache_request["state"] = AIRuntimeStateProjection.project(
+			plan_cache_state, 0)
+		var plan_cache_oracle_second := plan_cache_oracle_worker.decide(
+			plan_cache_request,
+			func() -> bool: return false,
+		)
+		var plan_cache_native_second: Dictionary = native_controller.decide(
+			plan_cache_request, 301)
+		var plan_cache_differences := {}
+		for field in full_action_fields:
+			if (
+				AIPositionEvaluator.stable_variant_signature(
+					plan_cache_native_second.get(field))
+				!= AIPositionEvaluator.stable_variant_signature(
+					plan_cache_oracle_second.get(field))
+			):
+				plan_cache_differences[field] = {
+					"native": plan_cache_native_second.get(field),
+					"oracle": plan_cache_oracle_second.get(field),
+				}
+		_check(
+			plan_cache_query.success
+			and bool(plan_cache_oracle_first.get("success", false))
+			and bool(plan_cache_native_first.get("success", false))
+			and plan_cache_first_step != null
+			and plan_cache_first_step.success
+			and plan_cache_next_query.success
+			and plan_cache_next_rows.size() > 1
+			and bool(plan_cache_oracle_second.get("turn_plan_cache_hit", false))
+			and bool(plan_cache_native_second.get("turn_plan_cache_hit", false))
+			and plan_cache_differences.is_empty(),
+			"Native multi-step plan cache diverged: %s / %s / %s / %s" % [
+				JSON.stringify(plan_cache_differences),
+				JSON.stringify(plan_cache_oracle_first),
+				JSON.stringify(plan_cache_oracle_second),
+				JSON.stringify(plan_cache_native_second),
+			],
+		)
+		var trusted_fixture := information_set.sample_state(TEST_SEED)
+		if trusted_fixture != null:
+			var trusted_oracle := NativeChallengeAI.new()
+			for trusted_actor in [0, 1]:
+				var expected_trusted := float(trusted_oracle.call(
+					"_traditional_leaf_score", trusted_fixture,
+					trusted_actor, catalog))
+				var native_trusted: Dictionary = native_controller.debug_trusted_leaf_score(
+					trusted_fixture.snapshot(), trusted_actor, TEST_SEED)
+				_check(
+					bool(native_trusted.get("success", false))
+					and is_equal_approx(float(native_trusted.get("score", NAN)),
+						expected_trusted),
+					"Native trusted leaf score diverged for actor %d: %.6f != %.6f" % [
+						trusted_actor,
+						float(native_trusted.get("score", NAN)),
+						expected_trusted,
+					],
+				)
+		for native_deck_key in RELEASE_DECK_KEYS:
+			var strategy_state := state.clone_state()
+			strategy_state.set_type_matchups_enabled(false)
+			strategy_state.public_deck_keys = [native_deck_key, native_deck_key]
+			var strategy_info := AIInformationSet.capture_view_only(
+				strategy_state, 0, catalog, [], [], TEST_SEED)
+			var native_strategy := registry.strategy_for(native_deck_key)
+			var strategy_actions: Array[Dictionary] = []
+			var expected_action_scores: Array[int] = []
+			var strategy_semantics := CardSemanticCatalog.new(catalog)
+			for strategy_action in legal:
+				strategy_actions.append(strategy_action.to_dict())
+				var action_view := strategy_info.read_only_view_for_legal_actions(
+					[strategy_action])
+				expected_action_scores.append(roundi(float(
+					native_strategy.action_score(
+						action_view,
+						strategy_action.to_dict(),
+						AIPositionEvaluator.semantic_context_for_action(
+							strategy_action, strategy_semantics),
+					)
+				) * AIPositionEvaluator.SCORE_SCALE))
+			var state_view := strategy_info.shared_read_only_view()
+			var expected_state_score := roundi(float(native_strategy.state_score(
+				state_view,
+				AIPositionEvaluator.semantic_context_for_view(
+					state_view, strategy_semantics),
+			)) * AIPositionEvaluator.SCORE_SCALE)
+			var native_strategy_scores: Dictionary = (
+				native_controller.debug_strategy_scores(
+					strategy_state.snapshot(), 0, strategy_actions))
+			var native_action_scores: Array = native_strategy_scores.get(
+				"action_scores", [])
+			var native_strategy_matches := (
+				bool(native_strategy_scores.get("success", false))
+				and roundi(float(native_strategy_scores.get("state_score", 0.0))
+					* AIPositionEvaluator.SCORE_SCALE) == expected_state_score
+				and native_action_scores.size() == expected_action_scores.size()
+			)
+			if native_strategy_matches:
+				for score_index in range(expected_action_scores.size()):
+					if roundi(float(native_action_scores[score_index])
+						* AIPositionEvaluator.SCORE_SCALE) != expected_action_scores[score_index]:
+						native_strategy_matches = false
+						break
+			_check(native_strategy_matches,
+				"Native strategy hook diverged for deck %s" % native_deck_key)
+			var native_trusted_actions: Dictionary = (
+				native_controller.debug_trusted_action_scores(
+					strategy_state.snapshot(), 0, strategy_actions, TEST_SEED))
+			var native_trusted_rows: Array = native_trusted_actions.get("rows", [])
+			var native_trusted_actions_match := (
+				bool(native_trusted_actions.get("success", false))
+				and native_trusted_rows.size() == legal.size()
+			)
+			var trusted_action_oracle := NativeChallengeAI.new()
+			if native_trusted_actions_match:
+				for trusted_action_index in range(legal.size()):
+					var trusted_action: GameAction = legal[trusted_action_index]
+					var trusted_row := Dictionary(
+						native_trusted_rows[trusted_action_index])
+					var expected_supported := true
+					var row_supported := bool(trusted_row.get("supported", false))
+					if expected_supported and not row_supported:
+						native_trusted_actions_match = false
+						break
+					if not row_supported:
+						continue
+					var expected_trusted_action_score := float(
+						trusted_action_oracle.call(
+							"_traditional_action_candidate_score",
+							strategy_state,
+							0,
+							trusted_action,
+							native_deck_key,
+							catalog,
+						))
+					if not is_equal_approx(
+						float(trusted_row.get("score", NAN)),
+						expected_trusted_action_score,
+					):
+						native_trusted_actions_match = false
+						break
+			_check(
+				native_trusted_actions_match,
+				"Native trusted terminal/setup action score diverged for deck %s"
+					% native_deck_key,
+			)
+			var choice_cards_by_deck := {
+				"fire": ["svi-chim", "svi-monf", "svi-infr", "svi-erec"],
+				"water": ["sv2-38", "sv2-staryu", "sv2-starm", "sv2-grex"],
+				"psychic": ["sv1-107", "sv1-108", "sv1-104", "sv1-ener-5"],
+				"lightning": ["svl-mare2", "svl-flaa2", "svl-pikaex"],
+				"fighting": ["svf-rio", "svf-luca", "svf-scyt", "svf-klea"],
+				"colorless": ["svi-tand", "svi-maus", "svi-dtur"],
+				"darkness": ["svd-doduo", "svd-dodrio", "svd-dark-patch"],
+				"dragon": ["svg-swa", "svg-alt", "sv1-ener-3", "sv1-ener-8"],
+				"grass": ["svg2-turt", "svg2-grot", "svg2-tort", "svg2-gard"],
+				"steel": ["svm-bronzor", "svm-bronzong", "svm-zacian"],
+			}
+			var choice_options: Array[Dictionary] = []
+			for choice_index in range(Array(
+				choice_cards_by_deck[native_deck_key]).size()):
+				var choice_card_id := str(Array(
+					choice_cards_by_deck[native_deck_key])[choice_index])
+				choice_options.append({
+					"id": "choice-%d" % choice_index,
+					"ref": {
+						"kind": "card",
+						"player": 0,
+						"zone": "hand",
+						"index": choice_index,
+						"card_id": choice_card_id,
+					},
+				})
+			var choice_view := {
+				"schema_version": 2,
+				"request_id": "native-choice-hook:%s" % native_deck_key,
+				"base_revision": strategy_state.revision,
+				"player": 0,
+				"request_type": "select_card",
+				"prompt": "",
+				"options": choice_options,
+				"min_select": 1,
+				"max_select": 1,
+				"allow_duplicates": false,
+				"can_cancel": false,
+				"presentation": {"purpose": "search"},
+			}
+			var expected_choice_scores: Array[int] = []
+			var choice_info_view := strategy_info.shared_read_only_view()
+			for choice_option in choice_options:
+				expected_choice_scores.append(roundi(float(
+					native_strategy.choice_score(
+						choice_info_view, choice_view, choice_option, {})
+				) * AIPositionEvaluator.SCORE_SCALE))
+			var native_choice_scores: Dictionary = (
+				native_controller.debug_strategy_choice_scores(
+					strategy_state.snapshot(), 0, choice_view, choice_options))
+			var native_choice_values: Array = native_choice_scores.get(
+				"choice_scores", [])
+			var native_choice_matches := (
+				bool(native_choice_scores.get("success", false))
+				and native_choice_values.size() == expected_choice_scores.size()
+			)
+			if native_choice_matches:
+				for choice_score_index in range(expected_choice_scores.size()):
+					if roundi(float(native_choice_values[choice_score_index])
+						* AIPositionEvaluator.SCORE_SCALE) != expected_choice_scores[
+							choice_score_index]:
+						native_choice_matches = false
+						break
+			_check(native_choice_matches,
+				"Native choice strategy hook diverged for deck %s" % native_deck_key)
+		var semantic_boundary_state := state.clone_state()
+		semantic_boundary_state.public_deck_keys = ["fire", "fire"]
+		semantic_boundary_state.players[0].hand.assign(["sv2-catch"])
+		semantic_boundary_state.players[1].active = PokemonState.new("svi-ente")
+		var disruption_action := GameAction.create(
+			"PLAY_TRAINER",
+			{},
+			0,
+			EntityRef.new("card", 0, "hand", "", 0, "", "sv2-catch"),
+		)
+		disruption_action.base_revision = semantic_boundary_state.revision
+		var boundary_info := AIInformationSet.capture_view_only(
+			semantic_boundary_state, 0, catalog, [disruption_action], [], TEST_SEED)
+		var boundary_strategy := registry.strategy_for("fire")
+		var boundary_semantics := CardSemanticCatalog.new(catalog)
+		var boundary_expected := roundi(float(boundary_strategy.action_score(
+			boundary_info.read_only_view_for_legal_actions([disruption_action]),
+			disruption_action.to_dict(),
+			AIPositionEvaluator.semantic_context_for_action(
+				disruption_action, boundary_semantics),
+		)) * AIPositionEvaluator.SCORE_SCALE)
+		var boundary_native: Dictionary = native_controller.debug_strategy_scores(
+			semantic_boundary_state.snapshot(), 0, [disruption_action.to_dict()])
+		var boundary_scores: Array = boundary_native.get("action_scores", [])
+		_check(
+			bool(boundary_native.get("success", false))
+			and boundary_scores.size() == 1
+			and roundi(float(boundary_scores[0])
+				* AIPositionEvaluator.SCORE_SCALE) == boundary_expected,
+			"Native action strategy escaped semantic_context_for_action",
+		)
+		var oracle_provider: RefCounted = NativeTraditionalOracleProviderScript.new()
+		var provider_ready: bool = bool(oracle_provider.call("configure",
+			information_set,
+			engine,
+			strategy,
+			catalog,
+			0,
+			information_set.match_seed(),
+		))
+		var public_snapshot := information_set.export_mutable()
+		var native_sample: Dictionary = native_controller.debug_determinize(
+			public_snapshot, 0, TEST_SEED, information_set.match_seed())
+		var oracle_sample := information_set.sample_state(TEST_SEED)
+		_check(
+			bool(native_sample.get("success", false))
+			and oracle_sample != null
+			and AIPositionEvaluator.stable_variant_signature(
+				native_sample.get("snapshot", {}))
+				== AIPositionEvaluator.stable_variant_signature(
+					oracle_sample.snapshot()),
+			"Native traditional information-set determinization diverged from the oracle",
+		)
+		var runtime_projection := AIRuntimeStateProjection.project(state, 0)
+		var native_runtime_sample: Dictionary = native_controller.debug_determinize(
+			runtime_projection, 0, TEST_SEED, information_set.match_seed())
+		_check(
+			bool(native_runtime_sample.get("success", false))
+			and oracle_sample != null
+			and AIPositionEvaluator.stable_variant_signature(
+				native_runtime_sample.get("snapshot", {}))
+				== AIPositionEvaluator.stable_variant_signature(
+					oracle_sample.snapshot()),
+			"Native ai_public_state_v1 determinization diverged from the oracle",
+		)
+		var native_controller_request := {
+			"actor": 0,
+			"seed": TEST_SEED,
+			"match_seed": information_set.match_seed(),
+			"belief_samples": 1,
+			"actions": action_wires,
+			"public_snapshot": public_snapshot,
+		}
+		var native_plan_started_usec := Time.get_ticks_usec()
+		var native_plan: Dictionary = native_controller.debug_decide_with_provider(
+			native_controller_request,
+			1,
+			Callable(oracle_provider, "dispatch"),
+		)
+		var callback_free_plan: Dictionary = native_controller.decide(
+			native_controller_request, 2)
+		var callback_free_counters := Dictionary(
+			callback_free_plan.get("native_performance_counters", {}))
+		var callback_free_action := (
+			GameAction.from_dict(callback_free_plan.get("action", {}))
+			if callback_free_plan.get("action") is Dictionary
+			else null
+		)
+		var native_plan_elapsed_usec := Time.get_ticks_usec() - native_plan_started_usec
+		if OS.get_environment("PTCG_NATIVE_TIMING") == "1":
+			print("NATIVE_TRADITIONAL_TIMING ", JSON.stringify({
+				"gd_usec": gd_plan_elapsed_usec,
+				"native_usec": native_plan_elapsed_usec,
+				"nodes": int(native_plan.get("nodes_expanded", 0)),
+			}))
+		var native_action: GameAction = (
+			GameAction.from_dict(native_plan.get("action", {}))
+			if native_plan.get("action") is Dictionary
+			else null
+		)
+		var native_performance_counters := Dictionary(
+			native_plan.get("native_performance_counters", {}))
+		var native_sequence_wires: Array = native_plan.get("sequence", [])
+		var oracle_sequence: Array = plan_a.get("turn_plan", [])
+		var native_cache_rows: Array = native_plan.get("cache_preconditions", [])
+		var native_plan_steps_match := (
+			native_sequence_wires.size() == oracle_sequence.size()
+			and native_cache_rows.size() == oracle_sequence.size()
+		)
+		if native_plan_steps_match:
+			for step_index in range(oracle_sequence.size()):
+				var native_step_action := GameAction.from_dict(
+					native_sequence_wires[step_index])
+				var oracle_step: Dictionary = oracle_sequence[step_index]
+				var native_precondition: Dictionary = native_cache_rows[step_index]
+				if (
+					str(TraditionalTurnPlanner.action_intent(
+						native_step_action).get("signature", ""))
+						!= str(oracle_step.get("signature", ""))
+					or str(native_precondition.get(
+						"expected_public_fingerprint", ""))
+						!= str(oracle_step.get("expected_public_fingerprint", ""))
+					or int(native_precondition.get("expected_actor", -1))
+						!= int(oracle_step.get("expected_actor", -2))
+					or str(native_precondition.get("expected_phase", ""))
+						!= str(oracle_step.get("expected_phase", ""))
+				):
+					native_plan_steps_match = false
+					break
+		_check(
+			bool(native_configured.get("success", false))
+			and provider_ready
+			and bool(native_plan.get("success", false))
+			and bool(native_plan.get("native_determinization", false))
+			and int(native_plan.get("native_trusted_leaf_mismatches", -1)) == 0
+			and int(native_performance_counters.get(
+				"action_score_callbacks", -1)) == 0
+			and int(native_performance_counters.get(
+				"choice_callbacks", -1)) == 0
+			and int(native_performance_counters.get(
+				"search_worker_count", -1)) == 1
+			and bool(callback_free_plan.get("success", false))
+			and int(callback_free_counters.get("provider_callbacks", -1)) == 0
+			and int(callback_free_counters.get("action_score_callbacks", -1)) == 0
+			and int(callback_free_counters.get("choice_callbacks", -1)) == 0
+			and _is_supplied_legal_action(callback_free_action, legal)
+			and int(callback_free_plan.get("nodes_expanded", 0)) > 0
+			and _intent_signature(native_action) == _intent_signature(selected_a)
+			and native_plan_steps_match
+			and int(native_plan.get("score_milli", -999999999))
+				== int(plan_a.get("score_milli", -999999998))
+			and int(native_plan.get("nodes_expanded", -1))
+				== int(plan_a.get("nodes_expanded", -2))
+			and int(native_plan.get("completed_depth", -1))
+				== int(plan_a.get("completed_depth", -2))
+			and int(native_plan.get("max_path_depth", -1))
+				== int(plan_a.get("max_path_depth", -2))
+			and int(native_plan.get("reply_completed_depth", -1))
+				== int(plan_a.get("reply_completed_depth", -2))
+			and str(native_plan.get("completion_reason", ""))
+				== str(plan_a.get("completion_reason", ""))
+			and str(native_plan.get("trajectory_hash", ""))
+				== str(plan_a.get("trajectory_hash", ""))
+			and int(native_plan.get("belief_samples", 0))
+				== int(plan_a.get("belief_samples", -1))
+			and int(native_plan.get("belief_consensus", 0))
+				== int(plan_a.get("belief_consensus", -1))
+			and native_plan.get("root_signatures_attempted", [])
+				== plan_a.get("root_signatures_attempted", [])
+			and native_plan.get("root_sample_counts", {})
+				== plan_a.get("root_sample_counts", {})
+			and str(native_plan.get("belief_seed_hash", ""))
+				== str(plan_a.get("belief_seed_hash", ""))
+			and str(native_plan.get("opponent_strategy_id", ""))
+				== str(plan_a.get("opponent_strategy_id", ""))
+			and int(native_plan.get("layers_completed", -1))
+				== int(plan_a.get("layers_completed", -2))
+			and str(native_plan.get("reply_completion_reason", ""))
+				== str(plan_a.get("reply_completion_reason", "")),
+			"Native C++ turn_beam_v2 controller diverged from its Godot semantic oracle: %s" % [
+				str({"oracle": plan_a, "native": native_plan}),
+			],
+		)
+		var trusted_worker := NativeChallengeAI.new()
+		var trusted_leaf := Callable(trusted_worker, "_traditional_leaf_score")
+		var trusted_plan := TraditionalTurnPlanner.plan_action(
+			request,
+			information_set,
+			legal,
+			strategy,
+			catalog,
+			engine,
+			func() -> bool: return false,
+			trusted_leaf,
+		)
+		var trusted_provider: RefCounted = NativeTraditionalOracleProviderScript.new()
+		var trusted_provider_ready: bool = bool(trusted_provider.call("configure",
+			information_set,
+			engine,
+			strategy,
+			catalog,
+			0,
+			information_set.match_seed(),
+			trusted_leaf,
+		))
+		var native_trusted_plan: Dictionary = native_controller.debug_decide_with_provider(
+			{
+				"actor": 0,
+				"seed": TEST_SEED,
+				"match_seed": information_set.match_seed(),
+				"belief_samples": 1,
+				"actions": action_wires,
+				"public_snapshot": public_snapshot,
+			},
+			2,
+			Callable(trusted_provider, "dispatch"),
+		)
+		var native_trusted_action := (
+			GameAction.from_dict(native_trusted_plan.get("action", {}))
+			if native_trusted_plan.get("action") is Dictionary
+			else null
+		)
+		var expected_trusted_action: GameAction = trusted_plan.get("action")
+		_check(
+			trusted_provider_ready
+			and bool(trusted_plan.get("success", false))
+			and bool(native_trusted_plan.get("success", false))
+			and bool(native_trusted_plan.get("native_trusted_leaf_enabled", false))
+			and int(native_trusted_plan.get("native_trusted_leaf_mismatches", -1)) == 0
+			and _intent_signature(native_trusted_action)
+				== _intent_signature(expected_trusted_action)
+			and int(native_trusted_plan.get("nodes_expanded", -1))
+				== int(trusted_plan.get("nodes_expanded", -2))
+			and str(native_trusted_plan.get("trajectory_hash", ""))
+				== str(trusted_plan.get("trajectory_hash", "")),
+			"Native trusted leaf evaluator diverged across the beam: %s" % [
+				str({"oracle": trusted_plan, "native": native_trusted_plan}),
+			],
+		)
+
 
 
 func _check_sample_zero_reuse_equivalence(
