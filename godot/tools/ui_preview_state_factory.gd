@@ -85,6 +85,7 @@ static func setup_state(seed: int = DEFAULT_SEED) -> GameState:
 static func promotion_state(seed: int = DEFAULT_SEED) -> GameState:
 	var state := battle_state(seed)
 	state.players[0].active = null
+	state.pending_promotions.assign([0])
 	state.players[0].bench[0] = PokemonState.new("svi-chim")
 	state.players[0].bench[0].energy_card_ids.assign(["sv1-ener-2"])
 	state.players[0].bench[1] = PokemonState.new("svi-ente")

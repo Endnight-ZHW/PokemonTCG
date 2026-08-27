@@ -110,8 +110,8 @@ func _is_waiting_for_opponent(
 		return false
 	if state.phase == "SETUP":
 		return (
-			view_player < state.setup_ready.size()
-			and state.setup_ready[view_player]
+			state.setup_actor_idx in [0, 1]
+			and state.setup_actor_idx != view_player
 		)
 	if game_mode == "local":
 		return false

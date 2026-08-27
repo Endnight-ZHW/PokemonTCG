@@ -41,7 +41,9 @@ func update_header(
 		turn_label.accessibility_name = turn_label.text
 		_update_task_hint("正在载入对局")
 		return
-	var display_actor := view_player if state.phase == "SETUP" else state.active_player_idx
+	var display_actor := state.active_player_idx
+	if state.phase == "SETUP" and state.setup_actor_idx in [0, 1]:
+		display_actor = state.setup_actor_idx
 	turn_label.text = "第 %d 回合 · 玩家 %d · %s" % [
 		state.turn_number,
 		display_actor + 1,
@@ -106,13 +108,20 @@ func _default_task_hint(
 	view_player: int,
 	ai_thinking: bool,
 ) -> String:
+	if not state.pending_promotions.is_empty():
+		var promotion_actor := int(state.pending_promotions[0])
+		return (
+			"选择备战宝可梦晋升到战斗区"
+			if promotion_actor == view_player
+			else "等待对手选择新的战斗宝可梦"
+		)
 	if ai_thinking:
 		return "等待对手行动"
 	if state.phase == "SETUP":
 		if (
 			view_player in [0, 1]
-			and view_player < state.setup_ready.size()
-			and state.setup_ready[view_player]
+			and state.setup_actor_idx in [0, 1]
+			and state.setup_actor_idx != view_player
 		):
 			return "等待对手完成准备"
 		if view_player in [0, 1] and state.get_player(view_player).active == null:

@@ -1530,8 +1530,11 @@ func _refresh_header(display_state: GameState = null) -> void:
 		)
 	else:
 		var display_actor := (
-			view_player
-			if active_state.phase == "SETUP"
+			active_state.setup_actor_idx
+			if (
+				active_state.phase == "SETUP"
+				and active_state.setup_actor_idx in [0, 1]
+			)
 			else active_state.active_player_idx
 		)
 		turn_label.text = "第 %d 回合 · %s · 玩家 %d" % [
@@ -3160,6 +3163,18 @@ func _current_task_hint() -> String:
 func _disabled_reason_for_source(source_key: String) -> String:
 	if state_ref == null:
 		return "正在载入对局状态"
+	if not state_ref.pending_promotions.is_empty():
+		return (
+			"请先选择新的战斗宝可梦"
+			if int(state_ref.pending_promotions[0]) == view_player
+			else "等待对手选择新的战斗宝可梦"
+		)
+	if (
+		state_ref.phase == "SETUP"
+		and state_ref.setup_actor_idx in [0, 1]
+		and state_ref.setup_actor_idx != view_player
+	):
+		return "等待对手完成准备"
 	if ai_thinking:
 		return "等待对手行动"
 	if state_ref.phase not in ["SETUP", "MAIN"]:
@@ -3184,6 +3199,8 @@ func _disabled_reason_for_source(source_key: String) -> String:
 			else str(card.get("trainer_type", ""))
 		)
 		var subtypes: Array = card.get("subtypes", [])
+		if state_ref.phase == "SETUP" and not catalog.is_basic_pokemon(card_id):
+			return "准备阶段只能放置基础宝可梦"
 		if supertype == "Energy" and player.energy_attached_this_turn:
 			return "本回合已附能"
 		if supertype == "Energy":
@@ -3203,8 +3220,6 @@ func _disabled_reason_for_source(source_key: String) -> String:
 			return "战斗区与备战区没有合法空位"
 		if "Stage 1" in subtypes or "Stage 2" in subtypes:
 			return "场上没有可进化为这张卡的宝可梦"
-		if state_ref.phase == "SETUP":
-			return "准备阶段只能放置基础宝可梦"
 		return "当前没有合法目标或不满足使用条件"
 	if source_key.begins_with("pokemon:"):
 		var parts := source_key.split(":")

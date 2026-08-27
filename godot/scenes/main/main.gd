@@ -34,7 +34,9 @@ const MODAL_SHADE_ALPHA := 0.72
 const MODAL_SHADE_OPAQUE_ALPHA := 1.0
 const TOAST_Z_INDEX := 350
 const DESIGN_CANVAS_SIZE := Vector2i(1600, 900)
-const MIN_RESPONSIVE_WINDOW_SIZE := Vector2i(640, 360)
+const MIN_RESPONSIVE_LANDSCAPE_SIZE := Vector2i(900, 540)
+const MIN_RESPONSIVE_PORTRAIT_SIZE := Vector2i(640, 960)
+const SYNTHETIC_WINDOW_FLOOR := Vector2i(320, 240)
 
 var catalog: CardCatalog = CardDatabase.catalog
 var native_rules := NativeRulesSessionAdapter.new(catalog)
@@ -114,6 +116,7 @@ var _startup_choreography_generation := 0
 var _startup_choreography_running := false
 var _responsive_canvas_window: Window
 var _original_content_scale_size := Vector2i.ZERO
+var _original_window_min_size := Vector2i.ZERO
 var _last_responsive_content_scale_size := Vector2i.ZERO
 
 
@@ -1951,6 +1954,12 @@ func _after_step(previous_active: int, previous_phase: String) -> void:
 			current_view_player = next_setup
 			_show_pass_overlay(next_setup, "准备阶段", "轮到玩家 %d 放置宝可梦。" % (next_setup + 1))
 			return
+	elif not state.pending_promotions.is_empty():
+		var promote_actor := int(state.pending_promotions[0])
+		if promote_actor != current_view_player:
+			current_view_player = promote_actor
+			_show_pass_overlay(promote_actor, "晋升", "请选择新的战斗宝可梦。")
+			return
 	elif (
 		state.active_player_idx != previous_active
 		or (previous_phase == "SETUP" and state.phase == "MAIN")
@@ -1962,12 +1971,6 @@ func _after_step(previous_active: int, previous_phase: String) -> void:
 			"请将设备交给玩家 %d。" % (current_view_player + 1),
 		)
 		return
-	elif not state.pending_promotions.is_empty():
-		var promote_actor := int(state.pending_promotions[0])
-		if promote_actor != current_view_player:
-			current_view_player = promote_actor
-			_show_pass_overlay(promote_actor, "晋升", "请选择新的战斗宝可梦。")
-			return
 	_refresh_game()
 
 
@@ -4851,6 +4854,13 @@ func _configure_responsive_canvas() -> void:
 	if _responsive_canvas_window == null:
 		_responsive_canvas_window = window
 		_original_content_scale_size = window.content_scale_size
+		_original_window_min_size = window.min_size
+	if (
+		DisplayServer.get_name().to_lower() != "headless"
+		and not OS.has_feature("mobile")
+		and not OS.has_feature("web")
+	):
+		window.min_size = MIN_RESPONSIVE_LANDSCAPE_SIZE
 	if not window.size_changed.is_connected(_on_responsive_window_size_changed):
 		window.size_changed.connect(_on_responsive_window_size_changed)
 	_apply_responsive_canvas()
@@ -4887,6 +4897,8 @@ func _restore_responsive_canvas() -> void:
 		== _last_responsive_content_scale_size
 	):
 		_responsive_canvas_window.content_scale_size = _original_content_scale_size
+	if _responsive_canvas_window.min_size == MIN_RESPONSIVE_LANDSCAPE_SIZE:
+		_responsive_canvas_window.min_size = _original_window_min_size
 	if _responsive_canvas_window.size_changed.is_connected(
 		_on_responsive_window_size_changed
 	):
@@ -4914,13 +4926,28 @@ func _responsive_content_scale_size(
 		or design_size.y <= 0
 	):
 		return design_size
+	# Below the native compact layouts, render the smallest validated canvas and
+	# let stretch scaling preserve the complete UI instead of reflowing cards and
+	# controls on top of one another. Desktop windows are clamped to the landscape
+	# minimum; this fallback primarily protects embedded/mobile edge cases.
+	var minimum_size := (
+		MIN_RESPONSIVE_PORTRAIT_SIZE
+		if window_size.y > window_size.x
+		else MIN_RESPONSIVE_LANDSCAPE_SIZE
+	)
 	# Script-only headless contracts use a synthetic 64×64 root. It is not a
-	# supported display and must retain the design canvas so UI can be inspected.
+	# display shape, so keep the design canvas rather than selecting a portrait
+	# layout from that placeholder aspect ratio.
 	if (
-		window_size.x < MIN_RESPONSIVE_WINDOW_SIZE.x
-		or window_size.y < MIN_RESPONSIVE_WINDOW_SIZE.y
+		window_size.x < SYNTHETIC_WINDOW_FLOOR.x
+		or window_size.y < SYNTHETIC_WINDOW_FLOOR.y
 	):
 		return design_size
+	if (
+		window_size.x < minimum_size.x
+		or window_size.y < minimum_size.y
+	):
+		return minimum_size
 	var fit_scale := minf(
 		float(window_size.x) / float(design_size.x),
 		float(window_size.y) / float(design_size.y),

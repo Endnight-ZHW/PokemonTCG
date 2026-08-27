@@ -160,7 +160,11 @@ func _check_main_shell_contract() -> void:
 		"Main safe-area conversion failed for a scaled secondary display",
 	)
 	_check(
-		main._responsive_content_scale_size(Vector2i(900, 540))
+		main._responsive_content_scale_size(Vector2i(640, 360))
+		== Vector2i(900, 540)
+		and main._responsive_content_scale_size(Vector2i(720, 1280))
+		== Vector2i(720, 1280)
+		and main._responsive_content_scale_size(Vector2i(900, 540))
 		== Vector2i(900, 540)
 		and main._responsive_content_scale_size(Vector2i(1024, 600))
 		== Vector2i(1024, 600)
@@ -282,8 +286,33 @@ func _check_main_shell_contract() -> void:
 	main._close_modal()
 	main._finish_modal_close(main._modal_generation)
 	await _check_open_modal_resize(main)
+	_check_local_promotion_handoff(main)
 	main.queue_free()
 	await _settle_layout(2)
+
+
+func _check_local_promotion_handoff(main: Node) -> void:
+	var state := GameState.new()
+	state.phase = "MAIN"
+	state.setup_stage = GameState.SETUP_COMPLETE
+	state.active_player_idx = 1
+	state.pending_promotions.assign([0])
+	main.state = state
+	main.game_mode = "local"
+	main.current_screen = "game"
+	main.current_view_player = 1
+	main._after_step(0, "MAIN")
+	_check(
+		main.current_view_player == 0
+		and main.modal_layer.visible
+		and main.modal_title.text == "晋升"
+		and main.modal_confirm.text == "显示玩家 1 手牌",
+		"Local handoff routed an active-player change before the pending promotion",
+	)
+	main._close_modal()
+	main._finish_modal_close(main._modal_generation)
+	main.state = null
+	main.current_screen = "title"
 
 
 func _check_generic_choice_category_limits(main: Control) -> void:

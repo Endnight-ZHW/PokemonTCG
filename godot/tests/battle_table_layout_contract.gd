@@ -99,6 +99,8 @@ static func run() -> Array[String]:
 		)
 	_check_hand_centering(failures)
 	_check_prize_hit_order(failures)
+	_check_mulligan_bonus_placement_controls(failures)
+	_check_pending_promotion_hints(failures)
 	var opponent_hand := BattleTableLayout.opponent_hand_plan(
 		5, 360.0, Vector2(70.0, 98.0), 26.0, 6.0
 	)
@@ -122,6 +124,119 @@ static func run() -> Array[String]:
 		"field guide rectangle union changed",
 	)
 	return failures
+
+
+static func _check_mulligan_bonus_placement_controls(
+	failures: Array[String],
+) -> void:
+	var state := GameState.new()
+	state.phase = "SETUP"
+	state.setup_stage = GameState.SETUP_BONUS_PLACEMENT
+	state.setup_actor_idx = 0
+	# Both players already completed their initial placement before the bonus
+	# draw. setup_ready therefore cannot identify who owns this continuation.
+	state.setup_ready.assign([true, true])
+	state.players[0].active = PokemonState.new("bonus-placement-active")
+
+	var header_scene := load(
+		"res://scenes/battle/components/battle_header.tscn") as PackedScene
+	var header := header_scene.instantiate() as BattleHeader
+	header.update_header(state, 0, false)
+	_expect(
+		failures,
+		header.task_hint_label.text == "可继续放置备战宝可梦，或完成准备",
+		"mulligan bonus placement incorrectly tells its actor to wait",
+	)
+	header.update_header(state, 1, false)
+	_expect(
+		failures,
+		header.task_hint_label.text == "等待对手完成准备"
+		and "玩家 1" in header.turn_label.text,
+		"mulligan bonus placement does not mark the non-actor as waiting",
+	)
+	header.free()
+
+	var hud_scene := load(
+		"res://scenes/battle/components/battle_phase_hud.tscn") as PackedScene
+	var hud := hud_scene.instantiate() as BattlePhaseHud
+	var setup_done := GameAction.create("SETUP_DONE", {}, 0)
+	hud.update_phase(state, 0, false, "challenge", [setup_done])
+	_expect(
+		failures,
+		hud.phase_advance_button.text == "完成准备"
+		and not hud.phase_advance_button.disabled
+		and hud.phase_advance_button.get_meta("action") == setup_done,
+		"mulligan bonus placement actor cannot submit SETUP_DONE",
+	)
+	hud.update_phase(state, 1, false, "challenge", [setup_done])
+	_expect(
+		failures,
+		hud.phase_advance_button.text == "等待对手"
+		and hud.phase_advance_button.disabled,
+		"mulligan bonus placement exposes controls to the non-actor",
+	)
+	hud.free()
+
+	var table := BattleTable.new()
+	table.state_ref = state
+	table.view_player = 1
+	_expect(
+		failures,
+		table._disabled_reason_for_source("hand:0") == "等待对手完成准备",
+		"setup non-actor receives a misleading card disabled reason",
+	)
+	state.players[0].hand.assign(["sv1-ener-1"])
+	table.view_player = 0
+	_expect(
+		failures,
+		table._disabled_reason_for_source("hand:0")
+		== "准备阶段只能放置基础宝可梦",
+		"setup actor receives a main-phase disabled reason for a non-Pokemon card",
+	)
+	table.free()
+
+
+static func _check_pending_promotion_hints(failures: Array[String]) -> void:
+	var state := GameState.new()
+	state.phase = "MAIN"
+	state.setup_stage = GameState.SETUP_COMPLETE
+	state.active_player_idx = 0
+	state.pending_promotions.assign([1])
+
+	var header_scene := load(
+		"res://scenes/battle/components/battle_header.tscn") as PackedScene
+	var header := header_scene.instantiate() as BattleHeader
+	header.update_header(state, 0, false)
+	_expect(
+		failures,
+		header.task_hint_label.text == "等待对手选择新的战斗宝可梦",
+		"pending promotion incorrectly tells the turn owner to act",
+	)
+	header.update_header(state, 1, false)
+	_expect(
+		failures,
+		header.task_hint_label.text == "选择备战宝可梦晋升到战斗区",
+		"pending promotion does not instruct its actual actor",
+	)
+	header.free()
+
+	var table := BattleTable.new()
+	table.state_ref = state
+	table.view_player = 0
+	_expect(
+		failures,
+		table._disabled_reason_for_source("hand:0")
+		== "等待对手选择新的战斗宝可梦",
+		"turn owner receives a misleading card reason during opponent promotion",
+	)
+	table.view_player = 1
+	_expect(
+		failures,
+		table._disabled_reason_for_source("hand:0")
+		== "请先选择新的战斗宝可梦",
+		"promotion actor receives a misleading card reason",
+	)
+	table.free()
 
 
 static func _check_prize_hit_order(failures: Array[String]) -> void:

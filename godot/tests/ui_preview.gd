@@ -31,6 +31,10 @@ func _render_previews() -> void:
 	var ui := packed.instantiate()
 	root.add_child(ui)
 	ui.initialize_ui()
+	if root.min_size != Vector2i(900, 540):
+		push_error("Desktop UI did not enforce the validated 900x540 minimum window")
+		_finish(1)
+		return
 	Input.warp_mouse(Vector2(4, 4))
 	# Give fonts, card textures and the procedural gradient one extra upload pass
 	# before the first GPU readback. Later captures reuse these resources.
@@ -364,6 +368,15 @@ func _render_previews() -> void:
 		_finish(1)
 		return
 	var previous_content_scale_size := root.content_scale_size
+	var previous_window_min_size := root.min_size
+	root.min_size = Vector2i.ZERO
+	root.size = Vector2i(640, 360)
+	await _settle_frontend(3)
+	ui.show_title()
+	await _settle_frontend()
+	if not _capture("title-minimum.png"):
+		_finish(1)
+		return
 	root.content_scale_size = Vector2i(720, 1280)
 	root.size = Vector2i(720, 1280)
 	await _settle_frontend(3)
@@ -373,6 +386,7 @@ func _render_previews() -> void:
 		_finish(1)
 		return
 	root.content_scale_size = previous_content_scale_size
+	root.min_size = previous_window_min_size
 	root.size = Vector2i(1024, 768)
 	await _settle_frontend(3)
 	ui.show_deck_select("challenge")
@@ -512,6 +526,26 @@ func _render_previews() -> void:
 	if not _capture("battle-setup-1280x720.png"):
 		_finish(1)
 		return
+	var bonus_setup_demo := setup_demo.clone_state()
+	bonus_setup_demo.setup_stage = GameState.SETUP_BONUS_PLACEMENT
+	bonus_setup_demo.setup_actor_idx = 0
+	bonus_setup_demo.setup_ready.assign([true, true])
+	bonus_setup_demo.players[0].bench[0] = PokemonState.new("svi-chim")
+	_update_battle_preview(
+		ui,
+		bonus_setup_demo,
+		UIPreviewStateFactory.setup_action_rows(bonus_setup_demo),
+	)
+	await _settle_rendered(3)
+	if not _capture("battle-bonus-placement-1280x720.png"):
+		_finish(1)
+		return
+	_update_battle_preview(
+		ui,
+		setup_demo,
+		UIPreviewStateFactory.setup_action_rows(setup_demo),
+		"hand:0",
+	)
 	root.size = Vector2i(2000, 900)
 	await _settle_rendered(3)
 	if not _capture("game-20x9.png"):
@@ -621,6 +655,14 @@ func _render_previews() -> void:
 	if not _capture("battle-main-compact.png"):
 		_finish(1)
 		return
+	var previous_battle_window_min_size := root.min_size
+	root.min_size = Vector2i.ZERO
+	root.size = Vector2i(640, 360)
+	await _settle_rendered(4)
+	if not _capture("battle-main-minimum.png"):
+		_finish(1)
+		return
+	root.min_size = previous_battle_window_min_size
 	root.size = Vector2i(1600, 900)
 	await _settle_rendered(4)
 	var energy_count_demo := demo.clone_state()
@@ -1939,6 +1981,7 @@ func _render_previews() -> void:
 	ui.battle_screen.clear_presentation_for_resync()
 	demo.winner = 0
 	demo.phase = "GAME_OVER"
+	_set_preview_motion("reduced", "high")
 	ui._show_end_screen()
 	await _settle_frontend()
 	if not _capture("end.png"):
@@ -1998,6 +2041,7 @@ func _move_pointer_to_control(control: Control) -> void:
 	motion.global_position = pointer_position
 	Input.parse_input_event(motion)
 	await process_frame
+	await RenderingServer.frame_post_draw
 
 
 func _begin_mouse_press(control: Control) -> bool:
