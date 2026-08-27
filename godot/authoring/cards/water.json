@@ -1,0 +1,1132 @@
+{
+  "cards": {
+    "sv1-49": {
+      "abilities": [],
+      "api_id": "sv1-49",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "condition": "ko_by_attack_damage_last_turn",
+                "status": "paralyzed",
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "conditional_status"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Water",
+            "Water",
+            "Colorless"
+          ],
+          "damage": 110,
+          "damage_text": "110",
+          "effects": [
+            {
+              "effect_type": "conditional_status",
+              "params": {
+                "condition": "ko_by_attack_damage_last_turn",
+                "status": "paralyzed",
+                "target": "opponent_active"
+              }
+            }
+          ],
+          "name": "愤怒冷冻",
+          "text": "在上一个对手的回合，如果因为招式的伤害，而导致自己的宝可梦昏厥的话，则使对手的战斗宝可梦陷入麻痹状态。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 130,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "拉普拉斯",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Metal",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv2-38": {
+      "abilities": [],
+      "api_id": "sv2-38",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_tails": [
+                  {
+                    "args": {},
+                    "branches": {},
+                    "op": "fail_attack"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Water"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [
+            {
+              "effect_type": "coin_flip",
+              "params": {
+                "on_heads": [],
+                "on_tails": [
+                  {
+                    "effect_type": "attack_fail",
+                    "params": {}
+                  }
+                ]
+              }
+            }
+          ],
+          "name": "跳一下",
+          "text": "抛掷1次硬币如果为反面，则这个招式失败。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "呱呱泡蛙",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv2-39": {
+      "abilities": [],
+      "api_id": "sv2-39",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "optional": true,
+                "target": "self"
+              },
+              "branches": {},
+              "op": "switch_pokemon"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Water",
+            "Water"
+          ],
+          "damage": 40,
+          "damage_text": "40",
+          "effects": [
+            {
+              "effect_type": "switch_self",
+              "params": {
+                "optional": true
+              }
+            }
+          ],
+          "name": "折返瞬击",
+          "text": "若希望，可将这只宝可梦与备战宝可梦互换。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "呱呱泡蛙",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 90,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "呱头蛙",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv2-delib": {
+      "abilities": [],
+      "api_id": "sv2-delib",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 0,
+          "cost": [],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 2,
+                "player": "self"
+              }
+            }
+          ],
+          "name": "双重抽取",
+          "text": "从自己牌库上方抽取2张卡牌。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Water",
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [],
+          "name": "冰之翼",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 60,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "信使鸟",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv2-glast": {
+      "abilities": [],
+      "api_id": "sv2-glast",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "apply_attack_lock_basic"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Water",
+            "Colorless"
+          ],
+          "damage": 40,
+          "damage_text": "40",
+          "effects": [
+            {
+              "effect_type": "attack_lock_basic",
+              "params": {
+                "target": "opponent_active"
+              }
+            }
+          ],
+          "name": "冻结",
+          "text": "在下一个对手的回合，受到这个招式影响的基础宝可梦，无法使用招式。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Water",
+            "Water",
+            "Colorless"
+          ],
+          "damage": 130,
+          "damage_text": "130",
+          "effects": [
+            {
+              "effect_type": "damage_counter_self",
+              "params": {
+                "amount": 30,
+                "damage_kind": "self_damage"
+              }
+            }
+          ],
+          "name": "疯狂冲撞",
+          "text": "给这只宝可梦也造成30点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 130,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "雪暴马",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Metal",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv2-grex": {
+      "abilities": [],
+      "api_id": "sv2-grex",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 40,
+                "bench_skips_type_matchups": true,
+                "player": "opponent"
+              },
+              "branches": {},
+              "op": "choose_damage_target"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "any_pokemon_damage",
+              "params": {
+                "amount": 40,
+                "bench_skips_type_matchups": true,
+                "player": "opponent"
+              }
+            }
+          ],
+          "name": "隐蔽手里剑",
+          "text": "对对手的1只宝可梦造成40点伤害。（对备战宝可梦不计算弱点·抗性）"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "bonus": 120,
+                "condition": "opponent_active_damaged"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Water",
+            "Water"
+          ],
+          "damage": 120,
+          "damage_text": "120+",
+          "effects": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "params": {
+                "bonus": 120,
+                "condition": "opponent_active_damaged"
+              }
+            }
+          ],
+          "name": "激流斩",
+          "text": "如果对手的战斗宝可梦身上有伤害指示物，则追加造成120点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "呱头蛙",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 300,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "甲贺忍蛙ex",
+      "number": "",
+      "prize_value": 2,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [
+        "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
+      ],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 2",
+        "ex"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv2-keldeo": {
+      "abilities": [],
+      "api_id": "sv2-keldeo",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "踢飞",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 10
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "bench_count",
+                          "player": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Water",
+            "Colorless"
+          ],
+          "damage": 10,
+          "damage_text": "10+",
+          "effects": [
+            {
+              "effect_type": "damage_plus_bench",
+              "params": {
+                "base": 10,
+                "count_own_bench": true,
+                "per_bench": 20
+              }
+            }
+          ],
+          "name": "队列之力",
+          "text": "追加造成自己备战宝可梦数量×20点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 110,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "凯路迪欧",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv2-starm": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "counters": 2,
+                "target": "opponent_any"
+              },
+              "branches": {},
+              "op": "place_counters_then_self_discard"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "place_counters_and_self_discard",
+              "params": {
+                "counters": 2,
+                "target": "opponent_any"
+              }
+            }
+          ],
+          "name": "神秘彗星",
+          "text": "在自己的回合可以使用1次。给对手的1只宝可梦身上，放置2个伤害指示物。然后，将这只宝可梦，以及放于其身上的所有卡牌，放于弃牌区。",
+          "trigger": ""
+        }
+      ],
+      "api_id": "sv2-starm",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Water",
+            "Colorless"
+          ],
+          "damage": 50,
+          "damage_text": "50",
+          "effects": [],
+          "name": "高速攻击",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "海星星",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 90,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "宝石海星",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv2-staryu": {
+      "abilities": [],
+      "api_id": "sv2-staryu",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "ignore_defender_damage_effects": true,
+                "ignore_resistance": true,
+                "ignore_weakness": true
+              },
+              "branches": {},
+              "op": "set_attack_flags"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Water",
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [
+            {
+              "effect_type": "attack_flags",
+              "params": {
+                "ignore_defender_damage_effects": true,
+                "ignore_resistance": true,
+                "ignore_weakness": true
+              }
+            }
+          ],
+          "name": "高速星星",
+          "text": "这个招式的伤害，不计算弱点、抗性以及对手战斗宝可梦身上所附加的效果。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 60,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "海星星",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv2-tatsu": {
+      "abilities": [],
+      "api_id": "sv2-tatsu",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "filter": "basic_water",
+                "from_zone": "deck",
+                "min_select": 0,
+                "to": "self_basic"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Water"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "energy_attach",
+              "params": {
+                "amount": 2,
+                "filter": "basic_water",
+                "from_zone": "deck",
+                "min_select": 0,
+                "to": "self_basic"
+              }
+            }
+          ],
+          "name": "预先准备",
+          "text": "选择自己牌库中最多2张「基本水能量」，附着于自己的1只基础宝可梦身上，并重洗牌库。"
+        },
+        {
+          "commands": [
+            {
+              "args": {},
+              "branches": {},
+              "op": "return_to_hand"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Water"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [
+            {
+              "effect_type": "return_to_hand",
+              "params": {}
+            }
+          ],
+          "name": "上弓折返",
+          "text": "将这只宝可梦，以及放于其身上的所有卡牌，放回手牌。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "米立龙",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg-ceti": {
+      "abilities": [],
+      "api_id": "svg-ceti",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 50,
+          "damage_text": "50",
+          "effects": [],
+          "name": "头突",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "lhs": {
+                    "const": 200
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "factors": [
+                      {
+                        "op": "damage_counters",
+                        "target": "self"
+                      },
+                      {
+                        "const": 20
+                      }
+                    ],
+                    "op": "mul"
+                  }
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Water",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 200,
+          "damage_text": "200-",
+          "effects": [
+            {
+              "effect_type": "damage_self_penalty",
+              "params": {
+                "base": 200,
+                "per_counter": 20
+              }
+            }
+          ],
+          "name": "扫除冲撞",
+          "text": "这个招式的伤害，会被减少相当于这只宝可梦身上放置的伤害指示物数量×20的数值。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "走鲸",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 180,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "浩大鲸",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 3,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Metal",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg-ceto": {
+      "abilities": [],
+      "api_id": "svg-ceto",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [],
+          "name": "撞击",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 80,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "走鲸",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Metal",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg2-empo": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "card_id": "svg2-empo"
+              },
+              "branches": {},
+              "op": "discard_then_revive"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "ability_discard_revive",
+              "params": {
+                "card_id": "svg2-empo"
+              }
+            }
+          ],
+          "name": "紧急上浮",
+          "text": "在自己的回合，如果这张卡牌在弃牌区，且自己没有手牌的话，则可使用1次。将这张卡牌放于备战区。然后，从自己的牌库上方抽取3张卡牌。",
+          "trigger": "on_turn"
+        }
+      ],
+      "api_id": "svg2-empo",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 60,
+                "bench_skips_type_matchups": true
+              },
+              "branches": {},
+              "op": "choose_damage_target"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Water"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "any_pokemon_damage",
+              "params": {
+                "amount": 60,
+                "bench_skips_type_matchups": true
+              }
+            }
+          ],
+          "name": "水之矢",
+          "text": "给对手的1只宝可梦，造成60点伤害。[备战宝可梦不计算弱点、抗性。]"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Water"
+      ],
+      "evolves_from": "波皇子",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 160,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "帝王拿波",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 2"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    }
+  },
+  "family": "water",
+  "format": "ptcg_card_source/1"
+}

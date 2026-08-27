@@ -1,0 +1,566 @@
+{
+  "cards": {
+    "svi-chim": {
+      "abilities": [],
+      "api_id": "svi-chim",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Fire"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [
+            {
+              "effect_type": "energy_discard",
+              "params": {
+                "amount": 1,
+                "filter": "any",
+                "from": "self"
+              }
+            }
+          ],
+          "name": "火花",
+          "text": "选择附着于这只宝可梦身上的1个能量，放于弃牌区。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Fire"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 50,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "小火焰猴",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Water",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-chiy": {
+      "abilities": [],
+      "api_id": "svi-chiy",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "energy_type": "basic_fire",
+                "min_select": 0,
+                "target": "self_or_bench"
+              },
+              "branches": {},
+              "op": "attach_energy_from_discard"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Fire"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "attach_from_discard",
+              "params": {
+                "amount": 2,
+                "energy_type": "basic_fire",
+                "min_select": 0,
+                "target": "self_or_bench"
+              }
+            }
+          ],
+          "name": "闪焰生成",
+          "text": "选择自己弃牌区中最多2张基本火能量，附着于自己的1只宝可梦身上。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "bonus": 90,
+                "condition": "ko_by_attack_damage_last_turn"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Fire",
+            "Fire"
+          ],
+          "damage": 50,
+          "damage_text": "50+",
+          "effects": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "params": {
+                "bonus": 90,
+                "condition": "ko_by_attack_damage_last_turn"
+              }
+            }
+          ],
+          "name": "嫉妒业火",
+          "text": "在上一个对手的回合，如果因为招式的伤害而导致自己的宝可梦昏厥的话，则追加造成90伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Fire"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 110,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "古玉鱼",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Water",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-ente": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "before_weakness": true,
+                "reduction": 20,
+                "requires_active": true
+              },
+              "branches": {},
+              "op": "register_aura_damage_reduction"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "aura_damage_reduction",
+              "params": {
+                "before_weakness": true,
+                "reduction": 20,
+                "requires_active": true
+              }
+            }
+          ],
+          "name": "压迫感",
+          "text": "只要这只宝可梦在战斗场上，对手战斗宝可梦使用的招式伤害「-20」。",
+          "trigger": "passive"
+        }
+      ],
+      "api_id": "svi-ente",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "fire",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 60,
+          "damage_text": "60+",
+          "effects": [
+            {
+              "effect_type": "damage_per_self_energy",
+              "params": {
+                "base": 60,
+                "energy_filter": "fire",
+                "per_energy": 20
+              }
+            }
+          ],
+          "name": "火焰之球",
+          "text": "追加这只宝可梦身上附着的火能量数量×20伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Fire"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 130,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "炎帝",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Water",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-hrot": {
+      "abilities": [],
+      "api_id": "svi-hrot",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 40,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Fire",
+            "Fire"
+          ],
+          "damage": 100,
+          "damage_text": "100",
+          "effects": [
+            {
+              "effect_type": "damage_counter_self",
+              "params": {
+                "amount": 40,
+                "damage_kind": "self_damage"
+              }
+            }
+          ],
+          "name": "高温冲撞",
+          "text": "给这只宝可梦也造成40伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Fire"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 90,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "加热洛托姆",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Water",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-infr": {
+      "abilities": [],
+      "api_id": "svi-infr",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "damage_per": 80,
+                "mill_count": 5
+              },
+              "branches": {},
+              "op": "mill_then_damage"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Fire"
+          ],
+          "damage": 80,
+          "damage_text": "80×",
+          "effects": [
+            {
+              "effect_type": "mill_and_damage_per_energy",
+              "params": {
+                "damage_per": 80,
+                "mill_count": 5
+              }
+            }
+          ],
+          "name": "螺旋业火",
+          "text": "将自己牌库上方5张翻到正面。造成其中能量张数×80伤害。正面朝上的能量放于弃牌区，剩余卡牌放回牌库并重洗。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 99,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Fire",
+            "Colorless"
+          ],
+          "damage": 160,
+          "damage_text": "160",
+          "effects": [
+            {
+              "effect_type": "energy_discard",
+              "params": {
+                "amount": 99,
+                "filter": "any",
+                "from": "self"
+              }
+            }
+          ],
+          "name": "燃烧踢",
+          "text": "将附着于这只宝可梦身上的能量全部放于弃牌区。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Fire"
+      ],
+      "evolves_from": "猛火猴",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 150,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "烈焰猴",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 2"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Water",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-monf": {
+      "abilities": [],
+      "api_id": "svi-monf",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Fire"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [],
+          "name": "火焰",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Fire",
+            "Colorless"
+          ],
+          "damage": 50,
+          "damage_text": "50",
+          "effects": [
+            {
+              "effect_type": "energy_discard",
+              "params": {
+                "amount": 1,
+                "filter": "any",
+                "from": "self"
+              }
+            }
+          ],
+          "name": "喷射火焰",
+          "text": "选择附着于这只宝可梦身上的1个能量，放于弃牌区。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Fire"
+      ],
+      "evolves_from": "小火焰猴",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 80,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "猛火猴",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Water",
+          "value": "×2"
+        }
+      ]
+    }
+  },
+  "family": "fire",
+  "format": "ptcg_card_source/1"
+}

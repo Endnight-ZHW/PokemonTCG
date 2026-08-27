@@ -1,0 +1,584 @@
+{
+  "cards": {
+    "sv1-ener-1": {
+      "abilities": [],
+      "api_id": "sv1-ener-1",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "草能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Grass"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "sv1-ener-2": {
+      "abilities": [],
+      "api_id": "sv1-ener-2",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "火能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Fire"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "sv1-ener-3": {
+      "abilities": [],
+      "api_id": "sv1-ener-3",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "水能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Water"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "sv1-ener-4": {
+      "abilities": [],
+      "api_id": "sv1-ener-4",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "雷能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Lightning"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "sv1-ener-5": {
+      "abilities": [],
+      "api_id": "sv1-ener-5",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "超能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Psychic"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "sv1-ener-6": {
+      "abilities": [],
+      "api_id": "sv1-ener-6",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "斗能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Fighting"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "sv1-ener-7": {
+      "abilities": [],
+      "api_id": "sv1-ener-7",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "恶能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Darkness"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "sv1-ener-8": {
+      "abilities": [],
+      "api_id": "sv1-ener-8",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "钢能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Metal"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svg2-lume": {
+      "abilities": [],
+      "api_id": "svg2-lume",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [
+        {
+          "downgrade_if_other_special": true,
+          "kind": "provide_energy",
+          "types": [
+            "Rainbow"
+          ]
+        }
+      ],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "夜光能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Rainbow"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [
+        "只要这张卡牌，被附着于宝可梦身上，就被视作1个所有属性的能量。",
+        "如果身上附着了这张卡牌的宝可梦，身上还附着了除这张卡牌以外的特殊能量的话，则这张卡牌被视作1个普通能量。"
+      ],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Special"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svi-dtur": {
+      "abilities": [],
+      "api_id": "svi-dtur",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless",
+            "Colorless"
+          ]
+        },
+        {
+          "effect": {
+            "delta": -20
+          },
+          "hook": "MODIFY_DAMAGE",
+          "kind": "modifier",
+          "priority": 30,
+          "scope": "attached_attacker"
+        }
+      ],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "双重涡轮能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Colorless",
+        "Colorless"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [
+        "只要这张卡牌被附着于宝可梦身上，就被视作2个[C]能量。",
+        "身上附有这张卡牌的宝可梦所使用的招式，给对手的宝可梦造成的伤害「-20」。"
+      ],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Special"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svi-jete": {
+      "abilities": [],
+      "api_id": "svi-jete",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless"
+          ]
+        },
+        {
+          "condition": {
+            "from_zone": "hand",
+            "target": "bench"
+          },
+          "effect": {
+            "op": "switch_with_active"
+          },
+          "hook": "ON_ATTACH",
+          "kind": "trigger",
+          "priority": 20
+        }
+      ],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "喷射能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Colorless"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [
+        "只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。",
+        "当将这张卡牌从手牌附着于备战宝可梦身上时，将该宝可梦与战斗宝可梦互换。"
+      ],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Special"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svi-mirc": {
+      "abilities": [],
+      "api_id": "svi-mirc",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless"
+          ]
+        },
+        {
+          "condition": {
+            "min_damage": 10,
+            "scope": "attached_defender"
+          },
+          "effect": {
+            "amount": 1,
+            "op": "draw_cards"
+          },
+          "hook": "AFTER_DAMAGE",
+          "kind": "trigger",
+          "priority": 20
+        }
+      ],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "幸运能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Colorless"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [
+        "只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。",
+        "身上附有这张卡牌的宝可梦，在战斗场上受到对手宝可梦的招式的伤害时，从自己的牌库上方抽取1张卡牌。"
+      ],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Special"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svi-trea": {
+      "abilities": [],
+      "api_id": "svi-trea",
+      "artist": "",
+      "attacks": [],
+      "commands": [],
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless"
+          ]
+        },
+        {
+          "compiled_commands": [
+            {
+              "args": {
+                "amount": 1,
+                "from_zone": "prizes",
+                "to": "any"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "condition": {
+            "source_zone": "prizes"
+          },
+          "effect": {
+            "op": "attach_to_benched_pokemon"
+          },
+          "hook": "ON_PRIZE_REVEALED",
+          "kind": "trigger",
+          "optional": true,
+          "priority": 20
+        }
+      ],
+      "energy_types": [],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 0,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "宝藏能量",
+      "number": "",
+      "prize_value": 0,
+      "provides_energy": [
+        "Colorless"
+      ],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [
+        "只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。",
+        "在自己的回合，当从反面朝上的自己的奖赏卡中拿取了这张卡牌时，在加入手牌前，可将这张卡牌附着于自己的宝可梦身上。"
+      ],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Special"
+      ],
+      "supertype": "Energy",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    }
+  },
+  "family": "energy",
+  "format": "ptcg_card_source/1"
+}

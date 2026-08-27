@@ -1,0 +1,272 @@
+{
+  "cards": {
+    "svg-alt": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "amount": 20
+              },
+              "branches": {},
+              "op": "heal_all"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "heal_all",
+              "params": {
+                "amount": 20
+              }
+            }
+          ],
+          "name": "哼唱治愈",
+          "text": "在自己的回合可以使用1次。将自己所有宝可梦的HP，各回复「20」。",
+          "trigger": "on_turn"
+        }
+      ],
+      "api_id": "svg-alt",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {},
+              "branches": {},
+              "op": "prevent_effects"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Water",
+            "Metal"
+          ],
+          "damage": 140,
+          "damage_text": "140",
+          "effects": [
+            {
+              "effect_type": "prevent_effects",
+              "params": {}
+            }
+          ],
+          "name": "光之波动",
+          "text": "在下一个对手的回合，这只宝可梦不受到对手宝可梦所使用招式的效果影响。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Dragon"
+      ],
+      "evolves_from": "青绵鸟",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 260,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "七夕青鸟ex",
+      "number": "",
+      "prize_value": 2,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [
+        "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
+      ],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1",
+        "ex"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svg-dram": {
+      "abilities": [],
+      "api_id": "svg-dram",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "damage_counters",
+                          "target": "self"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 60,
+          "damage_text": "60+",
+          "effects": [
+            {
+              "effect_type": "damage_per_self_damage",
+              "params": {
+                "base": 60,
+                "per_counter": 10
+              }
+            }
+          ],
+          "name": "逆鳞",
+          "text": "追加造成这只宝可梦身上放置的伤害指示物数量×10伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Dragon"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 120,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "老翁龙",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg-tatsu": {
+      "abilities": [],
+      "api_id": "svg-tatsu",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Water"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "水枪",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "count": 2,
+                "min_select": 0,
+                "source_slot": "active",
+                "switch_optional": true
+              },
+              "branches": {},
+              "op": "search_any_and_switch"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "search_any_and_switch",
+              "params": {
+                "count": 2,
+                "min_select": 0,
+                "source_slot": "active",
+                "switch_optional": true
+              }
+            }
+          ],
+          "name": "生存战略",
+          "text": "选择自己牌库中任意卡牌最多2张，加入手牌。并重洗牌库。若希望，可将这只宝可梦与备战宝可梦互换。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Dragon"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "米立龙",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    }
+  },
+  "family": "dragon",
+  "format": "ptcg_card_source/1"
+}

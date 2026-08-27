@@ -45,6 +45,7 @@ rules_names = (
     "ptcg_rules_projection.cpp",
     "ptcg_typed_state.cpp",
     "ptcg_typed_ir.cpp",
+    "ptcg_content_compiler.cpp",
 )
 challenge_names = (
     "challenge_support.cpp",
@@ -65,6 +66,7 @@ challenge_names = (
 binding_names = (
     "godot_rules_session.cpp",
     "native_challenge_ai.cpp",
+    "native_content_compiler.cpp",
     "ptcg_godot_value.cpp",
     "register_types.cpp",
 )

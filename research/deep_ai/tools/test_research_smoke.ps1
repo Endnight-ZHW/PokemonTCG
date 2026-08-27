@@ -14,8 +14,7 @@ $env:PYTHONNOUSERSITE = '1'
 $env:PYTHONPATH = @(
     (Join-Path $researchRoot 'build\native'),
     (Join-Path $researchRoot 'python'),
-    $researchRoot,
-    (Join-Path $repoRoot 'python')
+    $researchRoot
 ) -join [IO.Path]::PathSeparator
 & $Python -B -m unittest -q tests.test_research_smoke
 if ($LASTEXITCODE -ne 0) { throw 'Deep AI manual smoke workflow failed.' }

@@ -22,7 +22,7 @@ $releaseInputs = @(
     (Join-Path $repoRoot 'docs\RELEASE_NOTES.md'),
     (Join-Path $projectRoot 'data\release_manifest.json'),
     (Join-Path $projectRoot 'data\cards.json'),
-    (Join-Path $projectRoot 'data\card_ir_v3.json'),
+    (Join-Path $projectRoot 'data\card_ir_v4.json'),
     (Join-Path $projectRoot 'data\decks.json'),
     (Join-Path $projectRoot 'data\card_images.json'),
     (Join-Path $projectRoot 'data\card_image_hashes.json')
@@ -33,11 +33,7 @@ foreach ($required in $releaseInputs) {
     }
 }
 
-$portablePython = Join-Path $repoRoot '.tools\python311\python.exe'
-$pythonExe = if (Test-Path -LiteralPath $portablePython) { $portablePython } else { 'python' }
-$env:PYTHONNOUSERSITE = '1'
-& $pythonExe -B (Join-Path $repoRoot 'python\scripts\export_godot_data.py') `
-    --check --skip-images
+& (Join-Path $PSScriptRoot 'content.ps1') check
 if ($LASTEXITCODE -ne 0) { throw 'Godot generated data preflight failed.' }
 
 function Set-TestSigningEnvironment {

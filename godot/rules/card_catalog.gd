@@ -3,7 +3,7 @@ extends RefCounted
 
 const CARDS_PATH := "res://data/cards.json"
 const DECKS_PATH := "res://data/decks.json"
-const CARD_IR_PATH := "res://data/card_ir_v3.json"
+const CARD_IR_PATH := "res://data/card_ir_v4.json"
 
 static var _shared_cards: Dictionary = {}
 static var _shared_decks: Dictionary = {}
@@ -67,11 +67,11 @@ func is_read_only_repository() -> bool:
 
 
 func native_rules_catalog() -> Dictionary:
-	## Release matches consume the source-mapped Card IR v3 envelope. Isolated
+	## Release matches consume the source-mapped Card IR v4 envelope. Isolated
 	## synthetic test catalogs may provide raw cards without release IR.
 	var ir_cards: Variant = card_ir.get("cards")
 	if (
-		str(card_ir.get("format", "")) == "ptcg_card_ir/3"
+		str(card_ir.get("format", "")) == "ptcg_card_ir/4"
 		and int(card_ir.get("vm_ir_version", 0)) == 3
 		and ir_cards is Dictionary
 		and Dictionary(ir_cards).size() == cards.size()

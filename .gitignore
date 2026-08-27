@@ -35,20 +35,7 @@ torch_cache/
 
 # Test output
 .test_tmp/
-python/tests/.tmp/
 test_log_output.txt
-python/data/ai_policies_candidate.json
-python/data/ai_training_progress*.jsonl
-python/data/*.log
-
-# Training artifacts (exclude large generated files)
-python/data/ai_training/
-python/data/ai_models/*.rejected.*
-python/data/ai_models/candidate_*
-python/data/ai_models/resume_*.pt
-python/data/*_progress.jsonl
-python/data/smoke_progress.jsonl
-python/data/ai_training_checkpoints/
 
 # Generated AI audit output. Keep only the compact, reproducible evidence set.
 artifacts/*
@@ -66,6 +53,7 @@ artifacts/*
 !artifacts/native_parallel_singleleaf_v2.json
 !artifacts/native_parallel_multileaf_v2.json
 !artifacts/native_vs_python_puct_benchmark_v2.json
+!artifacts/relay_protocol_v6_benchmark.json
 
 # Godot generated files and local toolchains
 godot/.godot/
@@ -85,6 +73,7 @@ native/**/lib/
 native/**/*.obj
 native/**/*.o
 native/**/*.os
+native/**/*.pdb
 research/deep_ai/native/**/.sconsign.dblite
 research/deep_ai/native/**/bin/
 research/deep_ai/native/**/lib/
@@ -92,8 +81,6 @@ godot/bin/**/*.exp
 godot/bin/**/*.lib
 godot/bin/**/*.TMP
 godot/bin/**/~*
-python/ptcg_ai_core.exp
-python/ptcg_ai_core.lib
 .tools/
 .cache/
 

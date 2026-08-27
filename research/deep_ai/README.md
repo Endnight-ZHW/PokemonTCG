@@ -8,6 +8,13 @@ The Python teacher and Godot both call the same dependency-free
 ONNX files stay under `research/deep_ai/build` unless an explicit output path is
 provided.
 
+The research-only `python/engine` package contains the Python state/DTO adapter
+needed by teacher and replay experiments. It is private to this opt-in project;
+the product release runtime does not import it. The adjacent research-local
+`python/data` adapter reads the committed `godot/data/cards.json` and
+`godot/data/decks.json` catalogs directly; no root Python package or product
+`PYTHONPATH` entry is required.
+
 On Windows, install the pinned environment with `tools/setup_ai_toolchain.ps1`,
 then run the manual smoke workflow:
 

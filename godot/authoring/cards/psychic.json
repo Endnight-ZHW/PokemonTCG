@@ -1,0 +1,973 @@
+{
+  "cards": {
+    "sv1-104": {
+      "abilities": [],
+      "api_id": "sv1-104",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Psychic"
+          ],
+          "damage": 10,
+          "damage_text": "10",
+          "effects": [],
+          "name": "啃咬",
+          "text": ""
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Psychic",
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "幽魂射击",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "墓仔狗",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv1-106": {
+      "abilities": [],
+      "api_id": "sv1-106",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 80
+                    },
+                    {
+                      "factors": [
+                        {
+                          "filter": {
+                            "card_type": "pokemon",
+                            "energy_type": "Psychic"
+                          },
+                          "op": "discard_count",
+                          "player": "self"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Psychic",
+            "Psychic"
+          ],
+          "damage": 80,
+          "damage_text": "80+",
+          "effects": [
+            {
+              "effect_type": "damage_per_discard_psychic",
+              "params": {
+                "base": 80,
+                "per_card": 10
+              }
+            }
+          ],
+          "name": "扫墓",
+          "text": "追加造成自己弃牌区中超宝可梦的张数×10伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "墓仔狗",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 140,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "墓扬犬",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 3,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv1-107": {
+      "abilities": [],
+      "api_id": "sv1-107",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "damage_per_head": 10,
+                "flips": 3
+              },
+              "branches": {},
+              "op": "flip_coin_repeat_damage"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Psychic"
+          ],
+          "damage": 10,
+          "damage_text": "10×",
+          "effects": [
+            {
+              "effect_type": "coin_flip_triple",
+              "params": {
+                "damage_per_head": 10,
+                "flips": 3
+              }
+            }
+          ],
+          "name": "三连突刺",
+          "text": "抛掷3次硬币，造成正面次数×10伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 50,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "天然雀",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv1-108": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "basic_psychic",
+                "from_zone": "hand",
+                "to": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            },
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "energy_attach",
+              "params": {
+                "amount": 1,
+                "filter": "basic_psychic",
+                "from_zone": "hand",
+                "to": "bench"
+              }
+            },
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 2,
+                "player": "self"
+              }
+            }
+          ],
+          "name": "以太感知",
+          "text": "在自己的回合可以使用1次。选择自己手牌中的1张「基本超能量」，附着于备战宝可梦身上。然后，从自己牌库上方抽取2张卡牌。",
+          "trigger": ""
+        }
+      ],
+      "api_id": "sv1-108",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Psychic",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 80,
+          "damage_text": "80",
+          "effects": [],
+          "name": "超念力",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "天然雀",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 100,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "天然鸟",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv1-109": {
+      "abilities": [],
+      "api_id": "sv1-109",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "discard_amount": 1,
+                "draw_amount": 3
+              },
+              "branches": {},
+              "op": "discard_then_draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Psychic"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "discard_then_draw",
+              "params": {
+                "discard_amount": 1,
+                "draw_amount": 3
+              }
+            }
+          ],
+          "name": "循环抽取",
+          "text": "将自己的1张手牌放于弃牌区。若这样做，则从自己牌库上方抽取3张卡牌。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 30
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "psychic",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 30
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30+",
+          "effects": [
+            {
+              "effect_type": "damage_per_self_energy",
+              "params": {
+                "base": 30,
+                "energy_filter": "psychic",
+                "per_energy": 30
+              }
+            }
+          ],
+          "name": "月亮强念",
+          "text": "追加造成这只宝可梦身上附有的超能量数量×30点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 90,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "月石",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv1-110": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "energy_type": "psychic"
+              },
+              "branches": {},
+              "op": "register_conditional_zero_retreat"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "conditional_zero_retreat",
+              "params": {
+                "energy_type": "psychic"
+              }
+            }
+          ],
+          "name": "薄雾飘浮",
+          "text": "如果这只宝可梦身上附着了超能量的话，则这只宝可梦撤退所需能量全部消除。",
+          "trigger": "passive"
+        }
+      ],
+      "api_id": "sv1-110",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Psychic",
+            "Psychic",
+            "Colorless"
+          ],
+          "damage": 100,
+          "damage_text": "100",
+          "effects": [],
+          "name": "念动弹",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 110,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "拉帝亚斯",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv1-111": {
+      "abilities": [],
+      "api_id": "sv1-111",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "滑翔",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 3,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Psychic",
+            "Psychic",
+            "Colorless"
+          ],
+          "damage": 180,
+          "damage_text": "180",
+          "effects": [
+            {
+              "effect_type": "energy_discard",
+              "params": {
+                "amount": 3,
+                "filter": "any",
+                "from": "self"
+              }
+            }
+          ],
+          "name": "洁净光芒",
+          "text": "选择这只宝可梦身上附着的3个能量，放于弃牌区。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 110,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "拉帝欧斯",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv1-112": {
+      "abilities": [],
+      "api_id": "sv1-112",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Psychic"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [],
+          "name": "精神拳",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 99,
+                "from_self": true
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Psychic",
+            "Psychic",
+            "Psychic"
+          ],
+          "damage": 120,
+          "damage_text": "120",
+          "effects": [
+            {
+              "effect_type": "energy_relocate",
+              "params": {
+                "amount": 99,
+                "from_self": true
+              }
+            }
+          ],
+          "name": "基因螺旋",
+          "text": "将这只宝可梦身上附着的所有能量，以任意方式转附于备战宝可梦身上。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 120,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "代欧奇希斯",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv1-113": {
+      "abilities": [],
+      "api_id": "sv1-113",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "psychic",
+                "from_zone": "deck",
+                "going_second_bonus": 3,
+                "to": "any"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Psychic"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "energy_attach",
+              "params": {
+                "amount": 1,
+                "filter": "psychic",
+                "from_zone": "deck",
+                "going_second_bonus": 3,
+                "to": "any"
+              }
+            }
+          ],
+          "name": "新月生长",
+          "text": "选择自己牌库中的1张超能量，附着于自己的宝可梦身上。并重洗牌库。如果是后攻玩家的最初回合的话，则可附着的张数变为最多3张，附着于自己的1只宝可梦身上。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "bonus": 90,
+                "condition": "field_energy_ge_5"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Psychic",
+            "Psychic"
+          ],
+          "damage": 30,
+          "damage_text": "30+",
+          "effects": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "params": {
+                "bonus": 90,
+                "condition": "field_energy_ge_5"
+              }
+            }
+          ],
+          "name": "光子镭射",
+          "text": "如果自己场上有5个以上（包含5个）能量的话，则追加造成90点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 120,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "克雷色利亚",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "sv1-114": {
+      "abilities": [],
+      "api_id": "sv1-114",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "count": 2,
+                "destination": "hand",
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "search",
+              "params": {
+                "count": 2,
+                "destination": "hand",
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              }
+            }
+          ],
+          "name": "小使者",
+          "text": "从自己的牌库中选择最多2张基本能量卡，展示后加入手牌。然后重洗牌库。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "optional": true,
+                "target": "self"
+              },
+              "branches": {},
+              "op": "switch_pokemon"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Psychic",
+            "Colorless"
+          ],
+          "damage": 50,
+          "damage_text": "50",
+          "effects": [
+            {
+              "effect_type": "switch_self",
+              "params": {
+                "optional": true
+              }
+            }
+          ],
+          "name": "旋转折返",
+          "text": "若希望，可将这只宝可梦与备战宝可梦互换。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "咚咚鼠",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Metal",
+          "value": "×2"
+        }
+      ]
+    }
+  },
+  "family": "psychic",
+  "format": "ptcg_card_source/1"
+}

@@ -4,9 +4,12 @@ import sys
 import os
 from SCons.Script import Default, Environment
 rules_source_root = os.path.abspath(os.path.join("..", "ptcg_core", "src"))
+common_root = os.path.abspath(os.path.join("..", "common"))
+repo_root = os.path.abspath(os.path.join("..", ".."))
+json_root = os.path.join(repo_root, ".tools", "native", "nlohmann-json", "include")
 
 env = Environment(ENV=os.environ)
-env.Append(CPPPATH=["src", rules_source_root])
+env.Append(CPPPATH=["src", rules_source_root, common_root, json_root])
 if sys.platform == "win32":
     env.Append(CXXFLAGS=["/EHsc", "/std:c++17", "/O2", "/utf-8"])
 else:

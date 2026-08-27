@@ -1,0 +1,5426 @@
+{
+  "authored_card_count": 137,
+  "card_count": 137,
+  "cards": {
+    "sv1-104": {
+      "abilities": {},
+      "attacks": {
+        "啃咬": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "幽魂射击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/psychic.json",
+        "pointer": "/cards/sv1-104"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-106": {
+      "abilities": {},
+      "attacks": {
+        "扫墓": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 80
+                    },
+                    {
+                      "factors": [
+                        {
+                          "filter": {
+                            "card_type": "pokemon",
+                            "energy_type": "Psychic"
+                          },
+                          "op": "discard_count",
+                          "player": "self"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/sv1-106/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "追加造成自己弃牌区中超宝可梦的张数×10伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/psychic.json",
+        "pointer": "/cards/sv1-106"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-107": {
+      "abilities": {},
+      "attacks": {
+        "三连突刺": {
+          "commands": [
+            {
+              "args": {
+                "damage_per_head": 10,
+                "flips": 3
+              },
+              "branches": {},
+              "op": "flip_coin_repeat_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "flip_coin_repeat_damage",
+              "pointer": "/cards/sv1-107/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "抛掷3次硬币，造成正面次数×10伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/psychic.json",
+        "pointer": "/cards/sv1-107"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-108": {
+      "abilities": {
+        "以太感知": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "basic_psychic",
+                "from_zone": "hand",
+                "to": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            },
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "attach_energy",
+              "pointer": "/cards/sv1-108/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            },
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/sv1-108/abilities/0/commands/1",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "在自己的回合可以使用1次。选择自己手牌中的1张「基本超能量」，附着于备战宝可梦身上。然后，从自己牌库上方抽取2张卡牌。",
+          "trigger": ""
+        }
+      },
+      "attacks": {
+        "超念力": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/psychic.json",
+        "pointer": "/cards/sv1-108"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-109": {
+      "abilities": {},
+      "attacks": {
+        "循环抽取": {
+          "commands": [
+            {
+              "args": {
+                "discard_amount": 1,
+                "draw_amount": 3
+              },
+              "branches": {},
+              "op": "discard_then_draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "discard_then_draw_cards",
+              "pointer": "/cards/sv1-109/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "将自己的1张手牌放于弃牌区。若这样做，则从自己牌库上方抽取3张卡牌。",
+          "trigger": ""
+        },
+        "月亮强念": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 30
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "psychic",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 30
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/sv1-109/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "追加造成这只宝可梦身上附有的超能量数量×30点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/psychic.json",
+        "pointer": "/cards/sv1-109"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-110": {
+      "abilities": {
+        "薄雾飘浮": {
+          "commands": [
+            {
+              "args": {
+                "energy_type": "psychic"
+              },
+              "branches": {},
+              "op": "register_conditional_zero_retreat"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "register_conditional_zero_retreat",
+              "pointer": "/cards/sv1-110/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "如果这只宝可梦身上附着了超能量的话，则这只宝可梦撤退所需能量全部消除。",
+          "trigger": "passive"
+        }
+      },
+      "attacks": {
+        "念动弹": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/psychic.json",
+        "pointer": "/cards/sv1-110"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-111": {
+      "abilities": {},
+      "attacks": {
+        "洁净光芒": {
+          "commands": [
+            {
+              "args": {
+                "amount": 3,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "discard_energy",
+              "pointer": "/cards/sv1-111/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "选择这只宝可梦身上附着的3个能量，放于弃牌区。",
+          "trigger": ""
+        },
+        "滑翔": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/psychic.json",
+        "pointer": "/cards/sv1-111"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-112": {
+      "abilities": {},
+      "attacks": {
+        "基因螺旋": {
+          "commands": [
+            {
+              "args": {
+                "amount": 99,
+                "from_self": true
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "relocate_energy",
+              "pointer": "/cards/sv1-112/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "将这只宝可梦身上附着的所有能量，以任意方式转附于备战宝可梦身上。",
+          "trigger": ""
+        },
+        "精神拳": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/psychic.json",
+        "pointer": "/cards/sv1-112"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-113": {
+      "abilities": {},
+      "attacks": {
+        "光子镭射": {
+          "commands": [
+            {
+              "args": {
+                "bonus": 90,
+                "condition": "field_energy_ge_5"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "conditional_damage",
+              "pointer": "/cards/sv1-113/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "如果自己场上有5个以上（包含5个）能量的话，则追加造成90点伤害。",
+          "trigger": ""
+        },
+        "新月生长": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "psychic",
+                "from_zone": "deck",
+                "going_second_bonus": 3,
+                "to": "any"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "attach_energy",
+              "pointer": "/cards/sv1-113/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "选择自己牌库中的1张超能量，附着于自己的宝可梦身上。并重洗牌库。如果是后攻玩家的最初回合的话，则可附着的张数变为最多3张，附着于自己的1只宝可梦身上。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/psychic.json",
+        "pointer": "/cards/sv1-113"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-114": {
+      "abilities": {},
+      "attacks": {
+        "小使者": {
+          "commands": [
+            {
+              "args": {
+                "count": 2,
+                "destination": "hand",
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "search_cards",
+              "pointer": "/cards/sv1-114/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "从自己的牌库中选择最多2张基本能量卡，展示后加入手牌。然后重洗牌库。",
+          "trigger": ""
+        },
+        "旋转折返": {
+          "commands": [
+            {
+              "args": {
+                "optional": true,
+                "target": "self"
+              },
+              "branches": {},
+              "op": "switch_pokemon"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "switch_pokemon",
+              "pointer": "/cards/sv1-114/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/psychic.json"
+            }
+          ],
+          "text": "若希望，可将这只宝可梦与备战宝可梦互换。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/psychic.json",
+        "pointer": "/cards/sv1-114"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-150": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-150"
+      },
+      "source_map": [
+        {
+          "op": "switch_pokemon",
+          "pointer": "/cards/sv1-150/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "target": "self"
+          },
+          "branches": {},
+          "op": "switch_pokemon"
+        }
+      ]
+    },
+    "sv1-151": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-151"
+      },
+      "source_map": [
+        {
+          "op": "search_cards",
+          "pointer": "/cards/sv1-151/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 1,
+            "destination": "bench",
+            "filter": "basic_pokemon",
+            "from_zone": "deck",
+            "reveal": true
+          },
+          "branches": {},
+          "op": "search_cards"
+        }
+      ]
+    },
+    "sv1-152": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-152"
+      },
+      "source_map": [
+        {
+          "op": "evolve_skip_stage",
+          "pointer": "/cards/sv1-152/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "skip_to": "stage2"
+          },
+          "branches": {},
+          "op": "evolve_skip_stage"
+        }
+      ]
+    },
+    "sv1-153": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-153"
+      },
+      "source_map": [
+        {
+          "op": "conditional",
+          "pointer": "/cards/sv1-153/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        },
+        {
+          "op": "discard_cards",
+          "pointer": "/cards/sv1-153/commands/0/branches/cost/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        },
+        {
+          "op": "search_cards",
+          "pointer": "/cards/sv1-153/commands/0/branches/on_pay/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {
+            "cost": [
+              {
+                "args": {
+                  "amount": 2,
+                  "from": "hand"
+                },
+                "branches": {},
+                "op": "discard_cards"
+              }
+            ],
+            "on_pay": [
+              {
+                "args": {
+                  "count": 1,
+                  "destination": "hand",
+                  "filter": "pokemon",
+                  "from_zone": "deck",
+                  "reveal": true
+                },
+                "branches": {},
+                "op": "search_cards"
+              }
+            ]
+          },
+          "op": "conditional"
+        }
+      ]
+    },
+    "sv1-170": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-170"
+      },
+      "source_map": [
+        {
+          "op": "look_top_deck",
+          "pointer": "/cards/sv1-170/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 5,
+            "destination": "bench_energy",
+            "filter": "lightning_energy",
+            "min_select": 0,
+            "shuffle_rest": true,
+            "take": 2,
+            "target_pokemon_type": "Lightning"
+          },
+          "branches": {},
+          "op": "look_top_deck"
+        }
+      ]
+    },
+    "sv1-171": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-171"
+      },
+      "source_map": [
+        {
+          "op": "search_cards",
+          "pointer": "/cards/sv1-171/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 2,
+            "destination": "hand",
+            "filter": "basic_energy",
+            "from_zone": "discard",
+            "min_select": 0,
+            "reveal": true
+          },
+          "branches": {},
+          "op": "search_cards"
+        }
+      ]
+    },
+    "sv1-176": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-176"
+      },
+      "source_map": [
+        {
+          "op": "judge",
+          "pointer": "/cards/sv1-176/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "draw": 4
+          },
+          "branches": {},
+          "op": "judge"
+        }
+      ]
+    },
+    "sv1-180": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-180"
+      },
+      "source_map": [
+        {
+          "op": "draw_cards",
+          "pointer": "/cards/sv1-180/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 3,
+            "player": "self"
+          },
+          "branches": {},
+          "op": "draw_cards"
+        }
+      ]
+    },
+    "sv1-189": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-189"
+      },
+      "source_map": [
+        {
+          "op": "discard_then_draw_cards",
+          "pointer": "/cards/sv1-189/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "discard_hand": true,
+            "draw": 7
+          },
+          "branches": {},
+          "op": "discard_then_draw_cards"
+        }
+      ]
+    },
+    "sv1-201": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-201"
+      },
+      "source_map": [
+        {
+          "op": "register_tool_modifier",
+          "pointer": "/cards/sv1-201/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "effect": "damage_boost_when_behind"
+          },
+          "branches": {},
+          "op": "register_tool_modifier"
+        }
+      ]
+    },
+    "sv1-202": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-202"
+      },
+      "source_map": [
+        {
+          "op": "register_tool_modifier",
+          "pointer": "/cards/sv1-202/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "effect": "hp_boost_basic"
+          },
+          "branches": {},
+          "op": "register_tool_modifier"
+        }
+      ]
+    },
+    "sv1-203": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-203"
+      },
+      "source_map": [
+        {
+          "op": "recover_clara",
+          "pointer": "/cards/sv1-203/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "energy_count": 2,
+            "pokemon_count": 2
+          },
+          "branches": {},
+          "op": "recover_clara"
+        }
+      ]
+    },
+    "sv1-204": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv1-204"
+      },
+      "source_map": [
+        {
+          "op": "search_item_and_tool",
+          "pointer": "/cards/sv1-204/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "search_item_and_tool"
+        }
+      ]
+    },
+    "sv1-49": {
+      "abilities": {},
+      "attacks": {
+        "愤怒冷冻": {
+          "commands": [
+            {
+              "args": {
+                "condition": "ko_by_attack_damage_last_turn",
+                "status": "paralyzed",
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "conditional_status"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "conditional_status",
+              "pointer": "/cards/sv1-49/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "在上一个对手的回合，如果因为招式的伤害，而导致自己的宝可梦昏厥的话，则使对手的战斗宝可梦陷入麻痹状态。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/sv1-49"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-1": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/sv1-ener-1"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-2": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/sv1-ener-2"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-3": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/sv1-ener-3"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-4": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/sv1-ener-4"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-5": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/sv1-ener-5"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-6": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/sv1-ener-6"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-7": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/sv1-ener-7"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv1-ener-8": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/sv1-ener-8"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-38": {
+      "abilities": {},
+      "attacks": {
+        "跳一下": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_tails": [
+                  {
+                    "args": {},
+                    "branches": {},
+                    "op": "fail_attack"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "flip_coin",
+              "pointer": "/cards/sv2-38/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            },
+            {
+              "op": "fail_attack",
+              "pointer": "/cards/sv2-38/attacks/0/commands/0/branches/on_tails/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "抛掷1次硬币如果为反面，则这个招式失败。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/sv2-38"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-39": {
+      "abilities": {},
+      "attacks": {
+        "折返瞬击": {
+          "commands": [
+            {
+              "args": {
+                "optional": true,
+                "target": "self"
+              },
+              "branches": {},
+              "op": "switch_pokemon"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "switch_pokemon",
+              "pointer": "/cards/sv2-39/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "若希望，可将这只宝可梦与备战宝可梦互换。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/sv2-39"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-cand": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv2-cand"
+      },
+      "source_map": [
+        {
+          "op": "look_top_deck",
+          "pointer": "/cards/sv2-cand/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 7,
+            "filter": "water_pokemon_and_energy",
+            "min_select": 0,
+            "shuffle_rest": true,
+            "take": 99
+          },
+          "branches": {},
+          "op": "look_top_deck"
+        }
+      ]
+    },
+    "sv2-catch": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv2-catch"
+      },
+      "source_map": [
+        {
+          "op": "flip_coin",
+          "pointer": "/cards/sv2-catch/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        },
+        {
+          "op": "switch_pokemon",
+          "pointer": "/cards/sv2-catch/commands/0/branches/on_heads/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {
+            "on_heads": [
+              {
+                "args": {
+                  "target": "opponent",
+                  "you_choose": true
+                },
+                "branches": {},
+                "op": "switch_pokemon"
+              }
+            ]
+          },
+          "op": "flip_coin"
+        }
+      ]
+    },
+    "sv2-delib": {
+      "abilities": {},
+      "attacks": {
+        "冰之翼": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "双重抽取": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/sv2-delib/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "从自己牌库上方抽取2张卡牌。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/sv2-delib"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-glast": {
+      "abilities": {},
+      "attacks": {
+        "冻结": {
+          "commands": [
+            {
+              "args": {
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "apply_attack_lock_basic"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "apply_attack_lock_basic",
+              "pointer": "/cards/sv2-glast/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "在下一个对手的回合，受到这个招式影响的基础宝可梦，无法使用招式。",
+          "trigger": ""
+        },
+        "疯狂冲撞": {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_damage_counters",
+              "pointer": "/cards/sv2-glast/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "给这只宝可梦也造成30点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/sv2-glast"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-grex": {
+      "abilities": {},
+      "attacks": {
+        "激流斩": {
+          "commands": [
+            {
+              "args": {
+                "bonus": 120,
+                "condition": "opponent_active_damaged"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "conditional_damage",
+              "pointer": "/cards/sv2-grex/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "如果对手的战斗宝可梦身上有伤害指示物，则追加造成120点伤害。",
+          "trigger": ""
+        },
+        "隐蔽手里剑": {
+          "commands": [
+            {
+              "args": {
+                "amount": 40,
+                "bench_skips_type_matchups": true,
+                "player": "opponent"
+              },
+              "branches": {},
+              "op": "choose_damage_target"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "choose_damage_target",
+              "pointer": "/cards/sv2-grex/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "对对手的1只宝可梦造成40点伤害。（对备战宝可梦不计算弱点·抗性）",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/sv2-grex"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-keldeo": {
+      "abilities": {},
+      "attacks": {
+        "踢飞": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "队列之力": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 10
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "bench_count",
+                          "player": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/sv2-keldeo/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "追加造成自己备战宝可梦数量×20点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/sv2-keldeo"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-starm": {
+      "abilities": {
+        "神秘彗星": {
+          "commands": [
+            {
+              "args": {
+                "counters": 2,
+                "target": "opponent_any"
+              },
+              "branches": {},
+              "op": "place_counters_then_self_discard"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_counters_then_self_discard",
+              "pointer": "/cards/sv2-starm/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "在自己的回合可以使用1次。给对手的1只宝可梦身上，放置2个伤害指示物。然后，将这只宝可梦，以及放于其身上的所有卡牌，放于弃牌区。",
+          "trigger": ""
+        }
+      },
+      "attacks": {
+        "高速攻击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/sv2-starm"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-staryu": {
+      "abilities": {},
+      "attacks": {
+        "高速星星": {
+          "commands": [
+            {
+              "args": {
+                "ignore_defender_damage_effects": true,
+                "ignore_resistance": true,
+                "ignore_weakness": true
+              },
+              "branches": {},
+              "op": "set_attack_flags"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "set_attack_flags",
+              "pointer": "/cards/sv2-staryu/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "这个招式的伤害，不计算弱点、抗性以及对手战斗宝可梦身上所附加的效果。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/sv2-staryu"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-tatsu": {
+      "abilities": {},
+      "attacks": {
+        "上弓折返": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {},
+              "op": "return_to_hand"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "return_to_hand",
+              "pointer": "/cards/sv2-tatsu/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "将这只宝可梦，以及放于其身上的所有卡牌，放回手牌。",
+          "trigger": ""
+        },
+        "预先准备": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "filter": "basic_water",
+                "from_zone": "deck",
+                "min_select": 0,
+                "to": "self_basic"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "attach_energy",
+              "pointer": "/cards/sv2-tatsu/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "选择自己牌库中最多2张「基本水能量」，附着于自己的1只基础宝可梦身上，并重洗牌库。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/sv2-tatsu"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "sv2-young": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv2-young"
+      },
+      "source_map": [
+        {
+          "op": "shuffle_then_draw_cards",
+          "pointer": "/cards/sv2-young/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "affect": "self_only",
+            "draw": 5,
+            "shuffle_hand": true
+          },
+          "branches": {},
+          "op": "shuffle_then_draw_cards"
+        }
+      ]
+    },
+    "sv3-134": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/sv3-134"
+      },
+      "source_map": [
+        {
+          "op": "shuffle_from_discard_to_deck",
+          "pointer": "/cards/sv3-134/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 3,
+            "filter": "pokemon_and_energy"
+          },
+          "branches": {},
+          "op": "shuffle_from_discard_to_deck"
+        }
+      ]
+    },
+    "svd-absol": {
+      "abilities": {},
+      "attacks": {
+        "深挖伤口": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 50
+                    },
+                    {
+                      "condition": "opponent_active_damaged",
+                      "else": {
+                        "const": 0
+                      },
+                      "op": "if",
+                      "then": {
+                        "const": 70
+                      }
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svd-absol/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "如果对手的战斗宝可梦身上放置有伤害指示物的话，则追加造成70点伤害。",
+          "trigger": ""
+        },
+        "漩涡灾祸": {
+          "commands": [
+            {
+              "args": {
+                "amount": 10,
+                "choose_targets": false,
+                "count": 5,
+                "player": "opponent"
+              },
+              "branches": {},
+              "op": "deal_bench_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_bench_damage",
+              "pointer": "/cards/svd-absol/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "给对手的所有宝可梦，各造成10点伤害。[备战宝可梦不计算弱点、抗性。]",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/darkness.json",
+        "pointer": "/cards/svd-absol"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-dark-patch": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/darkness.json",
+        "pointer": "/cards/svd-dark-patch"
+      },
+      "source_map": [
+        {
+          "op": "attach_energy_from_discard",
+          "pointer": "/cards/svd-dark-patch/commands/0",
+          "source_path": "godot/authoring/cards/darkness.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 1,
+            "energy_type": "basic_darkness",
+            "target": "bench",
+            "target_pokemon_type": "Darkness"
+          },
+          "branches": {},
+          "op": "attach_energy_from_discard"
+        }
+      ]
+    },
+    "svd-darkrai": {
+      "abilities": {},
+      "attacks": {
+        "恶梦": {
+          "commands": [
+            {
+              "args": {
+                "status": "asleep",
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "apply_status"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "apply_status",
+              "pointer": "/cards/svd-darkrai/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "使对手的战斗宝可梦陷入睡眠状态。",
+          "trigger": ""
+        },
+        "漆黑之刃": {
+          "commands": [
+            {
+              "args": {
+                "attack_name": "漆黑之刃",
+                "scope": "all"
+              },
+              "branches": {},
+              "op": "apply_self_attack_lock"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "apply_self_attack_lock",
+              "pointer": "/cards/svd-darkrai/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "在下一个自己的回合，这只宝可梦无法使用招式。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/darkness.json",
+        "pointer": "/cards/svd-darkrai"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-dodrio": {
+      "abilities": {
+        "暴走抽取": {
+          "commands": [
+            {
+              "args": {
+                "amount": 10
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            },
+            {
+              "args": {
+                "amount": 1,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_damage_counters",
+              "pointer": "/cards/svd-dodrio/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            },
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/svd-dodrio/abilities/0/commands/1",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "在自己的回合可以使用1次。给这只宝可梦身上放置1个伤害指示物。然后，从自己牌库上方抽取1张卡牌。",
+          "trigger": "on_turn"
+        }
+      },
+      "attacks": {
+        "愤怒之喙": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 10
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "damage_counters",
+                          "target": "self"
+                        },
+                        {
+                          "const": 30
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svd-dodrio/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "追加造成这只宝可梦身上放置的伤害指示物数量×30伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/darkness.json",
+        "pointer": "/cards/svd-dodrio"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-doduo": {
+      "abilities": {},
+      "attacks": {
+        "突击": {
+          "commands": [
+            {
+              "args": {
+                "amount": 10,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_damage_counters",
+              "pointer": "/cards/svd-doduo/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "给这只宝可梦也造成10伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/darkness.json",
+        "pointer": "/cards/svd-doduo"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-hard-belt": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/darkness.json",
+        "pointer": "/cards/svd-hard-belt"
+      },
+      "source_map": [
+        {
+          "op": "register_tool_modifier",
+          "pointer": "/cards/svd-hard-belt/commands/0",
+          "source_path": "godot/authoring/cards/darkness.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 30,
+            "effect": "damage_reduction_stage1"
+          },
+          "branches": {},
+          "op": "register_tool_modifier"
+        }
+      ]
+    },
+    "svd-mabosstiff-ex": {
+      "abilities": {},
+      "attacks": {
+        "恫吓": {
+          "commands": [
+            {
+              "args": {
+                "amount": 50,
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "apply_outgoing_damage_reduction"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "apply_outgoing_damage_reduction",
+              "pointer": "/cards/svd-mabosstiff-ex/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "在下一个对手的回合，受到这个招式影响的宝可梦所使用招式的伤害「-50」。",
+          "trigger": ""
+        },
+        "自尊獠牙": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 100
+                    },
+                    {
+                      "condition": "own_bench_damaged",
+                      "else": {
+                        "const": 0
+                      },
+                      "op": "if",
+                      "then": {
+                        "const": 120
+                      }
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svd-mabosstiff-ex/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "如果自己的备战宝可梦身上放置有伤害指示物的话，则追加造成120伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/darkness.json",
+        "pointer": "/cards/svd-mabosstiff-ex"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-maschiff": {
+      "abilities": {},
+      "attacks": {
+        "踢飞": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "锐利之牙": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/darkness.json",
+        "pointer": "/cards/svd-maschiff"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-morpeko": {
+      "abilities": {},
+      "attacks": {
+        "捡食": {
+          "commands": [
+            {
+              "args": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "item",
+                "from_zone": "discard",
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "search_cards",
+              "pointer": "/cards/svd-morpeko/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "选择自己弃牌区中的1张物品，在给对手看过之后，加入手牌。",
+          "trigger": ""
+        },
+        "空腹撞击": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 20
+                    },
+                    {
+                      "condition": "own_hand_empty",
+                      "else": {
+                        "const": 0
+                      },
+                      "op": "if",
+                      "then": {
+                        "const": 90
+                      }
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svd-morpeko/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "如果自己没有手牌的话，则追加造成90点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/darkness.json",
+        "pointer": "/cards/svd-morpeko"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svd-seviper": {
+      "abilities": {},
+      "attacks": {
+        "挥落": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 50
+                    },
+                    {
+                      "condition": "opponent_active_evolved",
+                      "else": {
+                        "const": 0
+                      },
+                      "op": "if",
+                      "then": {
+                        "const": 50
+                      }
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svd-seviper/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/darkness.json"
+            }
+          ],
+          "text": "如果对手的战斗宝可梦为进化宝可梦的话，则追加造成50伤害。",
+          "trigger": ""
+        },
+        "锐利之牙": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/darkness.json",
+        "pointer": "/cards/svd-seviper"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-ensw2": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svf-ensw2"
+      },
+      "source_map": [
+        {
+          "op": "relocate_energy",
+          "pointer": "/cards/svf-ensw2/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 1,
+            "energy_type": "basic_energy"
+          },
+          "branches": {},
+          "op": "relocate_energy"
+        }
+      ]
+    },
+    "svf-farf": {
+      "abilities": {},
+      "attacks": {
+        "甩葱殴打": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "背来": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/svf-farf/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "从自己牌库上方抽取2张卡牌。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svf-farf"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-hawl": {
+      "abilities": {},
+      "attacks": {
+        "展示姿态": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "energy_type": "basic",
+                "min_select": 0,
+                "same_target": true,
+                "select_source": true,
+                "target": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy_from_discard"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "attach_energy_from_discard",
+              "pointer": "/cards/svf-hawl/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "选择自己弃牌区中最多2张基本能量，附着于1只备战宝可梦身上。",
+          "trigger": ""
+        },
+        "挥落": {
+          "commands": [
+            {
+              "args": {
+                "bonus": 30,
+                "condition": "opponent_active_evolved"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "conditional_damage",
+              "pointer": "/cards/svf-hawl/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "如果对手的战斗宝可梦为进化宝可梦的话，则追加造成30点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svf-hawl"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-houb": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svf-houb"
+      },
+      "source_map": [
+        {
+          "op": "hand_to_bottom_draw_until",
+          "pointer": "/cards/svf-houb/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "target_hand_size": 5
+          },
+          "branches": {},
+          "op": "hand_to_bottom_draw_until"
+        }
+      ]
+    },
+    "svf-klea": {
+      "abilities": {},
+      "attacks": {
+        "大树切割": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {},
+              "op": "flip_coin_then_ko"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "flip_coin_then_ko",
+              "pointer": "/cards/svf-klea/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/fighting.json"
+            }
+          ],
+          "text": "抛掷2次硬币，如果全部都是正面，则使对手的战斗宝可梦昏厥。",
+          "trigger": ""
+        },
+        "暴走冲撞": {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_damage_counters",
+              "pointer": "/cards/svf-klea/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/fighting.json"
+            }
+          ],
+          "text": "给这只宝可梦也造成30点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fighting.json",
+        "pointer": "/cards/svf-klea"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-luca": {
+      "abilities": {
+        "旺盛斗气": {
+          "commands": [
+            {
+              "args": {
+                "amount": 20
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            },
+            {
+              "args": {
+                "amount": 1,
+                "filter": "fighting",
+                "from_zone": "deck",
+                "to": "self"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_damage_counters",
+              "pointer": "/cards/svf-luca/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/fighting.json"
+            },
+            {
+              "op": "attach_energy",
+              "pointer": "/cards/svf-luca/abilities/0/commands/1",
+              "source_path": "godot/authoring/cards/fighting.json"
+            }
+          ],
+          "text": "在自己的回合可以使用1次。给这只宝可梦身上放置2个伤害指示物。然后，选择自己牌库中的1张斗能量卡，附着于这只宝可梦身上。并重洗牌库。",
+          "trigger": ""
+        }
+      },
+      "attacks": {
+        "连续波导弹": {
+          "commands": [
+            {
+              "args": {
+                "base": 10,
+                "per_energy": 60
+              },
+              "branches": {},
+              "op": "discard_energy_then_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "discard_energy_then_damage",
+              "pointer": "/cards/svf-luca/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/fighting.json"
+            }
+          ],
+          "text": "将附着于这只宝可梦身上的斗能量全部放于弃牌区，追加造成其张数×60点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fighting.json",
+        "pointer": "/cards/svf-luca"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-pass": {
+      "abilities": {},
+      "attacks": {
+        "辅助传递": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "from_self": true
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "relocate_energy",
+              "pointer": "/cards/svf-pass/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/fighting.json"
+            }
+          ],
+          "text": "选择这只宝可梦身上附着的1个能量，转附于备战宝可梦身上。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fighting.json",
+        "pointer": "/cards/svf-pass"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-potion": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svf-potion"
+      },
+      "source_map": [
+        {
+          "op": "choose_heal_damage",
+          "pointer": "/cards/svf-potion/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 30
+          },
+          "branches": {},
+          "op": "choose_heal_damage"
+        }
+      ]
+    },
+    "svf-rio": {
+      "abilities": {},
+      "attacks": {
+        "突击": {
+          "commands": [
+            {
+              "args": {
+                "amount": 20,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_damage_counters",
+              "pointer": "/cards/svf-rio/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/fighting.json"
+            }
+          ],
+          "text": "给这只宝可梦也造成20点伤害。",
+          "trigger": ""
+        },
+        "重拳": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fighting.json",
+        "pointer": "/cards/svf-rio"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-scyt": {
+      "abilities": {},
+      "attacks": {
+        "高速镰刀": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/grass.json",
+        "pointer": "/cards/svf-scyt"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svf-terr": {
+      "abilities": {},
+      "attacks": {
+        "岩窟冲撞": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {},
+              "op": "prevent_damage"
+            },
+            {
+              "args": {
+                "attack_name": "岩窟冲撞",
+                "scope": "player"
+              },
+              "branches": {},
+              "op": "apply_self_attack_lock"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "prevent_damage",
+              "pointer": "/cards/svf-terr/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/fighting.json"
+            },
+            {
+              "op": "apply_self_attack_lock",
+              "pointer": "/cards/svf-terr/attacks/0/commands/1",
+              "source_path": "godot/authoring/cards/fighting.json"
+            }
+          ],
+          "text": "在下一个对手的回合，这只宝可梦不会受到招式的伤害。在上一个自己的回合，如果自己的宝可梦使用了「岩窟冲撞」的话，则无法使用这个招式。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fighting.json",
+        "pointer": "/cards/svf-terr"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-alt": {
+      "abilities": {
+        "哼唱治愈": {
+          "commands": [
+            {
+              "args": {
+                "amount": 20
+              },
+              "branches": {},
+              "op": "heal_all"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "heal_all",
+              "pointer": "/cards/svg-alt/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/dragon.json"
+            }
+          ],
+          "text": "在自己的回合可以使用1次。将自己所有宝可梦的HP，各回复「20」。",
+          "trigger": "on_turn"
+        }
+      },
+      "attacks": {
+        "光之波动": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {},
+              "op": "prevent_effects"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "prevent_effects",
+              "pointer": "/cards/svg-alt/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/dragon.json"
+            }
+          ],
+          "text": "在下一个对手的回合，这只宝可梦不受到对手宝可梦所使用招式的效果影响。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/dragon.json",
+        "pointer": "/cards/svg-alt"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-beri": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svg-beri"
+      },
+      "source_map": [
+        {
+          "op": "draw_until_more_than_opponent",
+          "pointer": "/cards/svg-beri/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "draw_until_more_than_opponent"
+        }
+      ]
+    },
+    "svg-cast": {
+      "abilities": {},
+      "attacks": {
+        "双重抽取": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/svg-cast/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "从自己的牌库上方抽取2张卡牌。",
+          "trigger": ""
+        },
+        "暴风": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "energy_type": "basic_energy",
+                "from_self": true
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "relocate_energy",
+              "pointer": "/cards/svg-cast/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "选择附着于这只宝可梦身上的1个基本能量，转附于备战宝可梦身上。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svg-cast"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-ceti": {
+      "abilities": {},
+      "attacks": {
+        "头突": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "扫除冲撞": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "lhs": {
+                    "const": 200
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "factors": [
+                      {
+                        "op": "damage_counters",
+                        "target": "self"
+                      },
+                      {
+                        "const": 20
+                      }
+                    ],
+                    "op": "mul"
+                  }
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svg-ceti/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "这个招式的伤害，会被减少相当于这只宝可梦身上放置的伤害指示物数量×20的数值。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/svg-ceti"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-ceto": {
+      "abilities": {},
+      "attacks": {
+        "撞击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/svg-ceto"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-chef": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svg-chef"
+      },
+      "source_map": [
+        {
+          "op": "heal_damage",
+          "pointer": "/cards/svg-chef/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 70,
+            "target": "self"
+          },
+          "branches": {},
+          "op": "heal_damage"
+        }
+      ]
+    },
+    "svg-dram": {
+      "abilities": {},
+      "attacks": {
+        "逆鳞": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "damage_counters",
+                          "target": "self"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svg-dram/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/dragon.json"
+            }
+          ],
+          "text": "追加造成这只宝可梦身上放置的伤害指示物数量×10伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/dragon.json",
+        "pointer": "/cards/svg-dram"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-milt": {
+      "abilities": {},
+      "attacks": {
+        "活泼冲撞": {
+          "commands": [
+            {
+              "args": {
+                "base": 60,
+                "bonus": 90
+              },
+              "branches": {},
+              "op": "conditional_damage_then_heal"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "conditional_damage_then_heal",
+              "pointer": "/cards/svg-milt/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "在这个回合，如果回复了这只宝可梦的HP的话，则追加造成90伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svg-milt"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-swa": {
+      "abilities": {},
+      "attacks": {
+        "连续旋转": {
+          "commands": [
+            {
+              "args": {
+                "per_head": 20
+              },
+              "branches": {},
+              "op": "flip_until_tails"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "flip_until_tails",
+              "pointer": "/cards/svg-swa/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "抛掷硬币直到出现反面，造成正面次数×20点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svg-swa"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg-tatsu": {
+      "abilities": {},
+      "attacks": {
+        "水枪": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "生存战略": {
+          "commands": [
+            {
+              "args": {
+                "count": 2,
+                "min_select": 0,
+                "source_slot": "active",
+                "switch_optional": true
+              },
+              "branches": {},
+              "op": "search_any_and_switch"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "search_any_and_switch",
+              "pointer": "/cards/svg-tatsu/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/dragon.json"
+            }
+          ],
+          "text": "选择自己牌库中任意卡牌最多2张，加入手牌。并重洗牌库。若希望，可将这只宝可梦与备战宝可梦互换。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/dragon.json",
+        "pointer": "/cards/svg-tatsu"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-brel": {
+      "abilities": {},
+      "attacks": {
+        "音速直击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/grass.json",
+        "pointer": "/cards/svg2-brel"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-empo": {
+      "abilities": {
+        "紧急上浮": {
+          "commands": [
+            {
+              "args": {
+                "card_id": "svg2-empo"
+              },
+              "branches": {},
+              "op": "discard_then_revive"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "discard_then_revive",
+              "pointer": "/cards/svg2-empo/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "在自己的回合，如果这张卡牌在弃牌区，且自己没有手牌的话，则可使用1次。将这张卡牌放于备战区。然后，从自己的牌库上方抽取3张卡牌。",
+          "trigger": "on_turn"
+        }
+      },
+      "attacks": {
+        "水之矢": {
+          "commands": [
+            {
+              "args": {
+                "amount": 60,
+                "bench_skips_type_matchups": true
+              },
+              "branches": {},
+              "op": "choose_damage_target"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "choose_damage_target",
+              "pointer": "/cards/svg2-empo/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/water.json"
+            }
+          ],
+          "text": "给对手的1只宝可梦，造成60点伤害。[备战宝可梦不计算弱点、抗性。]",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/water.json",
+        "pointer": "/cards/svg2-empo"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-exps": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svg2-exps"
+      },
+      "source_map": [
+        {
+          "op": "register_tool_exp_share",
+          "pointer": "/cards/svg2-exps/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "register_tool_exp_share"
+        }
+      ]
+    },
+    "svg2-gard": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svg2-gard"
+      },
+      "source_map": [
+        {
+          "op": "draw_and_attach_energy",
+          "pointer": "/cards/svg2-gard/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "energy_count": 2,
+            "energy_type": "Grass",
+            "min_select": 0
+          },
+          "branches": {},
+          "op": "draw_and_attach_energy"
+        }
+      ]
+    },
+    "svg2-grot": {
+      "abilities": {
+        "日光甲壳": {
+          "commands": [
+            {
+              "args": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "grass_pokemon",
+                "from_zone": "deck",
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "search_cards",
+              "pointer": "/cards/svg2-grot/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/grass.json"
+            }
+          ],
+          "text": "在自己的回合可以使用1次。选择自己牌库中的1张G宝可梦，在给对手看过之后，加入手牌。并重洗牌库。",
+          "trigger": "on_turn"
+        }
+      },
+      "attacks": {
+        "飞叶快刀": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/grass.json",
+        "pointer": "/cards/svg2-grot"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-hamm": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svg2-hamm"
+      },
+      "source_map": [
+        {
+          "op": "flip_coin_then_discard_energy",
+          "pointer": "/cards/svg2-hamm/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "flip_coin_then_discard_energy"
+        }
+      ]
+    },
+    "svg2-lume": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [
+        {
+          "downgrade_if_other_special": true,
+          "kind": "provide_energy",
+          "types": [
+            "Rainbow"
+          ]
+        }
+      ],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/svg2-lume"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-shro": {
+      "abilities": {},
+      "attacks": {
+        "吸取": {
+          "commands": [
+            {
+              "args": {
+                "damage": 10,
+                "heal": 10
+              },
+              "branches": {},
+              "op": "deal_damage_then_heal"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage_then_heal",
+              "pointer": "/cards/svg2-shro/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/grass.json"
+            }
+          ],
+          "text": "回复这只宝可梦「10」HP。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/grass.json",
+        "pointer": "/cards/svg2-shro"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-tort": {
+      "abilities": {},
+      "attacks": {
+        "头突": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "进化压制": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "op": "evolved_count",
+                      "player": "self"
+                    },
+                    {
+                      "const": 50
+                    }
+                  ],
+                  "op": "mul"
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svg2-tort/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/grass.json"
+            }
+          ],
+          "text": "造成自己场上进化宝可梦数量×50点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/grass.json",
+        "pointer": "/cards/svg2-tort"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-turt": {
+      "abilities": {},
+      "attacks": {
+        "咬住": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "鲁莽头击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/grass.json",
+        "pointer": "/cards/svg2-turt"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svg2-zaru": {
+      "abilities": {},
+      "attacks": {
+        "反复鞭挞": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "Grass",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svg2-zaru/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/grass.json"
+            }
+          ],
+          "text": "追加造成这只宝可梦身上附有的G能量数量×20点伤害。",
+          "trigger": ""
+        },
+        "唤群之歌": {
+          "commands": [
+            {
+              "args": {
+                "default_count": 1,
+                "filter": "grass_pokemon",
+                "max_count": 3
+              },
+              "branches": {},
+              "op": "conditional_search"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "conditional_search",
+              "pointer": "/cards/svg2-zaru/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/grass.json"
+            }
+          ],
+          "text": "选择自己牌库中的1张G宝可梦，在给对手看过之后，加入手牌。并重洗牌库。如果是后攻玩家的最初回合的话，则可加入手牌的G宝可梦的张数变为最多3张。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/grass.json",
+        "pointer": "/cards/svg2-zaru"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-aipo": {
+      "abilities": {},
+      "attacks": {
+        "掌击": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "骗取": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/svi-aipo/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "从自己牌库上方抽取1张卡牌。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svi-aipo"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-ambi": {
+      "abilities": {},
+      "attacks": {
+        "招来": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/svi-ambi/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "从自己牌库上方抽取2张卡牌。",
+          "trigger": ""
+        },
+        "长手抛掷": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "op": "hand_size",
+                      "player": "self"
+                    },
+                    {
+                      "const": 20
+                    }
+                  ],
+                  "op": "mul"
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svi-ambi/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "造成自己手牌张数×20伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svi-ambi"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-cait": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svi-cait"
+      },
+      "source_map": [
+        {
+          "op": "hand_to_bottom_then_draw",
+          "pointer": "/cards/svi-cait/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "hand_to_bottom_then_draw"
+        }
+      ]
+    },
+    "svi-chim": {
+      "abilities": {},
+      "attacks": {
+        "火花": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "discard_energy",
+              "pointer": "/cards/svi-chim/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/fire.json"
+            }
+          ],
+          "text": "选择附着于这只宝可梦身上的1个能量，放于弃牌区。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fire.json",
+        "pointer": "/cards/svi-chim"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-chiy": {
+      "abilities": {},
+      "attacks": {
+        "嫉妒业火": {
+          "commands": [
+            {
+              "args": {
+                "bonus": 90,
+                "condition": "ko_by_attack_damage_last_turn"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "conditional_damage",
+              "pointer": "/cards/svi-chiy/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/fire.json"
+            }
+          ],
+          "text": "在上一个对手的回合，如果因为招式的伤害而导致自己的宝可梦昏厥的话，则追加造成90伤害。",
+          "trigger": ""
+        },
+        "闪焰生成": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "energy_type": "basic_fire",
+                "min_select": 0,
+                "target": "self_or_bench"
+              },
+              "branches": {},
+              "op": "attach_energy_from_discard"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "attach_energy_from_discard",
+              "pointer": "/cards/svi-chiy/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/fire.json"
+            }
+          ],
+          "text": "选择自己弃牌区中最多2张基本火能量，附着于自己的1只宝可梦身上。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fire.json",
+        "pointer": "/cards/svi-chiy"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-dtur": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless",
+            "Colorless"
+          ]
+        },
+        {
+          "effect": {
+            "delta": -20
+          },
+          "hook": "MODIFY_DAMAGE",
+          "kind": "modifier",
+          "priority": 30,
+          "scope": "attached_attacker"
+        }
+      ],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/svi-dtur"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-enst": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svi-enst"
+      },
+      "source_map": [
+        {
+          "op": "look_top_deck",
+          "pointer": "/cards/svi-enst/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 7,
+            "destination": "hand",
+            "filter": "energy",
+            "shuffle_rest": true,
+            "take": 1
+          },
+          "branches": {},
+          "op": "look_top_deck"
+        }
+      ]
+    },
+    "svi-ente": {
+      "abilities": {
+        "压迫感": {
+          "commands": [
+            {
+              "args": {
+                "before_weakness": true,
+                "reduction": 20,
+                "requires_active": true
+              },
+              "branches": {},
+              "op": "register_aura_damage_reduction"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "register_aura_damage_reduction",
+              "pointer": "/cards/svi-ente/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/fire.json"
+            }
+          ],
+          "text": "只要这只宝可梦在战斗场上，对手战斗宝可梦使用的招式伤害「-20」。",
+          "trigger": "passive"
+        }
+      },
+      "attacks": {
+        "火焰之球": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "fire",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svi-ente/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/fire.json"
+            }
+          ],
+          "text": "追加这只宝可梦身上附着的火能量数量×20伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fire.json",
+        "pointer": "/cards/svi-ente"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-erec": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svi-erec"
+      },
+      "source_map": [
+        {
+          "op": "shuffle_from_discard_to_deck",
+          "pointer": "/cards/svi-erec/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 5,
+            "filter": "basic_energy"
+          },
+          "branches": {},
+          "op": "shuffle_from_discard_to_deck"
+        }
+      ]
+    },
+    "svi-flam": {
+      "abilities": {},
+      "attacks": {
+        "俯冲": {
+          "commands": [
+            {
+              "args": {
+                "amount": 20,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_damage_counters",
+              "pointer": "/cards/svi-flam/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "给这只宝可梦也造成20伤害。",
+          "trigger": ""
+        },
+        "振翅": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svi-flam"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-gree": {
+      "abilities": {},
+      "attacks": {
+        "倾倒一空": {
+          "commands": [
+            {
+              "args": {
+                "base_damage": 60,
+                "bonus": 150,
+                "threshold": 5
+              },
+              "branches": {},
+              "op": "discard_hand_then_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "discard_hand_then_damage",
+              "pointer": "/cards/svi-gree/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "将自己的手牌全部放于弃牌区。如果将5张以上放于弃牌区，则追加造成150点伤害。",
+          "trigger": ""
+        },
+        "招来": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/svi-gree/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "从自己的牌库上方抽取2张卡牌。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svi-gree"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-hrot": {
+      "abilities": {},
+      "attacks": {
+        "高温冲撞": {
+          "commands": [
+            {
+              "args": {
+                "amount": 40,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_damage_counters",
+              "pointer": "/cards/svi-hrot/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/fire.json"
+            }
+          ],
+          "text": "给这只宝可梦也造成40伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fire.json",
+        "pointer": "/cards/svi-hrot"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-inde": {
+      "abilities": {},
+      "attacks": {
+        "妙手强念": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "op": "hand_size",
+                      "player": "self"
+                    },
+                    {
+                      "const": 10
+                    }
+                  ],
+                  "op": "mul"
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svi-inde/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "造成自己手牌张数×10点伤害。",
+          "trigger": ""
+        },
+        "招来": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/svi-inde/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "从自己的牌库上方抽取2张卡牌。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svi-inde"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-infr": {
+      "abilities": {},
+      "attacks": {
+        "燃烧踢": {
+          "commands": [
+            {
+              "args": {
+                "amount": 99,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "discard_energy",
+              "pointer": "/cards/svi-infr/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/fire.json"
+            }
+          ],
+          "text": "将附着于这只宝可梦身上的能量全部放于弃牌区。",
+          "trigger": ""
+        },
+        "螺旋业火": {
+          "commands": [
+            {
+              "args": {
+                "damage_per": 80,
+                "mill_count": 5
+              },
+              "branches": {},
+              "op": "mill_then_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "mill_then_damage",
+              "pointer": "/cards/svi-infr/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/fire.json"
+            }
+          ],
+          "text": "将自己牌库上方5张翻到正面。造成其中能量张数×80伤害。正面朝上的能量放于弃牌区，剩余卡牌放回牌库并重洗。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fire.json",
+        "pointer": "/cards/svi-infr"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-jete": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless"
+          ]
+        },
+        {
+          "condition": {
+            "from_zone": "hand",
+            "target": "bench"
+          },
+          "effect": {
+            "op": "switch_with_active"
+          },
+          "hook": "ON_ATTACH",
+          "kind": "trigger",
+          "priority": 20
+        }
+      ],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/svi-jete"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-maus": {
+      "abilities": {
+        "团结一致": {
+          "commands": [
+            {
+              "args": {
+                "filter_names": [
+                  "一对鼠",
+                  "一家鼠ex",
+                  "一家鼠"
+                ],
+                "per_pokemon": 3
+              },
+              "branches": {},
+              "op": "register_reactive_thorns"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "register_reactive_thorns",
+              "pointer": "/cards/svi-maus/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "当这只宝可梦在战斗场上受到对手宝可梦的招式的伤害时，将自己场上「一对鼠」和「一家鼠」的数量×3个伤害指示物，放置于使用了招式的宝可梦身上。",
+          "trigger": "on_damaged"
+        }
+      },
+      "attacks": {
+        "贪婪门牙": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/svi-maus/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "从自己牌库上方抽取2张卡牌。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svi-maus"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-mela": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svi-mela"
+      },
+      "source_map": [
+        {
+          "op": "conditional",
+          "pointer": "/cards/svi-mela/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        },
+        {
+          "op": "attach_energy_from_discard",
+          "pointer": "/cards/svi-mela/commands/0/branches/on_pay/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        },
+        {
+          "op": "draw_until",
+          "pointer": "/cards/svi-mela/commands/0/branches/on_pay/1",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "condition": "ko_last_opponent_turn"
+          },
+          "branches": {
+            "on_pay": [
+              {
+                "args": {
+                  "amount": 1,
+                  "energy_type": "basic_fire",
+                  "target": "self_or_bench"
+                },
+                "branches": {},
+                "op": "attach_energy_from_discard"
+              },
+              {
+                "args": {
+                  "target_hand_size": 6
+                },
+                "branches": {},
+                "op": "draw_until"
+              }
+            ]
+          },
+          "op": "conditional"
+        }
+      ]
+    },
+    "svi-mirc": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless"
+          ]
+        },
+        {
+          "condition": {
+            "min_damage": 10,
+            "scope": "attached_defender"
+          },
+          "effect": {
+            "amount": 1,
+            "op": "draw_cards"
+          },
+          "hook": "AFTER_DAMAGE",
+          "kind": "trigger",
+          "priority": 20
+        }
+      ],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/svi-mirc"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-monf": {
+      "abilities": {},
+      "attacks": {
+        "喷射火焰": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "any",
+                "from": "self"
+              },
+              "branches": {},
+              "op": "discard_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "discard_energy",
+              "pointer": "/cards/svi-monf/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/fire.json"
+            }
+          ],
+          "text": "选择附着于这只宝可梦身上的1个能量，放于弃牌区。",
+          "trigger": ""
+        },
+        "火焰": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/fire.json",
+        "pointer": "/cards/svi-monf"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-nemb": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svi-nemb"
+      },
+      "source_map": [
+        {
+          "op": "search_cards",
+          "pointer": "/cards/svi-nemb/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 2,
+            "destination": "hand",
+            "filter": "any",
+            "filter_name": "妮莫",
+            "from_zone": "discard",
+            "min_select": 0,
+            "reveal": true
+          },
+          "branches": {},
+          "op": "search_cards"
+        }
+      ]
+    },
+    "svi-popp": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svi-popp"
+      },
+      "source_map": [
+        {
+          "op": "relocate_energy",
+          "pointer": "/cards/svi-popp/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 2,
+            "min_select": 0,
+            "same_target": true
+          },
+          "branches": {},
+          "op": "relocate_energy"
+        }
+      ]
+    },
+    "svi-skwv": {
+      "abilities": {},
+      "attacks": {
+        "啃咬": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svi-skwv"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-sqwk": {
+      "abilities": {},
+      "attacks": {
+        "呼朋引伴": {
+          "commands": [
+            {
+              "args": {
+                "count": 2,
+                "destination": "bench",
+                "filter": "basic_pokemon",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "search_cards",
+              "pointer": "/cards/svi-sqwk/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "选择自己牌库中最多2张基础宝可梦，放于备战区。并重洗牌库。",
+          "trigger": ""
+        },
+        "飞翔": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {},
+                    "branches": {},
+                    "op": "prevent_all"
+                  }
+                ],
+                "on_tails": [
+                  {
+                    "args": {},
+                    "branches": {},
+                    "op": "fail_attack"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "flip_coin",
+              "pointer": "/cards/svi-sqwk/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            },
+            {
+              "op": "prevent_all",
+              "pointer": "/cards/svi-sqwk/attacks/1/commands/0/branches/on_heads/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            },
+            {
+              "op": "fail_attack",
+              "pointer": "/cards/svi-sqwk/attacks/1/commands/0/branches/on_tails/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "抛掷1次硬币如果为反面，则这个招式失败。如果为正面，则在下一个对手的回合，这只宝可梦不受到招式的伤害和效果影响。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svi-sqwk"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-stan": {
+      "abilities": {},
+      "attacks": {
+        "后踢": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "疯狂俯冲": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 0
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "any",
+                          "op": "energy_count",
+                          "scope": "opponent_active"
+                        },
+                        {
+                          "const": 30
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                },
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svi-stan/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "造成对手战斗宝可梦身上附有的能量数量×30点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svi-stan"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-tand": {
+      "abilities": {},
+      "attacks": {
+        "紧贴": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "踢飞": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svi-tand"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svi-trea": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [
+        {
+          "kind": "provide_energy",
+          "types": [
+            "Colorless"
+          ]
+        },
+        {
+          "compiled_commands": [
+            {
+              "args": {
+                "amount": 1,
+                "from_zone": "prizes",
+                "to": "any"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "condition": {
+            "source_zone": "prizes"
+          },
+          "effect": {
+            "op": "attach_to_benched_pokemon"
+          },
+          "hook": "ON_PRIZE_REVEALED",
+          "kind": "trigger",
+          "optional": true,
+          "priority": 20
+        }
+      ],
+      "source": {
+        "path": "godot/authoring/cards/energy.json",
+        "pointer": "/cards/svi-trea"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-chat": {
+      "abilities": {},
+      "attacks": {
+        "循环抽取": {
+          "commands": [
+            {
+              "args": {
+                "discard_amount": 1,
+                "draw_amount": 2
+              },
+              "branches": {},
+              "op": "discard_then_draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "discard_then_draw_cards",
+              "pointer": "/cards/svl-chat/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/colorless.json"
+            }
+          ],
+          "text": "将自己的1张手牌放于弃牌区。若这样做，则从自己牌库上方抽取2张卡牌。",
+          "trigger": ""
+        },
+        "振翅": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/colorless.json",
+        "pointer": "/cards/svl-chat"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-chin": {
+      "abilities": {},
+      "attacks": {
+        "电球": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/lightning.json",
+        "pointer": "/cards/svl-chin"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-emol": {
+      "abilities": {},
+      "attacks": {
+        "电击": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {
+                      "status": "paralyzed",
+                      "target": "opponent_active"
+                    },
+                    "branches": {},
+                    "op": "apply_status"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "flip_coin",
+              "pointer": "/cards/svl-emol/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/lightning.json"
+            },
+            {
+              "op": "apply_status",
+              "pointer": "/cards/svl-emol/attacks/0/commands/0/branches/on_heads/0",
+              "source_path": "godot/authoring/cards/lightning.json"
+            }
+          ],
+          "text": "抛掷1次硬币如果为正面，则使对手的战斗宝可梦陷入麻痹状态。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/lightning.json",
+        "pointer": "/cards/svl-emol"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-ensw": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svl-ensw"
+      },
+      "source_map": [
+        {
+          "op": "search_cards",
+          "pointer": "/cards/svl-ensw/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "count": 1,
+            "destination": "hand",
+            "filter": "basic_energy",
+            "from_zone": "deck",
+            "reveal": true
+          },
+          "branches": {},
+          "op": "search_cards"
+        }
+      ]
+    },
+    "svl-flaa2": {
+      "abilities": {
+        "电气发电机": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "energy_type": "lightning",
+                "target": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy_from_discard"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "attach_energy_from_discard",
+              "pointer": "/cards/svl-flaa2/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/lightning.json"
+            }
+          ],
+          "text": "在自己的回合可使用1次。选择自己弃牌区中的1张雷能量卡，附着于备战宝可梦身上。",
+          "trigger": ""
+        }
+      },
+      "attacks": {
+        "电球": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/lightning.json",
+        "pointer": "/cards/svl-flaa2"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-lant": {
+      "abilities": {},
+      "attacks": {
+        "炫目光束": {
+          "commands": [
+            {
+              "args": {
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "apply_dazzling_beam"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "apply_dazzling_beam",
+              "pointer": "/cards/svl-lant/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/lightning.json"
+            }
+          ],
+          "text": "在下一个对手的回合，受到这个招式影响的宝可梦在使用招式时，对手将抛掷1次硬币。如果为反面则那个招式失败。",
+          "trigger": ""
+        },
+        "电球": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/lightning.json",
+        "pointer": "/cards/svl-lant"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-mare2": {
+      "abilities": {},
+      "attacks": {
+        "后踢": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "电球": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/lightning.json",
+        "pointer": "/cards/svl-mare2"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-pikaex": {
+      "abilities": {},
+      "attacks": {
+        "强劲伏特": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_tails": [
+                  {
+                    "args": {
+                      "amount": 99,
+                      "filter": "any",
+                      "from": "self"
+                    },
+                    "branches": {},
+                    "op": "discard_energy"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "flip_coin",
+              "pointer": "/cards/svl-pikaex/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/lightning.json"
+            },
+            {
+              "op": "discard_energy",
+              "pointer": "/cards/svl-pikaex/attacks/1/commands/0/branches/on_tails/0",
+              "source_path": "godot/authoring/cards/lightning.json"
+            }
+          ],
+          "text": "抛掷1次硬币。如果是反面，则将这只宝可梦身上附着的能量全部放于弃牌区。",
+          "trigger": ""
+        },
+        "皮卡拳": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/lightning.json",
+        "pointer": "/cards/svl-pikaex"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-thun": {
+      "abilities": {},
+      "attacks": {
+        "打雷": {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_damage_counters",
+              "pointer": "/cards/svl-thun/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/lightning.json"
+            }
+          ],
+          "text": "给这只宝可梦也造成30点伤害。",
+          "trigger": ""
+        },
+        "辅助电光": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "filter": "lightning",
+                "from_zone": "hand",
+                "optional": true,
+                "to": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "attach_energy",
+              "pointer": "/cards/svl-thun/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/lightning.json"
+            }
+          ],
+          "text": "若希望，可选择自己手牌中的1张雷能量卡，附着于备战宝可梦身上。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/lightning.json",
+        "pointer": "/cards/svl-thun"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-trks": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svl-trks"
+      },
+      "source_map": [
+        {
+          "op": "trekking_shoes",
+          "pointer": "/cards/svl-trks/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "trekking_shoes"
+        }
+      ]
+    },
+    "svl-vitb": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svl-vitb"
+      },
+      "source_map": [
+        {
+          "op": "register_tool_modifier",
+          "pointer": "/cards/svl-vitb/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "effect": "damage_boost_10"
+          },
+          "branches": {},
+          "op": "register_tool_modifier"
+        }
+      ]
+    },
+    "svl-zera": {
+      "abilities": {},
+      "attacks": {
+        "疯狂伏特": {
+          "commands": [
+            {
+              "args": {
+                "amount": 20,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "place_damage_counters",
+              "pointer": "/cards/svl-zera/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/lightning.json"
+            }
+          ],
+          "text": "给这只宝可梦也造成20点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/lightning.json",
+        "pointer": "/cards/svl-zera"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svl-zinn": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svl-zinn"
+      },
+      "source_map": [
+        {
+          "op": "zinnia_resolve",
+          "pointer": "/cards/svl-zinn/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {},
+          "branches": {},
+          "op": "zinnia_resolve"
+        }
+      ]
+    },
+    "svm-bronzong": {
+      "abilities": {
+        "金属转移": {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "energy_type": "Metal"
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "relocate_energy",
+              "pointer": "/cards/svm-bronzong/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "在自己的回合可以使用任意次。选择附着于自己场上宝可梦身上的1个M能量，转附于自己其他宝可梦身上。",
+          "trigger": "repeatable"
+        }
+      },
+      "attacks": {
+        "意念头锤": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/metal.json",
+        "pointer": "/cards/svm-bronzong"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-bronzor": {
+      "abilities": {},
+      "attacks": {
+        "金属压制": {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {
+                      "status": "paralyzed",
+                      "target": "opponent_active"
+                    },
+                    "branches": {},
+                    "op": "apply_status"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "flip_coin",
+              "pointer": "/cards/svm-bronzor/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            },
+            {
+              "op": "apply_status",
+              "pointer": "/cards/svm-bronzor/attacks/0/commands/0/branches/on_heads/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "抛掷1次硬币如果为正面，则使对手的战斗宝可梦陷入麻痹状态。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/metal.json",
+        "pointer": "/cards/svm-bronzor"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-cobalion": {
+      "abilities": {
+        "正义法则": {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "attacker_subtype": "Basic",
+                "defender_type": "Darkness"
+              },
+              "branches": {},
+              "op": "register_aura_damage_boost"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "register_aura_damage_boost",
+              "pointer": "/cards/svm-cobalion/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "只要这只宝可梦在场上，自己的基础宝可梦使用的招式，给对手战斗场上的D宝可梦造成的伤害「+30」。",
+          "trigger": "passive"
+        }
+      },
+      "attacks": {
+        "跟进": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "max_per_target": 1,
+                "min_select": 0,
+                "select_source": true,
+                "to": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "attach_energy",
+              "pointer": "/cards/svm-cobalion/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "选择自己最多2只备战宝可梦，各附着1张牌库中的基本能量。并重洗牌库。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/metal.json",
+        "pointer": "/cards/svm-cobalion"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-dialga": {
+      "abilities": {},
+      "attacks": {
+        "时之逆流": {
+          "commands": [
+            {
+              "args": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "any",
+                "from_zone": "discard",
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "search_cards",
+              "pointer": "/cards/svm-dialga/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "选择自己弃牌区中任意1张卡牌，在给对手看过之后，加入手牌。",
+          "trigger": ""
+        },
+        "金属爆破": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "Metal",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svm-dialga/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "追加造成这只宝可梦身上附有的M能量数量×20点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/metal.json",
+        "pointer": "/cards/svm-dialga"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-klefki": {
+      "abilities": {},
+      "attacks": {
+        "解锁": {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "draw_cards",
+              "pointer": "/cards/svm-klefki/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "从自己的牌库上方抽取2张卡牌。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/metal.json",
+        "pointer": "/cards/svm-klefki"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-marnie-pride": {
+      "abilities": {},
+      "attacks": {},
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/trainer.json",
+        "pointer": "/cards/svm-marnie-pride"
+      },
+      "source_map": [
+        {
+          "op": "attach_energy_from_discard",
+          "pointer": "/cards/svm-marnie-pride/commands/0",
+          "source_path": "godot/authoring/cards/trainer.json"
+        }
+      ],
+      "trainer_commands": [
+        {
+          "args": {
+            "amount": 1,
+            "energy_type": "basic_energy",
+            "select_source": true,
+            "target": "bench"
+          },
+          "branches": {},
+          "op": "attach_energy_from_discard"
+        }
+      ]
+    },
+    "svm-orthworm": {
+      "abilities": {
+        "营养铁质": {
+          "commands": [
+            {
+              "args": {
+                "amount": 100,
+                "energy_type": "Metal",
+                "threshold": 3
+              },
+              "branches": {},
+              "op": "register_conditional_hp_boost"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "register_conditional_hp_boost",
+              "pointer": "/cards/svm-orthworm/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "如果这只宝可梦身上附着了3个及以上M能量的话，则这只宝可梦的最大HP「+100」。",
+          "trigger": "passive"
+        }
+      },
+      "attacks": {
+        "刺穿": {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "choose_targets": true,
+                "count": 1,
+                "player": "opponent"
+              },
+              "branches": {},
+              "op": "deal_bench_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_bench_damage",
+              "pointer": "/cards/svm-orthworm/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "给对手的1只备战宝可梦，也造成30伤害。[备战宝可梦不计算弱点、抗性。]",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/metal.json",
+        "pointer": "/cards/svm-orthworm"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-skarmory": {
+      "abilities": {},
+      "attacks": {
+        "啄": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "钢铁之刃": {
+          "commands": [
+            {
+              "args": {
+                "attack_name": "钢铁之刃",
+                "scope": "self"
+              },
+              "branches": {},
+              "op": "apply_self_attack_lock"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "apply_self_attack_lock",
+              "pointer": "/cards/svm-skarmory/attacks/1/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "在下一个自己的回合，这只宝可梦无法使用「钢铁之刃」。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/metal.json",
+        "pointer": "/cards/svm-skarmory"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-smeargle": {
+      "abilities": {},
+      "attacks": {
+        "冲撞": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        },
+        "多彩调色盘": {
+          "commands": [
+            {
+              "args": {
+                "count": 5,
+                "filter": "basic_energy",
+                "shuffle_rest": true,
+                "take": 99,
+                "target": "self_or_bench"
+              },
+              "branches": {},
+              "op": "look_top_attach_energy"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "look_top_attach_energy",
+              "pointer": "/cards/svm-smeargle/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "查看自己牌库上方5张卡牌，选择其中任意数量的基本能量，附着于自己的1只宝可梦身上。将剩余的卡牌放回牌库并重洗牌库。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/metal.json",
+        "pointer": "/cards/svm-smeargle"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-zacian": {
+      "abilities": {},
+      "attacks": {
+        "战斗军团": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 20
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "bench_count",
+                          "player": "self"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                },
+                "ignore_defender_damage_effects": true,
+                "ignore_weakness": true
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svm-zacian/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "追加造成自己备战宝可梦数量×10点伤害。这个招式的伤害，不计算弱点、以及对手战斗宝可梦身上所附加的效果。",
+          "trigger": ""
+        },
+        "薄片利刃": {
+          "commands": [],
+          "source_map": [],
+          "text": "",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/metal.json",
+        "pointer": "/cards/svm-zacian"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    },
+    "svm-zamazenta": {
+      "abilities": {
+        "金属之盾": {
+          "commands": [
+            {
+              "args": {
+                "reduction": 30,
+                "requires_attached_energy": true
+              },
+              "branches": {},
+              "op": "register_aura_damage_reduction"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "register_aura_damage_reduction",
+              "pointer": "/cards/svm-zamazenta/abilities/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "如果这只宝可梦身上附有能量的话，则这只宝可梦所受到的招式的伤害「-30」。",
+          "trigger": "passive"
+        }
+      },
+      "attacks": {
+        "报仇": {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 100
+                    },
+                    {
+                      "condition": "ko_last_opponent_turn",
+                      "else": {
+                        "const": 0
+                      },
+                      "op": "if",
+                      "then": {
+                        "const": 120
+                      }
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "source_map": [
+            {
+              "op": "deal_damage",
+              "pointer": "/cards/svm-zamazenta/attacks/0/commands/0",
+              "source_path": "godot/authoring/cards/metal.json"
+            }
+          ],
+          "text": "在上一个对手的回合，如果自己的宝可梦昏厥的话，则追加造成120点伤害。",
+          "trigger": ""
+        }
+      },
+      "energy_effects": [],
+      "source": {
+        "path": "godot/authoring/cards/metal.json",
+        "pointer": "/cards/svm-zamazenta"
+      },
+      "source_map": [],
+      "trainer_commands": []
+    }
+  },
+  "command_count": 160,
+  "content_fingerprint": "426a5e34136f7c6734e3ca308101f53f2533956fd127afd0e6ee0d1aa2e1468c",
+  "contract_fingerprint": "062eab8242ce56295e33799b74e72aa43999c7a1856b45c8b502d414f6084cd3",
+  "descriptor_digest": "d990e5514e1dcd1278b03a8bc5a3d8b74503d707a92801904ba494d579b299b2",
+  "effect_count": 160,
+  "format": "ptcg_card_ir/4",
+  "source_fingerprint": "61ff38e9ea7bb7d454c72b2e09c061efd405dcaaf65b977de369b03190836d01",
+  "source_map_coverage": 1.0,
+  "source_mapped_effect_count": 160,
+  "used_vm_ops": [
+    "add",
+    "apply_attack_lock_basic",
+    "apply_dazzling_beam",
+    "apply_outgoing_damage_reduction",
+    "apply_self_attack_lock",
+    "apply_status",
+    "attach_energy",
+    "attach_energy_from_discard",
+    "attach_to_benched_pokemon",
+    "bench_count",
+    "choose_damage_target",
+    "choose_heal_damage",
+    "conditional",
+    "conditional_damage",
+    "conditional_damage_then_heal",
+    "conditional_search",
+    "conditional_status",
+    "damage_counters",
+    "deal_bench_damage",
+    "deal_damage",
+    "deal_damage_then_heal",
+    "discard_cards",
+    "discard_count",
+    "discard_energy",
+    "discard_energy_then_damage",
+    "discard_hand_then_damage",
+    "discard_then_draw_cards",
+    "discard_then_revive",
+    "draw_and_attach_energy",
+    "draw_cards",
+    "draw_until",
+    "draw_until_more_than_opponent",
+    "energy_count",
+    "evolve_skip_stage",
+    "evolved_count",
+    "fail_attack",
+    "flip_coin",
+    "flip_coin_repeat_damage",
+    "flip_coin_then_discard_energy",
+    "flip_coin_then_ko",
+    "flip_until_tails",
+    "hand_size",
+    "hand_to_bottom_draw_until",
+    "hand_to_bottom_then_draw",
+    "heal_all",
+    "heal_damage",
+    "if",
+    "judge",
+    "look_top_attach_energy",
+    "look_top_deck",
+    "mill_then_damage",
+    "mul",
+    "place_counters_then_self_discard",
+    "place_damage_counters",
+    "prevent_all",
+    "prevent_damage",
+    "prevent_effects",
+    "recover_clara",
+    "register_aura_damage_boost",
+    "register_aura_damage_reduction",
+    "register_conditional_hp_boost",
+    "register_conditional_zero_retreat",
+    "register_reactive_thorns",
+    "register_tool_exp_share",
+    "register_tool_modifier",
+    "relocate_energy",
+    "return_to_hand",
+    "search_any_and_switch",
+    "search_cards",
+    "search_item_and_tool",
+    "set_attack_flags",
+    "shuffle_from_discard_to_deck",
+    "shuffle_then_draw_cards",
+    "sub",
+    "switch_pokemon",
+    "switch_with_active",
+    "trekking_shoes",
+    "zinnia_resolve"
+  ],
+  "vm_ir_version": 3
+}

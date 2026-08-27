@@ -1,0 +1,3207 @@
+{
+  "format": "ptcg_vm_descriptors_source/1",
+  "payload": {
+    "descriptor_digest": "d990e5514e1dcd1278b03a8bc5a3d8b74503d707a92801904ba494d579b299b2",
+    "descriptor_schema_version": 1,
+    "descriptors": {
+      "apply_attack_lock_basic": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "post_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "apply_attack_lock_basic",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "attack_lock_basic"
+      },
+      "apply_dazzling_beam": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "post_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "apply_dazzling_beam",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "dazzling_beam"
+      },
+      "apply_outgoing_damage_reduction": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "post_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "apply_outgoing_damage_reduction",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "apply_outgoing_damage_reduction"
+      },
+      "apply_self_attack_lock": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "attack_name": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "post_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "apply_self_attack_lock",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "self_attack_lock"
+      },
+      "apply_status": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "condition": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "post_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "apply_status",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "status"
+      },
+      "attach_energy": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "filter": {
+              "type": "string"
+            },
+            "from_zone": {
+              "type": "string"
+            },
+            "going_second_bonus": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_per_target": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "min_select": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "optional": {
+              "type": "boolean"
+            },
+            "select_source": {
+              "type": "boolean"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "attach_energy",
+        "preflight_evaluator": "energy_attach",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "energy_attach"
+      },
+      "attach_energy_from_discard": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "energy_type": {
+              "type": "string"
+            },
+            "filter": {
+              "type": "string"
+            },
+            "min_select": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "same_target": {
+              "type": "boolean"
+            },
+            "select_source": {
+              "type": "boolean"
+            },
+            "target": {
+              "type": "string"
+            },
+            "target_pokemon_type": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "attach_energy_from_discard",
+        "preflight_evaluator": "attach_from_discard",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "attach_from_discard"
+      },
+      "choose_damage_target": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "bench_skips_type_matchups": {
+              "type": "boolean"
+            },
+            "piercing_on_bench": {
+              "type": "boolean"
+            },
+            "player": {
+              "enum": [
+                "self",
+                "opponent"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "choose_damage_target",
+        "preflight_evaluator": "opponent_pokemon",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "any_pokemon_damage"
+      },
+      "choose_heal_damage": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "player": {
+              "enum": [
+                "self",
+                "opponent"
+              ],
+              "type": "string"
+            },
+            "target_player": {
+              "enum": [
+                "self",
+                "opponent"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "choose_heal_damage",
+        "preflight_evaluator": "damaged_pokemon",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "potion_heal"
+      },
+      "conditional": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "condition": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [
+            "cost",
+            "on_pay"
+          ],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "control",
+        "internal": false,
+        "may_suspend": true,
+        "op": "conditional",
+        "preflight_evaluator": "conditional",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "conditional"
+      },
+      "conditional_damage": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "bonus": {
+              "type": "integer"
+            },
+            "condition": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "conditional_damage",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "conditional_damage_bonus"
+      },
+      "conditional_damage_then_heal": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "bonus": {
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "conditional_damage_then_heal",
+        "preflight_evaluator": "damage_or_heal",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "conditional_damage_heal"
+      },
+      "conditional_search": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "default_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "filter": {
+              "type": "string"
+            },
+            "max_count": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "conditional_search",
+        "preflight_evaluator": "search",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "conditional_search_extra"
+      },
+      "conditional_status": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "condition": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "post_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "conditional_status",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "conditional_status"
+      },
+      "deal_bench_damage": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "choose_targets": {
+              "type": "boolean"
+            },
+            "count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "player": {
+              "enum": [
+                "self",
+                "opponent"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "deal_bench_damage",
+        "preflight_evaluator": "opponent_bench",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "bench_damage"
+      },
+      "deal_damage": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "consume_condition": {
+              "type": "string"
+            },
+            "formula_ast": {
+              "type": [
+                "object",
+                "integer",
+                "number",
+                "string"
+              ]
+            },
+            "ignore_defender_damage_effects": {
+              "type": "boolean"
+            },
+            "ignore_resistance": {
+              "type": "boolean"
+            },
+            "ignore_weakness": {
+              "type": "boolean"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": "when_formula_ast",
+        "requires_boolean_success": true,
+        "semantic_kind": "damage"
+      },
+      "deal_damage_per_discard_psychic": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "per_card": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage_per_discard_psychic",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_per_discard_psychic"
+      },
+      "deal_damage_per_energy": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "count_from": {
+              "type": "string"
+            },
+            "per_energy": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage_per_energy",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_per_energy"
+      },
+      "deal_damage_per_evolved": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "per_evolved": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage_per_evolved",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_per_evolved"
+      },
+      "deal_damage_per_hand_size": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "per": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage_per_hand_size",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_per_hand_size"
+      },
+      "deal_damage_per_self_damage": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "per_counter": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage_per_self_damage",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_per_self_damage"
+      },
+      "deal_damage_per_self_energy": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "energy_filter": {
+              "type": "string"
+            },
+            "per_energy": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage_per_self_energy",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_per_self_energy"
+      },
+      "deal_damage_per_self_energy_type": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "energy_type": {
+              "type": "string"
+            },
+            "per_energy": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage_per_self_energy_type",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_per_self_energy_type"
+      },
+      "deal_damage_plus_bench": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "count_own_bench": {
+              "type": "boolean"
+            },
+            "per_bench": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage_plus_bench",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_plus_bench"
+      },
+      "deal_damage_then_heal": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "damage": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "heal": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage_then_heal",
+        "preflight_evaluator": "damage_or_heal",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_and_self_heal"
+      },
+      "deal_damage_with_self_penalty": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "per_counter": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "deal_damage_with_self_penalty",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_self_penalty"
+      },
+      "discard_cards": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "from": {
+              "type": "string"
+            },
+            "from_zone": {
+              "type": "string"
+            },
+            "player": {
+              "enum": [
+                "self",
+                "opponent"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "discard_cards",
+        "preflight_evaluator": "discard_cost",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "discard"
+      },
+      "discard_energy": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "energy_type": {
+              "type": "string"
+            },
+            "filter": {
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "discard_energy",
+        "preflight_evaluator": "energy_discard",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "energy_discard"
+      },
+      "discard_energy_then_damage": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "per_energy": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "discard_energy_then_damage",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "discard_fighting_energy_damage"
+      },
+      "discard_hand_then_damage": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base_damage": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "bonus": {
+              "type": "integer"
+            },
+            "threshold": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "discard_hand_then_damage",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "discard_hand_conditional_bonus"
+      },
+      "discard_then_draw_cards": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "discard_amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "discard_hand": {
+              "type": "boolean"
+            },
+            "draw": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "draw_amount": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "discard_then_draw_cards",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "discard_then_draw"
+      },
+      "discard_then_revive": {
+        "allowed_contexts": [
+          "ability"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "card_id": {
+              "type": "string"
+            },
+            "discard_idx": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "card_id"
+          ],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "discard_then_revive",
+        "preflight_evaluator": "discard_revive",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "ability_discard_revive"
+      },
+      "draw_and_attach_energy": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "energy_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "energy_type": {
+              "type": "string"
+            },
+            "min_select": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "draw_and_attach_energy",
+        "preflight_evaluator": "draw_attach",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "draw_and_attach_energy"
+      },
+      "draw_cards": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "player": {
+              "enum": [
+                "self",
+                "opponent"
+              ],
+              "type": "string"
+            },
+            "stadium_type": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "draw_cards",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "draw"
+      },
+      "draw_until": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "target_hand_size": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "draw_until",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "draw_until"
+      },
+      "draw_until_more_than_opponent": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "margin": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "draw_until_more_than_opponent",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "draw_until_more"
+      },
+      "evolve_skip_stage": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "skip_to": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "evolve_skip_stage",
+        "preflight_evaluator": "rare_candy",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "evolve_skip_stage"
+      },
+      "fail_attack": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "pre_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "fail_attack",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "attack_fail"
+      },
+      "flip_coin": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "pre_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [
+            "on_heads",
+            "on_tails"
+          ],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "control",
+        "internal": false,
+        "may_suspend": true,
+        "op": "flip_coin",
+        "preflight_evaluator": "coin_branches",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "coin_flip"
+      },
+      "flip_coin_repeat_damage": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "damage_per_head": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "flips": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "flip_coin_repeat_damage",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "coin_flip_triple"
+      },
+      "flip_coin_then_discard_energy": {
+        "allowed_contexts": [
+          "trainer"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "flip_coin_then_discard_energy",
+        "preflight_evaluator": "opponent_energy",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "coin_flip_energy_discard"
+      },
+      "flip_coin_then_ko": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "flip_coin_then_ko",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "coin_flip_double_ko"
+      },
+      "flip_until_tails": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "per_head": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "flip_until_tails",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "coin_flip_until_tails"
+      },
+      "hand_to_bottom_draw_until": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "target_hand_size": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "hand_to_bottom_draw_until",
+        "preflight_evaluator": "hand_nonempty",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "houb"
+      },
+      "hand_to_bottom_then_draw": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "hand_to_bottom_then_draw",
+        "preflight_evaluator": "hand_nonempty",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "hand_to_bottom_draw"
+      },
+      "heal_all": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "heal_all",
+        "preflight_evaluator": "damaged_pokemon",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "heal_all"
+      },
+      "heal_damage": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "heal_damage",
+        "preflight_evaluator": "heal_target",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "heal"
+      },
+      "judge": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "draw": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "judge",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "judge"
+      },
+      "look_top_attach_energy": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "filter": {
+              "type": "string"
+            },
+            "shuffle_rest": {
+              "type": "boolean"
+            },
+            "take": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "look_top_attach_energy",
+        "preflight_evaluator": "look_top_attach",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "look_top_attach_energy"
+      },
+      "look_top_deck": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "filter": {
+              "type": "string"
+            },
+            "min_select": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "rest_bottom": {
+              "type": "boolean"
+            },
+            "shuffle_rest": {
+              "type": "boolean"
+            },
+            "take": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "target_pokemon_type": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "look_top_deck",
+        "preflight_evaluator": "look_top",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "look_top_deck"
+      },
+      "mill_then_damage": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "damage_per": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "mill_count": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": false,
+        "op": "mill_then_damage",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "mill_and_damage_per_energy"
+      },
+      "place_counters_then_self_discard": {
+        "allowed_contexts": [
+          "ability"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "counters": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            },
+            "target_player": {
+              "enum": [
+                "self",
+                "opponent"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "place_counters_then_self_discard",
+        "preflight_evaluator": "opponent_pokemon",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "place_counters_and_self_discard"
+      },
+      "place_damage_counters": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "damage_kind": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "place_damage_counters",
+        "preflight_evaluator": "self_survives_counter",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "damage_counter_self"
+      },
+      "prevent_all": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "post_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "prevent_all",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "prevent_all"
+      },
+      "prevent_damage": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "post_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "prevent_damage",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "prevent_damage"
+      },
+      "prevent_effects": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "post_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "prevent_effects",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "prevent_effects"
+      },
+      "recover_clara": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "energy_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pokemon_count": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "recover_clara",
+        "preflight_evaluator": "clara",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "clara"
+      },
+      "register_aura_damage_boost": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "type": "integer"
+            },
+            "attacker_subtype": {
+              "type": "string"
+            },
+            "defender_type": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "register_aura_damage_boost",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "aura_damage_boost"
+      },
+      "register_aura_damage_reduction": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "before_weakness": {
+              "type": "boolean"
+            },
+            "priority": {
+              "type": "integer"
+            },
+            "reduction": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requires_active": {
+              "type": "boolean"
+            },
+            "requires_attached_energy": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "register_aura_damage_reduction",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "aura_damage_reduction"
+      },
+      "register_conditional_hp_boost": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "type": "integer"
+            },
+            "energy_type": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "integer"
+            },
+            "threshold": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "register_conditional_hp_boost",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "conditional_hp_boost"
+      },
+      "register_conditional_zero_retreat": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "energy_type": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "register_conditional_zero_retreat",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "conditional_zero_retreat"
+      },
+      "register_reactive_thorns": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "filter_names": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "per_pokemon": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "priority": {
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "register_reactive_thorns",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "reactive_thorns"
+      },
+      "register_tool_exp_share": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "priority": {
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "register_tool_exp_share",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "tool_exp_share"
+      },
+      "register_tool_modifier": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "type": "integer"
+            },
+            "effect": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "register_tool_modifier",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "tool"
+      },
+      "relocate_energy": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "energy_type": {
+              "type": "string"
+            },
+            "from_self": {
+              "type": "boolean"
+            },
+            "min_select": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "same_target": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "relocate_energy",
+        "preflight_evaluator": "energy_relocate",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "energy_relocate"
+      },
+      "return_to_hand": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "post_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "return_to_hand",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "return_to_hand"
+      },
+      "search_any_and_switch": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "min_select": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source_slot": {
+              "type": "string"
+            },
+            "switch_optional": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "search_any_and_switch",
+        "preflight_evaluator": "search",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "search_any_and_switch"
+      },
+      "search_cards": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "filter": {
+              "type": "string"
+            },
+            "filter_name": {
+              "type": "string"
+            },
+            "from_zone": {
+              "type": "string"
+            },
+            "min_select": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "reveal": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "search_cards",
+        "preflight_evaluator": "search",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "search"
+      },
+      "search_item_and_tool": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "search_item_and_tool",
+        "preflight_evaluator": "deck_nonempty",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "arven"
+      },
+      "set_attack_damage_formula": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "base": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "condition_bonus": {
+              "type": "object"
+            },
+            "ignore_defender_damage_effects": {
+              "type": "boolean"
+            },
+            "ignore_resistance": {
+              "type": "boolean"
+            },
+            "ignore_weakness": {
+              "type": "boolean"
+            },
+            "per_energy": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "per_own_bench": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "per_self_damage_counter": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "per_self_energy_type": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "replace_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "set_attack_damage_formula",
+        "preflight_evaluator": "opponent_active",
+        "replaces_base_damage": true,
+        "requires_boolean_success": true,
+        "semantic_kind": "attack_damage_formula"
+      },
+      "set_attack_flags": {
+        "allowed_contexts": [
+          "attack"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "ignore_defender_damage_effects": {
+              "type": "boolean"
+            },
+            "ignore_effects": {
+              "type": "boolean"
+            },
+            "ignore_resistance": {
+              "type": "boolean"
+            },
+            "ignore_weakness": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "pre_damage",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": false,
+        "op": "set_attack_flags",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "attack_flags"
+      },
+      "shuffle_from_discard_to_deck": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "filter": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "shuffle_from_discard_to_deck",
+        "preflight_evaluator": "discard_search",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "shuffle_from_discard"
+      },
+      "shuffle_then_draw_cards": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "affect": {
+              "type": "string"
+            },
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "draw": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "shuffle_hand": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "shuffle_then_draw_cards",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "shuffle_draw"
+      },
+      "switch_pokemon": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "optional": {
+              "type": "boolean"
+            },
+            "target": {
+              "enum": [
+                "self",
+                "opponent"
+              ],
+              "type": "string"
+            },
+            "you_choose": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": false,
+        "may_suspend": true,
+        "op": "switch_pokemon",
+        "preflight_evaluator": "switch",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "switch"
+      },
+      "trekking_shoes": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "trekking_shoes",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "trekking_shoes"
+      },
+      "trigger_draw_cards": {
+        "allowed_contexts": [
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "amount": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "player": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "amount",
+            "player",
+            "source"
+          ],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": true,
+        "may_suspend": false,
+        "op": "trigger_draw_cards",
+        "preflight_evaluator": "always",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "trigger_draw_cards"
+      },
+      "trigger_move_basic_energy": {
+        "allowed_contexts": [
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "from_player": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "from_slot": {
+              "type": "string"
+            },
+            "optional": {
+              "type": "boolean"
+            },
+            "select_source": {
+              "type": "boolean"
+            },
+            "source": {
+              "type": "string"
+            },
+            "target_tool_id": {
+              "type": "string"
+            },
+            "to_player": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "to_slot": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "from_player",
+            "from_slot",
+            "source",
+            "to_player",
+            "to_slot"
+          ],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": true,
+        "may_suspend": true,
+        "op": "trigger_move_basic_energy",
+        "preflight_evaluator": "trigger_energy",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "trigger_move_basic_energy"
+      },
+      "trigger_place_damage_counters": {
+        "allowed_contexts": [
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "player": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "presentation_phase": {
+              "type": "string"
+            },
+            "slot": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "source_kind": {
+              "type": "string"
+            },
+            "source_player": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "target_ref": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "count",
+            "player",
+            "slot",
+            "source"
+          ],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": true,
+        "may_suspend": false,
+        "op": "trigger_place_damage_counters",
+        "preflight_evaluator": "trigger_target",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "trigger_place_damage_counters"
+      },
+      "trigger_switch_with_active": {
+        "allowed_contexts": [
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {
+            "bench_idx": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "player": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "slot": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "bench_idx",
+            "player",
+            "slot",
+            "source"
+          ],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "atomic",
+        "internal": true,
+        "may_suspend": false,
+        "op": "trigger_switch_with_active",
+        "preflight_evaluator": "trigger_target",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "trigger_switch_with_active"
+      },
+      "zinnia_resolve": {
+        "allowed_contexts": [
+          "ability",
+          "attack",
+          "trainer",
+          "trigger"
+        ],
+        "args_schema": {
+          "additional_properties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "attack_timing": "none",
+        "branch_schema": {
+          "additional_properties": false,
+          "allowed_keys": [],
+          "required": [],
+          "type": "object"
+        },
+        "implementation_kind": "native_composite",
+        "internal": false,
+        "may_suspend": true,
+        "op": "zinnia_resolve",
+        "preflight_evaluator": "hand_two",
+        "replaces_base_damage": false,
+        "requires_boolean_success": true,
+        "semantic_kind": "zinnia_resolve"
+      }
+    },
+    "digest_algorithm": "sha256",
+    "golden_ops": [
+      "apply_attack_lock_basic",
+      "apply_dazzling_beam",
+      "apply_outgoing_damage_reduction",
+      "apply_self_attack_lock",
+      "apply_status",
+      "attach_energy",
+      "attach_energy_from_discard",
+      "choose_damage_target",
+      "choose_heal_damage",
+      "conditional",
+      "conditional_damage",
+      "conditional_damage_then_heal",
+      "conditional_search",
+      "conditional_status",
+      "deal_bench_damage",
+      "deal_damage",
+      "deal_damage_per_discard_psychic",
+      "deal_damage_per_energy",
+      "deal_damage_per_evolved",
+      "deal_damage_per_hand_size",
+      "deal_damage_per_self_damage",
+      "deal_damage_per_self_energy",
+      "deal_damage_per_self_energy_type",
+      "deal_damage_plus_bench",
+      "deal_damage_then_heal",
+      "deal_damage_with_self_penalty",
+      "discard_cards",
+      "discard_energy",
+      "discard_energy_then_damage",
+      "discard_hand_then_damage",
+      "discard_then_draw_cards",
+      "discard_then_revive",
+      "draw_and_attach_energy",
+      "draw_cards",
+      "draw_until",
+      "draw_until_more_than_opponent",
+      "evolve_skip_stage",
+      "fail_attack",
+      "flip_coin",
+      "flip_coin_repeat_damage",
+      "flip_coin_then_discard_energy",
+      "flip_coin_then_ko",
+      "flip_until_tails",
+      "hand_to_bottom_draw_until",
+      "hand_to_bottom_then_draw",
+      "heal_all",
+      "heal_damage",
+      "judge",
+      "look_top_attach_energy",
+      "look_top_deck",
+      "mill_then_damage",
+      "place_counters_then_self_discard",
+      "place_damage_counters",
+      "prevent_all",
+      "prevent_damage",
+      "prevent_effects",
+      "recover_clara",
+      "register_aura_damage_boost",
+      "register_aura_damage_reduction",
+      "register_conditional_hp_boost",
+      "register_conditional_zero_retreat",
+      "register_reactive_thorns",
+      "register_tool_exp_share",
+      "register_tool_modifier",
+      "relocate_energy",
+      "return_to_hand",
+      "search_any_and_switch",
+      "search_cards",
+      "search_item_and_tool",
+      "set_attack_damage_formula",
+      "set_attack_flags",
+      "shuffle_from_discard_to_deck",
+      "shuffle_then_draw_cards",
+      "switch_pokemon",
+      "trekking_shoes",
+      "trigger_draw_cards",
+      "trigger_move_basic_energy",
+      "trigger_place_damage_counters",
+      "trigger_switch_with_active",
+      "zinnia_resolve"
+    ],
+    "vm_ir_version": 3
+  }
+}

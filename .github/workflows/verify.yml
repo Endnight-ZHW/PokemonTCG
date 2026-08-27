@@ -1,7 +1,7 @@
 name: verify
 
 env:
-  CI_PYTHON_VERSION: '3.11.9'
+  CI_PYTHON_VERSION: '3.11.15'
 
 on:
   push:
@@ -18,20 +18,29 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.CI_PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: python/requirements.txt
 
-      - name: Install product authoring dependencies
+      - name: Install product build dependency
         shell: pwsh
-        run: python -m pip install -r .\python\requirements.txt "scons==4.10.1"
+        run: python -m pip install "scons==4.10.1"
 
-      - name: Install pinned Godot toolchain
+      - name: Install pinned native and Godot toolchains
         shell: pwsh
-        run: .\tools\setup_godot_toolchain.ps1
+        run: |
+          .\tools\setup_native_ai_deps.ps1
+          .\tools\setup_godot_toolchain.ps1
 
       - name: Run fast verification
         shell: pwsh
-        run: .\tools\test_fast.ps1 -Python python
+        run: .\tools\test_fast.ps1
+
+      - name: Package Windows Relay
+        shell: pwsh
+        run: .\tools\package_relay.ps1
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: relay-windows-x86_64
+          path: dist/relay/*.zip
 
       - name: Run fixed-seed Challenge matches
         shell: pwsh
@@ -47,24 +56,49 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.CI_PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: python/requirements.txt
 
-      - name: Install product authoring dependencies
+      - name: Install product build dependency
         shell: pwsh
-        run: python -m pip install -r .\python\requirements.txt "scons==4.10.1"
+        run: python -m pip install "scons==4.10.1"
 
-      - name: Install pinned Godot toolchain
+      - name: Install pinned native and Godot toolchains
         shell: pwsh
-        run: .\tools\setup_godot_toolchain.ps1
+        run: |
+          .\tools\setup_native_ai_deps.ps1
+          .\tools\setup_godot_toolchain.ps1
 
-      - name: Run Python, Godot UI, LAN and Relay contracts
+      - name: Run authoring, Godot UI, LAN and Relay contracts
         shell: pwsh
-        run: .\tools\test_standard.ps1 -Python python
+        run: .\tools\test_standard.ps1
+
+  relay-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.CI_PYTHON_VERSION }}
+
+      - name: Install SCons
+        run: python -m pip install "scons==4.10.1"
+
+      - name: Test and package Linux Relay
+        shell: pwsh
+        run: |
+          ./tools/setup_relay_deps.ps1
+          ./tools/test_relay.ps1
+          ./tools/package_relay.ps1
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: relay-linux-x86_64
+          path: dist/relay/*.tar.gz
 
   release:
     if: github.event_name == 'workflow_dispatch'
-    needs: standard
+    needs: [standard, relay-linux]
     runs-on: windows-latest
     timeout-minutes: 180
     steps:
@@ -73,12 +107,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.CI_PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: python/requirements.txt
 
       - name: Install product build dependencies
         shell: pwsh
-        run: python -m pip install -r .\python\requirements.txt "scons==4.10.1"
+        run: python -m pip install "scons==4.10.1"
 
       - name: Install pinned product toolchains
         shell: pwsh
@@ -88,7 +120,9 @@ jobs:
 
       - name: Build and package test-signed release
         shell: pwsh
-        run: .\tools\package_release.ps1 -AndroidSigning test
+        run: |
+          .\tools\package_release.ps1 -AndroidSigning test
+          .\tools\package_relay.ps1
 
       - name: Verify Windows and Android artifacts
         shell: pwsh

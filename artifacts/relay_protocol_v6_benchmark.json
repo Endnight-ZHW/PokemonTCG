@@ -1,0 +1,55 @@
+{
+  "benchmark": "ptcg_relay_protocol_v6_load/1",
+  "date": "2026-08-27",
+  "baseline_revision": "bc9da789590c195166206d410f80ce66e28635ea",
+  "environment": {
+    "os": "Microsoft Windows 11 Pro 10.0.26200",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700K",
+    "logical_processors": 24
+  },
+  "load": {
+    "rooms": 100,
+    "connections": 200,
+    "relay_threads": 2,
+    "sustained_messages": 24000,
+    "burst_messages": 12000,
+    "burst_messages_per_connection": 60
+  },
+  "cpp_relay": {
+    "reported_values": "median_of_3_runs",
+    "server_cpu_ms": 1781.25,
+    "legal_frames_lost": 0,
+    "sustained": {
+      "seconds": 3.0209434,
+      "throughput_messages_per_second": 7944.53812011175,
+      "p95_latency_ms": 4.2209
+    },
+    "burst": {
+      "seconds": 0.1855957,
+      "throughput_messages_per_second": 64656.67038622123,
+      "p95_latency_ms": 1.661
+    }
+  },
+  "python_relay_baseline": {
+    "server_cpu_ms": 3328.125,
+    "legal_frames_lost": 0,
+    "sustained": {
+      "seconds": 3.0212963,
+      "throughput_messages_per_second": 7943.610164948072,
+      "p95_latency_ms": 8.3568
+    },
+    "burst": {
+      "seconds": 0.768399,
+      "throughput_messages_per_second": 15616.886539415069,
+      "p95_latency_ms": 13.2612
+    }
+  },
+  "comparison": {
+    "cpp_cpu_ratio": 0.5352112676056338,
+    "cpp_cpu_reduction": 0.46478873239436624,
+    "burst_throughput_ratio": 4.140176739008501,
+    "sustained_p95_ratio": 0.5050856787287,
+    "burst_p95_ratio": 0.12525261665610954,
+    "acceptance": "pass"
+  }
+}

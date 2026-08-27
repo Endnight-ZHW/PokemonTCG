@@ -1,5 +1,5 @@
 {
-  "android_version_code": 8,
+  "android_version_code": 9,
   "format_version": 6,
   "godot_version": "4.7.stable",
   "native_challenge": {
@@ -11,7 +11,10 @@
   },
   "native_rules": {
     "action_schema_version": 4,
-    "card_ir_content_fingerprint": "11c4f1e6b599b6ed383d7066c7cf232351c9467523d767c26b0fd117aba0eda5",
+    "card_ir_content_fingerprint": "426a5e34136f7c6734e3ca308101f53f2533956fd127afd0e6ee0d1aa2e1468c",
+    "card_ir_contract_fingerprint": "062eab8242ce56295e33799b74e72aa43999c7a1856b45c8b502d414f6084cd3",
+    "card_ir_source_fingerprint": "61ff38e9ea7bb7d454c72b2e09c061efd405dcaaf65b977de369b03190836d01",
+    "card_ir_version": 4,
     "choice_view_schema_version": 2,
     "core": "ptcg_core",
     "core_fingerprint": "80ec2ee0282430c43674d2ab0191aeb338e60f2ba02b614bc64af2950897e96e",
@@ -40,6 +43,7 @@
     "fallback_seed": 1831565813
   },
   "schemas": {
+    "card_ir": 4,
     "choice_view": 2,
     "godot_actions": 4,
     "godot_rules": 6,
@@ -49,5 +53,5 @@
     "snapshot": 3,
     "vm_ir": 3
   },
-  "version": "0.7.0"
+  "version": "0.8.0"
 }

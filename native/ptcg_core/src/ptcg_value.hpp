@@ -11,8 +11,8 @@
 namespace ptcg::ai {
 
 // Small dependency-free JSON-shaped value used at the shared rules boundary.
-// Python and Godot each translate their native mapping/array types to this
-// representation once, outside the simulation loop.
+// Godot and the opt-in Deep AI research binding translate their native
+// mapping/array types to this representation once, outside the simulation loop.
 class Value {
 public:
     enum class Type : std::uint8_t {

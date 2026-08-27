@@ -31,8 +31,8 @@ struct RulesSessionResult {
     bool terminal = false;
 };
 
-// Stateful, dependency-free owner for one authoritative match.  Godot and
-// Python bindings expose this object; neither binding is allowed to mutate the
+// Stateful, dependency-free owner for one authoritative match. Godot and the
+// research-only pybind adapter expose this object; neither binding may mutate
 // state or RNG independently.
 class RulesSession {
 public:

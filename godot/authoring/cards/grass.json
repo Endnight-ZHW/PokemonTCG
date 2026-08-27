@@ -1,0 +1,560 @@
+{
+  "cards": {
+    "svf-scyt": {
+      "abilities": [],
+      "api_id": "svf-scyt",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "高速镰刀",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 90,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "飞天螳螂",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg2-brel": {
+      "abilities": [],
+      "api_id": "svg2-brel",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Grass"
+          ],
+          "damage": 60,
+          "damage_text": "60",
+          "effects": [],
+          "name": "音速直击",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "蘑蘑菇",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 110,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "斗笠菇",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg2-grot": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "grass_pokemon",
+                "from_zone": "deck",
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "search",
+              "params": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "grass_pokemon",
+                "from_zone": "deck",
+                "reveal": true
+              }
+            }
+          ],
+          "name": "日光甲壳",
+          "text": "在自己的回合可以使用1次。选择自己牌库中的1张G宝可梦，在给对手看过之后，加入手牌。并重洗牌库。",
+          "trigger": "on_turn"
+        }
+      ],
+      "api_id": "svg2-grot",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Grass",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 50,
+          "damage_text": "50",
+          "effects": [],
+          "name": "飞叶快刀",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "草苗龟",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 100,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "树林龟",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 3,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg2-shro": {
+      "abilities": [],
+      "api_id": "svg2-shro",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "damage": 10,
+                "heal": 10
+              },
+              "branches": {},
+              "op": "deal_damage_then_heal"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Grass"
+          ],
+          "damage": 10,
+          "damage_text": "10",
+          "effects": [
+            {
+              "effect_type": "damage_and_self_heal",
+              "params": {
+                "damage": 10,
+                "heal": 10
+              }
+            }
+          ],
+          "name": "吸取",
+          "text": "回复这只宝可梦「10」HP。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 60,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "蘑蘑菇",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg2-tort": {
+      "abilities": [],
+      "api_id": "svg2-tort",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "op": "evolved_count",
+                      "player": "self"
+                    },
+                    {
+                      "const": 50
+                    }
+                  ],
+                  "op": "mul"
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Grass",
+            "Colorless"
+          ],
+          "damage": 50,
+          "damage_text": "50×",
+          "effects": [
+            {
+              "effect_type": "damage_per_evolved",
+              "params": {
+                "per_evolved": 50
+              }
+            }
+          ],
+          "name": "进化压制",
+          "text": "造成自己场上进化宝可梦数量×50点伤害。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 4,
+          "cost": [
+            "Grass",
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 160,
+          "damage_text": "160",
+          "effects": [],
+          "name": "头突",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "树林龟",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 190,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "土台龟",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 4,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 2"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg2-turt": {
+      "abilities": [],
+      "api_id": "svg2-turt",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Grass"
+          ],
+          "damage": 10,
+          "damage_text": "10",
+          "effects": [],
+          "name": "咬住",
+          "text": ""
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Grass",
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "鲁莽头击",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 80,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "草苗龟",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg2-zaru": {
+      "abilities": [],
+      "api_id": "svg2-zaru",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "default_count": 1,
+                "filter": "grass_pokemon",
+                "max_count": 3
+              },
+              "branches": {},
+              "op": "conditional_search"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Grass"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "conditional_search_extra",
+              "params": {
+                "default_count": 1,
+                "filter": "grass_pokemon",
+                "max_count": 3
+              }
+            }
+          ],
+          "name": "唤群之歌",
+          "text": "选择自己牌库中的1张G宝可梦，在给对手看过之后，加入手牌。并重洗牌库。如果是后攻玩家的最初回合的话，则可加入手牌的G宝可梦的张数变为最多3张。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "Grass",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 60,
+          "damage_text": "60+",
+          "effects": [
+            {
+              "effect_type": "damage_per_self_energy_type",
+              "params": {
+                "base": 60,
+                "energy_type": "Grass",
+                "per_energy": 20
+              }
+            }
+          ],
+          "name": "反复鞭挞",
+          "text": "追加造成这只宝可梦身上附有的G能量数量×20点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 130,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "萨戮德",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    }
+  },
+  "family": "grass",
+  "format": "ptcg_card_source/1"
+}

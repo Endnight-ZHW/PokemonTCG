@@ -4499,7 +4499,7 @@
         "winner": -1
       },
       "parity_allowlist": {
-        "pending": "Python publishes one source-target distribution request while Godot first selects concrete discard attachments and then targets; both are authoritative, bounded continuations but their first pending envelopes are intentionally different until the shared multi-round choice manifest replaces the legacy Python shape."
+        "pending": "The legacy reference runtime published one source-target distribution request while the native VM selects concrete discard attachments before targets."
       },
       "portable_seed": 1707,
       "source_slot": "active"
@@ -63393,7 +63393,7 @@
     {
       "field": "pending",
       "op": "attach_energy_from_discard",
-      "reason": "Python publishes one source-target distribution request while Godot first selects concrete discard attachments and then targets; both are authoritative, bounded continuations but their first pending envelopes are intentionally different until the shared multi-round choice manifest replaces the legacy Python shape."
+      "reason": "The legacy reference runtime published one source-target distribution request while the native VM selects concrete discard attachments before targets."
     }
   ],
   "registered_ops": [

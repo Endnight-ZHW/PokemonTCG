@@ -86,7 +86,7 @@ class NativeActorServiceV3:
                 )
             ),
             "card_ir": json.loads(
-                (self.repo_root / "godot" / "data" / "card_ir_v3.json").read_text(
+                (self.repo_root / "godot" / "data" / "card_ir_v4.json").read_text(
                     encoding="utf-8"
                 )
             ),

@@ -2,6 +2,7 @@
 
 #include "godot_rules_session.hpp"
 #include "native_challenge_ai.hpp"
+#include "native_content_compiler.hpp"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/godot.hpp>
@@ -13,6 +14,7 @@ void initialize_product_native_module(ModuleInitializationLevel level) {
         return;
     }
     GDREGISTER_CLASS(NativeChallengeAI);
+    GDREGISTER_CLASS(NativeContentCompiler);
     GDREGISTER_CLASS(NativeRulesSession);
 }
 

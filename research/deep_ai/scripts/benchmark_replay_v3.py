@@ -14,8 +14,7 @@ from pathlib import Path
 RESEARCH_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PYTHON_ROOT = RESEARCH_ROOT / "python"
-PRODUCT_PYTHON_ROOT = REPO_ROOT / "python"
-for import_root in (PYTHON_ROOT, PRODUCT_PYTHON_ROOT):
+for import_root in (PYTHON_ROOT,):
     if str(import_root) not in sys.path:
         sys.path.insert(0, str(import_root))
 

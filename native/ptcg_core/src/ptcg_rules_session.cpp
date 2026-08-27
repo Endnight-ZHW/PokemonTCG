@@ -199,7 +199,7 @@ CatalogPayload normalize_catalog(const Value &catalog) {
         || envelope_cards == nullptr || !envelope_cards->is_object()
         || envelope_cards->as_object().empty()
         || card_ir == nullptr || !card_ir->is_object()
-        || string_field(*card_ir, "format") != "ptcg_card_ir/3"
+        || string_field(*card_ir, "format") != "ptcg_card_ir/4"
     ) {
         throw std::invalid_argument("invalid_card_ir_envelope");
     }

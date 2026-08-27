@@ -1,0 +1,942 @@
+{
+  "cards": {
+    "svm-bronzong": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "energy_type": "Metal"
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "energy_relocate",
+              "params": {
+                "amount": 1,
+                "energy_type": "Metal"
+              }
+            }
+          ],
+          "name": "金属转移",
+          "text": "在自己的回合可以使用任意次。选择附着于自己场上宝可梦身上的1个M能量，转附于自己其他宝可梦身上。",
+          "trigger": "repeatable"
+        }
+      ],
+      "api_id": "svm-bronzong",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Metal",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 70,
+          "damage_text": "70",
+          "effects": [],
+          "name": "意念头锤",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "铜镜怪",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 110,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "青铜钟",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 3,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svm-bronzor": {
+      "abilities": [],
+      "api_id": "svm-bronzor",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {
+                      "status": "paralyzed",
+                      "target": "opponent_active"
+                    },
+                    "branches": {},
+                    "op": "apply_status"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Metal",
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [
+            {
+              "effect_type": "coin_flip",
+              "params": {
+                "on_heads": [
+                  {
+                    "effect_type": "status",
+                    "params": {
+                      "status": "paralyzed",
+                      "target": "opponent_active"
+                    }
+                  }
+                ],
+                "on_tails": []
+              }
+            }
+          ],
+          "name": "金属压制",
+          "text": "抛掷1次硬币如果为正面，则使对手的战斗宝可梦陷入麻痹状态。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 60,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "铜镜怪",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svm-cobalion": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "attacker_subtype": "Basic",
+                "defender_type": "Darkness"
+              },
+              "branches": {},
+              "op": "register_aura_damage_boost"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "aura_damage_boost",
+              "params": {
+                "amount": 30,
+                "attacker_subtype": "Basic",
+                "defender_type": "Darkness"
+              }
+            }
+          ],
+          "name": "正义法则",
+          "text": "只要这只宝可梦在场上，自己的基础宝可梦使用的招式，给对手战斗场上的D宝可梦造成的伤害「+30」。",
+          "trigger": "passive"
+        }
+      ],
+      "api_id": "svm-cobalion",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "max_per_target": 1,
+                "min_select": 0,
+                "select_source": true,
+                "to": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [
+            {
+              "effect_type": "energy_attach",
+              "params": {
+                "amount": 2,
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "max_per_target": 1,
+                "min_select": 0,
+                "select_source": true,
+                "to": "bench"
+              }
+            }
+          ],
+          "name": "跟进",
+          "text": "选择自己最多2只备战宝可梦，各附着1张牌库中的基本能量。并重洗牌库。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 120,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "勾帕路翁",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svm-dialga": {
+      "abilities": [],
+      "api_id": "svm-dialga",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "any",
+                "from_zone": "discard",
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Metal"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "search",
+              "params": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "any",
+                "from_zone": "discard",
+                "reveal": true
+              }
+            }
+          ],
+          "name": "时之逆流",
+          "text": "选择自己弃牌区中任意1张卡牌，在给对手看过之后，加入手牌。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 60
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "Metal",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 60,
+          "damage_text": "60+",
+          "effects": [
+            {
+              "effect_type": "attack_damage_formula",
+              "params": {
+                "base": 60,
+                "per_energy": 20,
+                "per_self_energy_type": "Metal"
+              }
+            }
+          ],
+          "name": "金属爆破",
+          "text": "追加造成这只宝可梦身上附有的M能量数量×20点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 130,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "帝牙卢卡",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svm-klefki": {
+      "abilities": [],
+      "api_id": "svm-klefki",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 10,
+          "damage_text": "10",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 2,
+                "player": "self"
+              }
+            }
+          ],
+          "name": "解锁",
+          "text": "从自己的牌库上方抽取2张卡牌。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "钥圈儿",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svm-orthworm": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "amount": 100,
+                "energy_type": "Metal",
+                "threshold": 3
+              },
+              "branches": {},
+              "op": "register_conditional_hp_boost"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "conditional_hp_boost",
+              "params": {
+                "amount": 100,
+                "energy_type": "Metal",
+                "threshold": 3
+              }
+            }
+          ],
+          "name": "营养铁质",
+          "text": "如果这只宝可梦身上附着了3个及以上M能量的话，则这只宝可梦的最大HP「+100」。",
+          "trigger": "passive"
+        }
+      ],
+      "api_id": "svm-orthworm",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 30,
+                "choose_targets": true,
+                "count": 1,
+                "player": "opponent"
+              },
+              "branches": {},
+              "op": "deal_bench_damage"
+            }
+          ],
+          "converted_energy_cost": 4,
+          "cost": [
+            "Colorless",
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 100,
+          "damage_text": "100",
+          "effects": [
+            {
+              "effect_type": "bench_damage",
+              "params": {
+                "amount": 30,
+                "choose_targets": true,
+                "count": 1,
+                "player": "opponent"
+              }
+            }
+          ],
+          "name": "刺穿",
+          "text": "给对手的1只备战宝可梦，也造成30伤害。[备战宝可梦不计算弱点、抗性。]"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 130,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "拖拖蚓",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svm-skarmory": {
+      "abilities": [],
+      "api_id": "svm-skarmory",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "啄",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "attack_name": "钢铁之刃",
+                "scope": "self"
+              },
+              "branches": {},
+              "op": "apply_self_attack_lock"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Metal",
+            "Metal",
+            "Colorless"
+          ],
+          "damage": 120,
+          "damage_text": "120",
+          "effects": [
+            {
+              "effect_type": "self_attack_lock",
+              "params": {
+                "attack_name": "钢铁之刃",
+                "scope": "self"
+              }
+            }
+          ],
+          "name": "钢铁之刃",
+          "text": "在下一个自己的回合，这只宝可梦无法使用「钢铁之刃」。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 120,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "盔甲鸟",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svm-smeargle": {
+      "abilities": [],
+      "api_id": "svm-smeargle",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "count": 5,
+                "filter": "basic_energy",
+                "shuffle_rest": true,
+                "take": 99,
+                "target": "self_or_bench"
+              },
+              "branches": {},
+              "op": "look_top_attach_energy"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "look_top_attach_energy",
+              "params": {
+                "count": 5,
+                "filter": "basic_energy",
+                "shuffle_rest": true,
+                "take": 99,
+                "target": "self_or_bench"
+              }
+            }
+          ],
+          "name": "多彩调色盘",
+          "text": "查看自己牌库上方5张卡牌，选择其中任意数量的基本能量，附着于自己的1只宝可梦身上。将剩余的卡牌放回牌库并重洗牌库。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [],
+          "name": "冲撞",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "图图犬",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svm-zacian": {
+      "abilities": [],
+      "api_id": "svm-zacian",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 20
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "bench_count",
+                          "player": "self"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                },
+                "ignore_defender_damage_effects": true,
+                "ignore_weakness": true
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Metal"
+          ],
+          "damage": 20,
+          "damage_text": "20+",
+          "effects": [
+            {
+              "effect_type": "attack_damage_formula",
+              "params": {
+                "base": 20,
+                "ignore_defender_damage_effects": true,
+                "ignore_resistance": false,
+                "ignore_weakness": true,
+                "per_own_bench": 10
+              }
+            }
+          ],
+          "name": "战斗军团",
+          "text": "追加造成自己备战宝可梦数量×10点伤害。这个招式的伤害，不计算弱点、以及对手战斗宝可梦身上所附加的效果。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Metal",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 100,
+          "damage_text": "100",
+          "effects": [],
+          "name": "薄片利刃",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 130,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "苍响",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "svm-zamazenta": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "reduction": 30,
+                "requires_attached_energy": true
+              },
+              "branches": {},
+              "op": "register_aura_damage_reduction"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "aura_damage_reduction",
+              "params": {
+                "reduction": 30,
+                "requires_attached_energy": true
+              }
+            }
+          ],
+          "name": "金属之盾",
+          "text": "如果这只宝可梦身上附有能量的话，则这只宝可梦所受到的招式的伤害「-30」。",
+          "trigger": "passive"
+        }
+      ],
+      "api_id": "svm-zamazenta",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 100
+                    },
+                    {
+                      "condition": "ko_last_opponent_turn",
+                      "else": {
+                        "const": 0
+                      },
+                      "op": "if",
+                      "then": {
+                        "const": 120
+                      }
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Metal",
+            "Metal",
+            "Colorless"
+          ],
+          "damage": 100,
+          "damage_text": "100+",
+          "effects": [
+            {
+              "effect_type": "attack_damage_formula",
+              "params": {
+                "base": 100,
+                "condition_bonus": {
+                  "bonus": 120,
+                  "condition": "ko_last_opponent_turn"
+                }
+              }
+            }
+          ],
+          "name": "报仇",
+          "text": "在上一个对手的回合，如果自己的宝可梦昏厥的话，则追加造成120点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 130,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "藏玛然特",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    }
+  },
+  "family": "metal",
+  "format": "ptcg_card_source/1"
+}

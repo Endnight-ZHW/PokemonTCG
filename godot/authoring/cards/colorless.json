@@ -1,0 +1,1516 @@
+{
+  "cards": {
+    "svf-farf": {
+      "abilities": [],
+      "api_id": "svf-farf",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 2,
+                "player": "self"
+              }
+            }
+          ],
+          "name": "背来",
+          "text": "从自己牌库上方抽取2张卡牌。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [],
+          "name": "甩葱殴打",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 90,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "大葱鸭",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "svf-hawl": {
+      "abilities": [],
+      "api_id": "svf-hawl",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "energy_type": "basic",
+                "min_select": 0,
+                "same_target": true,
+                "select_source": true,
+                "target": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy_from_discard"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "attach_from_discard",
+              "params": {
+                "amount": 2,
+                "energy_type": "basic",
+                "min_select": 0,
+                "same_target": true,
+                "select_source": true,
+                "target": "bench"
+              }
+            }
+          ],
+          "name": "展示姿态",
+          "text": "选择自己弃牌区中最多2张基本能量，附着于1只备战宝可梦身上。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "bonus": 30,
+                "condition": "opponent_active_evolved"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30+",
+          "effects": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "params": {
+                "bonus": 30,
+                "condition": "opponent_active_evolved"
+              }
+            }
+          ],
+          "name": "挥落",
+          "text": "如果对手的战斗宝可梦为进化宝可梦的话，则追加造成30点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "摔跤鹰人",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg-cast": {
+      "abilities": [],
+      "api_id": "svg-cast",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 2
+              }
+            }
+          ],
+          "name": "双重抽取",
+          "text": "从自己的牌库上方抽取2张卡牌。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "energy_type": "basic_energy",
+                "from_self": true
+              },
+              "branches": {},
+              "op": "relocate_energy"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [
+            {
+              "effect_type": "energy_relocate",
+              "params": {
+                "amount": 1,
+                "energy_type": "basic_energy",
+                "from_self": true
+              }
+            }
+          ],
+          "name": "暴风",
+          "text": "选择附着于这只宝可梦身上的1个基本能量，转附于备战宝可梦身上。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "飘浮泡泡",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg-milt": {
+      "abilities": [],
+      "api_id": "svg-milt",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "base": 60,
+                "bonus": 90
+              },
+              "branches": {},
+              "op": "conditional_damage_then_heal"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 60,
+          "damage_text": "60+",
+          "effects": [
+            {
+              "effect_type": "conditional_damage_heal",
+              "params": {
+                "base": 60,
+                "bonus": 90
+              }
+            }
+          ],
+          "name": "活泼冲撞",
+          "text": "在这个回合，如果回复了这只宝可梦的HP的话，则追加造成90伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 120,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "大奶罐",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "svg-swa": {
+      "abilities": [],
+      "api_id": "svg-swa",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "per_head": 20
+              },
+              "branches": {},
+              "op": "flip_until_tails"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20×",
+          "effects": [
+            {
+              "effect_type": "coin_flip_until_tails",
+              "params": {
+                "per_head": 20
+              }
+            }
+          ],
+          "name": "连续旋转",
+          "text": "抛掷硬币直到出现反面，造成正面次数×20点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 50,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "青绵鸟",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-aipo": {
+      "abilities": [],
+      "api_id": "svi-aipo",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 1,
+                "player": "self"
+              }
+            }
+          ],
+          "name": "骗取",
+          "text": "从自己牌库上方抽取1张卡牌。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "掌击",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 60,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "长尾怪手",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-ambi": {
+      "abilities": [],
+      "api_id": "svi-ambi",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 2,
+                "player": "self"
+              }
+            }
+          ],
+          "name": "招来",
+          "text": "从自己牌库上方抽取2张卡牌。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "op": "hand_size",
+                      "player": "self"
+                    },
+                    {
+                      "const": 20
+                    }
+                  ],
+                  "op": "mul"
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20×",
+          "effects": [
+            {
+              "effect_type": "damage_per_hand_size",
+              "params": {
+                "per": 20
+              }
+            }
+          ],
+          "name": "长手抛掷",
+          "text": "造成自己手牌张数×20伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "长尾怪手",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 100,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "双尾怪手",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-flam": {
+      "abilities": [],
+      "api_id": "svi-flam",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [],
+          "name": "振翅",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 20,
+                "damage_kind": "self_damage"
+              },
+              "branches": {},
+              "op": "place_damage_counters"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 110,
+          "damage_text": "110",
+          "effects": [
+            {
+              "effect_type": "damage_counter_self",
+              "params": {
+                "amount": 20,
+                "damage_kind": "self_damage"
+              }
+            }
+          ],
+          "name": "俯冲",
+          "text": "给这只宝可梦也造成20伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 110,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "缠红鹤",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-gree": {
+      "abilities": [],
+      "api_id": "svi-gree",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 2,
+                "player": "self"
+              }
+            }
+          ],
+          "name": "招来",
+          "text": "从自己的牌库上方抽取2张卡牌。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "base_damage": 60,
+                "bonus": 150,
+                "threshold": 5
+              },
+              "branches": {},
+              "op": "discard_hand_then_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 60,
+          "damage_text": "60+",
+          "effects": [
+            {
+              "effect_type": "discard_hand_conditional_bonus",
+              "params": {
+                "base_damage": 60,
+                "bonus": 150,
+                "threshold": 5
+              }
+            }
+          ],
+          "name": "倾倒一空",
+          "text": "将自己的手牌全部放于弃牌区。如果将5张以上放于弃牌区，则追加造成150点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "贪心栗鼠",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 130,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "藏饱栗鼠",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 3,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-inde": {
+      "abilities": [],
+      "api_id": "svi-inde",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 2,
+                "player": "self"
+              }
+            }
+          ],
+          "name": "招来",
+          "text": "从自己的牌库上方抽取2张卡牌。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "op": "hand_size",
+                      "player": "self"
+                    },
+                    {
+                      "const": 10
+                    }
+                  ],
+                  "op": "mul"
+                }
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 10,
+          "damage_text": "10×",
+          "effects": [
+            {
+              "effect_type": "damage_per_hand_size",
+              "params": {
+                "per": 10
+              }
+            }
+          ],
+          "name": "妙手强念",
+          "text": "造成自己手牌张数×10点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 90,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "爱管侍",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-maus": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "filter_names": [
+                  "一对鼠",
+                  "一家鼠ex",
+                  "一家鼠"
+                ],
+                "per_pokemon": 3
+              },
+              "branches": {},
+              "op": "register_reactive_thorns"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "reactive_thorns",
+              "params": {
+                "filter_names": [
+                  "一对鼠",
+                  "一家鼠ex",
+                  "一家鼠"
+                ],
+                "per_pokemon": 3
+              }
+            }
+          ],
+          "name": "团结一致",
+          "text": "当这只宝可梦在战斗场上受到对手宝可梦的招式的伤害时，将自己场上「一对鼠」和「一家鼠」的数量×3个伤害指示物，放置于使用了招式的宝可梦身上。",
+          "trigger": "on_damaged"
+        }
+      ],
+      "api_id": "svi-maus",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "player": "self"
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 120,
+          "damage_text": "120",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 2,
+                "player": "self"
+              }
+            }
+          ],
+          "name": "贪婪门牙",
+          "text": "从自己牌库上方抽取2张卡牌。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "一对鼠",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 230,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "一家鼠ex",
+      "number": "",
+      "prize_value": 2,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 0,
+      "rules": [
+        "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
+      ],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Stage 1",
+        "ex"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-skwv": {
+      "abilities": [],
+      "api_id": "svi-skwv",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "啃咬",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 60,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "贪心栗鼠",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-sqwk": {
+      "abilities": [],
+      "api_id": "svi-sqwk",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "count": 2,
+                "destination": "bench",
+                "filter": "basic_pokemon",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "search",
+              "params": {
+                "count": 2,
+                "destination": "bench",
+                "filter": "basic_pokemon",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              }
+            }
+          ],
+          "name": "呼朋引伴",
+          "text": "选择自己牌库中最多2张基础宝可梦，放于备战区。并重洗牌库。"
+        },
+        {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {},
+                    "branches": {},
+                    "op": "prevent_all"
+                  }
+                ],
+                "on_tails": [
+                  {
+                    "args": {},
+                    "branches": {},
+                    "op": "fail_attack"
+                  }
+                ]
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 60,
+          "damage_text": "60",
+          "effects": [
+            {
+              "effect_type": "coin_flip",
+              "params": {
+                "on_heads": [
+                  {
+                    "effect_type": "prevent_all",
+                    "params": {}
+                  }
+                ],
+                "on_tails": [
+                  {
+                    "effect_type": "attack_fail",
+                    "params": {}
+                  }
+                ]
+              }
+            }
+          ],
+          "name": "飞翔",
+          "text": "抛掷1次硬币如果为反面，则这个招式失败。如果为正面，则在下一个对手的回合，这只宝可梦不受到招式的伤害和效果影响。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "怒鹦哥",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-stan": {
+      "abilities": [],
+      "api_id": "svi-stan",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "后踢",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 0
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "any",
+                          "op": "energy_count",
+                          "scope": "opponent_active"
+                        },
+                        {
+                          "const": 30
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                },
+                "target": "opponent_active"
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30×",
+          "effects": [
+            {
+              "effect_type": "damage_per_energy",
+              "params": {
+                "base": 0,
+                "count_from": "opponent_active",
+                "per_energy": 30,
+                "target": "opponent_active"
+              }
+            }
+          ],
+          "name": "疯狂俯冲",
+          "text": "造成对手战斗宝可梦身上附有的能量数量×30点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 110,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "惊角鹿",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "svi-tand": {
+      "abilities": [],
+      "api_id": "svi-tand",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 10,
+          "damage_text": "10",
+          "effects": [],
+          "name": "紧贴",
+          "text": ""
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [],
+          "name": "踢飞",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 40,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "一对鼠",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "svl-chat": {
+      "abilities": [],
+      "api_id": "svl-chat",
+      "artist": "",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "discard_amount": 1,
+                "draw_amount": 2
+              },
+              "branches": {},
+              "op": "discard_then_draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "discard_then_draw",
+              "params": {
+                "discard_amount": 1,
+                "draw_amount": 2
+              }
+            }
+          ],
+          "name": "循环抽取",
+          "text": "将自己的1张手牌放于弃牌区。若这样做，则从自己牌库上方抽取2张卡牌。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 10,
+          "damage_text": "10",
+          "effects": [],
+          "name": "振翅",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 70,
+      "image_url_large": "",
+      "image_url_small": "",
+      "name": "聒噪鸟",
+      "number": "",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "",
+      "regulation_mark": "",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 0,
+      "rules": [],
+      "set_id": "",
+      "set_name": "",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    }
+  },
+  "family": "colorless",
+  "format": "ptcg_card_source/1"
+}

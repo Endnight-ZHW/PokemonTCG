@@ -1,6 +1,6 @@
 # PokemonTCG
 
-基于 Godot 4.7 的宝可梦卡牌对战游戏，当前版本为 0.7.0。产品支持本地双人、
+基于 Godot 4.7 的宝可梦卡牌对战游戏，当前版本为 0.8.0。产品支持本地双人、
 Challenge AI、ENet LAN 与 WebSocket Relay；协议与存档边界保持 Action 4、
 ChoiceView 2、Protocol 6、Snapshot 3、Journal 1 和 RNG 2。
 
@@ -8,19 +8,24 @@ ChoiceView 2、Protocol 6、Snapshot 3、Journal 1 和 RNG 2。
 
 ## 代码边界
 
-- `native/ptcg_core`：无 Godot/Python 依赖的权威规则核心。
+- `native/ptcg_core`：无 Godot/Python 业务依赖的权威规则与内容编译器。
 - `native/challenge_core`：唯一的产品 AI 策略与 `ChallengeController`。
-- `godot/native/bindings`：只负责 Godot 类型转换和类注册。
-- `godot`：发布客户端、UI、网络与唯一卡图资源。
-- `python`：卡牌作者工具、数据导出与 Relay 服务。
-- `research/deep_ai`：显式运行的独立研究项目，不进入产品构建、发布包或常规 CI。
+- `native/relay_server`：独立发布的 Boost.Beast Protocol v6 Relay。
+- `godot/native/bindings`：Godot 类型转换及 `NativeContentCompiler` 等绑定。
+- `godot/authoring`：卡牌、牌组、策略和 VM 描述符的唯一 JSON 作者源。
+- `godot`：发布客户端、UI、网络、生成数据与唯一卡图资源。
+- `research/deep_ai`：独立 Python 研究项目，不进入产品构建、客户端包或常规 CI。
 
-版本、Android versionCode、发布牌组和 schema 的唯一清单是
+产品业务不再包含 Python。Python 只作为 SCons 的构建解释器；Deep AI 的 Python 依赖和
+产物全部留在研究目录。版本、Android versionCode、发布牌组和 schema 的唯一清单是
 [`godot/data/release_manifest.json`](godot/data/release_manifest.json)。
+Godot 继续使用 SCons 的背景见其
+[build-system FAQ](https://docs.godotengine.org/en/latest/about/faq.html#why-does-godot-use-the-scons-build-system)。
 
 ## 开发与验证
 
 ```powershell
+python -m pip install "scons==4.10.1"
 .\tools\setup_godot_toolchain.ps1
 .\tools\setup_native_ai_deps.ps1
 .\tools\test_fast.ps1
@@ -28,13 +33,29 @@ ChoiceView 2、Protocol 6、Snapshot 3、Journal 1 和 RNG 2。
 .\tools\test_godot_ai.ps1
 ```
 
-打开编辑器：
+卡牌内容统一通过 Godot headless + C++ 编译：
 
 ```powershell
-.\.tools\godot-4.7\Godot_v4.7-stable_win64.exe --editor --path .\godot
+.\tools\content.ps1 lint
+.\tools\content.ps1 status -Json
+.\tools\content.ps1 test -CardId svi-chim
+.\tools\content.ps1 export
+.\tools\content.ps1 check
 ```
 
-构建 Windows/Android 与发布包：
+启动和打包独立 Relay：
+
+```powershell
+.\tools\build_relay.ps1 -Configuration release
+.\native\relay_server\bin\ptcg_relay_server.exe `
+  --host 127.0.0.1 --port 8766 --threads 2 --max-rooms 100
+.\tools\package_relay.ps1
+```
+
+公网 `wss://` 由 Caddy/Nginx 终止 TLS，示例见
+[`deploy/relay`](deploy/relay)。Relay 不会放入客户端发布包。
+
+构建 Windows/Android 客户端与发布包：
 
 ```powershell
 .\tools\setup_android_toolchain.ps1
@@ -42,15 +63,6 @@ ChoiceView 2、Protocol 6、Snapshot 3、Journal 1 和 RNG 2。
 .\tools\build_godot.ps1 -Target all -Configuration debug
 .\tools\package_release.ps1 -AndroidSigning test
 .\tools\test_release.ps1
-```
-
-卡牌数据检查与 Relay：
-
-```powershell
-python -m pip install -r .\python\requirements.txt
-python -B .\python\scripts\card_author.py lint
-python -B .\python\scripts\export_godot_data.py --check
-python -B .\python\relay_server.py --host 0.0.0.0 --port 8766
 ```
 
 Deep AI 研究说明见 [`research/deep_ai/README.md`](research/deep_ai/README.md)，

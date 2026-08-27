@@ -30,4 +30,11 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Unable to pin godot-cpp.'
 }
 
+& (Join-Path $PSScriptRoot 'setup_relay_deps.ps1') -Force:$Force
+$boostVersionPath = ([string]$lock.native.boost.version).Replace('.', '_')
+$boostRoot = Join-Path $nativeRoot "boost_$boostVersionPath"
+$jsonRoot = Join-Path $nativeRoot 'nlohmann-json'
+
 Write-Host "godot-cpp=$godotCpp"
+Write-Host "boost=$boostRoot"
+Write-Host "nlohmann-json=$jsonRoot"

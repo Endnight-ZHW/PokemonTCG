@@ -1,22 +1,25 @@
 [CmdletBinding()]
-param([string]$Python = '')
+param()
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$portable = Join-Path $repoRoot '.tools\python311\python.exe'
-if ([string]::IsNullOrWhiteSpace($Python)) {
-    $Python = if (Test-Path -LiteralPath $portable) { $portable } else { 'python' }
-}
-$env:PYTHONNOUSERSITE = '1'
+& (Join-Path $PSScriptRoot 'test_product_boundary.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'Product Python boundary failed.' }
 
-& (Join-Path $PSScriptRoot 'test_ptcg_core.ps1') -Python $Python
+& (Join-Path $PSScriptRoot 'test_ptcg_core.ps1')
 if ($LASTEXITCODE -ne 0) { throw 'Dependency-free C++ rules core failed.' }
 
-& (Join-Path $PSScriptRoot 'test_challenge_core.ps1') -Python $Python
+& (Join-Path $PSScriptRoot 'test_challenge_core.ps1')
 if ($LASTEXITCODE -ne 0) { throw 'Dependency-free C++ Challenge core failed.' }
 
-& $Python -B (Join-Path $repoRoot 'python\scripts\card_author.py') lint
-if ($LASTEXITCODE -ne 0) { throw 'Card authoring contract failed.' }
+& (Join-Path $PSScriptRoot 'build_native_ai.ps1') -Target windows -Configuration debug
+if ($LASTEXITCODE -ne 0) { throw 'Godot native debug runtime build failed.' }
+
+& (Join-Path $PSScriptRoot 'test_relay.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'C++ Relay protocol core failed.' }
+
+& (Join-Path $PSScriptRoot 'content.ps1') test
+if ($LASTEXITCODE -ne 0) { throw 'Native content compiler contract failed.' }
 
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $godotPaths = Get-GodotToolchainPaths -RepoRoot $repoRoot

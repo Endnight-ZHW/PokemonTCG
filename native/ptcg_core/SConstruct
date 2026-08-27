@@ -27,6 +27,7 @@ core_objects = [
         "ptcg_rules_projection",
         "ptcg_typed_state",
         "ptcg_typed_ir",
+        "ptcg_content_compiler",
     )
 ]
 test_object = env.Object(

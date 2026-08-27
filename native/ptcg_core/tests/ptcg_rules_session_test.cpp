@@ -1,4 +1,5 @@
 #include "ptcg_rules_session.hpp"
+#include "ptcg_content_compiler.hpp"
 #include "ptcg_typed_ir.hpp"
 #include "ptcg_typed_state.hpp"
 
@@ -169,6 +170,18 @@ const Value &active_of(const Value &state, std::size_t owner) {
 
 int main() {
     try {
+        const Value content_contract = ptcg::ai::content_compiler_contract();
+        require(
+            content_contract.find("boundary_id")->string_or()
+                == "ptcg.native_content_compiler/1"
+                && content_contract.find("card_ir_format")->string_or()
+                    == "ptcg_card_ir/4",
+            "native content compiler contract mismatch");
+        const Value rejected_content = ptcg::ai::compile_content_bundle(Value());
+        require(
+            !rejected_content.find("success")->as_bool()
+                && !rejected_content.find("diagnostics")->as_array().empty(),
+            "native content compiler accepted a non-object bundle");
         const Value cards = catalog();
         const Value match_decks = decks();
         const Value config(Object{

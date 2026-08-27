@@ -28,11 +28,19 @@
   },
   "python": {
     "version": "3.11.15",
-    "scons": "4.10.1",
-    "websockets": "16.0",
-    "requests": "2.32.3"
+    "scons": "4.10.1"
   },
   "native": {
-    "godot_cpp_commit": "5ffd70e34d0ab87009a9f0ffa3361bc8f4b09731"
+    "godot_cpp_commit": "5ffd70e34d0ab87009a9f0ffa3361bc8f4b09731",
+    "boost": {
+      "version": "1.92.0",
+      "url": "https://archives.boost.io/release/1.92.0/source/boost_1_92_0.tar.gz",
+      "sha256": "c4a3b310ddd2472416e091067166b0713be97c63f38c212c484ada022fd296ce"
+    },
+    "nlohmann_json": {
+      "version": "3.12.0",
+      "url": "https://github.com/nlohmann/json/releases/download/v3.12.0/json.hpp",
+      "sha256": "aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63"
+    }
   }
 }

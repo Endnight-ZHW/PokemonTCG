@@ -2,7 +2,7 @@ extends SceneTree
 
 const CARDS_PATH := "res://data/cards.json"
 const DECKS_PATH := "res://data/decks.json"
-const CARD_IR_PATH := "res://data/card_ir_v3.json"
+const CARD_IR_PATH := "res://data/card_ir_v4.json"
 const STRATEGIES_PATH := "res://data/ai_strategies.json"
 
 var failures: Array[String] = []
@@ -141,7 +141,7 @@ func _run() -> void:
 			== str(card_ir.get("content_fingerprint", ""))
 		and str(ir_session.journal().get("contract_fingerprint", ""))
 			== str(card_ir.get("contract_fingerprint", "")),
-		"Card IR v3 envelope/fingerprint was not adopted by ptcg_core: %s" % [
+		"Card IR v4 envelope/fingerprint was not adopted by ptcg_core: %s" % [
 			str(ir_created),
 		],
 	)

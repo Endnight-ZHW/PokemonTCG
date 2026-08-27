@@ -1,6 +1,6 @@
 # Godot 4.7 客户端
 
-这是项目当前的发布版本，版本号为 0.7.0。客户端使用 Godot 4.7
+这是项目当前的发布版本，版本号为 0.8.0。客户端使用 Godot 4.7
 Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 
 ## 已实现
@@ -133,11 +133,13 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 
 ## 数据来源
 
-`data/` 和 `assets/cards/` 由 Python 类型化卡牌 DSL 与导入数据生成。不要直接手工维护
-生成的 Card IR/卡牌数据；Python 只编译描述，权威执行仍在 `ptcg_core`。修改作者源后执行：
+`authoring/` 是卡牌、牌组、策略与 VM 描述符的唯一 JSON 作者源，`data/` 是由
+`NativeContentCompiler` 生成并提交的运行数据；`assets/cards/` 是按 card ID 命名的唯一卡图源。
+不要直接手工维护生成的 Card IR/卡牌数据。修改作者源后执行：
 
 ```powershell
-.\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py
+.\tools\content.ps1 export
+.\tools\content.ps1 check
 ```
 
 版本、schema 和发布牌组以 [`data/release_manifest.json`](data/release_manifest.json)

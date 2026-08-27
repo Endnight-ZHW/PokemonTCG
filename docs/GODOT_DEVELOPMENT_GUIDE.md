@@ -560,7 +560,7 @@ Main.update_view()    -> 页面重新显示状态
 | 调整可配置尺寸或动画速度 | 场景根节点的 `@export` 参数 | 参数可被 Inspector 保存 |
 | 调整运行时布局算法 | 对应 `.gd` 的 `_layout_*`、`_place_*` 函数 | 改完要看多种窗口比例 |
 | 新增用户交互 | 页面 `.tscn` 新增控件，页面 `.gd` 新增或连接 `signal`，`Main` 处理 | 页面只报告意图，不改规则状态 |
-| 新增组合卡牌效果 | Python 类型化卡牌 DSL、场景测试、生成的 Card IR v3 | 不修改 GDScript/C++ 规则代码 |
+| 新增组合卡牌效果 | `godot/authoring` JSON、场景测试、生成的 Card IR v4 | 不修改 GDScript/C++ 规则代码 |
 | 新增通用规则原语 | VM 描述符、一个 C++ handler、语言无关 golden | 绑定层不复制语义 |
 | 新增联网行为 | `NetworkMatchController` 和协议层 | 客户端只提交动作/选择，不提交完整状态 |
 
@@ -716,7 +716,7 @@ sequenceDiagram
 
 ## 9. 原生规则会话与嵌套选择
 
-卡牌效果由 Card IR v3 的通用 VM 指令驱动，唯一执行器位于 C++ `ptcg_core`。典型流程：
+卡牌效果由 Card IR v4 的通用 VM 指令驱动，唯一执行器位于 C++ `ptcg_core`。典型流程：
 
 1. Godot 提交完整 Action V4；核心核对 schema、revision、actor、来源、目标和合法动作。
 2. 核心在事务内执行 VM 与结算栈，并独占 RNG。
@@ -831,28 +831,29 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 
 ## 11. 新增卡牌或效果
 
-`godot/data/*.json` 是生成文件，不要直接修改。卡牌作者源位于 Python 类型化 DSL，
-所有效果编译为 Card IR v3；Python 和 GDScript 都不执行规则。
+`godot/data/*.json` 是生成文件，不要直接修改。唯一作者源位于 `godot/authoring/` 的
+JSON 文档，所有效果由 `NativeContentCompiler` 编译为 Card IR v4；GDScript 负责文件 I/O，
+C++ 负责 schema、VM、牌组和策略校验。
 
 推荐流程：
 
-1. 在 Python 卡牌 DSL 中加入卡牌规格；纯组合卡只改这一份规格。
+1. 在 `godot/authoring/cards/<family>.json` 中加入卡牌规格；纯组合卡只改这一份规格。
 2. 增加一份语言无关场景测试，覆盖合法、非法与选择链。
-3. 运行 `card lint/test/status`；已有 VM 原语应直接组合，不添加语言分支。
+3. 运行 `tools/content.ps1 lint/test/status`；已有 VM 原语应直接组合，不添加语言分支。
 4. 只有确实缺少通用原语时，才更新一份描述符、一个 C++ handler 和对应 golden。
 5. 导出 Godot 数据：
 
 ```powershell
-.\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py
+.\tools\content.ps1 export
 ```
 
 6. 检查生成数据是否同步：
 
 ```powershell
-.\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
+.\tools\content.ps1 check
 ```
 
-7. 运行 C++、Godot、AI 和网络回归。纯组合卡不得修改 C++、GDScript 或 Python 规则执行代码。
+7. 运行 C++、Godot、AI 和网络回归。纯组合卡不得修改 C++ 或 GDScript 规则执行代码。
 
 新效果至少测试：
 
@@ -1004,7 +1005,7 @@ Windows 与 Android 调试构建：
 - 开发调试包：用于自己测试，输出到 `godot/dist/windows/` 和 `godot/dist/android/`。
 - 正式发布包：用于分发，输出到 `godot/dist/release/`，并生成 ZIP、APK 和 SHA-256 清单。
 
-0.7.0 以 Godot 客户端和原生 Challenge AI 为唯一产品运行基线。Deep AI 是
+0.8.0 以 Godot 客户端、原生 Challenge AI 和独立 C++ Relay 为产品运行基线。Deep AI 是
 `research/deep_ai` 下显式运行的研究项目，不进入发布清单、产品扩展或发布包。
 发布包不会包含 Python 运行时、研究脚本、测试脚本或工具链目录。
 
@@ -1037,7 +1038,7 @@ Windows 原生 AI 还需要本机安装 Visual Studio C++ Build Tools。脚本�
 如果刚改过卡牌或卡组，先确认生成数据同步：
 
 ```powershell
-.\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
+.\tools\content.ps1 check
 ```
 
 研究 Deep AI 时显式进入 `research/deep_ai`，先运行
@@ -1110,7 +1111,7 @@ Android 调试 APK 可以用 ADB 安装：
 
 | 文件 | 用途 |
 |---|---|
-| `godot/dist/release/PokemonTCG-Windows-x86_64-0.7.0.zip` | 可分发 Windows ZIP |
+| `godot/dist/release/PokemonTCG-Windows-x86_64-0.8.0.zip` | 可分发 Windows ZIP |
 | `godot/dist/release/windows/PokemonTCG.exe` | 未压缩 Windows release 可执行文件 |
 | `godot/dist/release/windows/PokemonTCG.pck` | Godot 资源包 |
 | `godot/dist/release/SHA256SUMS.json` | ZIP、EXE、PCK、DLL 和模型校验清单 |
@@ -1132,14 +1133,14 @@ Android 调试 APK 可以用 ADB 安装：
 
 | 文件 | 用途 |
 |---|---|
-| `godot/dist/release/PokemonTCG-Android-arm64-0.7.0-test.apk` | Android 9+ ARM64 测试签名 APK |
+| `godot/dist/release/PokemonTCG-Android-arm64-0.8.0-test.apk` | Android 9+ ARM64 测试签名 APK |
 | `godot/dist/release/android/PokemonTCG.apk` | Godot 导出的原始 release APK |
 | `godot/dist/release/SHA256SUMS.json` | 发布校验清单 |
 
 安装测试签名 APK：
 
 ```powershell
-.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.7.0-test.apk
+.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.8.0-test.apk
 ```
 
 查看设备是否连接：
@@ -1175,7 +1176,7 @@ $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = "your-keystore-password"
 正式签名输出文件名：
 
 ```text
-godot/dist/release/PokemonTCG-Android-arm64-0.7.0-production.apk
+godot/dist/release/PokemonTCG-Android-arm64-0.8.0-production.apk
 ```
 
 正式签名注意事项：
@@ -1183,7 +1184,7 @@ godot/dist/release/PokemonTCG-Android-arm64-0.7.0-production.apk
 - keystore 丢失后，应用商店同包名升级会非常麻烦，必须离线备份。
 - `GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD` 当前同时作为 store password 和 key password 使用。
 - 不要把 keystore 放到 `godot/`、`docs/`、`tools/` 或任何会被提交的目录。
-- 正式包固定包名 `com.pokemontcg.game`、`versionCode=8`、`versionName=0.7.0`、仅 `arm64-v8a`。
+- 正式包固定包名 `com.pokemontcg.game`、`versionCode=9`、`versionName=0.8.0`、仅 `arm64-v8a`。
 
 ### 发布后校验
 
@@ -1210,8 +1211,8 @@ godot/dist/release/PokemonTCG-Android-arm64-0.7.0-production.apk
 手工抽查校验值：
 
 ```powershell
-Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.7.0.zip -Algorithm SHA256
-Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.7.0-test.apk -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.8.0.zip -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.8.0-test.apk -Algorithm SHA256
 Get-Content .\godot\dist\release\SHA256SUMS.json
 ```
 
@@ -1221,7 +1222,7 @@ Get-Content .\godot\dist\release\SHA256SUMS.json
 .\.tools\android-sdk\build-tools\35.0.0\apksigner.bat verify `
   --verbose `
   --print-certs `
-  .\godot\dist\release\PokemonTCG-Android-arm64-0.7.0-production.apk
+  .\godot\dist\release\PokemonTCG-Android-arm64-0.8.0-production.apk
 ```
 
 如果本地 Build Tools 版本不是 `35.0.0`，以 `.tools/android-sdk/build-tools/` 下实际目录为准。
@@ -1653,20 +1654,20 @@ Godot 的 `data/*.json` 是生成物。新手最容易犯的错是直接改 `god
 
 ### 新增或修改卡牌
 
-1. 在 `python/card_data/templates/` 中找到对应属性或训练家模板文件，加入卡牌基础数据。
-2. 使用 `python/card_data/authoring_dsl.py` 暴露的类型化规格组合已有效果/VM 原语。
+1. 在 `godot/authoring/cards/` 中找到对应属性或训练家 JSON，加入卡牌印刷数据。
+2. 在 attack、ability 或 trainer 卡牌对象中用 `commands` 直接组合已有 VM 原语。
 3. 增加语言无关场景测试，至少验证合法动作、非法目标、隐藏信息和选择链。
-4. 运行作者工具：`card_author.py lint`、目标卡 `test` 与 `status --json`。
+4. 运行作者工具：`tools/content.ps1 lint`、目标卡 `test -CardId <id>` 与 `status -Json`。
 5. 运行导出：
 
 ```powershell
-.\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py
+.\tools\content.ps1 export
 ```
 
 6. 检查生成物是否一致：
 
 ```powershell
-.\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
+.\tools\content.ps1 check
 ```
 
 7. 运行 C++ 与 Godot 测试：
@@ -1678,31 +1679,29 @@ Godot 的 `data/*.json` 是生成物。新手最容易犯的错是直接改 `god
 
 ### 新增一套基于既有卡牌的预组卡组
 
-1. 打开 `python/data/deck_definitions.py`。
-2. 新增一个 `MY_DECK = [("card_id", count), ...]`，总数必须是 60。
-3. 把新卡组加入 `ALL_CARD_IDS` 的 deck 列表。
-4. 打开 `python/scripts/godot_export/card_data.py`，在 `DECKS` 中加入新 key、显示名、能量类型和卡组常量。
-5. 更新 `godot/data/release_manifest.json` 的发布牌组列表。
-6. 运行导出和 `--check`。
+1. 打开 `godot/authoring/decks.json`。
+2. 新增一个 deck 对象，填写 key、显示名、能量类型和 `cards` 计数列表；总数必须是 60。
+3. 在 `godot/authoring/ai_strategies.json` 增加同 key 的 Challenge 策略及卡牌角色引用。
+4. 更新 `godot/data/release_manifest.json` 的发布牌组列表。
+5. 运行 `tools/content.ps1 test`、`export` 和 `check`。
 
 最小示例结构：
 
-```python
-MY_FIRE_DECK = [
-    ("svi-chim", 4),
-    ("svi-monf", 3),
-    ("svi-infr", 3),
-    ("sv1-151", 4),
-    ("sv1-153", 4),
-    ("sv1-180", 4),
-    ("sv1-ener-2", 18),
-    # 继续补足到 60 张
-]
+```json
+{
+  "key": "my_fire",
+  "name": "示例牌组",
+  "energy_type": "Fire",
+  "cards": [
+    {"card_id": "svi-chim", "count": 4},
+    {"card_id": "sv1-ener-2", "count": 18}
+  ]
+}
 ```
 
-新增卡图时，先把图片放在 Python 数据目录，并更新 `python/data/card_image_mapping.json`。
-导出脚本会复制图片到 `godot/assets/cards/`。如果卡图缺失，Godot 会显示文字占位，
-但发布前应让 `test_godot.ps1` 的卡图存在性检查通过。
+新增卡图时，直接把图片保存为 `godot/assets/cards/<card-id>.webp`；映射和 SHA-256
+由导出器按文件名生成。如果卡图缺失，Godot 会显示文字占位，但发布前应让
+`test_godot.ps1` 的卡图存在性检查通过。
 
 ## 20. 新增查看面板的维护规则
 
@@ -1733,8 +1732,8 @@ MY_FIRE_DECK = [
 | 选择面板确认按钮灰掉 | 选择数量不在 min/max 范围 | 检查 `ChoiceView.min_select/max_select` 和 `selected_choice_ids` |
 | 分配能量提交错误 | option ID 被 UI 重写 | UI 只能重复已有 option ID，不要生成新 ID |
 | 动画在减少动画模式仍播放 | 没检查 `AppSettings.reduced_motion` | 跳过 Tween 或使用 reduced speed |
-| 导出后卡组没出现 | 没加入 `export_godot_data.py` 的 `DECKS` | 同步 `deck_definitions.py` 和导出脚本 |
-| `--check` 报 stale | 生成数据没提交或改了 Python 权威数据 | 重新运行导出并检查 diff |
+| 导出后卡组没出现 | `decks.json` 或同 key 策略缺失 | 同步作者牌组、策略和发布清单 |
+| `check` 报 stale | 生成数据没提交或作者 JSON 已变化 | 重新运行 `content.ps1 export` 并检查 diff |
 
 ## 22. 新手安全检查清单
 
@@ -1743,14 +1742,14 @@ MY_FIRE_DECK = [
 - 先在 `res://tools/ui_workbench.tscn` 找到对应页面，确认要改的是哪个场景或组件。
 - 看节点的 `editor_description`。标注“不要删除”的节点可以调样式和尺寸，但不要删、改名或取消唯一节点。
 - 搜索脚本引用。改节点名之前用 `rg "%NodeName|NodeName" godot` 确认有没有 `%Name` 或路径依赖。
-- 判断修改类型：纯视觉改 `.tscn` / Theme；交互改 signal；组合卡改 DSL/场景测试；新规则原语改 C++/golden；联网改协议控制器。
+- 判断修改类型：纯视觉改 `.tscn` / Theme；交互改 signal；组合卡改作者 JSON/场景测试；新规则原语改 C++/golden；联网改协议控制器。
 
 改的时候：
 
 - Container 下的控件优先改 `custom_minimum_size`、size flags、separation 和 margin。
 - 普通 `Control` 下的控件再改 anchors、offsets、position 和 size。
 - 战斗牌桌先改 `BattleTable` 的 Inspector 导出参数，再考虑 `_layout_board()`。
-- 卡牌、牌组和效果数据不要直接改 `godot/data/*.json`；它们由 Python 权威数据导出。
+- 卡牌、牌组和效果数据不要直接改 `godot/data/*.json`；它们由 `godot/authoring` 编译导出。
 - 动画里不要调用规则结算、扣血、抽牌或切换玩家；动画只表现已经发生的结果。
 - UI 不要直接改 `GameState`，只发 `signal` 或提交 `GameAction` / `ChoiceResponse`。
 
