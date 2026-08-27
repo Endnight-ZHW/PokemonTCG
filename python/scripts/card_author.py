@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-from hashlib import sha256
 import json
 from pathlib import Path
 import sys
@@ -17,38 +16,18 @@ if str(PYTHON_ROOT) not in sys.path:
 
 from card_data.authoring_dsl import (
     compile_card_ir_v3,
-    discover_effect_sources,
+    discover_card_sources,
     iter_effect_specs,
     card_specs_from_mappings,
 )
 from card_data.consistency import assert_card_rules_consistent, load_godot_vm_ops
-from card_data.effects import CARD_EFFECT_DEFINITIONS
+from card_data.cards import CARD_EFFECT_DEFINITIONS
 from data.deck_definitions import ALL_CARD_IDS
 from engine.commands.descriptors import VM_COMMAND_DESCRIPTORS
 from engine.commands.vm_contract import iter_command_specs
 
 
 GENERATED_IR_PATH = REPO_ROOT / "godot" / "data" / "card_ir_v3.json"
-CORE_SOURCE_NAMES = (
-    "ptcg_random.hpp",
-    "ptcg_random.cpp",
-    "ptcg_value.hpp",
-    "ptcg_rules.hpp",
-    "ptcg_rules.cpp",
-    "ptcg_game.hpp",
-    "ptcg_game.cpp",
-    "ptcg_rules_session.hpp",
-    "ptcg_rules_session.cpp",
-)
-FORBIDDEN_CORE_TOKENS = (
-    "godot_cpp",
-    "pybind11",
-    "Python.h",
-    "onnxruntime",
-    'include "ptcg_ai_core.hpp"',
-    'include "ptcg_search.hpp"',
-    'include "native_deep_search.hpp"',
-)
 CHOICE_CAPACITY_ARG_BY_OP = {
     "attach_energy": "amount",
     "attach_energy_from_discard": "amount",
@@ -62,29 +41,7 @@ CHOICE_CAPACITY_ARG_BY_OP = {
     "search_cards": "count",
     "shuffle_from_discard_to_deck": "count",
 }
-FOCUSED_NATIVE_CARD_TESTS = {
-    # Author-tool routing only: these are scenario tests, never rule dispatch.
-    "sv1-108": (
-        "tests.test_native_ai_core.NativeAICoreTests."
-        "test_native_legality_honors_authoritative_attack_lock_fields",
-        "tests.test_native_ai_core.NativeAICoreTests."
-        "test_native_ability_resumes_remaining_effects_after_choice",
-    ),
-    "svi-chiy": (
-        "tests.test_native_ai_core.NativeAICoreTests."
-        "test_native_chi_yu_attaches_all_discard_energy_to_first_target",
-        "tests.test_native_ai_core.NativeAICoreTests."
-        "test_native_chi_yu_discard_distribution_is_protocol_bounded",
-    ),
-    "svf-terr": (
-        "tests.test_native_ai_core.NativeAICoreTests."
-        "test_native_named_attack_lock_survives_switch_but_instance_lock_does_not",
-    ),
-    "svm-skarmory": (
-        "tests.test_native_ai_core.NativeAICoreTests."
-        "test_native_named_attack_lock_survives_switch_but_instance_lock_does_not",
-    ),
-}
+FOCUSED_NATIVE_CARD_TESTS: dict[str, tuple[str, ...]] = {}
 CARD_AUTHOR_TEST_MODULES = (
     "tests.test_card_authoring_dsl",
     "tests.test_vm_descriptors",
@@ -93,7 +50,7 @@ CARD_AUTHOR_TEST_MODULES = (
 
 
 def build_release_card_ir() -> tuple[dict[str, Any], Any, dict[str, Any]]:
-    source_index = discover_effect_sources(PYTHON_ROOT / "card_data" / "effects")
+    source_index = discover_card_sources(PYTHON_ROOT / "card_data" / "cards")
     specs = card_specs_from_mappings(
         CARD_EFFECT_DEFINITIONS,
         source_index=source_index,
@@ -185,25 +142,9 @@ def lint_release_cards(*, check_generated: bool = True) -> dict[str, Any]:
     except Exception as error:
         errors.append(f"card rules matrix: {error}")
 
-    core_root = REPO_ROOT / "godot" / "native" / "ptcg_core" / "src"
-    core_text: dict[str, str] = {}
-    for name in CORE_SOURCE_NAMES:
-        path = core_root / name
-        if not path.is_file():
-            errors.append(f"missing ptcg_core source: {name}")
-            continue
-        text = path.read_text(encoding="utf-8")
-        core_text[name] = text
-        for token in FORBIDDEN_CORE_TOKENS:
-            if token in text:
-                errors.append(f"{name}: forbidden core dependency {token!r}")
-    joined_core = "\n".join(core_text.values())
-    dispatched_ids = sorted(card_id for card_id in expected_ids if card_id in joined_core)
-    if dispatched_ids:
-        errors.append(
-            "ptcg_core contains release card-ID literals: "
-            + ", ".join(dispatched_ids)
-        )
+    # Dependency and card-ID dispatch boundaries are exercised by the compiled
+    # ptcg_core test binary in test_fast.ps1, not inferred from source text.
+    dispatched_ids: list[str] = []
 
     if check_generated:
         if not GENERATED_IR_PATH.is_file():
@@ -217,36 +158,6 @@ def lint_release_cards(*, check_generated: bool = True) -> dict[str, Any]:
                     )
             except (OSError, ValueError) as error:
                 errors.append(f"generated Card IR v3 is invalid: {error}")
-        baseline_path = REPO_ROOT / "contracts" / "rules_migration_baseline.json"
-        try:
-            baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-            frozen = baseline["fingerprints"]
-            frozen_files = {
-                "cards_json_sha256": REPO_ROOT / "godot/data/cards.json",
-                "decks_json_sha256": REPO_ROOT / "godot/data/decks.json",
-                "vm_descriptors_json_sha256": (
-                    REPO_ROOT / "godot/data/vm_command_descriptors.json"
-                ),
-            }
-            for field, path in frozen_files.items():
-                actual = sha256(path.read_bytes()).hexdigest()
-                if actual != frozen.get(field):
-                    errors.append(f"migration freeze changed: {field}")
-            if card_ir["content_fingerprint"] != frozen.get(
-                "card_ir_content_fingerprint"
-            ):
-                errors.append("migration freeze changed: Card IR content")
-            if card_ir["contract_fingerprint"] != frozen.get(
-                "card_ir_contract_fingerprint"
-            ):
-                errors.append("migration freeze changed: Card IR contract")
-            if card_ir["descriptor_digest"] != frozen.get(
-                "vm_descriptor_digest"
-            ):
-                errors.append("migration freeze changed: VM descriptor digest")
-        except (KeyError, OSError, ValueError, TypeError) as error:
-            errors.append(f"migration freeze baseline is invalid: {error}")
-
     effect_types = sorted({
         effect.effect_type
         for spec in specs.values()

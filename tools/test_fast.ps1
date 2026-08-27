@@ -12,6 +12,9 @@ $env:PYTHONNOUSERSITE = '1'
 & (Join-Path $PSScriptRoot 'test_ptcg_core.ps1') -Python $Python
 if ($LASTEXITCODE -ne 0) { throw 'Dependency-free C++ rules core failed.' }
 
+& (Join-Path $PSScriptRoot 'test_challenge_core.ps1') -Python $Python
+if ($LASTEXITCODE -ne 0) { throw 'Dependency-free C++ Challenge core failed.' }
+
 & $Python -B (Join-Path $repoRoot 'python\scripts\card_author.py') lint
 if ($LASTEXITCODE -ne 0) { throw 'Card authoring contract failed.' }
 

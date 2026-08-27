@@ -1,71 +1,26 @@
 {
   "android_version_code": 8,
-  "deep_encoder": {
-    "candidate_numeric_size": 48,
-    "candidate_ref_fields": 8,
-    "entity_mask": true,
-    "entity_numeric_size": 24,
-    "entity_slots": 160,
-    "entity_type_fields": 4,
-    "state_global_size": 192,
-    "wdl_size": 3
-  },
-  "deep_fallback": "challenge",
-  "deep_model": {
-    "config": {
-      "card_semantic_size": 53,
-      "dropout": 0.0,
-      "ffn_dimension": 512,
-      "heads": 8,
-      "layers": 4,
-      "model_dimension": 128,
-      "num_decks": 10
-    },
-    "status": "alphazero_v3_candidate_required",
-    "universal": true,
-    "variant": "universal_infoset_transformer_v3"
-  },
-  "deep_planner": {
-    "c_puct": 1.4,
-    "challenge_prior_weight": 0.0,
-    "evidence_sha256": "",
-    "full_turn_rollout": false,
-    "leaf_evaluator": "neural_wdl",
-    "planner_id": "infoset_puct_v3",
-    "schema_version": 3,
-    "training_simulations": 128,
-    "value_head_mode": "search_backup"
-  },
-  "deep_runtime_enabled": false,
-  "format_version": 5,
+  "format_version": 6,
   "godot_version": "4.7.stable",
-  "model_count": 0,
-  "native_ai": {
+  "native_challenge": {
     "abi_version": 2,
-    "production_ready": false,
-    "python_binding": "ptcg_ai_core",
-    "shared_core": "ptcg_core"
+    "binding_class": "NativeChallengeAI",
+    "core": "challenge_core",
+    "production_ready": true,
+    "strategy_schema": "ptcg.ai_strategy_catalog/1"
   },
   "native_rules": {
     "action_schema_version": 4,
-    "card_ir_content_fingerprint": "70b41b8eac2aa884ba519571be263e78415a06de993fb0ef215d7d0319a1ca93",
-    "card_ir_contract_fingerprint": "80ec2ee0282430c43674d2ab0191aeb338e60f2ba02b614bc64af2950897e96e",
+    "card_ir_content_fingerprint": "11c4f1e6b599b6ed383d7066c7cf232351c9467523d767c26b0fd117aba0eda5",
     "choice_view_schema_version": 2,
+    "core": "ptcg_core",
     "core_fingerprint": "80ec2ee0282430c43674d2ab0191aeb338e60f2ba02b614bc64af2950897e96e",
-    "default_runtime": "ptcg_core",
     "journal_format_version": 1,
-    "migration_phase": "native_only",
     "native_abi_version": 2,
     "protocol_version": 6,
     "snapshot_schema_version": 3,
-    "static_library": "ptcg_core",
     "vm_descriptor_digest": "d990e5514e1dcd1278b03a8bc5a3d8b74503d707a92801904ba494d579b299b2",
     "vm_ir_version": 3
-  },
-  "onnx": {
-    "opset": 17,
-    "runtime_version": "1.26.0",
-    "watchdog_seconds": 2.0
   },
   "product_name": "PokemonTCG",
   "release_decks": [
@@ -85,17 +40,11 @@
     "fallback_seed": 1831565813
   },
   "schemas": {
-    "ai_evaluation": 7,
-    "card_vocab": 1,
-    "checkpoint": 13,
-    "deep_planner": 3,
-    "encoder": 8,
+    "choice_view": 2,
     "godot_actions": 4,
     "godot_rules": 6,
-    "planner": 3,
+    "journal": 1,
     "protocol": 6,
-    "python_actions": 4,
-    "python_rules": 5,
     "rng": 2,
     "snapshot": 3,
     "vm_ir": 3

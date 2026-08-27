@@ -1,4 +1,4 @@
-"""Contracts for the local-only Python debugging and training toolchain."""
+"""Black-box contracts for Python authoring and Relay boundaries."""
 from __future__ import annotations
 
 import json
@@ -30,10 +30,6 @@ class PythonToolBoundaryTests(unittest.TestCase):
     def test_pygame_client_is_physically_absent(self):
         self.assertEqual(list((PYTHON_ROOT / "ui").rglob("*.py")), [])
         self.assertFalse((PYTHON_ROOT / "main.py").exists())
-        requirements = (PYTHON_ROOT / "requirements.txt").read_text(
-            encoding="utf-8"
-        ).lower()
-        self.assertNotIn("pygame", requirements)
 
     def test_python_rule_executors_are_physically_absent(self):
         retired = (
@@ -62,34 +58,6 @@ class PythonToolBoundaryTests(unittest.TestCase):
             "ir.py",
             "vm_contract.py",
         })
-        facade = (PYTHON_ROOT / "engine" / "game_engine.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("NativeRulesSession", facade)
-        self.assertNotIn("ActionResolver", facade)
-        self.assertNotIn("VMInterpreter", facade)
-
-    def test_config_has_no_legacy_client_network_endpoints(self):
-        import config
-
-        for token in (
-            "NETWORK_PORT",
-            "NETWORK_TIMEOUT",
-            "RELAY_SERVER_HOST",
-            "RELAY_SERVER_PORT",
-        ):
-            with self.subTest(token=token):
-                self.assertFalse(hasattr(config, token))
-
-    def test_python_gate_resolves_relative_interpreter_before_chdir(self):
-        source = (PYTHON_ROOT.parent / "tools" / "test_python.ps1").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("Resolve-Path -LiteralPath $Python", source)
-        self.assertLess(
-            source.index("Resolve-Path -LiteralPath $Python"),
-            source.index("\nPush-Location"),
-        )
 
     def test_engine_snapshot_has_no_client_view_compatibility_fields(self):
         forbidden_fields = {"is_network_view", "_hand_hidden", "_hand_count"}

@@ -20,9 +20,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 11,
+        "column": 9,
         "line": 3,
-        "path": "python/card_data/effects/psychic.py"
+        "path": "python/card_data/cards/psychic.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -69,9 +69,9 @@
               "op": "deal_damage",
               "path": "/cards/sv1-106/attacks/扫墓/effects/0/0",
               "source": {
-                "column": 48,
-                "line": 4,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 61,
+                "line": 33,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -82,8 +82,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 4,
-        "path": "python/card_data/effects/psychic.py"
+        "line": 19,
+        "path": "python/card_data/cards/psychic.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -108,9 +108,9 @@
               "op": "flip_coin_repeat_damage",
               "path": "/cards/sv1-107/attacks/三连突刺/effects/0/0",
               "source": {
-                "column": 54,
-                "line": 6,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 67,
+                "line": 50,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -121,8 +121,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 6,
-        "path": "python/card_data/effects/psychic.py"
+        "line": 36,
+        "path": "python/card_data/cards/psychic.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -156,9 +156,9 @@
               "op": "attach_energy",
               "path": "/cards/sv1-108/abilities/以太感知/effects/0/0",
               "source": {
-                "column": 48,
-                "line": 9,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 61,
+                "line": 71,
+                "path": "python/card_data/cards/psychic.py"
               }
             },
             {
@@ -166,9 +166,9 @@
               "op": "draw_cards",
               "path": "/cards/sv1-108/abilities/以太感知/effects/1/0",
               "source": {
-                "column": 48,
-                "line": 14,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 61,
+                "line": 76,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -187,8 +187,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 8,
-        "path": "python/card_data/effects/psychic.py"
+        "line": 53,
+        "path": "python/card_data/cards/psychic.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -213,9 +213,9 @@
               "op": "discard_then_draw_cards",
               "path": "/cards/sv1-109/attacks/循环抽取/effects/0/0",
               "source": {
-                "column": 54,
-                "line": 17,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 67,
+                "line": 98,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -258,9 +258,9 @@
               "op": "deal_damage",
               "path": "/cards/sv1-109/attacks/月亮强念/effects/0/0",
               "source": {
-                "column": 54,
-                "line": 19,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 67,
+                "line": 101,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -271,8 +271,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 17,
-        "path": "python/card_data/effects/psychic.py"
+        "line": 80,
+        "path": "python/card_data/cards/psychic.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -295,9 +295,9 @@
               "op": "register_conditional_zero_retreat",
               "path": "/cards/sv1-110/abilities/薄雾飘浮/effects/0/0",
               "source": {
-                "column": 48,
-                "line": 25,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 61,
+                "line": 124,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -316,8 +316,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 23,
-        "path": "python/card_data/effects/psychic.py"
+        "line": 105,
+        "path": "python/card_data/cards/psychic.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -343,9 +343,9 @@
               "op": "discard_energy",
               "path": "/cards/sv1-111/attacks/洁净光芒/effects/0/0",
               "source": {
-                "column": 54,
-                "line": 29,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 67,
+                "line": 143,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -362,8 +362,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 28,
-        "path": "python/card_data/effects/psychic.py"
+        "line": 127,
+        "path": "python/card_data/cards/psychic.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -388,9 +388,9 @@
               "op": "relocate_energy",
               "path": "/cards/sv1-112/attacks/基因螺旋/effects/0/0",
               "source": {
-                "column": 54,
-                "line": 32,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 67,
+                "line": 163,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -407,8 +407,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 31,
-        "path": "python/card_data/effects/psychic.py"
+        "line": 147,
+        "path": "python/card_data/cards/psychic.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -433,9 +433,9 @@
               "op": "conditional_damage",
               "path": "/cards/sv1-113/attacks/光子镭射/effects/0/0",
               "source": {
-                "column": 54,
-                "line": 40,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 67,
+                "line": 190,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -462,9 +462,9 @@
               "op": "attach_energy",
               "path": "/cards/sv1-113/attacks/新月生长/effects/0/0",
               "source": {
-                "column": 54,
-                "line": 34,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 67,
+                "line": 184,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -475,8 +475,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 34,
-        "path": "python/card_data/effects/psychic.py"
+        "line": 166,
+        "path": "python/card_data/cards/psychic.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -505,9 +505,9 @@
               "op": "search_cards",
               "path": "/cards/sv1-114/attacks/小使者/effects/0/0",
               "source": {
-                "column": 51,
-                "line": 42,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 64,
+                "line": 211,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -531,9 +531,9 @@
               "op": "switch_pokemon",
               "path": "/cards/sv1-114/attacks/旋转折返/effects/0/0",
               "source": {
-                "column": 54,
-                "line": 49,
-                "path": "python/card_data/effects/psychic.py"
+                "column": 67,
+                "line": 218,
+                "path": "python/card_data/cards/psychic.py"
               }
             }
           ],
@@ -544,8 +544,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 42,
-        "path": "python/card_data/effects/psychic.py"
+        "line": 193,
+        "path": "python/card_data/cards/psychic.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -555,9 +555,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 1,
-        "line": 18,
-        "path": "python/card_data/effects/trainer.py"
+        "column": 9,
+        "line": 3,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -565,9 +565,9 @@
           "op": "switch_pokemon",
           "path": "/cards/sv1-150/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 18,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 8,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -587,8 +587,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 19,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 9,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -596,9 +596,9 @@
           "op": "search_cards",
           "path": "/cards/sv1-151/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 19,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 14,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -622,8 +622,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 25,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 20,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -631,9 +631,9 @@
           "op": "evolve_skip_stage",
           "path": "/cards/sv1-152/trainer/effects/0/0",
           "source": {
-            "column": 31,
+            "column": 44,
             "line": 25,
-            "path": "python/card_data/effects/trainer.py"
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -653,8 +653,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 26,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 27,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -662,9 +662,9 @@
           "op": "conditional",
           "path": "/cards/sv1-153/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 26,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 32,
+            "path": "python/card_data/cards/trainer.py"
           }
         },
         {
@@ -672,9 +672,9 @@
           "op": "discard_cards",
           "path": "/cards/sv1-153/trainer/effects/0/1",
           "source": {
-            "column": 51,
-            "line": 27,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 64,
+            "line": 33,
+            "path": "python/card_data/cards/trainer.py"
           }
         },
         {
@@ -682,9 +682,9 @@
           "op": "search_cards",
           "path": "/cards/sv1-153/trainer/effects/0/2",
           "source": {
-            "column": 53,
-            "line": 29,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 66,
+            "line": 36,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -726,8 +726,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 37,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 42,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -735,9 +735,9 @@
           "op": "look_top_deck",
           "path": "/cards/sv1-170/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 37,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 47,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -763,8 +763,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 45,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 55,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -772,9 +772,9 @@
           "op": "search_cards",
           "path": "/cards/sv1-171/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 45,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 60,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -799,8 +799,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 16,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 67,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -808,9 +808,9 @@
           "op": "judge",
           "path": "/cards/sv1-176/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 16,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 72,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -830,8 +830,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 17,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 73,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -839,9 +839,9 @@
           "op": "draw_cards",
           "path": "/cards/sv1-180/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 17,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 78,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -862,8 +862,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 15,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 80,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -871,9 +871,9 @@
           "op": "discard_then_draw_cards",
           "path": "/cards/sv1-189/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 15,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 85,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -894,8 +894,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 80,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 87,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -903,9 +903,9 @@
           "op": "register_tool_modifier",
           "path": "/cards/sv1-201/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 80,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 92,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -925,8 +925,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 81,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 94,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -934,9 +934,9 @@
           "op": "register_tool_modifier",
           "path": "/cards/sv1-202/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 81,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 99,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -956,8 +956,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 82,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 101,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -965,9 +965,9 @@
           "op": "recover_clara",
           "path": "/cards/sv1-203/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 82,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 106,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -988,8 +988,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 83,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 108,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -997,9 +997,9 @@
           "op": "search_item_and_tool",
           "path": "/cards/sv1-204/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 83,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 113,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -1032,9 +1032,9 @@
               "op": "conditional_status",
               "path": "/cards/sv1-49/attacks/愤怒冷冻/effects/0/0",
               "source": {
-                "column": 63,
-                "line": 3,
-                "path": "python/card_data/effects/water.py"
+                "column": 66,
+                "line": 17,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1044,9 +1044,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 11,
+        "column": 9,
         "line": 3,
-        "path": "python/card_data/effects/water.py"
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1056,9 +1056,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 4,
-        "path": "python/card_data/effects/energy.py"
+        "column": 9,
+        "line": 3,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1068,9 +1068,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 5,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 4,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1080,9 +1080,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 6,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 5,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1092,9 +1092,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 7,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 6,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1104,9 +1104,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 8,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 7,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1116,9 +1116,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 9,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 8,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1128,9 +1128,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 10,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 9,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1140,9 +1140,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 11,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 10,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1172,9 +1172,9 @@
               "op": "flip_coin",
               "path": "/cards/sv2-38/attacks/跳一下/effects/0/0",
               "source": {
-                "column": 50,
-                "line": 42,
-                "path": "python/card_data/effects/water.py"
+                "column": 63,
+                "line": 35,
+                "path": "python/card_data/cards/water.py"
               }
             },
             {
@@ -1182,9 +1182,9 @@
               "op": "fail_attack",
               "path": "/cards/sv2-38/attacks/跳一下/effects/0/1",
               "source": {
-                "column": 69,
-                "line": 44,
-                "path": "python/card_data/effects/water.py"
+                "column": 82,
+                "line": 37,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1195,8 +1195,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 42,
-        "path": "python/card_data/effects/water.py"
+        "line": 21,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1221,9 +1221,9 @@
               "op": "switch_pokemon",
               "path": "/cards/sv2-39/attacks/折返瞬击/effects/0/0",
               "source": {
-                "column": 53,
-                "line": 46,
-                "path": "python/card_data/effects/water.py"
+                "column": 66,
+                "line": 53,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1234,8 +1234,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 46,
-        "path": "python/card_data/effects/water.py"
+        "line": 39,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1246,8 +1246,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 5,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 114,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -1255,9 +1255,9 @@
           "op": "look_top_deck",
           "path": "/cards/sv2-cand/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 5,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 119,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -1281,8 +1281,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 11,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 125,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -1290,9 +1290,9 @@
           "op": "flip_coin",
           "path": "/cards/sv2-catch/trainer/effects/0/0",
           "source": {
-            "column": 33,
-            "line": 11,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 46,
+            "line": 130,
+            "path": "python/card_data/cards/trainer.py"
           }
         },
         {
@@ -1300,9 +1300,9 @@
           "op": "switch_pokemon",
           "path": "/cards/sv2-catch/trainer/effects/0/1",
           "source": {
-            "column": 58,
-            "line": 12,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 71,
+            "line": 131,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -1351,9 +1351,9 @@
               "op": "draw_cards",
               "path": "/cards/sv2-delib/attacks/双重抽取/effects/0/0",
               "source": {
-                "column": 56,
-                "line": 31,
-                "path": "python/card_data/effects/water.py"
+                "column": 69,
+                "line": 71,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1364,8 +1364,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 31,
-        "path": "python/card_data/effects/water.py"
+        "line": 55,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1389,9 +1389,9 @@
               "op": "apply_attack_lock_basic",
               "path": "/cards/sv2-glast/attacks/冻结/effects/0/0",
               "source": {
-                "column": 50,
-                "line": 19,
-                "path": "python/card_data/effects/water.py"
+                "column": 63,
+                "line": 94,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1415,9 +1415,9 @@
               "op": "place_damage_counters",
               "path": "/cards/sv2-glast/attacks/疯狂冲撞/effects/0/0",
               "source": {
-                "column": 56,
-                "line": 21,
-                "path": "python/card_data/effects/water.py"
+                "column": 69,
+                "line": 96,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1428,8 +1428,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 19,
-        "path": "python/card_data/effects/water.py"
+        "line": 75,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1454,9 +1454,9 @@
               "op": "conditional_damage",
               "path": "/cards/sv2-grex/attacks/激流斩/effects/0/0",
               "source": {
-                "column": 52,
-                "line": 11,
-                "path": "python/card_data/effects/water.py"
+                "column": 65,
+                "line": 123,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1481,9 +1481,9 @@
               "op": "choose_damage_target",
               "path": "/cards/sv2-grex/attacks/隐蔽手里剑/effects/0/0",
               "source": {
-                "column": 58,
-                "line": 7,
-                "path": "python/card_data/effects/water.py"
+                "column": 71,
+                "line": 119,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1494,8 +1494,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 7,
-        "path": "python/card_data/effects/water.py"
+        "line": 99,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1544,9 +1544,9 @@
               "op": "deal_damage",
               "path": "/cards/sv2-keldeo/attacks/队列之力/effects/0/0",
               "source": {
-                "column": 57,
-                "line": 15,
-                "path": "python/card_data/effects/water.py"
+                "column": 70,
+                "line": 143,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1557,8 +1557,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 14,
-        "path": "python/card_data/effects/water.py"
+        "line": 126,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1582,9 +1582,9 @@
               "op": "place_counters_then_self_discard",
               "path": "/cards/sv2-starm/abilities/神秘彗星/effects/0/0",
               "source": {
-                "column": 50,
-                "line": 39,
-                "path": "python/card_data/effects/water.py"
+                "column": 63,
+                "line": 165,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1603,8 +1603,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 38,
-        "path": "python/card_data/effects/water.py"
+        "line": 147,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1630,9 +1630,9 @@
               "op": "set_attack_flags",
               "path": "/cards/sv2-staryu/attacks/高速星星/effects/0/0",
               "source": {
-                "column": 57,
-                "line": 34,
-                "path": "python/card_data/effects/water.py"
+                "column": 70,
+                "line": 184,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1643,8 +1643,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 34,
-        "path": "python/card_data/effects/water.py"
+        "line": 169,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1666,9 +1666,9 @@
               "op": "return_to_hand",
               "path": "/cards/sv2-tatsu/attacks/上弓折返/effects/0/0",
               "source": {
-                "column": 56,
-                "line": 30,
-                "path": "python/card_data/effects/water.py"
+                "column": 69,
+                "line": 213,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1695,9 +1695,9 @@
               "op": "attach_energy",
               "path": "/cards/sv2-tatsu/attacks/预先准备/effects/0/0",
               "source": {
-                "column": 56,
-                "line": 24,
-                "path": "python/card_data/effects/water.py"
+                "column": 69,
+                "line": 207,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -1708,8 +1708,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 24,
-        "path": "python/card_data/effects/water.py"
+        "line": 188,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1719,9 +1719,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 11,
-        "line": 3,
-        "path": "python/card_data/effects/trainer.py"
+        "column": 1,
+        "line": 134,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -1729,9 +1729,9 @@
           "op": "shuffle_then_draw_cards",
           "path": "/cards/sv2-young/trainer/effects/0/0",
           "source": {
-            "column": 43,
-            "line": 3,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 46,
+            "line": 139,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -1753,8 +1753,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 35,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 143,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -1762,9 +1762,9 @@
           "op": "shuffle_from_discard_to_deck",
           "path": "/cards/sv3-134/trainer/effects/0/0",
           "source": {
-            "column": 31,
-            "line": 35,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 44,
+            "line": 148,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -1800,9 +1800,9 @@
               "op": "set_attack_damage_formula",
               "path": "/cards/svd-absol/attacks/深挖伤口/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 107,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 69,
+                "line": 25,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -1828,9 +1828,9 @@
               "op": "deal_bench_damage",
               "path": "/cards/svd-absol/attacks/漩涡灾祸/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 94,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 69,
+                "line": 20,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -1840,9 +1840,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 90,
-        "path": "python/card_data/effects/darkness.py"
+        "column": 9,
+        "line": 3,
+        "path": "python/card_data/cards/darkness.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1852,9 +1852,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 175,
-        "path": "python/card_data/effects/darkness.py"
+        "column": 1,
+        "line": 30,
+        "path": "python/card_data/cards/darkness.py"
       },
       "source_map": [
         {
@@ -1862,9 +1862,9 @@
           "op": "attach_energy_from_discard",
           "path": "/cards/svd-dark-patch/trainer/effects/0/0",
           "source": {
-            "column": 26,
-            "line": 176,
-            "path": "python/card_data/effects/darkness.py"
+            "column": 51,
+            "line": 35,
+            "path": "python/card_data/cards/darkness.py"
           }
         }
       ],
@@ -1901,9 +1901,9 @@
               "op": "apply_status",
               "path": "/cards/svd-darkrai/attacks/恶梦/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 126,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 65,
+                "line": 57,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -1927,9 +1927,9 @@
               "op": "apply_self_attack_lock",
               "path": "/cards/svd-darkrai/attacks/漆黑之刃/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 134,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 71,
+                "line": 60,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -1939,9 +1939,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 122,
-        "path": "python/card_data/effects/darkness.py"
+        "column": 1,
+        "line": 40,
+        "path": "python/card_data/cards/darkness.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -1972,9 +1972,9 @@
               "op": "place_damage_counters",
               "path": "/cards/svd-dodrio/abilities/暴走抽取/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 42,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 64,
+                "line": 81,
+                "path": "python/card_data/cards/darkness.py"
               }
             },
             {
@@ -1982,9 +1982,9 @@
               "op": "draw_cards",
               "path": "/cards/svd-dodrio/abilities/暴走抽取/effects/1/0",
               "source": {
-                "column": 20,
-                "line": 43,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 64,
+                "line": 83,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -2028,9 +2028,9 @@
               "op": "set_attack_damage_formula",
               "path": "/cards/svd-dodrio/attacks/愤怒之喙/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 50,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 70,
+                "line": 86,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -2040,9 +2040,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 37,
-        "path": "python/card_data/effects/darkness.py"
+        "column": 1,
+        "line": 63,
+        "path": "python/card_data/cards/darkness.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2067,9 +2067,9 @@
               "op": "place_damage_counters",
               "path": "/cards/svd-doduo/attacks/突击/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 62,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 63,
+                "line": 103,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -2079,9 +2079,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 58,
-        "path": "python/card_data/effects/darkness.py"
+        "column": 1,
+        "line": 89,
+        "path": "python/card_data/cards/darkness.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2091,9 +2091,9 @@
       "attacks": {},
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 186,
-        "path": "python/card_data/effects/darkness.py"
+        "column": 1,
+        "line": 106,
+        "path": "python/card_data/cards/darkness.py"
       },
       "source_map": [
         {
@@ -2101,9 +2101,9 @@
           "op": "register_tool_modifier",
           "path": "/cards/svd-hard-belt/trainer/effects/0/0",
           "source": {
-            "column": 26,
-            "line": 187,
-            "path": "python/card_data/effects/darkness.py"
+            "column": 50,
+            "line": 111,
+            "path": "python/card_data/cards/darkness.py"
           }
         }
       ],
@@ -2138,9 +2138,9 @@
               "op": "apply_outgoing_damage_reduction",
               "path": "/cards/svd-mabosstiff-ex/attacks/恫吓/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 8,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 71,
+                "line": 132,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -2165,9 +2165,9 @@
               "op": "set_attack_damage_formula",
               "path": "/cards/svd-mabosstiff-ex/attacks/自尊獠牙/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 16,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 77,
+                "line": 135,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -2177,9 +2177,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 4,
-        "path": "python/card_data/effects/darkness.py"
+        "column": 1,
+        "line": 114,
+        "path": "python/card_data/cards/darkness.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2202,9 +2202,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 31,
-        "path": "python/card_data/effects/darkness.py"
+        "column": 1,
+        "line": 140,
+        "path": "python/card_data/cards/darkness.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2232,9 +2232,9 @@
               "op": "search_cards",
               "path": "/cards/svd-morpeko/attacks/捡食/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 146,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 65,
+                "line": 176,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -2259,9 +2259,9 @@
               "op": "set_attack_damage_formula",
               "path": "/cards/svd-morpeko/attacks/空腹撞击/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 160,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 71,
+                "line": 182,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -2271,9 +2271,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 142,
-        "path": "python/card_data/effects/darkness.py"
+        "column": 1,
+        "line": 159,
+        "path": "python/card_data/cards/darkness.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2299,9 +2299,9 @@
               "op": "set_attack_damage_formula",
               "path": "/cards/svd-seviper/attacks/挥落/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 75,
-                "path": "python/card_data/effects/darkness.py"
+                "column": 65,
+                "line": 202,
+                "path": "python/card_data/cards/darkness.py"
               }
             }
           ],
@@ -2317,9 +2317,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 70,
-        "path": "python/card_data/effects/darkness.py"
+        "column": 1,
+        "line": 187,
+        "path": "python/card_data/cards/darkness.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2330,8 +2330,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 99,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 151,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -2339,9 +2339,9 @@
           "op": "relocate_energy",
           "path": "/cards/svf-ensw2/trainer/effects/0/0",
           "source": {
-            "column": 33,
-            "line": 99,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 46,
+            "line": 156,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -2382,9 +2382,9 @@
               "op": "draw_cards",
               "path": "/cards/svf-farf/attacks/背来/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 53,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 62,
+                "line": 18,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -2394,9 +2394,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 1,
-        "line": 53,
-        "path": "python/card_data/effects/colorless.py"
+        "column": 9,
+        "line": 3,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2425,9 +2425,9 @@
               "op": "attach_energy_from_discard",
               "path": "/cards/svf-hawl/attacks/展示姿态/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 56,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 68,
+                "line": 40,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -2451,9 +2451,9 @@
               "op": "conditional_damage",
               "path": "/cards/svf-hawl/attacks/挥落/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 63,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 62,
+                "line": 47,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -2464,8 +2464,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 56,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 22,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2476,8 +2476,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 101,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 159,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -2485,9 +2485,9 @@
           "op": "hand_to_bottom_draw_until",
           "path": "/cards/svf-houb/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 101,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 165,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -2518,9 +2518,9 @@
               "op": "flip_coin_then_ko",
               "path": "/cards/svf-klea/attacks/大树切割/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 17,
-                "path": "python/card_data/effects/fighting.py"
+                "column": 68,
+                "line": 21,
+                "path": "python/card_data/cards/fighting.py"
               }
             }
           ],
@@ -2544,9 +2544,9 @@
               "op": "place_damage_counters",
               "path": "/cards/svf-klea/attacks/暴走冲撞/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 18,
-                "path": "python/card_data/effects/fighting.py"
+                "column": 68,
+                "line": 23,
+                "path": "python/card_data/cards/fighting.py"
               }
             }
           ],
@@ -2556,9 +2556,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 1,
-        "line": 17,
-        "path": "python/card_data/effects/fighting.py"
+        "column": 9,
+        "line": 3,
+        "path": "python/card_data/cards/fighting.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2591,9 +2591,9 @@
               "op": "place_damage_counters",
               "path": "/cards/svf-luca/abilities/旺盛斗气/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 8,
-                "path": "python/card_data/effects/fighting.py"
+                "column": 62,
+                "line": 44,
+                "path": "python/card_data/cards/fighting.py"
               }
             },
             {
@@ -2601,9 +2601,9 @@
               "op": "attach_energy",
               "path": "/cards/svf-luca/abilities/旺盛斗气/effects/1/0",
               "source": {
-                "column": 49,
-                "line": 10,
-                "path": "python/card_data/effects/fighting.py"
+                "column": 62,
+                "line": 46,
+                "path": "python/card_data/cards/fighting.py"
               }
             }
           ],
@@ -2629,9 +2629,9 @@
               "op": "discard_energy_then_damage",
               "path": "/cards/svf-luca/attacks/连续波导弹/effects/0/0",
               "source": {
-                "column": 58,
-                "line": 15,
-                "path": "python/card_data/effects/fighting.py"
+                "column": 71,
+                "line": 51,
+                "path": "python/card_data/cards/fighting.py"
               }
             }
           ],
@@ -2642,8 +2642,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 7,
-        "path": "python/card_data/effects/fighting.py"
+        "line": 26,
+        "path": "python/card_data/cards/fighting.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2668,9 +2668,9 @@
               "op": "relocate_energy",
               "path": "/cards/svf-pass/attacks/辅助传递/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 21,
-                "path": "python/card_data/effects/fighting.py"
+                "column": 68,
+                "line": 68,
+                "path": "python/card_data/cards/fighting.py"
               }
             }
           ],
@@ -2681,8 +2681,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 21,
-        "path": "python/card_data/effects/fighting.py"
+        "line": 54,
+        "path": "python/card_data/cards/fighting.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2693,8 +2693,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 98,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 167,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -2702,9 +2702,9 @@
           "op": "choose_heal_damage",
           "path": "/cards/svf-potion/trainer/effects/0/0",
           "source": {
-            "column": 34,
-            "line": 98,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 47,
+            "line": 172,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -2738,9 +2738,9 @@
               "op": "place_damage_counters",
               "path": "/cards/svf-rio/attacks/突击/effects/0/0",
               "source": {
-                "column": 48,
-                "line": 4,
-                "path": "python/card_data/effects/fighting.py"
+                "column": 61,
+                "line": 87,
+                "path": "python/card_data/cards/fighting.py"
               }
             }
           ],
@@ -2756,9 +2756,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 11,
-        "line": 3,
-        "path": "python/card_data/effects/fighting.py"
+        "column": 1,
+        "line": 71,
+        "path": "python/card_data/cards/fighting.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2775,9 +2775,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 11,
+        "column": 9,
         "line": 3,
-        "path": "python/card_data/effects/grass.py"
+        "path": "python/card_data/cards/grass.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2807,9 +2807,9 @@
               "op": "prevent_damage",
               "path": "/cards/svf-terr/attacks/岩窟冲撞/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 23,
-                "path": "python/card_data/effects/fighting.py"
+                "column": 68,
+                "line": 104,
+                "path": "python/card_data/cards/fighting.py"
               }
             },
             {
@@ -2817,9 +2817,9 @@
               "op": "apply_self_attack_lock",
               "path": "/cards/svf-terr/attacks/岩窟冲撞/effects/1/0",
               "source": {
-                "column": 47,
-                "line": 24,
-                "path": "python/card_data/effects/fighting.py"
+                "column": 60,
+                "line": 106,
+                "path": "python/card_data/cards/fighting.py"
               }
             }
           ],
@@ -2830,8 +2830,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 23,
-        "path": "python/card_data/effects/fighting.py"
+        "line": 90,
+        "path": "python/card_data/cards/fighting.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2854,9 +2854,9 @@
               "op": "heal_all",
               "path": "/cards/svg-alt/abilities/哼唱治愈/effects/0/0",
               "source": {
-                "column": 48,
-                "line": 4,
-                "path": "python/card_data/effects/dragon.py"
+                "column": 61,
+                "line": 22,
+                "path": "python/card_data/cards/dragon.py"
               }
             }
           ],
@@ -2879,9 +2879,9 @@
               "op": "prevent_effects",
               "path": "/cards/svg-alt/attacks/光之波动/effects/0/0",
               "source": {
-                "column": 54,
-                "line": 5,
-                "path": "python/card_data/effects/dragon.py"
+                "column": 67,
+                "line": 24,
+                "path": "python/card_data/cards/dragon.py"
               }
             }
           ],
@@ -2891,9 +2891,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 11,
+        "column": 9,
         "line": 3,
-        "path": "python/card_data/effects/dragon.py"
+        "path": "python/card_data/cards/dragon.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -2904,8 +2904,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 103,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 174,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -2913,9 +2913,9 @@
           "op": "draw_until_more_than_opponent",
           "path": "/cards/svg-beri/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 103,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 179,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -2946,9 +2946,9 @@
               "op": "draw_cards",
               "path": "/cards/svg-cast/attacks/双重抽取/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 70,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 68,
+                "line": 68,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -2973,9 +2973,9 @@
               "op": "relocate_energy",
               "path": "/cards/svg-cast/attacks/暴风/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 71,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 62,
+                "line": 70,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -2986,8 +2986,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 70,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 50,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3034,9 +3034,9 @@
               "op": "deal_damage",
               "path": "/cards/svg-ceti/attacks/扫除冲撞/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 49,
-                "path": "python/card_data/effects/water.py"
+                "column": 68,
+                "line": 234,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -3047,8 +3047,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 48,
-        "path": "python/card_data/effects/water.py"
+        "line": 215,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3066,8 +3066,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 47,
-        "path": "python/card_data/effects/water.py"
+        "line": 237,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3078,8 +3078,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 102,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 180,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -3087,9 +3087,9 @@
           "op": "heal_damage",
           "path": "/cards/svg-chef/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 102,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 185,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -3142,9 +3142,9 @@
               "op": "deal_damage",
               "path": "/cards/svg-dram/attacks/逆鳞/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 6,
-                "path": "python/card_data/effects/dragon.py"
+                "column": 62,
+                "line": 40,
+                "path": "python/card_data/cards/dragon.py"
               }
             }
           ],
@@ -3155,8 +3155,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 6,
-        "path": "python/card_data/effects/dragon.py"
+        "line": 26,
+        "path": "python/card_data/cards/dragon.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3181,9 +3181,9 @@
               "op": "conditional_damage_then_heal",
               "path": "/cards/svg-milt/attacks/活泼冲撞/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 68,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 68,
+                "line": 88,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -3194,8 +3194,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 68,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 74,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3219,9 +3219,9 @@
               "op": "flip_until_tails",
               "path": "/cards/svg-swa/attacks/连续旋转/effects/0/0",
               "source": {
-                "column": 54,
-                "line": 66,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 67,
+                "line": 105,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -3232,8 +3232,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 66,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 91,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3266,9 +3266,9 @@
               "op": "search_any_and_switch",
               "path": "/cards/svg-tatsu/attacks/生存战略/effects/0/0",
               "source": {
-                "column": 56,
-                "line": 9,
-                "path": "python/card_data/effects/dragon.py"
+                "column": 69,
+                "line": 59,
+                "path": "python/card_data/cards/dragon.py"
               }
             }
           ],
@@ -3279,8 +3279,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 8,
-        "path": "python/card_data/effects/dragon.py"
+        "line": 43,
+        "path": "python/card_data/cards/dragon.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3298,8 +3298,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 18,
-        "path": "python/card_data/effects/grass.py"
+        "line": 15,
+        "path": "python/card_data/cards/grass.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3322,9 +3322,9 @@
               "op": "discard_then_revive",
               "path": "/cards/svg2-empo/abilities/紧急上浮/effects/0/0",
               "source": {
-                "column": 50,
-                "line": 52,
-                "path": "python/card_data/effects/water.py"
+                "column": 63,
+                "line": 270,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -3350,9 +3350,9 @@
               "op": "choose_damage_target",
               "path": "/cards/svg2-empo/attacks/水之矢/effects/0/0",
               "source": {
-                "column": 53,
-                "line": 54,
-                "path": "python/card_data/effects/water.py"
+                "column": 66,
+                "line": 272,
+                "path": "python/card_data/cards/water.py"
               }
             }
           ],
@@ -3363,8 +3363,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 51,
-        "path": "python/card_data/effects/water.py"
+        "line": 252,
+        "path": "python/card_data/cards/water.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3375,8 +3375,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 105,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 187,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -3384,9 +3384,9 @@
           "op": "register_tool_exp_share",
           "path": "/cards/svg2-exps/trainer/effects/0/0",
           "source": {
-            "column": 33,
-            "line": 105,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 46,
+            "line": 192,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -3404,8 +3404,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 106,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 193,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -3413,9 +3413,9 @@
           "op": "draw_and_attach_energy",
           "path": "/cards/svg2-gard/trainer/effects/0/0",
           "source": {
-            "column": 33,
-            "line": 106,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 46,
+            "line": 198,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -3453,9 +3453,9 @@
               "op": "search_cards",
               "path": "/cards/svg2-grot/abilities/日光甲壳/effects/0/0",
               "source": {
-                "column": 50,
-                "line": 6,
-                "path": "python/card_data/effects/grass.py"
+                "column": 63,
+                "line": 45,
+                "path": "python/card_data/cards/grass.py"
               }
             }
           ],
@@ -3474,8 +3474,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 5,
-        "path": "python/card_data/effects/grass.py"
+        "line": 27,
+        "path": "python/card_data/cards/grass.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3486,8 +3486,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 104,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 202,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -3495,9 +3495,9 @@
           "op": "flip_coin_then_discard_energy",
           "path": "/cards/svg2-hamm/trainer/effects/0/0",
           "source": {
-            "column": 33,
-            "line": 104,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 46,
+            "line": 207,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -3522,9 +3522,9 @@
         }
       ],
       "source": {
-        "column": 4,
-        "line": 61,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 11,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3549,9 +3549,9 @@
               "op": "deal_damage_then_heal",
               "path": "/cards/svg2-shro/attacks/吸取/effects/0/0",
               "source": {
-                "column": 50,
-                "line": 16,
-                "path": "python/card_data/effects/grass.py"
+                "column": 63,
+                "line": 66,
+                "path": "python/card_data/cards/grass.py"
               }
             }
           ],
@@ -3562,8 +3562,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 16,
-        "path": "python/card_data/effects/grass.py"
+        "line": 52,
+        "path": "python/card_data/cards/grass.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3604,9 +3604,9 @@
               "op": "deal_damage",
               "path": "/cards/svg2-tort/attacks/进化压制/effects/0/0",
               "source": {
-                "column": 56,
-                "line": 13,
-                "path": "python/card_data/effects/grass.py"
+                "column": 69,
+                "line": 87,
+                "path": "python/card_data/cards/grass.py"
               }
             }
           ],
@@ -3617,8 +3617,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 13,
-        "path": "python/card_data/effects/grass.py"
+        "line": 69,
+        "path": "python/card_data/cards/grass.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3642,8 +3642,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 4,
-        "path": "python/card_data/effects/grass.py"
+        "line": 90,
+        "path": "python/card_data/cards/grass.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3687,9 +3687,9 @@
               "op": "deal_damage",
               "path": "/cards/svg2-zaru/attacks/反复鞭挞/effects/0/0",
               "source": {
-                "column": 56,
-                "line": 23,
-                "path": "python/card_data/effects/grass.py"
+                "column": 69,
+                "line": 128,
+                "path": "python/card_data/cards/grass.py"
               }
             }
           ],
@@ -3714,9 +3714,9 @@
               "op": "conditional_search",
               "path": "/cards/svg2-zaru/attacks/唤群之歌/effects/0/0",
               "source": {
-                "column": 56,
-                "line": 19,
-                "path": "python/card_data/effects/grass.py"
+                "column": 69,
+                "line": 124,
+                "path": "python/card_data/cards/grass.py"
               }
             }
           ],
@@ -3727,8 +3727,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 19,
-        "path": "python/card_data/effects/grass.py"
+        "line": 106,
+        "path": "python/card_data/cards/grass.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3759,9 +3759,9 @@
               "op": "draw_cards",
               "path": "/cards/svi-aipo/attacks/骗取/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 15,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 62,
+                "line": 125,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -3772,8 +3772,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 15,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 107,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3798,9 +3798,9 @@
               "op": "draw_cards",
               "path": "/cards/svi-ambi/attacks/招来/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 18,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 62,
+                "line": 147,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -3834,9 +3834,9 @@
               "op": "deal_damage",
               "path": "/cards/svi-ambi/attacks/长手抛掷/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 20,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 68,
+                "line": 150,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -3847,8 +3847,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 18,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 129,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3859,8 +3859,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 77,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 209,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -3868,9 +3868,9 @@
           "op": "hand_to_bottom_then_draw",
           "path": "/cards/svi-cait/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 77,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 214,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -3903,9 +3903,9 @@
               "op": "discard_energy",
               "path": "/cards/svi-chim/attacks/火花/effects/0/0",
               "source": {
-                "column": 59,
-                "line": 3,
-                "path": "python/card_data/effects/fire.py"
+                "column": 62,
+                "line": 17,
+                "path": "python/card_data/cards/fire.py"
               }
             }
           ],
@@ -3915,9 +3915,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 11,
+        "column": 9,
         "line": 3,
-        "path": "python/card_data/effects/fire.py"
+        "path": "python/card_data/cards/fire.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -3942,9 +3942,9 @@
               "op": "conditional_damage",
               "path": "/cards/svi-chiy/attacks/嫉妒业火/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 30,
-                "path": "python/card_data/effects/fire.py"
+                "column": 68,
+                "line": 44,
+                "path": "python/card_data/cards/fire.py"
               }
             }
           ],
@@ -3970,9 +3970,9 @@
               "op": "attach_energy_from_discard",
               "path": "/cards/svi-chiy/attacks/闪焰生成/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 25,
-                "path": "python/card_data/effects/fire.py"
+                "column": 68,
+                "line": 39,
+                "path": "python/card_data/cards/fire.py"
               }
             }
           ],
@@ -3983,8 +3983,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 25,
-        "path": "python/card_data/effects/fire.py"
+        "line": 21,
+        "path": "python/card_data/cards/fire.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4011,9 +4011,9 @@
         }
       ],
       "source": {
-        "column": 4,
-        "line": 24,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 19,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4024,8 +4024,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 63,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 215,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -4033,9 +4033,9 @@
           "op": "look_top_deck",
           "path": "/cards/svi-enst/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 63,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 220,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -4073,9 +4073,9 @@
               "op": "register_aura_damage_reduction",
               "path": "/cards/svi-ente/abilities/压迫感/effects/0/0",
               "source": {
-                "column": 48,
-                "line": 14,
-                "path": "python/card_data/effects/fire.py"
+                "column": 61,
+                "line": 66,
+                "path": "python/card_data/cards/fire.py"
               }
             }
           ],
@@ -4120,9 +4120,9 @@
               "op": "deal_damage",
               "path": "/cards/svi-ente/attacks/火焰之球/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 18,
-                "path": "python/card_data/effects/fire.py"
+                "column": 68,
+                "line": 70,
+                "path": "python/card_data/cards/fire.py"
               }
             }
           ],
@@ -4133,8 +4133,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 12,
-        "path": "python/card_data/effects/fire.py"
+        "line": 47,
+        "path": "python/card_data/cards/fire.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4145,8 +4145,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 61,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 226,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -4154,9 +4154,9 @@
           "op": "shuffle_from_discard_to_deck",
           "path": "/cards/svi-erec/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 61,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 231,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -4191,9 +4191,9 @@
               "op": "place_damage_counters",
               "path": "/cards/svi-flam/attacks/俯冲/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 47,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 62,
+                "line": 168,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -4210,8 +4210,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 46,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 152,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4237,9 +4237,9 @@
               "op": "discard_hand_then_damage",
               "path": "/cards/svi-gree/attacks/倾倒一空/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 31,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 68,
+                "line": 192,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -4263,9 +4263,9 @@
               "op": "draw_cards",
               "path": "/cards/svi-gree/attacks/招来/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 29,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 62,
+                "line": 189,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -4276,8 +4276,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 29,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 171,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4302,9 +4302,9 @@
               "op": "place_damage_counters",
               "path": "/cards/svi-hrot/attacks/高温冲撞/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 22,
-                "path": "python/card_data/effects/fire.py"
+                "column": 68,
+                "line": 88,
+                "path": "python/card_data/cards/fire.py"
               }
             }
           ],
@@ -4315,8 +4315,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 22,
-        "path": "python/card_data/effects/fire.py"
+        "line": 74,
+        "path": "python/card_data/cards/fire.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4351,9 +4351,9 @@
               "op": "deal_damage",
               "path": "/cards/svi-inde/attacks/妙手强念/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 37,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 68,
+                "line": 217,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -4377,9 +4377,9 @@
               "op": "draw_cards",
               "path": "/cards/svi-inde/attacks/招来/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 35,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 62,
+                "line": 214,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -4390,8 +4390,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 35,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 196,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4417,9 +4417,9 @@
               "op": "discard_energy",
               "path": "/cards/svi-infr/attacks/燃烧踢/effects/0/0",
               "source": {
-                "column": 52,
-                "line": 10,
-                "path": "python/card_data/effects/fire.py"
+                "column": 65,
+                "line": 112,
+                "path": "python/card_data/cards/fire.py"
               }
             }
           ],
@@ -4443,9 +4443,9 @@
               "op": "mill_then_damage",
               "path": "/cards/svi-infr/attacks/螺旋业火/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 8,
-                "path": "python/card_data/effects/fire.py"
+                "column": 68,
+                "line": 109,
+                "path": "python/card_data/cards/fire.py"
               }
             }
           ],
@@ -4456,8 +4456,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 8,
-        "path": "python/card_data/effects/fire.py"
+        "line": 91,
+        "path": "python/card_data/cards/fire.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4486,9 +4486,9 @@
         }
       ],
       "source": {
-        "column": 4,
-        "line": 12,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 30,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4516,9 +4516,9 @@
               "op": "register_reactive_thorns",
               "path": "/cards/svi-maus/abilities/团结一致/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 41,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 62,
+                "line": 238,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -4544,9 +4544,9 @@
               "op": "draw_cards",
               "path": "/cards/svi-maus/attacks/贪婪门牙/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 44,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 68,
+                "line": 243,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -4557,8 +4557,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 40,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 219,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4569,8 +4569,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 52,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 233,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -4578,9 +4578,9 @@
           "op": "conditional",
           "path": "/cards/svi-mela/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 52,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 239,
+            "path": "python/card_data/cards/trainer.py"
           }
         },
         {
@@ -4588,9 +4588,9 @@
           "op": "attach_energy_from_discard",
           "path": "/cards/svi-mela/trainer/effects/0/1",
           "source": {
-            "column": 55,
-            "line": 55,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 68,
+            "line": 242,
+            "path": "python/card_data/cards/trainer.py"
           }
         },
         {
@@ -4598,9 +4598,9 @@
           "op": "draw_until",
           "path": "/cards/svi-mela/trainer/effects/0/2",
           "source": {
-            "column": 55,
-            "line": 59,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 68,
+            "line": 246,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -4658,9 +4658,9 @@
         }
       ],
       "source": {
-        "column": 4,
-        "line": 49,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 41,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4686,9 +4686,9 @@
               "op": "discard_energy",
               "path": "/cards/svi-monf/attacks/喷射火焰/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 6,
-                "path": "python/card_data/effects/fire.py"
+                "column": 68,
+                "line": 132,
+                "path": "python/card_data/cards/fire.py"
               }
             }
           ],
@@ -4705,8 +4705,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 5,
-        "path": "python/card_data/effects/fire.py"
+        "line": 116,
+        "path": "python/card_data/cards/fire.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4717,8 +4717,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 69,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 248,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -4726,9 +4726,9 @@
           "op": "search_cards",
           "path": "/cards/svi-nemb/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 69,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 253,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -4754,8 +4754,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 78,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 261,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -4763,9 +4763,9 @@
           "op": "relocate_energy",
           "path": "/cards/svi-popp/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 78,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 266,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -4794,8 +4794,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 28,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 246,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4824,9 +4824,9 @@
               "op": "search_cards",
               "path": "/cards/svi-sqwk/attacks/呼朋引伴/effects/0/0",
               "source": {
-                "column": 65,
-                "line": 3,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 68,
+                "line": 276,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -4862,9 +4862,9 @@
               "op": "flip_coin",
               "path": "/cards/svi-sqwk/attacks/飞翔/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 10,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 62,
+                "line": 283,
+                "path": "python/card_data/cards/colorless.py"
               }
             },
             {
@@ -4872,9 +4872,9 @@
               "op": "prevent_all",
               "path": "/cards/svi-sqwk/attacks/飞翔/effects/0/1",
               "source": {
-                "column": 70,
-                "line": 11,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 83,
+                "line": 284,
+                "path": "python/card_data/cards/colorless.py"
               }
             },
             {
@@ -4882,9 +4882,9 @@
               "op": "fail_attack",
               "path": "/cards/svi-sqwk/attacks/飞翔/effects/0/2",
               "source": {
-                "column": 70,
-                "line": 13,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 83,
+                "line": 286,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -4894,9 +4894,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 11,
-        "line": 3,
-        "path": "python/card_data/effects/colorless.py"
+        "column": 1,
+        "line": 258,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4947,9 +4947,9 @@
               "op": "deal_damage",
               "path": "/cards/svi-stan/attacks/疯狂俯冲/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 23,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 68,
+                "line": 304,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -4960,8 +4960,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 22,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 288,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -4985,8 +4985,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 39,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 309,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5015,9 +5015,9 @@
         }
       ],
       "source": {
-        "column": 4,
-        "line": 36,
-        "path": "python/card_data/effects/energy.py"
+        "column": 1,
+        "line": 53,
+        "path": "python/card_data/cards/energy.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5042,9 +5042,9 @@
               "op": "discard_then_draw_cards",
               "path": "/cards/svl-chat/attacks/循环抽取/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 50,
-                "path": "python/card_data/effects/colorless.py"
+                "column": 68,
+                "line": 340,
+                "path": "python/card_data/cards/colorless.py"
               }
             }
           ],
@@ -5061,8 +5061,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 50,
-        "path": "python/card_data/effects/colorless.py"
+        "line": 325,
+        "path": "python/card_data/cards/colorless.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5079,9 +5079,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 1,
-        "line": 10,
-        "path": "python/card_data/effects/lightning.py"
+        "column": 9,
+        "line": 3,
+        "path": "python/card_data/cards/lightning.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5114,9 +5114,9 @@
               "op": "flip_coin",
               "path": "/cards/svl-emol/attacks/电击/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 21,
-                "path": "python/card_data/effects/lightning.py"
+                "column": 62,
+                "line": 29,
+                "path": "python/card_data/cards/lightning.py"
               }
             },
             {
@@ -5124,9 +5124,9 @@
               "op": "apply_status",
               "path": "/cards/svl-emol/attacks/电击/effects/0/1",
               "source": {
-                "column": 70,
-                "line": 22,
-                "path": "python/card_data/effects/lightning.py"
+                "column": 83,
+                "line": 30,
+                "path": "python/card_data/cards/lightning.py"
               }
             }
           ],
@@ -5137,8 +5137,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 21,
-        "path": "python/card_data/effects/lightning.py"
+        "line": 15,
+        "path": "python/card_data/cards/lightning.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5149,8 +5149,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 89,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 270,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -5158,9 +5158,9 @@
           "op": "search_cards",
           "path": "/cards/svl-ensw/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 89,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 275,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -5198,9 +5198,9 @@
               "op": "attach_energy_from_discard",
               "path": "/cards/svl-flaa2/abilities/电气发电机/effects/0/0",
               "source": {
-                "column": 51,
-                "line": 16,
-                "path": "python/card_data/effects/lightning.py"
+                "column": 64,
+                "line": 52,
+                "path": "python/card_data/cards/lightning.py"
               }
             }
           ],
@@ -5219,8 +5219,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 15,
-        "path": "python/card_data/effects/lightning.py"
+        "line": 34,
+        "path": "python/card_data/cards/lightning.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5244,9 +5244,9 @@
               "op": "apply_dazzling_beam",
               "path": "/cards/svl-lant/attacks/炫目光束/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 11,
-                "path": "python/card_data/effects/lightning.py"
+                "column": 68,
+                "line": 75,
+                "path": "python/card_data/cards/lightning.py"
               }
             }
           ],
@@ -5263,8 +5263,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 11,
-        "path": "python/card_data/effects/lightning.py"
+        "line": 57,
+        "path": "python/card_data/cards/lightning.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5288,8 +5288,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 14,
-        "path": "python/card_data/effects/lightning.py"
+        "line": 78,
+        "path": "python/card_data/cards/lightning.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5323,9 +5323,9 @@
               "op": "flip_coin",
               "path": "/cards/svl-pikaex/attacks/强劲伏特/effects/0/0",
               "source": {
-                "column": 57,
-                "line": 4,
-                "path": "python/card_data/effects/lightning.py"
+                "column": 70,
+                "line": 111,
+                "path": "python/card_data/cards/lightning.py"
               }
             },
             {
@@ -5333,9 +5333,9 @@
               "op": "discard_energy",
               "path": "/cards/svl-pikaex/attacks/强劲伏特/effects/0/1",
               "source": {
-                "column": 74,
-                "line": 6,
-                "path": "python/card_data/effects/lightning.py"
+                "column": 87,
+                "line": 113,
+                "path": "python/card_data/cards/lightning.py"
               }
             }
           ],
@@ -5351,9 +5351,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 11,
-        "line": 3,
-        "path": "python/card_data/effects/lightning.py"
+        "column": 1,
+        "line": 94,
+        "path": "python/card_data/cards/lightning.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5378,9 +5378,9 @@
               "op": "place_damage_counters",
               "path": "/cards/svl-thun/attacks/打雷/effects/0/0",
               "source": {
-                "column": 49,
-                "line": 32,
-                "path": "python/card_data/effects/lightning.py"
+                "column": 62,
+                "line": 141,
+                "path": "python/card_data/cards/lightning.py"
               }
             }
           ],
@@ -5407,9 +5407,9 @@
               "op": "attach_energy",
               "path": "/cards/svl-thun/attacks/辅助电光/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 26,
-                "path": "python/card_data/effects/lightning.py"
+                "column": 68,
+                "line": 135,
+                "path": "python/card_data/cards/lightning.py"
               }
             }
           ],
@@ -5420,8 +5420,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 26,
-        "path": "python/card_data/effects/lightning.py"
+        "line": 117,
+        "path": "python/card_data/cards/lightning.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5432,8 +5432,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 95,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 281,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -5441,9 +5441,9 @@
           "op": "trekking_shoes",
           "path": "/cards/svl-trks/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 95,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 286,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -5461,8 +5461,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 96,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 287,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -5470,9 +5470,9 @@
           "op": "register_tool_modifier",
           "path": "/cards/svl-vitb/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 96,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 292,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -5506,9 +5506,9 @@
               "op": "place_damage_counters",
               "path": "/cards/svl-zera/attacks/疯狂伏特/effects/0/0",
               "source": {
-                "column": 55,
-                "line": 35,
-                "path": "python/card_data/effects/lightning.py"
+                "column": 68,
+                "line": 158,
+                "path": "python/card_data/cards/lightning.py"
               }
             }
           ],
@@ -5519,8 +5519,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 35,
-        "path": "python/card_data/effects/lightning.py"
+        "line": 144,
+        "path": "python/card_data/cards/lightning.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5531,8 +5531,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 97,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 294,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -5540,9 +5540,9 @@
           "op": "zinnia_resolve",
           "path": "/cards/svl-zinn/trainer/effects/0/0",
           "source": {
-            "column": 32,
-            "line": 97,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 45,
+            "line": 299,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -5573,9 +5573,9 @@
               "op": "relocate_energy",
               "path": "/cards/svm-bronzong/abilities/金属转移/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 99,
-                "path": "python/card_data/effects/metal.py"
+                "column": 66,
+                "line": 21,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -5593,9 +5593,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 94,
-        "path": "python/card_data/effects/metal.py"
+        "column": 9,
+        "line": 3,
+        "path": "python/card_data/cards/metal.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5628,9 +5628,9 @@
               "op": "flip_coin",
               "path": "/cards/svm-bronzor/attacks/金属压制/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 75,
-                "path": "python/card_data/effects/metal.py"
+                "column": 71,
+                "line": 39,
+                "path": "python/card_data/cards/metal.py"
               }
             },
             {
@@ -5638,9 +5638,9 @@
               "op": "apply_status",
               "path": "/cards/svm-bronzor/attacks/金属压制/effects/0/1",
               "source": {
-                "column": 32,
-                "line": 79,
-                "path": "python/card_data/effects/metal.py"
+                "column": 88,
+                "line": 40,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -5650,9 +5650,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 71,
-        "path": "python/card_data/effects/metal.py"
+        "column": 1,
+        "line": 25,
+        "path": "python/card_data/cards/metal.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5677,9 +5677,9 @@
               "op": "register_aura_damage_boost",
               "path": "/cards/svm-cobalion/abilities/正义法则/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 129,
-                "path": "python/card_data/effects/metal.py"
+                "column": 66,
+                "line": 62,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -5710,9 +5710,9 @@
               "op": "attach_energy",
               "path": "/cards/svm-cobalion/attacks/跟进/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 143,
-                "path": "python/card_data/effects/metal.py"
+                "column": 66,
+                "line": 66,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -5722,9 +5722,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 124,
-        "path": "python/card_data/effects/metal.py"
+        "column": 1,
+        "line": 44,
+        "path": "python/card_data/cards/metal.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5752,9 +5752,9 @@
               "op": "search_cards",
               "path": "/cards/svm-dialga/attacks/时之逆流/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 163,
-                "path": "python/card_data/effects/metal.py"
+                "column": 70,
+                "line": 92,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -5797,9 +5797,9 @@
               "op": "set_attack_damage_formula",
               "path": "/cards/svm-dialga/attacks/金属爆破/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 177,
-                "path": "python/card_data/effects/metal.py"
+                "column": 70,
+                "line": 98,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -5809,9 +5809,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 159,
-        "path": "python/card_data/effects/metal.py"
+        "column": 1,
+        "line": 74,
+        "path": "python/card_data/cards/metal.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5836,9 +5836,9 @@
               "op": "draw_cards",
               "path": "/cards/svm-klefki/attacks/解锁/effects/0/0",
               "source": {
-                "column": 43,
-                "line": 190,
-                "path": "python/card_data/effects/metal.py"
+                "column": 64,
+                "line": 116,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -5848,9 +5848,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 189,
-        "path": "python/card_data/effects/metal.py"
+        "column": 1,
+        "line": 102,
+        "path": "python/card_data/cards/metal.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5861,8 +5861,8 @@
       "energy_effects": [],
       "source": {
         "column": 1,
-        "line": 84,
-        "path": "python/card_data/effects/trainer.py"
+        "line": 300,
+        "path": "python/card_data/cards/trainer.py"
       },
       "source_map": [
         {
@@ -5870,9 +5870,9 @@
           "op": "attach_energy_from_discard",
           "path": "/cards/svm-marnie-pride/trainer/effects/0/0",
           "source": {
-            "column": 40,
-            "line": 84,
-            "path": "python/card_data/effects/trainer.py"
+            "column": 53,
+            "line": 305,
+            "path": "python/card_data/cards/trainer.py"
           }
         }
       ],
@@ -5909,9 +5909,9 @@
               "op": "register_conditional_hp_boost",
               "path": "/cards/svm-orthworm/abilities/营养铁质/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 197,
-                "path": "python/card_data/effects/metal.py"
+                "column": 66,
+                "line": 137,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -5939,9 +5939,9 @@
               "op": "deal_bench_damage",
               "path": "/cards/svm-orthworm/attacks/刺穿/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 207,
-                "path": "python/card_data/effects/metal.py"
+                "column": 66,
+                "line": 141,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -5951,9 +5951,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 192,
-        "path": "python/card_data/effects/metal.py"
+        "column": 1,
+        "line": 119,
+        "path": "python/card_data/cards/metal.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -5984,9 +5984,9 @@
               "op": "apply_self_attack_lock",
               "path": "/cards/svm-skarmory/attacks/钢铁之刃/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 113,
-                "path": "python/card_data/effects/metal.py"
+                "column": 72,
+                "line": 162,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -5996,9 +5996,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 108,
-        "path": "python/card_data/effects/metal.py"
+        "column": 1,
+        "line": 146,
+        "path": "python/card_data/cards/metal.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -6032,9 +6032,9 @@
               "op": "look_top_attach_energy",
               "path": "/cards/svm-smeargle/attacks/多彩调色盘/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 56,
-                "path": "python/card_data/effects/metal.py"
+                "column": 75,
+                "line": 183,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -6044,9 +6044,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 52,
-        "path": "python/card_data/effects/metal.py"
+        "column": 1,
+        "line": 165,
+        "path": "python/card_data/cards/metal.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -6091,9 +6091,9 @@
               "op": "set_attack_damage_formula",
               "path": "/cards/svm-zacian/attacks/战斗军团/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 37,
-                "path": "python/card_data/effects/metal.py"
+                "column": 70,
+                "line": 208,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -6109,9 +6109,9 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 33,
-        "path": "python/card_data/effects/metal.py"
+        "column": 1,
+        "line": 190,
+        "path": "python/card_data/cards/metal.py"
       },
       "source_map": [],
       "trainer_commands": []
@@ -6135,9 +6135,9 @@
               "op": "register_aura_damage_reduction",
               "path": "/cards/svm-zamazenta/abilities/金属之盾/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 9,
-                "path": "python/card_data/effects/metal.py"
+                "column": 67,
+                "line": 233,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -6164,9 +6164,9 @@
               "op": "set_attack_damage_formula",
               "path": "/cards/svm-zamazenta/attacks/报仇/effects/0/0",
               "source": {
-                "column": 20,
-                "line": 19,
-                "path": "python/card_data/effects/metal.py"
+                "column": 67,
+                "line": 236,
+                "path": "python/card_data/cards/metal.py"
               }
             }
           ],
@@ -6176,17 +6176,17 @@
       },
       "energy_effects": [],
       "source": {
-        "column": 4,
-        "line": 4,
-        "path": "python/card_data/effects/metal.py"
+        "column": 1,
+        "line": 215,
+        "path": "python/card_data/cards/metal.py"
       },
       "source_map": [],
       "trainer_commands": []
     }
   },
   "command_count": 160,
-  "content_fingerprint": "70b41b8eac2aa884ba519571be263e78415a06de993fb0ef215d7d0319a1ca93",
-  "contract_fingerprint": "80ec2ee0282430c43674d2ab0191aeb338e60f2ba02b614bc64af2950897e96e",
+  "content_fingerprint": "11c4f1e6b599b6ed383d7066c7cf232351c9467523d767c26b0fd117aba0eda5",
+  "contract_fingerprint": "5c48a37b16da64a965da31b6fd91bd2589ce7237c08f300fca041b0c25971d55",
   "descriptor_digest": "d990e5514e1dcd1278b03a8bc5a3d8b74503d707a92801904ba494d579b299b2",
   "effect_count": 160,
   "format": "ptcg_card_ir/3",

@@ -29,15 +29,14 @@ function Get-GodotToolchainPaths {
 
 function Get-ReleaseManifest {
     param([Parameter(Mandatory)] [string]$RepoRoot)
-    $path = Join-Path $RepoRoot 'release_manifest.json'
+    $path = Join-Path $RepoRoot 'godot\data\release_manifest.json'
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Release manifest is missing: $path"
     }
     $manifest = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
     $decks = @($manifest.release_decks)
-    $modelCount = [int]$manifest.model_count
-    if ($decks.Count -eq 0 -or $modelCount -notin @(0, 1)) {
-        throw 'Release manifest has an invalid universal model count.'
+    if ($decks.Count -eq 0) {
+        throw 'Release manifest contains no release decks.'
     }
     if (@($decks | Sort-Object -Unique).Count -ne $decks.Count) {
         throw 'Release manifest contains duplicate release deck keys.'
@@ -45,31 +44,20 @@ function Get-ReleaseManifest {
     return $manifest
 }
 
-function Assert-ReleaseDeepFallbackContract {
+function Assert-ProductReleaseContract {
     param([Parameter(Mandatory)] $Manifest)
-    $modelCount = [int]$Manifest.model_count
-    if ([string]$Manifest.deep_fallback -ne 'challenge') {
-        throw 'Release manifest Deep fallback must be challenge.'
-    }
-    if ([bool]$Manifest.deep_runtime_enabled) {
-        $planner = $Manifest.deep_planner
-        $evidence = [string]$planner.evidence_sha256
-        if (
-            $modelCount -ne 1 -or
-            [int]$Manifest.format_version -ne 5 -or
-            [int]$Manifest.schemas.deep_planner -ne 3 -or
-            [int]$planner.schema_version -ne 3 -or
-            [string]$planner.planner_id -ne 'infoset_puct_v3' -or
-            [string]$Manifest.deep_model.variant -ne 'universal_infoset_transformer_v3' -or
-            -not [bool]$Manifest.deep_model.universal -or
-            -not [bool]$Manifest.native_ai.production_ready -or
-            $evidence -notmatch '^[0-9a-f]{64}$'
-        ) {
-            throw 'Enabled Deep release manifest is incomplete or incompatible.'
-        }
-    }
-    elseif ($modelCount -ne 0) {
-        throw 'Disabled Deep release manifest has an inconsistent model count.'
+    if (
+        [string]$Manifest.version -ne '0.7.0' -or
+        [int]$Manifest.android_version_code -ne 8 -or
+        [int]$Manifest.schemas.godot_actions -ne 4 -or
+        [int]$Manifest.schemas.choice_view -ne 2 -or
+        [int]$Manifest.schemas.protocol -ne 6 -or
+        [int]$Manifest.schemas.snapshot -ne 3 -or
+        [int]$Manifest.schemas.journal -ne 1 -or
+        [int]$Manifest.schemas.rng -ne 2 -or
+        -not [bool]$Manifest.native_challenge.production_ready
+    ) {
+        throw 'Release manifest does not match the product contract.'
     }
 }
 

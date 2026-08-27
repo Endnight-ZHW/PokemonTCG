@@ -6,7 +6,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $common = Join-Path $PSScriptRoot 'toolchain_common.ps1'
 . $common
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
-Assert-ReleaseDeepFallbackContract -Manifest $release
+Assert-ProductReleaseContract -Manifest $release
 $portable = Join-Path $repoRoot '.tools\python311\python.exe'
 if ([string]::IsNullOrWhiteSpace($Python)) {
     $Python = if (Test-Path -LiteralPath $portable) { $portable } else { 'python' }

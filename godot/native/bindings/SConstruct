@@ -1,0 +1,99 @@
+#!/usr/bin/env python
+
+import os
+from SCons.Script import ARGUMENTS, Default, SConscript
+
+
+def _consume_path_argument(name, default):
+    return os.path.abspath(ARGUMENTS.pop(name, default))
+
+
+godot_cpp_dir = _consume_path_argument("godot_cpp_dir", "godot-cpp")
+project_root = _consume_path_argument("project_root", "../..")
+
+env = SConscript(os.path.join(godot_cpp_dir, "SConstruct"))
+repository_root = os.path.abspath(os.path.join("..", "..", ".."))
+rules_root = os.path.join(repository_root, "native", "ptcg_core")
+challenge_root = os.path.join(repository_root, "native", "challenge_core")
+rules_source_root = os.path.join(rules_root, "src")
+challenge_source_root = os.path.join(challenge_root, "src")
+env.Append(CPPPATH=["src", rules_source_root, challenge_source_root])
+
+if env["platform"] == "windows":
+    env.Append(CXXFLAGS=["/EHsc"])
+elif env["platform"] == "android":
+    env.Append(CXXFLAGS=["-fexceptions"])
+
+
+def _objects(group, source_root, names, shared=False):
+    builder = env.SharedObject if shared else env.Object
+    return [
+        builder(
+            os.path.join("build", group, os.path.splitext(name)[0]),
+            os.path.join(source_root, name),
+        )[0]
+        for name in names
+    ]
+
+
+rules_names = (
+    "ptcg_random.cpp",
+    "ptcg_rules.cpp",
+    "ptcg_game.cpp",
+    "ptcg_rules_session.cpp",
+    "ptcg_rules_queries.cpp",
+    "ptcg_rules_projection.cpp",
+    "ptcg_typed_state.cpp",
+    "ptcg_typed_ir.cpp",
+)
+challenge_names = (
+    "challenge_support.cpp",
+    "challenge_search_provider.cpp",
+    "challenge_controller.cpp",
+    "ptcg_traditional_search.cpp",
+    "ptcg_traditional_infoset.cpp",
+    "ptcg_traditional_mandatory.cpp",
+    "ptcg_traditional_evaluator.cpp",
+    "ptcg_traditional_policy.cpp",
+    "ptcg_traditional_strategy.cpp",
+    "ptcg_traditional_battle_evaluation.cpp",
+    "ptcg_traditional_board_evaluation.cpp",
+    "ptcg_traditional_effect_evaluation.cpp",
+    "ptcg_traditional_choice_evaluation.cpp",
+    "ptcg_traditional_trusted.cpp",
+)
+binding_names = (
+    "godot_rules_session.cpp",
+    "native_challenge_ai.cpp",
+    "ptcg_godot_value.cpp",
+    "register_types.cpp",
+)
+
+rules_objects = _objects("ptcg_core", rules_source_root, rules_names)
+challenge_objects = _objects(
+    "challenge_core", challenge_source_root, challenge_names
+)
+binding_objects = _objects("bindings", "src", binding_names, shared=True)
+
+suffix = "{}_{}_{}".format(env["platform"], env["target"], env["arch"])
+rules_library = env.StaticLibrary(
+    os.path.join(rules_root, "lib", "ptcg_core_" + suffix),
+    source=rules_objects,
+)
+challenge_library = env.StaticLibrary(
+    os.path.join(challenge_root, "lib", "challenge_core_" + suffix),
+    source=challenge_objects,
+)
+env.NoCache(rules_library)
+env.NoCache(challenge_library)
+env.Append(LIBS=[challenge_library, rules_library])
+
+output = os.path.join(
+    project_root,
+    "bin",
+    env["platform"],
+    "libpokemon_ai{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+)
+library = env.SharedLibrary(output, source=binding_objects)
+env.NoCache(library)
+Default([rules_library, challenge_library, library])

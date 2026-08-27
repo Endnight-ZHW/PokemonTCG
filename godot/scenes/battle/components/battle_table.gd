@@ -124,7 +124,6 @@ var own_allowance_labels: Dictionary = {}
 var phase_labels: Dictionary = {}
 var phase_advance_button: Button
 var all_actions_button: Button
-var action_panel: BattleActionPanel
 var action_list: VBoxContainer
 var all_actions_scroll: ScrollContainer
 var all_actions_toggle: Button
@@ -137,7 +136,9 @@ var log_panel: BattleLogPanel
 var log_label: RichTextLabel
 var action_popover: CardActionPopover
 var attachment_choice_popover: AttachmentChoicePopover
-var interaction_router := CardInteractionRouter.new()
+var interaction_router := BattleInteractionController.new()
+var table_renderer := BattleTableRenderer.new()
+var presentation_state := BattlePresentationState.new()
 var choice_target_options: Dictionary = {}
 var choice_target_prompt := ""
 var opponent_hand_surface: Control
@@ -182,28 +183,63 @@ var _detail_content_signature := ""
 var _detail_passthrough_key := ""
 var _board_origin := Vector2.ZERO
 var _initialized := false
-var _active_flyers: Array[Control] = []
-var _flyer_tweens: Dictionary = {}
+var card_motion_controller := BattleCardMotionController.new()
+var _active_flyers: Array[Control]:
+	get:
+		return card_motion_controller.entities
+var _flyer_tweens: Dictionary:
+	get:
+		return card_motion_controller.tweens
 var _card_motion_batches: Dictionary = {}
 var _card_motion_batch_sequence := 0
 var _neutral_public_motion_texture: Texture2D
 var _event_motion_completions: Dictionary = {}
 var _presentation_snapshot: Dictionary = {}
-var _presentation_reveals: Dictionary = {}
-var _presentation_mask_counts: Dictionary = {}
-var _presentation_feedbacks: Dictionary = {}
-var _presentation_landing_feedbacks: Dictionary = {}
-var _presentation_covers: Dictionary = {}
-var _presentation_cover_tweens: Dictionary = {}
-var _presentation_slot_covers: Dictionary = {}
-var _presentation_slot_cover_states: Dictionary = {}
-var _presentation_slot_event_queues: Dictionary = {}
-var _presentation_slot_event_plans: Dictionary = {}
-var _presentation_deferred_ko_slots: Dictionary = {}
-var _presentation_event_hand_targets: Dictionary = {}
-var _presentation_hand_target_cursor: Dictionary = {}
-var _presentation_hand_removed_counts: Dictionary = {}
-var _presentation_event_hand_sources: Dictionary = {}
+var _presentation_reveals: Dictionary:
+	get:
+		return presentation_state.reveals
+var _presentation_mask_counts: Dictionary:
+	get:
+		return presentation_state.mask_counts
+var _presentation_feedbacks: Dictionary:
+	get:
+		return presentation_state.feedbacks
+var _presentation_landing_feedbacks: Dictionary:
+	get:
+		return presentation_state.landing_feedbacks
+var _presentation_covers: Dictionary:
+	get:
+		return presentation_state.covers
+var _presentation_cover_tweens: Dictionary:
+	get:
+		return presentation_state.cover_tweens
+var _presentation_slot_covers: Dictionary:
+	get:
+		return presentation_state.slot_covers
+var _presentation_slot_cover_states: Dictionary:
+	get:
+		return presentation_state.slot_cover_states
+var _presentation_slot_event_queues: Dictionary:
+	get:
+		return presentation_state.slot_event_queues
+var _presentation_slot_event_plans: Dictionary:
+	get:
+		return presentation_state.slot_event_plans
+var _presentation_deferred_ko_slots: Dictionary:
+	get:
+		return presentation_state.deferred_ko_slots
+var _presentation_event_hand_targets: Dictionary:
+	get:
+		return presentation_state.event_hand_targets
+var _presentation_hand_target_cursor: Dictionary:
+	get:
+		return presentation_state.hand_target_cursor
+var _presentation_hand_removed_counts: Dictionary:
+	get:
+		return presentation_state.hand_removed_counts
+var _presentation_event_hand_sources: Dictionary:
+	get:
+		return presentation_state.event_hand_sources
 var _presentation_hand_source_proxies: Array[Control] = []
 var _presentation_opponent_hand_proxies: Array[Control] = []
 var _presentation_opponent_hand_nodes: Array[Control] = []
@@ -212,12 +248,22 @@ var _presentation_opponent_hand_stage_count := 0
 var _presentation_opponent_hand_event_deltas: Dictionary = {}
 var _presentation_opponent_hand_planned_deltas: Dictionary = {}
 var _presentation_opponent_hand_target_cursor := 0
-var _presentation_hand_proxy_by_key: Dictionary = {}
-var _presentation_hand_snapshot_rows: Dictionary = {}
+var _presentation_hand_proxy_by_key: Dictionary:
+	get:
+		return presentation_state.hand_proxy_by_key
+var _presentation_hand_snapshot_rows: Dictionary:
+	get:
+		return presentation_state.hand_snapshot_rows
 var _presentation_hand_virtual_keys: Array[String] = []
-var _presentation_attachment_source_proxies: Dictionary = {}
-var _presentation_attachment_source_specs: Dictionary = {}
-var _presentation_zone_states: Dictionary = {}
+var _presentation_attachment_source_proxies: Dictionary:
+	get:
+		return presentation_state.attachment_source_proxies
+var _presentation_attachment_source_specs: Dictionary:
+	get:
+		return presentation_state.attachment_source_specs
+var _presentation_zone_states: Dictionary:
+	get:
+		return presentation_state.zone_states
 var _presentation_hud_state: GameState
 var _presentation_actions_suppressed := false
 var _active_presentation_event_id := ""
@@ -230,7 +276,6 @@ var _hand_layout_tweens: Dictionary = {}
 var _hand_layout_motion_handles: Dictionary = {}
 var _hand_transition_sequences: Dictionary = {}
 var hand_motion_controller := HandMotionController.new()
-var card_motion_layer := CardMotionLayer.new()
 var _hand_visual_sequence := 0
 var _hand_identity_player := -1
 var _pending_removed_hand_visual_ids: Dictionary = {}
@@ -270,6 +315,7 @@ func initialize_ui() -> void:
 		return
 	_resolve_scene_nodes()
 	_ensure_presentation_coordinator()
+	table_renderer.configure(self)
 	anchor_resolver.configure(self)
 	hand_motion_controller.configure(self, _hand_layout_tweens)
 	_initialized = true
@@ -404,7 +450,6 @@ func _resolve_scene_nodes() -> void:
 		"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseAdvanceButton"
 	) as Button
 	all_actions_button = null
-	action_panel = null
 	action_list = null
 	all_actions_scroll = null
 	all_actions_toggle = null
@@ -481,14 +526,7 @@ func update_view(
 	game_mode = p_game_mode
 	if not _initialized or state_ref == null:
 		return
-	_refresh_header()
-	_refresh_field()
-	_refresh_opponent_hand()
-	_refresh_hand()
-	_refresh_actions()
-	_refresh_log()
-	_refresh_target_hints()
-	_refresh_ai_thinking_indicator()
+	table_renderer.render_current_view()
 	if selected_entity_key.is_empty():
 		hide_card_detail()
 	elif detail_panel and detail_panel.visible:
@@ -544,7 +582,7 @@ func visible_card_source_keys() -> Array[String]:
 	var result: Array[String] = []
 	for hand_view in hand_views:
 		if hand_view and hand_view.visible and not hand_view.card_id.is_empty():
-			result.append(CardInteractionRouter.hand_key(hand_view.hand_index))
+			result.append(BattleInteractionController.hand_key(hand_view.hand_index))
 	for slot_key_value in slot_views.keys():
 		var slot_key := str(slot_key_value)
 		var slot_view := slot_views[slot_key] as CardView
@@ -558,7 +596,7 @@ func visible_card_source_keys() -> Array[String]:
 		if discard == null or not discard.visible or discard.count <= 0:
 			continue
 		var player := view_player if scene_key == "own_discard" else 1 - view_player
-		result.append(CardInteractionRouter.zone_key(player, "discard"))
+		result.append(BattleInteractionController.zone_key(player, "discard"))
 	return result
 
 
@@ -601,7 +639,7 @@ func _refresh_ai_thinking_indicator() -> void:
 
 
 func _ai_player_index() -> int:
-	if game_mode in ["challenge", "deep"]:
+	if game_mode == "challenge":
 		return 1
 	return 1 - view_player
 
@@ -611,8 +649,6 @@ func _ai_display_name(player_idx: int) -> String:
 		var name := str(state_ref.get_player(player_idx).name).strip_edges()
 		if not name.is_empty():
 			return name
-	if game_mode == "deep":
-		return "Deep AI"
 	if game_mode == "challenge":
 		return "Challenge AI"
 	return "AI"
@@ -752,9 +788,9 @@ func _spawn_startup_mulligan_summary(
 			4,
 		),
 	)
-	card_motion_layer.add(label)
+	card_motion_controller.add(label)
 	var tween := create_tween()
-	card_motion_layer.bind_tween(label, tween)
+	card_motion_controller.bind_tween(label, tween)
 	tween.tween_property(label, "modulate:a", 1.0, minf(0.12, duration * 0.25))
 	if not reduced:
 		tween.parallel().tween_property(label, "scale", Vector2.ONE * 1.04, minf(0.12, duration * 0.25))
@@ -1148,7 +1184,7 @@ func _bind_scene_nodes() -> void:
 	playmat.quality_profile = _settings_quality_profile()
 	effects.quality_profile = _settings_quality_profile()
 	world_feedback.quality_profile = _settings_quality_profile()
-	card_motion_layer.configure(effects, _active_flyers, _flyer_tweens)
+	card_motion_controller.configure(effects)
 	if reveal_layer == null:
 		reveal_layer = BattleRevealLayer.new()
 		reveal_layer.name = "BattleRevealLayer"
@@ -1824,7 +1860,7 @@ func _refresh_actions() -> void:
 	for hand_view in hand_views:
 		if not hand_view.visible:
 			continue
-		var source_key := CardInteractionRouter.hand_key(hand_view.hand_index)
+		var source_key := BattleInteractionController.hand_key(hand_view.hand_index)
 		var source_actionable := interaction_router.has_source(source_key)
 		hand_view.set_interaction_state(
 			source_actionable,
@@ -1851,7 +1887,7 @@ func _refresh_actions() -> void:
 			view_player if scene_key == "own_discard" else 1 - view_player
 		)
 		var discard_actionable := interaction_router.has_source(
-			CardInteractionRouter.zone_key(discard_player, "discard"),
+			BattleInteractionController.zone_key(discard_player, "discard"),
 		)
 		discard_zone.set_action({})
 		discard_zone.set_action_menu(discard_actionable)
@@ -1887,7 +1923,7 @@ func _refresh_target_hints() -> void:
 		var action := row.get("action") as GameAction
 		if action == null:
 			continue
-		for target_key in CardInteractionRouter.target_keys_for_action(action, row):
+		for target_key in BattleInteractionController.target_keys_for_action(action, row):
 			selected_target_labels[target_key] = _target_hint_for_action(action)
 	for target_key_value in choice_target_options.keys():
 		var choice_value: Variant = choice_target_options[target_key_value]
@@ -1952,7 +1988,7 @@ func _refresh_target_hints() -> void:
 	if not _drag_source_key.is_empty():
 		for row in selected_rows:
 			var action := row.get("action") as GameAction
-			if action and "stadium" in CardInteractionRouter.drag_target_keys_for_action(action, row):
+			if action and "stadium" in BattleInteractionController.drag_target_keys_for_action(action, row):
 				stadium_highlighted = true
 				break
 	(zones["stadium"] as ZoneView).set_drop_highlight(stadium_highlighted)
@@ -3260,7 +3296,7 @@ func _matching_active_selection_rows(target_key: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for row in _rows_for_active_selection():
 		var action := row.get("action") as GameAction
-		if action and target_key in CardInteractionRouter.target_keys_for_action(action, row):
+		if action and target_key in BattleInteractionController.target_keys_for_action(action, row):
 			result.append(row)
 	return result
 
@@ -3514,7 +3550,7 @@ func _avoid_controls_for_rows(rows: Array[Dictionary]) -> Array[Control]:
 			if defending_active and not seen.has(defending_active):
 				seen[defending_active] = true
 				result.append(defending_active)
-		for target_key in CardInteractionRouter.target_keys_for_action(action, row):
+		for target_key in BattleInteractionController.target_keys_for_action(action, row):
 			var control := _source_control_for_key(target_key)
 			if control and not seen.has(control):
 				seen[control] = true
@@ -3590,7 +3626,7 @@ func _on_popover_dismissed() -> void:
 		_drag_session != null
 		and _drag_session.state == CARD_DRAG_SESSION.AWAITING_VARIANT
 		and dismissed_forced_source
-		== CardInteractionRouter.hand_key(_drag_session.hand_index)
+		== BattleInteractionController.hand_key(_drag_session.hand_index)
 	):
 		_return_drag_session("variant_cancelled")
 
@@ -3668,9 +3704,9 @@ func _on_card_activated(
 	slot_name: String,
 ) -> void:
 	var clicked_key := (
-		CardInteractionRouter.hand_key(hand_index)
+		BattleInteractionController.hand_key(hand_index)
 		if hand_index >= 0
-		else CardInteractionRouter.pokemon_key(player, slot_name)
+		else BattleInteractionController.pokemon_key(player, slot_name)
 	)
 	if not selected_entity_key.is_empty() and clicked_key == selected_entity_key:
 		_reset_action_interaction_state()
@@ -3756,7 +3792,7 @@ func _on_zone_inspected(context: Dictionary) -> void:
 func _on_zone_action_menu_requested(context: Dictionary) -> void:
 	var zone_name := str(context.get("zone", ""))
 	var zone_player := int(context.get("player", -1))
-	var source_key := CardInteractionRouter.zone_key(zone_player, zone_name)
+	var source_key := BattleInteractionController.zone_key(zone_player, zone_name)
 	if source_key.is_empty() or not interaction_router.has_source(source_key):
 		return
 	if action_popover and action_popover.visible and _popover_source_key == source_key:
@@ -3791,7 +3827,7 @@ func _on_card_dropped(
 			_drag_session.state = CARD_DRAG_SESSION.AWAITING_VARIANT
 		_show_forced_action_rows(
 			matching_rows,
-			CardInteractionRouter.hand_key(hand_index),
+			BattleInteractionController.hand_key(hand_index),
 		)
 		return
 	if _drag_session != null:
@@ -3844,7 +3880,7 @@ func _on_hand_drag_started(hand_index: int) -> void:
 	_drag_session.grab_offset = source_view.drag_grab_offset_local()
 	source_view.set_drag_masked(true)
 	_ensure_drag_proxy(_drag_pointer_position())
-	_drag_source_key = CardInteractionRouter.hand_key(hand_index)
+	_drag_source_key = BattleInteractionController.hand_key(hand_index)
 	if action_popover:
 		action_popover.dismiss(false)
 	_refresh_target_hints()
@@ -3997,7 +4033,7 @@ func _ensure_drag_proxy(start: Vector2) -> Control:
 	proxy.position = _drag_proxy_position_for_pointer(start, proxy)
 	proxy.rotation_degrees = _drag_session.source_rotation
 	proxy.modulate.a = 1.0
-	card_motion_layer.add(proxy)
+	card_motion_controller.add(proxy)
 	_drag_session.proxy = proxy
 	return proxy
 
@@ -4075,7 +4111,7 @@ func _animate_drag_proxy(
 			completion.call()
 		return
 	var tween := create_tween().set_parallel(true)
-	card_motion_layer.bind_tween(proxy, tween)
+	card_motion_controller.bind_tween(proxy, tween)
 	tween.tween_property(
 		proxy,
 		"position",
@@ -5351,7 +5387,7 @@ func _adopt_opponent_hand_landing_flyer(flyer: Control) -> bool:
 	var stage_delta := int(flyer.get_meta("opponent_hand_stage_count_delta", 1))
 	_active_flyers.erase(flyer)
 	_flyer_tweens.erase(flyer.get_instance_id())
-	card_motion_layer.forget(flyer)
+	card_motion_controller.forget(flyer)
 	_cancel_hand_layout_motion(flyer)
 	flyer.name = "SnapshotOpponentHandProxy_%d" % flyer.get_instance_id()
 	flyer.remove_meta("card_motion_entity")
@@ -7922,7 +7958,7 @@ func _dispose_card_motion_batch_flyer(
 	if flying.has_meta("motion_batch_ordinal"):
 		flying.remove_meta("motion_batch_ordinal")
 	# Opponent-hand arrivals are adopted as stationary hidden-hand proxies by
-	# _finish_flyer(). They no longer belong to CardMotionLayer and must survive
+	# _finish_flyer(). They no longer belong to the motion controller and must survive
 	# until the opponent-hand transaction itself reconciles.
 	if bool(flying.get_meta("card_motion_entity", false)):
 		_dispose_flyer(flying)
@@ -9150,12 +9186,12 @@ func _spawn_slot_composite_motion(
 	mover.modulate.a = 1.0
 	mover.z_index = 100 + index
 	mover.set_table_depth(_motion_depth_for_point((start + finish) * 0.5), true)
-	card_motion_layer.add(mover)
+	card_motion_controller.add(mover)
 
 	var tween := create_tween()
 	if delay > 0.0:
 		tween.tween_interval(delay)
-	card_motion_layer.bind_tween(mover, tween)
+	card_motion_controller.bind_tween(mover, tween)
 	tween.tween_method(
 		_update_slot_composite_motion.bind(
 			mover,
@@ -9446,7 +9482,7 @@ func _retain_slot_composite_as_cover(
 		return
 	_active_flyers.erase(mover)
 	_flyer_tweens.erase(mover.get_instance_id())
-	card_motion_layer.forget(mover)
+	card_motion_controller.forget(mover)
 	mover.remove_meta("card_motion_entity")
 	mover.set_meta("retained_slot_cover", true)
 	mover.set_meta("presentation_slot_key", destination_key)
@@ -10000,10 +10036,10 @@ func _spawn_shuffle_motion(
 		flyer.position = start - flyer.size * 0.5
 		flyer.rotation_degrees = side * -1.5
 		flyer.modulate.a = 1.0
-		card_motion_layer.add(flyer)
+		card_motion_controller.add(flyer)
 		_retain_shuffle_source_zone(source_zone, flyer)
 		var tween := create_tween()
-		card_motion_layer.bind_tween(flyer, tween)
+		card_motion_controller.bind_tween(flyer, tween)
 		tween.tween_method(
 			_update_shuffle_card.bind(
 				flyer,
@@ -10217,7 +10253,7 @@ func _spawn_flying_card(
 			previous.kill()
 		_flyer_tweens.erase(flying.get_instance_id())
 		if flying not in _active_flyers:
-			card_motion_layer.add(flying)
+			card_motion_controller.add(flying)
 	else:
 		flying = _create_paper_card_token(
 			texture,
@@ -10283,7 +10319,7 @@ func _spawn_flying_card(
 	flying.pivot_offset = flying.size * 0.5
 	flying.rotation_degrees = start_rotation
 	flying.modulate.a = 1.0
-	card_motion_layer.add(flying)
+	card_motion_controller.add(flying)
 	var drag_continuation := flying.has_meta("drag_session_id")
 	var travel_distance := motion_start.distance_to(finish)
 	if drag_continuation:
@@ -10312,7 +10348,7 @@ func _spawn_flying_card(
 	var tween := create_tween()
 	if delay > 0.0:
 		tween.tween_interval(delay)
-	card_motion_layer.bind_tween(flying, tween)
+	card_motion_controller.bind_tween(flying, tween)
 	tween.tween_method(
 		_update_flyer.bind(
 			flying,
@@ -10581,7 +10617,7 @@ func _dispose_flyer(flying: Control) -> void:
 	if tween and tween.is_valid():
 		tween.kill()
 	_flyer_tweens.erase(flying.get_instance_id())
-	card_motion_layer.forget(flying)
+	card_motion_controller.forget(flying)
 	flying.visible = false
 	flying.modulate.a = 0.0
 	flying.free()

@@ -170,8 +170,8 @@ pressed 同时服务点击和触摸。不要为普通按钮新增按键/控制�
 字体层级统一为普通 UI、说明与战斗 HUD 使用 Semibold 600，按钮、表单选项、菜单、页面标题和
 关键 CTA 使用 Bold 700；只有长段 `RichTextLabel` 保留 Medium 500，避免大段文字过密。
 `game_theme.tres` 与 `front_end_theme.tres` 都必须绑定上述 `FontVariation`，不要直接绑定原始可变
-TTF，也不要用描边模拟字重；原始字体的默认轴值可能不是 Regular。新增动态 Theme 时同步更新
-`theme_factory.gd`，避免退回 Godot fallback。`variation_opentype` 的 `wght` 键必须使用 OpenType
+TTF，也不要用描边模拟字重；原始字体的默认轴值可能不是 Regular。新增动态样式时复用
+`DesignTokens` 和现有主题资源。`variation_opentype` 的 `wght` 键必须使用 OpenType
 整数 tag `0x77676874`（十进制 `2003265652`），不能写成字符串 `"wght"`；后者会让当前字体按
 默认 Thin 100 渲染，即使资源文件表面上写了 600 / 700。
 
@@ -780,8 +780,8 @@ Main._process() -> poll_result()
 Main -> GameEngine.apply_action/apply_choice()
 ```
 
-不要把 Node、Texture 或其他 Godot 场景对象传入 AI 线程。0.6.0 的旧 Deep 模型仍绑定旧规则，
-`deep_runtime_enabled=false`；发布 UI 不显示 Deep 入口，历史调用稳定回退 Challenge。
+不要把 Node、Texture 或其他 Godot 场景对象传入 AI 线程。产品只注册原生
+`ChallengeController`，不存在 Deep 模式或第二套运行时回退策略。
 
 标题页只显示一个“挑战 AI”入口，并以 `challenge` 作为进入牌组页的默认模式。AI 类型由
 牌组选择页的 `AIModeOption` 固定为 `challenge`。`FirstPlayerOption` 只显示“由硬币胜者选择”，
@@ -1004,10 +1004,9 @@ Windows 与 Android 调试构建：
 - 开发调试包：用于自己测试，输出到 `godot/dist/windows/` 和 `godot/dist/android/`。
 - 正式发布包：用于分发，输出到 `godot/dist/release/`，并生成 ZIP、APK 和 SHA-256 清单。
 
-0.7.0 以 Godot 客户端和 Challenge AI 为运行基线。Deep AI 训练基础设施已重构为
-高吞吐信息集 AlphaZero v3，但在正式强度和发布设备门槛完成前，
-manifest 仍将 `deep_runtime_enabled` 设为 false。旧模型只读保留。
-发布包不会包含 Python 运行时、PyTorch、训练脚本、测试脚本或工具链目录。
+0.7.0 以 Godot 客户端和原生 Challenge AI 为唯一产品运行基线。Deep AI 是
+`research/deep_ai` 下显式运行的研究项目，不进入发布清单、产品扩展或发布包。
+发布包不会包含 Python 运行时、研究脚本、测试脚本或工具链目录。
 
 ### 第一次发布前准备
 
@@ -1016,12 +1015,11 @@ manifest 仍将 `deep_runtime_enabled` 设为 false。旧模型只读保留。
 ```powershell
 .\tools\setup_godot_toolchain.ps1
 .\tools\setup_android_toolchain.ps1
-.\tools\setup_ai_toolchain.ps1
 .\tools\setup_native_ai_deps.ps1
 ```
 
-这些脚本把 Godot、JDK、Android SDK/NDK、Python AI 工具链、`godot-cpp` 和
-ONNX Runtime 下载到 `.tools/`。它们不要求你手工配置系统 `PATH`。
+这些脚本把 Godot、JDK、Android SDK/NDK 和 `godot-cpp` 下载到 `.tools/`。
+它们不要求你手工配置系统 `PATH`。
 
 Windows 原生 AI 还需要本机安装 Visual Studio C++ Build Tools。脚本会通过
 `vswhere.exe` 寻找 `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`；如果报
@@ -1042,33 +1040,9 @@ Windows 原生 AI 还需要本机安装 Visual Studio C++ Build Tools。脚本�
 .\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
 ```
 
-训练 Deep AI 时使用精确锁定的 `DL` Conda 环境；ONNX 导出与校验沿用同一
-固定依赖合约。环境固定禁用用户目录包：
-
-```powershell
-$env:PYTHONNOUSERSITE = '1'
-conda run -n DL python -c "import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))"
-conda run -n DL python -c "import onnx, onnxruntime; print(onnx.__version__, onnxruntime.__version__)"
-```
-
-唯一可写训练入口是 universal 信息集 AlphaZero v3。先校验冻结教师 replay，再执行：
-
-```powershell
-$env:PYTHONNOUSERSITE = '1'
-conda run -n DL python -B .\python\scripts\train_deep_ai_v3.py verify-replay `
-  --replay .\python\data\ai_training\bootstrap-v3
-.\tools\train_deep_ai_v3.ps1 -Preset pilot
-```
-
-只做 smoke 时仍要求原生 actor，输出到 `build/`：
-
-```powershell
-$env:PYTHONNOUSERSITE = '1'
-.\tools\train_deep_ai_v3.ps1 -Preset smoke
-```
-
-训练器会把 checkpoint、证据、ONNX 和 runtime manifest 写入候选目录，不直接
-覆盖在线模型。详见 `deep_ai_alphazero_v3.md`；v2 run 会被明确拒绝且不支持迁移。
+研究 Deep AI 时显式进入 `research/deep_ai`，先运行
+`tools/test_research_smoke.ps1`。研究输出只写到该目录的 `build/`，不会复制进 Godot。
+详见 `research/deep_ai/README.md`。
 
 ### 生成开发调试包
 
@@ -1136,13 +1110,13 @@ Android 调试 APK 可以用 ADB 安装：
 
 | 文件 | 用途 |
 |---|---|
-| `godot/dist/release/PokemonTCG-Windows-x86_64-0.6.0.zip` | 可分发 Windows ZIP |
+| `godot/dist/release/PokemonTCG-Windows-x86_64-0.7.0.zip` | 可分发 Windows ZIP |
 | `godot/dist/release/windows/PokemonTCG.exe` | 未压缩 Windows release 可执行文件 |
 | `godot/dist/release/windows/PokemonTCG.pck` | Godot 资源包 |
 | `godot/dist/release/SHA256SUMS.json` | ZIP、EXE、PCK、DLL 和模型校验清单 |
 
-给玩家分发 Windows 版时，优先发 ZIP，不要只发 `.exe`。ZIP 中还包含 `.pck`、AI 原生库、
-ONNX Runtime、许可证和 `BUILD_INFO.json`。
+给玩家分发 Windows 版时，优先发 ZIP，不要只发 `.exe`。ZIP 中还包含 `.pck`、产品原生库、
+发布清单和 `BUILD_INFO.json`。
 
 ### 生成 Android 测试签名 APK
 
@@ -1158,14 +1132,14 @@ ONNX Runtime、许可证和 `BUILD_INFO.json`。
 
 | 文件 | 用途 |
 |---|---|
-| `godot/dist/release/PokemonTCG-Android-arm64-0.6.0-test.apk` | Android 9+ ARM64 测试签名 APK |
+| `godot/dist/release/PokemonTCG-Android-arm64-0.7.0-test.apk` | Android 9+ ARM64 测试签名 APK |
 | `godot/dist/release/android/PokemonTCG.apk` | Godot 导出的原始 release APK |
 | `godot/dist/release/SHA256SUMS.json` | 发布校验清单 |
 
 安装测试签名 APK：
 
 ```powershell
-.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.6.0-test.apk
+.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.7.0-test.apk
 ```
 
 查看设备是否连接：
@@ -1201,7 +1175,7 @@ $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = "your-keystore-password"
 正式签名输出文件名：
 
 ```text
-godot/dist/release/PokemonTCG-Android-arm64-0.6.0-production.apk
+godot/dist/release/PokemonTCG-Android-arm64-0.7.0-production.apk
 ```
 
 正式签名注意事项：
@@ -1209,7 +1183,7 @@ godot/dist/release/PokemonTCG-Android-arm64-0.6.0-production.apk
 - keystore 丢失后，应用商店同包名升级会非常麻烦，必须离线备份。
 - `GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD` 当前同时作为 store password 和 key password 使用。
 - 不要把 keystore 放到 `godot/`、`docs/`、`tools/` 或任何会被提交的目录。
-- 正式包仍然固定包名 `com.pokemontcg.game`、`versionCode=8`、`versionName=0.6.0`、仅 `arm64-v8a`。
+- 正式包固定包名 `com.pokemontcg.game`、`versionCode=8`、`versionName=0.7.0`、仅 `arm64-v8a`。
 
 ### 发布后校验
 
@@ -1226,18 +1200,18 @@ godot/dist/release/PokemonTCG-Android-arm64-0.6.0-production.apk
 - Windows ZIP 不包含 Python、PyTorch、测试、工具目录或 console exe。
 - Android APK 包名、版本号、SDK、ABI 正确。
 - Android APK 签名可验证。
-- Android APK 的资源与 manifest 一致，且 Deep 运行时保持关闭并声明 Challenge 回退。
+- Android APK 的资源与清单一致，且不包含研究或 ONNX 文件。
 - `SHA256SUMS.json` 中每个文件的 SHA-256 与实际文件一致。
 
-`test_release.ps1` 从 `release_manifest.json` 读取版本和 Android versionCode，默认检查
+`test_release.ps1` 从 `godot/data/release_manifest.json` 读取版本和 Android versionCode，默认检查
 `test` 签名 APK。若生成的是 `production` 正式签名 APK，仍需对实际产物再做一次签名和
 元数据检查。
 
 手工抽查校验值：
 
 ```powershell
-Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.6.0.zip -Algorithm SHA256
-Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.6.0-test.apk -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.7.0.zip -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.7.0-test.apk -Algorithm SHA256
 Get-Content .\godot\dist\release\SHA256SUMS.json
 ```
 
@@ -1247,7 +1221,7 @@ Get-Content .\godot\dist\release\SHA256SUMS.json
 .\.tools\android-sdk\build-tools\35.0.0\apksigner.bat verify `
   --verbose `
   --print-certs `
-  .\godot\dist\release\PokemonTCG-Android-arm64-0.6.0-production.apk
+  .\godot\dist\release\PokemonTCG-Android-arm64-0.7.0-production.apk
 ```
 
 如果本地 Build Tools 版本不是 `35.0.0`，以 `.tools/android-sdk/build-tools/` 下实际目录为准。
@@ -1258,9 +1232,8 @@ APK 构建成功不等于 Android 发布完成。至少按 `docs/ANDROID_TEST_CH
 其中最重要的是：
 
 - 冷启动、横屏、安全区、系统返回手势/返回键和设置保存。
-- 本地双人和 Challenge AI 离线对局；历史 Deep 入口不可见，旧调用稳定回退 Challenge。
-- 检查 `deep_runtime_enabled=false`、`deep_fallback=challenge`、兼容模型 0、历史模型 10；不把
-  旧模型 load+infer 当作 0.6.0 发布条件。
+- 本地双人和 Challenge AI 离线对局；产品中不存在 Deep 入口或回退分支。
+- 检查 APK 不包含 `.onnx`、ONNX Runtime 或 `research/deep_ai` 内容。
 - 标题和战斗音乐各保持前台至少 3 分钟，确认没有音频崩溃。
 - 抽牌、攻击、击倒、奖赏、胜利演出在目标设备帧率可接受。
 - 切后台、锁屏、恢复、断网、网络切换和覆盖安装。
@@ -1276,13 +1249,12 @@ APK 构建成功不等于 Android 发布完成。至少按 `docs/ANDROID_TEST_CH
 | `Godot 4.7 is not installed` | 没跑工具链安装 | 运行 `.\tools\setup_godot_toolchain.ps1` |
 | `JDK 17 is missing` | Android 工具链未安装 | 运行 `.\tools\setup_android_toolchain.ps1` |
 | `Android NDK 28.1 is missing` | SDK/NDK 不完整 | 重跑 `setup_android_toolchain.ps1`，必要时加 `-Force` |
-| `AI Python toolchain is missing` | AI Python 未安装 | 运行 `.\tools\setup_ai_toolchain.ps1` |
 | `godot-cpp is missing` | 原生 AI 依赖未安装 | 运行 `.\tools\setup_native_ai_deps.ps1` |
 | `Visual C++ Build Tools are missing` | Windows 原生库缺 C++ 编译器 | 安装 Visual Studio Build Tools 的 C++ 工作负载 |
 | `Production Android signing requires ...` | 正式签名环境变量缺失 | 设置 keystore 路径、alias 和密码 |
 | ADB 覆盖安装失败 | 设备上已有不同签名包 | 卸载 `com.pokemontcg.game` 后再安装 |
 | `test_release.ps1` 找不到 APK | 只打了 Windows 包或签名模式不匹配 | 用 `-AndroidSigning test` 重新完整打包，或按实际产物调整验收流程 |
-| APK 过大 | 内置卡图、ONNX 模型和原生库 | 发布前不要手工删除资源；先确认是否真的需要裁剪 |
+| APK 过大 | 内置卡图或原生库 | 发布前不要手工删除资源；先用发布载荷检查定位来源 |
 
 ## 15. 建议的学习路线
 
@@ -1709,8 +1681,8 @@ Godot 的 `data/*.json` 是生成物。新手最容易犯的错是直接改 `god
 1. 打开 `python/data/deck_definitions.py`。
 2. 新增一个 `MY_DECK = [("card_id", count), ...]`，总数必须是 60。
 3. 把新卡组加入 `ALL_CARD_IDS` 的 deck 列表。
-4. 打开 `python/scripts/export_godot_data.py`，在 `DECKS` 中加入新 key、显示名、能量类型和卡组常量。
-5. 如果该卡组要给 Deep AI 使用，还需要训练或导出对应模型；没有模型时不要把它标记为 Deep AI 已部署。
+4. 打开 `python/scripts/godot_export/card_data.py`，在 `DECKS` 中加入新 key、显示名、能量类型和卡组常量。
+5. 更新 `godot/data/release_manifest.json` 的发布牌组列表。
 6. 运行导出和 `--check`。
 
 最小示例结构：

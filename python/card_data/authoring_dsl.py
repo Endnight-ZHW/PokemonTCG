@@ -431,12 +431,12 @@ def _iter_nested_effects(value: EffectSpec) -> Iterable[EffectSpec]:
                     yield from _iter_nested_effects(nested)
 
 
-def discover_effect_sources(effects_root: Path) -> SourceIndex:
-    """Read author source locations without importing or executing modules."""
+def discover_card_sources(cards_root: Path) -> SourceIndex:
+    """Read effect locations from the single-source ``CARDS`` modules."""
     cards: dict[str, SourceLocation] = {}
     effects: dict[str, dict[str, list[SourceLocation]]] = {}
     duplicates: set[str] = set()
-    for path in sorted(effects_root.glob("*.py")):
+    for path in sorted(cards_root.glob("*.py")):
         if path.name == "__init__.py":
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -445,7 +445,10 @@ def discover_effect_sources(effects_root: Path) -> SourceIndex:
                 continue
             value = node.value
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if not any(isinstance(target, ast.Name) and target.id == "EFFECTS" for target in targets):
+            if not any(
+                isinstance(target, ast.Name) and target.id == "CARDS"
+                for target in targets
+            ):
                 continue
             if not isinstance(value, ast.Dict):
                 continue
@@ -523,5 +526,5 @@ __all__ = [
     "card_specs_from_mappings",
     "iter_effect_specs",
     "compile_card_ir_v3",
-    "discover_effect_sources",
+    "discover_card_sources",
 ]

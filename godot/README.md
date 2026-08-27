@@ -5,11 +5,11 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 
 ## 已实现
 
-- 本地双人和 Challenge AI；信息集 AlphaZero v3 尚未晋升模型，Deep 入口停用并回退 Challenge。
-- 10 套预组卡组；Deep v3 运行时使用一个 universal ONNX 和十项牌组路由，当前发布未捆绑模型。
+- 本地双人和原生 Challenge AI；产品不注册 Deep 模式或第二套 AI 回退策略。
+- 10 套预组卡组；产品运行时和导出包不包含 ONNX 模型或研究文件。
 - ENet LAN 与 WebSocket Relay Protocol v6 联机；旧 Protocol 5 房间明确拒绝且不提供桥接。
 - Native ABI 2 `ptcg_core` 是唯一规则引擎；GDScript 只负责会话绑定、UI、网络和表现，
-  同一 C++ 核心也通过 pybind 服务训练工具与原生搜索。
+  同一 C++ 核心通过研究目录中的显式 pybind 服务离线实验。
 - 响应式实体牌桌、卡图、动画、音频和移动端画质分档。
 - 深色“午夜竞技场”全屏标题页，使用深海军蓝、青蓝舞台光、金色点缀和八种基础能量；
   首页只保留本地对战、挑战 AI、联机对战三个主入口，LAN/Relay 在网络大厅中选择。
@@ -108,7 +108,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 
 `test_godot.ps1` 包含标题页三档布局、前台多分辨率、四边安全区、鼠标/触控专用输入契约、
 弹窗历史、Android 系统返回、Theme 隔离、原生会话/搜索和交互 contract。本地、Challenge、
-LAN 与 Relay 另有完整实战回归；Deep 模型未晋升时入口保持关闭，不虚构模型对局。
+LAN 与 Relay 另有完整实战回归；研究模型不参与产品门禁。
 截图输出到 `build/ui-preview/`，其中 `title.png`、`title-1280x720.png`、
 `title-compact.png`、`title-portrait.png` 覆盖午夜竞技场的 Wide/Compact/Dense 布局，
 `title-hover.png` 检查鼠标悬停，`title-rotated.png` 检查动态展示卡，
@@ -138,8 +138,7 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 
 ```powershell
 .\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py
-.\tools\export_onnx_models.ps1
 ```
 
-版本、schema、发布牌组和模型集合以 [`../release_manifest.json`](../release_manifest.json)
+版本、schema 和发布牌组以 [`data/release_manifest.json`](data/release_manifest.json)
 为唯一来源；当前发布状态见 [`../docs/RELEASE_NOTES.md`](../docs/RELEASE_NOTES.md)。

@@ -10,12 +10,3 @@ windows.debug.x86_64 = "res://bin/windows/libpokemon_ai.windows.template_debug.x
 windows.release.x86_64 = "res://bin/windows/libpokemon_ai.windows.template_release.x86_64.dll"
 android.debug.arm64 = "res://bin/android/libpokemon_ai.android.template_debug.arm64.so"
 android.release.arm64 = "res://bin/android/libpokemon_ai.android.template_release.arm64.so"
-
-[dependencies]
-
-windows.debug.x86_64 = {
-    "res://bin/windows/onnxruntime.dll": ""
-}
-android.debug.arm64 = {
-    "res://bin/android/libonnxruntime.so": ""
-}

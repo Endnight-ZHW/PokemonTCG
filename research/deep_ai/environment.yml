@@ -1,0 +1,12 @@
+name: PokemonTCG-DeepAI
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11.15
+  - pip
+  - pip:
+      # conda-env resolves this path relative to environment.yml.
+      - -r requirements-ai-gpu.lock.txt
+variables:
+  # Prevent unrelated packages from %APPDATA%\Python leaking into training.
+  PYTHONNOUSERSITE: "1"

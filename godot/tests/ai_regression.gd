@@ -26,24 +26,10 @@ func _initialize() -> void:
 		return
 	var catalog := CardCatalog.new()
 	var engine := GameEngine.new(catalog)
-	var worker := NativeChallengeAI.new()
-	var runtime := DeepAIRuntime.new()
+	var worker := ChallengeAIClient.new()
 	var summaries: Array[Dictionary] = []
-	for failure in _budget_contract_failures(catalog, engine, worker):
-		failures.append(failure)
 	for failure in _new_choice_policy_contract_failures(worker):
 		failures.append(failure)
-	if runtime.runtime_enabled or runtime.is_available():
-		failures.append("legacy Deep runtime must remain disabled for rules v4")
-	if runtime.load_for_deck("fire") or runtime.last_error != "deep_runtime_disabled":
-		failures.append("disabled Deep runtime did not fail deterministically")
-	summaries.append({
-		"success": true,
-		"mode": "deep",
-		"skipped": true,
-		"reason": "deep_runtime_disabled",
-		"fallback": "challenge",
-	})
 	for mode in ["challenge"]:
 		for index in range(deck_keys.size()):
 			var deck_key := str(deck_keys[index])
@@ -55,7 +41,7 @@ func _initialize() -> void:
 				mode,
 				deck_key,
 				opponent_key,
-				20260621 + index * 101 + (10000 if mode == "deep" else 0),
+				20260621 + index * 101,
 				catalog,
 				engine,
 				worker,
@@ -67,7 +53,6 @@ func _initialize() -> void:
 			if not bool(summary.get("success", false)):
 				failures.append("%s %s: %s" % [
 					mode, deck_key, summary.get("error", "unknown")])
-			runtime.unload()
 	if failures.is_empty():
 		print("AI_REGRESSION_OK ", JSON.stringify({
 			"games": summaries,
@@ -106,161 +91,11 @@ func _load_release_deck_keys() -> Dictionary:
 		deck_keys.append(deck_key)
 	if deck_keys.is_empty():
 		return {"ok": false, "error": "Release manifest has no release decks"}
-	var deep_enabled := bool(manifest.get("deep_runtime_enabled", false))
-	var model_count := int(manifest.get("model_count", -1))
-	var model_count_valid := model_count == (1 if deep_enabled else 0)
-	if (
-		str(manifest.get("deep_fallback", "")) != "challenge"
-		or not model_count_valid
-	):
-		return {"ok": false, "error": "Release manifest Deep fallback contract is invalid"}
 	return {"ok": true, "value": deck_keys}
 
 
-func _budget_contract_failures(
-	catalog: CardCatalog,
-	engine: GameEngine,
-	worker: NativeChallengeAI,
-) -> Array[String]:
-	var errors: Array[String] = []
-	var main_state := GameState.new()
-	main_state.phase = "MAIN"
-	var main_actions: Array[GameAction] = []
-	main_actions.append(GameAction.create("END_TURN", {}, 0))
-	main_actions.append(GameAction.create(
-		"DECLARE_ATTACK", {"attack_index": 0}, 0))
-	var main_budget := NativeChallengeAI.gameplay_action_budget(main_state, main_actions)
-	if str(main_budget.get("engine", "")) != NativeChallengeAI.TRADITIONAL_ENGINE_ID:
-		errors.append("gameplay must use turn_beam_v2")
-	if int(main_budget.get("max_depth", -1)) != NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH:
-		errors.append("gameplay must use fixed depth eight")
-	for retired_key in ["simulation_budget", "seconds", "dynamic_budget", "time_budget_ms"]:
-		if main_budget.has(retired_key):
-			errors.append("gameplay profile must not expose %s" % retired_key)
-
-	var setup_state := GameState.new()
-	setup_state.phase = "SETUP"
-	var setup_actions: Array[GameAction] = []
-	setup_actions.append(GameAction.create("PLAY_BASIC", {}, 0))
-	setup_actions.append(GameAction.create("SETUP_DONE", {}, 0))
-	var setup_budget := NativeChallengeAI.gameplay_action_budget(setup_state, setup_actions)
-	if setup_budget != main_budget:
-		errors.append("mandatory phases must not silently select a weaker profile")
-
-	var state := GameState.new()
-	state.public_deck_keys = ["fire", "water"]
-	var rng := PortableRandomSource.new(424242)
-	var setup := engine.setup_game(
-		state,
-		catalog.expand_deck("fire"),
-		catalog.expand_deck("water"),
-		rng,
-	)
-	if not setup.success:
-		errors.append("budget contract setup failed: %s" % setup.message)
-		return errors
-	# Setup now begins with a serialized turn-order Choice. Action budgets are
-	# only meaningful after that pending decision has been consumed.
-	var setup_pending := engine.query_pending_choice(state, 0)
-	if setup_pending == null:
-		setup_pending = engine.query_pending_choice(state, 1)
-	if setup_pending != null:
-		var setup_choice := engine.apply_choice_response(
-			state, _automatic_choice(setup_pending), rng)
-		if not setup_choice.success:
-			errors.append(
-				"budget contract setup choice failed: %s" % setup_choice.message)
-			return errors
-	var actor := _actor(state)
-	var budget_query := engine.query_legal_action_groups(state, actor)
-	var legal := budget_query.concrete_actions() if budget_query.success else []
-	if legal.is_empty():
-		var budget_pending := engine.query_pending_choice(state, 0)
-		if budget_pending == null:
-			budget_pending = engine.query_pending_choice(state, 1)
-		errors.append(
-			(
-				"budget contract has no legal action phase=%s setup_stage=%s "
-				+ "actor=%d pending_type=%s pending_player=%d"
-			) % [
-				state.phase,
-				state.setup_stage,
-				actor,
-				budget_pending.request_type if budget_pending != null else "",
-				budget_pending.player if budget_pending != null else -1,
-			]
-		)
-		return errors
-	var single_actions: Array[GameAction] = []
-	single_actions.append(legal[0])
-	var single_rows: Array = []
-	single_rows.append(legal[0].to_dict())
-	var single_decision := worker.decide({
-		"kind": "action",
-		"state": RuntimeStateProjection.project(state, actor),
-		"actor": actor,
-		"revision": state.revision,
-		"request_id": "budget-single",
-		"mode": "challenge",
-		"deck_key": str(state.public_deck_keys[actor]),
-		"seed": 424242,
-		"internal_evaluation_smoke": true,
-		"deterministic": true,
-		"actions": single_rows,
-	}, func() -> bool: return false)
-	if not bool(single_decision.get("success", false)):
-		errors.append("single-action budget decision failed: %s" % single_decision.get("error", "unknown"))
-	elif int(single_decision.get("simulations", -1)) != 0:
-		errors.append("single-action budget decision must return zero simulations")
-	elif str(single_decision.get("completion_reason", "")) != "forced_tactic":
-		errors.append("single-action decision must report forced_tactic completion")
-	elif str(single_decision.get("planner", "")) != "turn_beam_v2":
-		errors.append("single-action decision must report turn_beam_v2")
-	else:
-		var applied_state := state.clone_state()
-		var selected := GameAction.from_dict(single_decision["action"])
-		selected.action_id = "budget-contract:%d" % state.revision
-		var step := _apply_test_action(engine, applied_state, selected, rng)
-		if not step.success:
-			errors.append("single-action budget decision produced illegal action: %s" % step.message)
-
-	var choice_options: Array[Dictionary] = []
-	choice_options.append({"option_id": "a", "label": "a"})
-	choice_options.append({"option_id": "b", "label": "b"})
-	var choice_request := ChoiceView.new(
-		"budget-choice",
-		state.revision,
-		"select",
-		actor,
-		"Budget choice",
-		choice_options,
-		1,
-		1,
-		false,
-		false,
-	)
-	var choice_result := worker.decide({
-		"kind": "choice",
-		"state": RuntimeStateProjection.project(state, actor),
-		"choice": choice_request.to_dict(),
-		"actor": actor,
-		"revision": state.revision,
-		"request_id": "budget-choice",
-		"mode": "challenge",
-		"deck_key": str(state.public_deck_keys[actor]),
-		"seed": 434343,
-		"internal_evaluation_smoke": true,
-		"deterministic": true,
-	}, func() -> bool: return false)
-	if not bool(choice_result.get("success", false)):
-		errors.append("choice budget decision failed: %s" % choice_result.get("error", "unknown"))
-	elif int(choice_result.get("simulations", -1)) != 0:
-		errors.append("choice budget decision must return zero simulations")
-	return errors
-
-
 func _new_choice_policy_contract_failures(
-	worker: NativeChallengeAI,
+	worker: ChallengeAIClient,
 ) -> Array[String]:
 	var errors: Array[String] = []
 	var state := GameState.new()
@@ -475,7 +310,7 @@ func _play_game(
 	game_seed: int,
 	catalog: CardCatalog,
 	engine: GameEngine,
-	worker: NativeChallengeAI,
+	worker: ChallengeAIClient,
 	backend: Variant,
 ) -> Dictionary:
 	var state := GameState.new()
@@ -572,11 +407,6 @@ func _play_game(
 			}, func() -> bool: return false, backend)
 			if not decision.get("success", false):
 				return {"success": false, "error": decision.get("error", "decision")}
-			if mode == "deep" and decision.get("deep_fallback", false):
-				return {
-					"success": false,
-					"error": "unexpected deep fallback: %s" % decision.get("fallback_reason", ""),
-				}
 			action = GameAction.from_dict(decision["action"])
 			decisions += 1
 		else:
@@ -703,20 +533,70 @@ func _automatic_choice(
 			"prize:%d" % (0 if best_prize == 999 else best_prize)
 		])
 	if request.request_type == "select_retreat_payment" and state != null and catalog != null:
-		return NativeChallengeAI.retreat_payment_response(state, request, catalog)
+		return _retreat_payment_response(state, request, catalog)
 	var count := maxi(request.min_select, request.max_select)
 	if not request.allow_duplicates:
 		count = mini(request.options.size(), count)
-	var ranked: Array[int] = []
-	for index in range(request.options.size()):
-		ranked.append(index)
-	var selected := AIChoiceSelector.select_ranked_option_ids(
-		request,
-		ranked,
-		count,
-		catalog,
-	)
+	var selected: Array[String] = []
+	for index in range(count):
+		var option_index := index % request.options.size()
+		selected.append(str(request.options[option_index].get("option_id", "")))
 	return ChoiceResponse.new(request.request_id, selected)
+
+
+func _retreat_payment_response(
+	state: GameState,
+	request: ChoiceView,
+	catalog: CardCatalog,
+) -> ChoiceResponse:
+	var required_units := maxi(0, int(request.presentation.get("required_units", 0)))
+	var active: PokemonState = state.get_player(request.player).active
+	if required_units <= 0 or active == null:
+		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
+	var candidates: Array[Dictionary] = []
+	for option_order in range(request.options.size()):
+		var option: Dictionary = request.options[option_order]
+		var ref: Dictionary = option.get("ref", {})
+		var index := int(ref.get("index", -1))
+		if (
+			str(ref.get("attachment_type", "")) != "energy"
+			or index < 0
+			or index >= active.energy_card_ids.size()
+		):
+			continue
+		var units := EnergyView.units_provided_by_card(
+			active.energy_card_ids, index, catalog)
+		if units > 0:
+			candidates.append({
+				"option_id": str(option.get("option_id", "")),
+				"units": units,
+				"index": index,
+				"order": option_order,
+			})
+	candidates.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		if int(left["units"]) != int(right["units"]):
+			return int(left["units"]) > int(right["units"])
+		if int(left["index"]) != int(right["index"]):
+			return int(left["index"]) < int(right["index"])
+		return int(left["order"]) < int(right["order"])
+	)
+	var selected: Array[Dictionary] = []
+	var paid_units := 0
+	for candidate in candidates:
+		selected.append(candidate)
+		paid_units += int(candidate["units"])
+		if paid_units >= required_units:
+			break
+	if paid_units < required_units:
+		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
+	for index in range(selected.size() - 1, -1, -1):
+		if paid_units - int(selected[index]["units"]) >= required_units:
+			paid_units -= int(selected[index]["units"])
+			selected.remove_at(index)
+	var option_ids: Array[String] = []
+	for candidate in selected:
+		option_ids.append(str(candidate["option_id"]))
+	return ChoiceResponse.new(request.request_id, option_ids)
 
 
 func _apply_test_action(

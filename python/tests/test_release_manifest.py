@@ -1,435 +1,86 @@
 from __future__ import annotations
 
-import configparser
-import hashlib
 import json
-import re
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
-from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
-from engine.commands.vm_contract import VM_IR_VERSION
-from engine.snapshot import SNAPSHOT_SCHEMA_VERSION
-from scripts.export_godot_data import DECKS
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+MANIFEST_PATH = REPO_ROOT / "godot" / "data" / "release_manifest.json"
 
 
 class ReleaseManifestTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.manifest = json.loads(
-            (REPO_ROOT / "release_manifest.json").read_text(encoding="utf-8")
-        )
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
-    def test_generated_manifest_and_release_set_are_exact(self):
-        generated = json.loads(
-            (REPO_ROOT / "godot" / "data" / "release_manifest.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        self.assertEqual(generated, self.manifest)
-        decks = self.manifest["release_decks"]
-        self.assertEqual(len(decks), len(set(decks)))
-        self.assertEqual(set(decks), set(DECKS))
+    def test_godot_manifest_is_the_only_release_manifest(self):
+        self.assertTrue(MANIFEST_PATH.is_file())
+        self.assertFalse((REPO_ROOT / "release_manifest.json").exists())
 
-    def test_release_070_metadata_and_deep_contract_are_explicit(self):
-        self.assertEqual(self.manifest["format_version"], 5)
-        self.assertEqual(self.manifest["version"], "0.7.0")
-        self.assertEqual(self.manifest["android_version_code"], 8)
-        self.assertEqual(self.manifest["deep_fallback"], "challenge")
-        self.assertEqual(self.manifest["model_count"], 0)
-        deep_planner = self.manifest["deep_planner"]
-        self.assertEqual(deep_planner["schema_version"], 3)
-        self.assertEqual(
-            deep_planner["planner_id"], "infoset_puct_v3"
-        )
-        self.assertEqual(deep_planner["training_simulations"], 128)
-        self.assertEqual(deep_planner["leaf_evaluator"], "neural_wdl")
-        self.assertFalse(deep_planner["full_turn_rollout"])
-        if self.manifest["deep_runtime_enabled"]:
-            self.assertEqual(self.manifest["model_count"], 1)
-            self.assertRegex(
-                deep_planner["evidence_sha256"], r"^[0-9a-f]{64}$"
-            )
-        else:
-            self.assertEqual(self.manifest["model_count"], 0)
-            self.assertEqual(deep_planner["evidence_sha256"], "")
-        expected_schemas = {
-            "protocol": 6,
-            "godot_rules": 6,
-            "godot_actions": 4,
-            "python_rules": 5,
-            "python_actions": 4,
-            "snapshot": 3,
-            "encoder": 8,
-            "checkpoint": 13,
-            "card_vocab": 1,
-            "planner": 3,
-            "deep_planner": 3,
-            "vm_ir": 3,
-            "rng": 2,
-            "ai_evaluation": 7,
-        }
-        self.assertEqual(self.manifest["schemas"], expected_schemas)
+    def test_player_visible_versions_are_frozen(self):
+        manifest = self.manifest
+        self.assertEqual(manifest["version"], "0.7.0")
+        self.assertEqual(manifest["android_version_code"], 8)
+        self.assertEqual(manifest["schemas"]["godot_actions"], 4)
+        self.assertEqual(manifest["schemas"]["choice_view"], 2)
+        self.assertEqual(manifest["schemas"]["protocol"], 6)
+        self.assertEqual(manifest["schemas"]["snapshot"], 3)
+        self.assertEqual(manifest["schemas"]["journal"], 1)
+        self.assertEqual(manifest["schemas"]["rng"], 2)
+        self.assertEqual(len(manifest["release_decks"]), 10)
+        self.assertTrue(manifest["native_challenge"]["production_ready"])
 
-    def test_deep_model_catalog_matches_committed_release_state(self):
-        runtime = json.loads(
-            (REPO_ROOT / "godot" / "data" / "ai_models_runtime.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        source_schemas = runtime["source_schemas"]
-        deep_enabled = bool(self.manifest["deep_runtime_enabled"])
-        self.assertEqual(
-            (
-                source_schemas["python_rules_version"],
-                source_schemas["python_action_version"],
-                source_schemas["python_encoder_version"],
-            ),
-            (
-                self.manifest["schemas"]["python_rules"],
-                self.manifest["schemas"]["python_actions"],
-                self.manifest["schemas"]["encoder"],
-            ),
-        )
-        self.assertEqual(runtime["format_version"], 4)
-        self.assertEqual(len(runtime["models"]), self.manifest["model_count"])
-        self.assertEqual(
-            runtime["contract"]["model_variant"],
-            "universal_infoset_transformer_v3",
-        )
-        if deep_enabled:
-            self.assertEqual(set(runtime["models"]), {"universal"})
-            self.assertEqual(
-                set(runtime["deck_routes"]),
-                set(self.manifest["release_decks"]),
-            )
-            self.assertEqual(set(runtime["deck_routes"].values()), {"universal"})
-        else:
-            self.assertEqual(runtime["models"], {})
-            self.assertEqual(runtime["deck_routes"], {})
-
-    def test_schema_and_android_metadata_match_runtime(self):
-        schemas = self.manifest["schemas"]
-        self.assertEqual(schemas["python_rules"], RULES_SCHEMA_VERSION)
-        self.assertEqual(schemas["python_actions"], ACTION_SCHEMA_VERSION)
-        self.assertEqual(schemas["snapshot"], SNAPSHOT_SCHEMA_VERSION)
-        self.assertEqual(schemas["vm_ir"], VM_IR_VERSION)
-        card_ir = json.loads(
-            (REPO_ROOT / "godot" / "data" / "card_ir_v3.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        native_rules = self.manifest["native_rules"]
-        self.assertEqual(self.manifest["native_ai"]["abi_version"], 2)
-        self.assertEqual(native_rules["native_abi_version"], 2)
-        self.assertEqual(native_rules["vm_ir_version"], VM_IR_VERSION)
-        self.assertEqual(
-            native_rules["card_ir_content_fingerprint"],
-            card_ir["content_fingerprint"],
-        )
-        self.assertEqual(
-            native_rules["card_ir_contract_fingerprint"],
-            card_ir["contract_fingerprint"],
-        )
-        self.assertEqual(
-            native_rules["core_fingerprint"],
-            card_ir["contract_fingerprint"],
-        )
-        self.assertEqual(
-            native_rules["vm_descriptor_digest"],
-            card_ir["descriptor_digest"],
-        )
-        app_state = (REPO_ROOT / "godot" / "autoload" / "app_state.gd").read_text(
-            encoding="utf-8"
-        )
-        self.assertRegex(
-            app_state,
-            rf"RULES_SCHEMA_VERSION\s*:=\s*{int(schemas['godot_rules'])}\b",
-        )
-        self.assertRegex(
-            app_state,
-            rf"ACTION_SCHEMA_VERSION\s*:=\s*{int(schemas['godot_actions'])}\b",
-        )
-        protocol = (REPO_ROOT / "godot" / "network" / "protocol_v6.gd").read_text(
-            encoding="utf-8"
-        )
-        self.assertRegex(protocol, rf"const\s+VERSION\s*:=\s*{schemas['protocol']}\b")
-        presets = (REPO_ROOT / "godot" / "export_presets.cfg").read_text(
-            encoding="utf-8"
-        )
-        parsed_presets = configparser.ConfigParser(interpolation=None)
-        parsed_presets.optionxform = str
-        parsed_presets.read_string(presets)
-        android_presets = [
-            section
-            for section in parsed_presets.sections()
-            if re.fullmatch(r"preset\.\d+", section)
-            and parsed_presets.get(section, "platform", fallback="").strip('"')
-            == "Android"
-        ]
-        self.assertTrue(android_presets, "No Android export presets found")
-        for preset in android_presets:
-            options = f"{preset}.options"
-            preset_name = parsed_presets.get(preset, "name", fallback=preset)
-            self.assertTrue(parsed_presets.has_section(options), preset_name)
-            self.assertEqual(
-                parsed_presets.getint(options, "version/code"),
-                int(self.manifest["android_version_code"]),
-                preset_name,
-            )
-            self.assertEqual(
-                parsed_presets.get(options, "version/name").strip('"'),
-                str(self.manifest["version"]),
-                preset_name,
-            )
-
-        for preset in (
-            section
-            for section in parsed_presets.sections()
-            if re.fullmatch(r"preset\.\d+", section)
+    def test_product_manifest_has_no_research_runtime_fields(self):
+        encoded = json.dumps(self.manifest, sort_keys=True).lower()
+        for retired in (
+            "deep_",
+            "onnx",
+            "model_count",
+            "checkpoint",
+            "card_vocab",
+            "ai_evaluation",
         ):
-            preset_name = parsed_presets.get(
-                preset, "name", fallback=""
-            ).strip('"')
-            include_filter = parsed_presets.get(
-                preset, "include_filter", fallback=""
-            ).strip('"')
-            exclude_filter = parsed_presets.get(
-                preset, "exclude_filter", fallback=""
-            ).strip('"')
-            self.assertNotIn("data/ai_models/*.onnx", include_filter)
-            if "Deep" in preset_name:
-                self.assertNotIn(
-                    "data/ai_models/*.onnx", exclude_filter
-                )
-            else:
-                self.assertIn("data/ai_models/*.onnx", exclude_filter)
-            self.assertIn("tools/*", exclude_filter)
-            for oracle_path in (
-                "ai/native_traditional_oracle_provider.gd",
-                "ai/new_arch/ai_turn_beam_planner.gd",
-                "ai/new_arch/traditional_turn_planner.gd",
-            ):
-                self.assertIn(oracle_path, exclude_filter, preset_name)
+            self.assertNotIn(retired, encoded)
 
-        baseline = REPO_ROOT / "godot" / "tools" / "ai_baseline"
-        self.assertTrue((baseline / "ai_turn_beam_planner_v1.gd").is_file())
-        self.assertTrue((baseline / "traditional_turn_planner_v1.gd").is_file())
-        frozen_strategy = json.loads(
-            (baseline / "ai_strategies_v1.json").read_text(encoding="utf-8")
-        )
-        production_strategy = json.loads(
+    def test_product_tree_has_no_onnx_or_deep_runtime_assets(self):
+        forbidden = [
+            REPO_ROOT / "godot" / "bin" / "windows" / "onnxruntime.dll",
+            REPO_ROOT / "godot" / "bin" / "android" / "libonnxruntime.so",
+            REPO_ROOT / "godot" / "data" / "ai_models_runtime.json",
+            REPO_ROOT / "godot" / "ai" / "deep_ai_runtime.gd",
+            REPO_ROOT / "godot" / "ai" / "information_set_puct.gd",
+        ]
+        self.assertTrue(all(not path.exists() for path in forbidden))
+
+    def test_runtime_strategy_payload_excludes_test_and_hook_data(self):
+        payload = json.loads(
             (REPO_ROOT / "godot" / "data" / "ai_strategies.json").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertEqual(
-            frozen_strategy["content_hash"],
-            "703535c35babe7046f55974057e4ef14feff68d48b4f613c4c467cfd5fc58b5a",
+        for strategy in payload["strategies"].values():
+            self.assertNotIn("golden_scenarios", strategy)
+            self.assertNotIn("runtime_hook_hash", strategy)
+
+    def test_real_exporter_check_passes(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(REPO_ROOT / "python" / "scripts" / "export_godot_data.py"),
+                "--check",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         )
-        self.assertEqual(
-            set(frozen_strategy["strategies"]),
-            set(production_strategy["strategies"]),
-        )
-
-    def test_release_pipeline_packages_only_the_runtime_model_contract(self):
-        package_script = (
-            REPO_ROOT / "tools" / "package_release.ps1"
-        ).read_text(encoding="utf-8")
-        release_test = (
-            REPO_ROOT / "tools" / "test_release.ps1"
-        ).read_text(encoding="utf-8")
-        standard_test = (
-            REPO_ROOT / "tools" / "test_standard.ps1"
-        ).read_text(encoding="utf-8")
-        android_runtime_test = (
-            REPO_ROOT / "tools" / "test_android_runtime.ps1"
-        ).read_text(encoding="utf-8")
-        build_smoke = (
-            REPO_ROOT / "tools" / "smoke_godot_build.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertNotIn('file = "models/', package_script)
-        self.assertNotIn("export_onnx_models.py", package_script)
-        self.assertNotIn("export_onnx_models.ps1", standard_test)
-        for name, source in (
-            ("package_release.ps1", package_script),
-            ("test_release.ps1", release_test),
-            ("test_android_runtime.ps1", android_runtime_test),
-            ("smoke_godot_build.ps1", build_smoke),
-            ("test_standard.ps1", standard_test),
-        ):
-            with self.subTest(script=name):
-                self.assertIn("Assert-ReleaseDeepFallbackContract", source)
-        self.assertIn("-ExpectedModels $modelCount", release_test)
-        self.assertIn("-ExpectedModels $modelCount", build_smoke)
-        self.assertNotIn("-ExpectedModels 0", release_test)
-        self.assertNotIn("-ExpectedModels 0", build_smoke)
-
-    def test_godot_runtime_release_metadata_is_manifest_driven(self):
-        app_state = (REPO_ROOT / "godot" / "autoload" / "app_state.gd").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn('"res://data/release_manifest.json"', app_state)
-        self.assertIn('.get("version", "")', app_state)
-        self.assertNotIn(str(self.manifest["version"]), app_state)
-        self.assertNotRegex(app_state, r"const\s+APP_VERSION\s*:=")
-
-        ai_regression = (
-            REPO_ROOT / "godot" / "tests" / "ai_regression.gd"
-        ).read_text(encoding="utf-8")
-        self.assertIn('"res://data/release_manifest.json"', ai_regression)
-        self.assertIn('manifest.get("release_decks", null)', ai_regression)
-        self.assertIn('manifest.get("model_count", -1)', ai_regression)
-        self.assertNotIn("DEEP_DECK_KEYS", ai_regression)
-        self.assertNotIn("CHALLENGE_DECK_KEYS", ai_regression)
-
-    def test_gpu_lock_matches_release_toolchain_versions(self):
-        locked_toolchain = json.loads(
-            (REPO_ROOT / "tools" / "toolchain.lock.json").read_text(encoding="utf-8")
-        )
-        toolchain = locked_toolchain["python"]
-        self.assertEqual(
-            str(self.manifest["godot_version"]),
-            str(locked_toolchain["godot"]["full_config"]),
-        )
-        environment = (REPO_ROOT / "python" / "environment.yml").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn(f"python={toolchain['version']}", environment)
-        self.assertIn("-r requirements-ai-gpu.lock.txt", environment)
-        self.assertIn('PYTHONNOUSERSITE: "1"', environment)
-
-        rows = {}
-        lock_text = (
-            REPO_ROOT / "python" / "requirements-ai-gpu.lock.txt"
-        ).read_text(encoding="utf-8")
-        for raw_line in lock_text.splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or line.startswith("--"):
-                continue
-            name, separator, version = line.partition("==")
-            self.assertEqual(separator, "==", line)
-            rows[name.lower()] = version
-        self.assertEqual(rows["numpy"], toolchain["numpy"])
-        self.assertEqual(rows["onnx"], toolchain["onnx"])
-        self.assertEqual(rows["onnxruntime"], toolchain["onnxruntime"])
-        self.assertEqual(rows["pybind11"], toolchain["pybind11"])
-        self.assertEqual(rows["torch"].split("+", 1)[0], toolchain["torch"])
-        expected_cuda_tag = "cu" + str(toolchain["cuda"]).replace(".", "")
-        self.assertEqual(rows["torch"].split("+", 1)[1], expected_cuda_tag)
-
-    def test_windows_ci_uses_an_installable_python_and_forwards_it(self):
-        workflow = (
-            REPO_ROOT / ".github" / "workflows" / "verify.yml"
-        ).read_text(encoding="utf-8")
-        self.assertIn("CI_PYTHON_VERSION: '3.11.9'", workflow)
-        self.assertEqual(workflow.count("actions/checkout@v7"), 5)
-        self.assertNotIn("actions/checkout@v4", workflow)
-        self.assertEqual(workflow.count("actions/setup-python@v7"), 4)
-        self.assertEqual(
-            workflow.count(
-                "python-version: ${{ env.CI_PYTHON_VERSION }}"
-            ),
-            4,
-        )
-        self.assertIn('"scons==4.10.1"', workflow)
-
-        fast = (REPO_ROOT / "tools" / "test_fast.ps1").read_text(
-            encoding="utf-8"
-        )
-        core = (REPO_ROOT / "tools" / "test_ptcg_core.ps1").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("test_ptcg_core.ps1') -Python $Python", fast)
-        self.assertIn("global_script_class_cache.cfg", fast)
-        self.assertIn("--import", fast)
-        self.assertIn("[string]$Python = ''", core)
-        self.assertIn("Get-Command $Python", core)
-
-        evaluator = (
-            REPO_ROOT / "tools" / "evaluate_godot_ai.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertEqual(evaluator.count("'-X', 'utf8',"), 5)
-
-    def test_godot_tool_paths_are_derived_from_the_toolchain_lock(self):
-        common = (
-            REPO_ROOT / "tools" / "toolchain_common.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn("function Get-GodotToolchainPaths", common)
-        scripts = (
-            "setup_godot_toolchain.ps1",
-            "build_godot.ps1",
-            "test_godot.ps1",
-            "test_godot_ai.ps1",
-            "test_godot_network.ps1",
-            "evaluate_godot_ai.ps1",
-        )
-        for name in scripts:
-            source = (REPO_ROOT / "tools" / name).read_text(encoding="utf-8")
-            self.assertIn("Get-GodotToolchainPaths", source, name)
-            self.assertNotRegex(
-                source,
-                r"godot-4\.7|Godot_v4\.7|editor_settings-4\.7|export_templates\\4\.7",
-                name,
-            )
-
-    def test_deep_ai_pipeline_reads_release_decks_from_manifest(self):
-        source = (
-            REPO_ROOT / "tools" / "train_deep_ai_v3.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn("train_deep_ai_v3.py", source)
-        self.assertIn("bootstrap", source)
-        self.assertIn("--teacher-replay", source)
-        self.assertFalse(
-            (REPO_ROOT / "tools" / "train_deep_ai_v2.ps1").exists()
-        )
-        self.assertFalse(
-            (REPO_ROOT / "python" / "scripts" / "train_deep_ai.py").exists()
-        )
-
-    def test_release_schema_consumers_do_not_redeclare_manifest_versions(self):
-        deep_runtime = (
-            REPO_ROOT / "godot" / "ai" / "deep_ai_runtime.gd"
-        ).read_text(encoding="utf-8")
-        self.assertIn('"res://data/release_manifest.json"', deep_runtime)
-        self.assertIn('schemas.get("python_rules", 0)', deep_runtime)
-        self.assertIn('schemas.get("python_actions", 0)', deep_runtime)
-        self.assertIn('schemas.get("encoder", 0)', deep_runtime)
-        self.assertIn('manifest.get("opset", 0)', deep_runtime)
-        self.assertIn('manifest.get("onnx_runtime_version", "")', deep_runtime)
-        self.assertNotIn("EXPECTED_PYTHON_ENCODER_VERSION", deep_runtime)
-        self.assertNotIn("compatibility_bridge", deep_runtime)
-
-        train = (
-            REPO_ROOT / "tools" / "train_deep_ai_v3.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn("'train'", train)
-        self.assertIn("'release'", train)
-        self.assertNotIn("--trainer", train)
-
-        onnx_export = (
-            REPO_ROOT / "python" / "scripts" / "export_onnx_models_v3.py"
-        ).read_text(encoding="utf-8")
-        self.assertIn('RELEASE_MANIFEST["schemas"]["python_rules"]', onnx_export)
-        self.assertIn('RELEASE_MANIFEST["schemas"]["python_actions"]', onnx_export)
-        self.assertNotIn("compatibility_bridge", onnx_export)
-
-        godot_export = (
-            REPO_ROOT / "python" / "scripts" / "export_godot_data.py"
-        ).read_text(encoding="utf-8")
-        self.assertIn('release_schemas["godot_rules"]', godot_export)
-        self.assertIn('release_schemas["godot_actions"]', godot_export)
-        self.assertIn('release_schemas["protocol"]', godot_export)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

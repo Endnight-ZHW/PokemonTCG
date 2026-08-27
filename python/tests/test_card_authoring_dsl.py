@@ -12,12 +12,15 @@ sys.path.insert(0, str(REPO_ROOT / "python"))
 from card_data.authoring_dsl import (
     CardEffectSpec,
     compile_card_ir_v3,
-    discover_effect_sources,
+    discover_card_sources,
     iter_effect_specs,
     card_specs_from_mappings,
 )
-from card_data.effects import CARD_EFFECT_DEFINITIONS, CARD_EFFECT_SPECS
-from card_data.templates import OFFLINE_CARD_TEMPLATES
+from card_data.cards import (
+    CARD_DEFINITIONS,
+    CARD_EFFECT_DEFINITIONS,
+    CARD_EFFECT_SPECS,
+)
 from data.deck_definitions import ALL_CARD_IDS
 from engine.commands.descriptors import VM_COMMAND_DESCRIPTORS
 from scripts.card_author import (
@@ -42,8 +45,8 @@ class CardAuthoringDslTests(unittest.TestCase):
         )
 
     def test_card_ir_v3_has_complete_source_mapping_and_fingerprint(self):
-        source_index = discover_effect_sources(
-            REPO_ROOT / "python" / "card_data" / "effects"
+        source_index = discover_card_sources(
+            REPO_ROOT / "python" / "card_data" / "cards"
         )
         self.assertEqual(source_index.duplicate_card_ids, ())
         specs = card_specs_from_mappings(
@@ -70,8 +73,8 @@ class CardAuthoringDslTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        source_index = discover_effect_sources(
-            REPO_ROOT / "python" / "card_data" / "effects"
+        source_index = discover_card_sources(
+            REPO_ROOT / "python" / "card_data" / "cards"
         )
         current = compile_card_ir_v3(
             card_specs_from_mappings(
@@ -141,7 +144,7 @@ class CardAuthoringDslTests(unittest.TestCase):
         for card_id in ("sv1-109", "svl-chat"):
             cycle_draw = next(
                 attack
-                for attack in OFFLINE_CARD_TEMPLATES[card_id]["attacks"]
+                for attack in CARD_DEFINITIONS[card_id]["attacks"]
                 if attack["name"] == "循环抽取"
             )
             self.assertIn("若这样做", cycle_draw["text"])

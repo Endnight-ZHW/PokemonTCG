@@ -15,43 +15,30 @@ $stagingRoot = Join-Path $repoRoot '.tools\release-staging'
 $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
-Assert-ReleaseDeepFallbackContract -Manifest $release
+Assert-ProductReleaseContract -Manifest $release
 $version = [string]$release.version
-$modelCount = [int]$release.model_count
-$deepEnabled = [bool]$release.deep_runtime_enabled
 
 $releaseInputs = @(
     (Join-Path $repoRoot 'docs\RELEASE_NOTES.md'),
-    (Join-Path $repoRoot 'release_manifest.json'),
     (Join-Path $projectRoot 'data\release_manifest.json'),
     (Join-Path $projectRoot 'data\cards.json'),
     (Join-Path $projectRoot 'data\card_ir_v3.json'),
     (Join-Path $projectRoot 'data\decks.json'),
     (Join-Path $projectRoot 'data\card_images.json'),
-    (Join-Path $projectRoot 'data\card_image_hashes.json'),
-    (Join-Path $projectRoot 'data\ai_models_runtime.json')
+    (Join-Path $projectRoot 'data\card_image_hashes.json')
 )
-if ($deepEnabled) {
-    $releaseInputs += @(
-        (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE'),
-        (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt')
-    )
-}
 foreach ($required in $releaseInputs) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Missing release input: $required"
     }
 }
-$pythonExe = Join-Path $repoRoot '.tools\python311\python.exe'
-if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
-    throw 'Pinned Python export environment is missing. Run tools/setup_ai_toolchain.ps1 first.'
-}
+
+$portablePython = Join-Path $repoRoot '.tools\python311\python.exe'
+$pythonExe = if (Test-Path -LiteralPath $portablePython) { $portablePython } else { 'python' }
 $env:PYTHONNOUSERSITE = '1'
 & $pythonExe -B (Join-Path $repoRoot 'python\scripts\export_godot_data.py') `
     --check --skip-images
-if ($LASTEXITCODE -ne 0) {
-    throw 'Godot generated data preflight failed.'
-}
+if ($LASTEXITCODE -ne 0) { throw 'Godot generated data preflight failed.' }
 
 function Set-TestSigningEnvironment {
     $signingRoot = Join-Path $repoRoot '.tools\signing'
@@ -60,10 +47,9 @@ function Set-TestSigningEnvironment {
     New-Item -ItemType Directory -Force -Path $signingRoot | Out-Null
     if (-not (Test-Path -LiteralPath $credentialsPath)) {
         $password = ([guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')).Substring(0, 32)
-        [ordered]@{
-            alias = 'pokemontcg-stage6'
-            password = $password
-        } | ConvertTo-Json | Set-Content -LiteralPath $credentialsPath -Encoding UTF8
+        [ordered]@{ alias = 'pokemontcg-stage6'; password = $password } |
+            ConvertTo-Json |
+            Set-Content -LiteralPath $credentialsPath -Encoding UTF8
     }
     $credentials = Get-Content -Raw -LiteralPath $credentialsPath | ConvertFrom-Json
     if (-not (Test-Path -LiteralPath $keystore)) {
@@ -71,20 +57,11 @@ function Set-TestSigningEnvironment {
         if (-not (Test-Path -LiteralPath $keytool)) {
             throw 'JDK 17 is missing. Run tools/setup_android_toolchain.ps1 first.'
         }
-        & $keytool `
-            -genkeypair `
-            -v `
-            -keystore $keystore `
-            -storepass $credentials.password `
-            -keypass $credentials.password `
-            -alias $credentials.alias `
-            -keyalg RSA `
-            -keysize 2048 `
-            -validity 10000 `
-            -dname 'CN=PokemonTCG Stage 6 Test, OU=Local Testing, O=PokemonTCG, C=CN'
-        if ($LASTEXITCODE -ne 0) {
-            throw 'Unable to generate the local Stage 6 test keystore.'
-        }
+        & $keytool -genkeypair -v -keystore $keystore `
+            -storepass $credentials.password -keypass $credentials.password `
+            -alias $credentials.alias -keyalg RSA -keysize 2048 -validity 10000 `
+            -dname 'CN=PokemonTCG Local Test, OU=Local Testing, O=PokemonTCG, C=CN'
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to generate the local test keystore.' }
     }
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_PATH = $keystore
     $env:GODOT_ANDROID_KEYSTORE_RELEASE_USER = [string]$credentials.alias
@@ -98,8 +75,7 @@ function Assert-ProductionSigningEnvironment {
         'GODOT_ANDROID_KEYSTORE_RELEASE_USER',
         'GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD'
     )) {
-        $value = [Environment]::GetEnvironmentVariable($name)
-        if ([string]::IsNullOrWhiteSpace($value)) {
+        if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
             throw "Production Android signing requires $name."
         }
     }
@@ -117,84 +93,52 @@ if ($AndroidSigning -eq 'test') {
 
 if (-not $SkipBuild) {
     & (Join-Path $PSScriptRoot 'build_native_ai.ps1') -Target all -Configuration release
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Release native AI build failed.'
-    }
-    & $pythonExe -B -m unittest -q python.tests.test_native_rules_session
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Native ABI 2 pybind session contract failed after release build.'
-    }
+    if ($LASTEXITCODE -ne 0) { throw 'Release native runtime build failed.' }
     $target = if ($AndroidSigning -eq 'none') { 'windows' } else { 'all' }
     & (Join-Path $PSScriptRoot 'build_godot.ps1') `
-        -Target $target `
-        -Configuration release `
+        -Target $target -Configuration release `
         -IncludeAndroidRuntimeSmoke:($AndroidSigning -ne 'none')
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Godot release export failed.'
-    }
+    if ($LASTEXITCODE -ne 0) { throw 'Godot release export failed.' }
 }
 
 $windowsExe = Join-Path $windowsRoot 'PokemonTCG.exe'
 $windowsPck = Join-Path $windowsRoot 'PokemonTCG.pck'
-foreach ($required in @($windowsExe, $windowsPck)) {
-    if (-not (Test-Path -LiteralPath $required)) {
+$windowsDll = Join-Path $windowsRoot 'libpokemon_ai.windows.template_release.x86_64.dll'
+foreach ($required in @($windowsExe, $windowsPck, $windowsDll)) {
+    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Missing release artifact: $required"
     }
 }
 
-$releaseSmokeProcess = Start-Process `
-    -FilePath $windowsExe `
-    -ArgumentList @('--', '--phase6-release-smoke') `
-    -PassThru `
-    -WindowStyle Hidden
+$releaseSmoke = Start-Process -FilePath $windowsExe `
+    -ArgumentList @('--', '--phase6-release-smoke') -PassThru -WindowStyle Hidden
 try {
-    if (-not $releaseSmokeProcess.WaitForExit(180000)) {
+    if (-not $releaseSmoke.WaitForExit(180000)) {
         throw 'Windows release smoke timed out after 180 seconds.'
     }
-    $releaseSmokeExitCode = $releaseSmokeProcess.ExitCode
-}
-finally {
-    if (-not $releaseSmokeProcess.HasExited) {
-        Stop-Process -Id $releaseSmokeProcess.Id -Force
-        $releaseSmokeProcess.WaitForExit()
+    if ($releaseSmoke.ExitCode -ne 0) {
+        throw "Windows release smoke failed with exit code $($releaseSmoke.ExitCode)."
     }
-}
-if ($releaseSmokeExitCode -ne 0) {
-    throw "Windows release smoke failed with exit code $releaseSmokeExitCode."
+} finally {
+    if (-not $releaseSmoke.HasExited) {
+        Stop-Process -Id $releaseSmoke.Id -Force
+        $releaseSmoke.WaitForExit()
+    }
 }
 Write-Host 'WINDOWS_RELEASE_SMOKE_OK'
 
+Assert-PathUnderRoot -Root (Join-Path $repoRoot '.tools') -Path $stagingRoot
 if (Test-Path -LiteralPath $stagingRoot) {
-    $resolvedStaging = (Resolve-Path -LiteralPath $stagingRoot).Path
-    $resolvedTools = (Resolve-Path -LiteralPath (Join-Path $repoRoot '.tools')).Path
-    if (-not $resolvedStaging.StartsWith($resolvedTools, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Unsafe staging path: $resolvedStaging"
-    }
-    Remove-Item -LiteralPath $resolvedStaging -Recurse -Force
+    Remove-Item -LiteralPath $stagingRoot -Recurse -Force
 }
 $packageRoot = Join-Path $stagingRoot "PokemonTCG-$version"
 New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
-
-foreach ($name in @(
-    'PokemonTCG.exe',
-    'PokemonTCG.pck',
-    'libpokemon_ai.windows.template_release.x86_64.dll'
-)) {
-    Copy-Item -LiteralPath (Join-Path $windowsRoot $name) -Destination $packageRoot
-}
-if ($deepEnabled) {
-    Copy-Item -LiteralPath (Join-Path $windowsRoot 'onnxruntime.dll') `
-        -Destination $packageRoot
+foreach ($source in @($windowsExe, $windowsPck, $windowsDll)) {
+    Copy-Item -LiteralPath $source -Destination $packageRoot
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\RELEASE_NOTES.md') -Destination $packageRoot
-Copy-Item -LiteralPath (Join-Path $repoRoot 'release_manifest.json') `
+Copy-Item -LiteralPath (Join-Path $projectRoot 'data\release_manifest.json') `
     -Destination (Join-Path $packageRoot 'RELEASE_MANIFEST.json')
-if ($deepEnabled) {
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE') `
-        -Destination (Join-Path $packageRoot 'ONNXRUNTIME_LICENSE.txt')
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt') `
-        -Destination (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.txt')
-}
 
 $buildInfo = [ordered]@{
     version = $version
@@ -203,11 +147,12 @@ $buildInfo = [ordered]@{
     protocol = [int]$release.schemas.protocol
     rules_schema = [int]$release.schemas.godot_rules
     action_schema = [int]$release.schemas.godot_actions
+    choice_view_schema = [int]$release.schemas.choice_view
+    snapshot_schema = [int]$release.schemas.snapshot
+    journal_schema = [int]$release.schemas.journal
     rng_schema = [int]$release.schemas.rng
-    onnx_runtime = [string]$release.onnx.runtime_version
-    onnx_models = $modelCount
-    deep_runtime_enabled = [bool]$release.deep_runtime_enabled
-    deep_fallback = [string]$release.deep_fallback
+    native_rules = [string]$release.native_rules.core
+    native_challenge = [string]$release.native_challenge.core
     windows_arch = 'x86_64'
     android_arch = if ($AndroidSigning -eq 'none') { $null } else { 'arm64-v8a' }
     android_signing = $AndroidSigning
@@ -215,37 +160,28 @@ $buildInfo = [ordered]@{
 $buildInfo | ConvertTo-Json | Set-Content `
     -LiteralPath (Join-Path $packageRoot 'BUILD_INFO.json') -Encoding UTF8
 
-$stagedOnnxFiles = @(
+$forbiddenStaging = @(
     Get-ChildItem -LiteralPath $packageRoot -Recurse -File |
-        Where-Object { $_.Extension -ieq '.onnx' }
+        Where-Object {
+            $_.Extension -ieq '.onnx' -or
+            $_.FullName -match '(?i)[\\/](research|deep_ai|tests|tools)[\\/]'
+        }
 )
-if ($stagedOnnxFiles.Count -ne 0) {
-    throw 'Windows release staging contains unexpected non-universal ONNX models.'
+if ($forbiddenStaging.Count -ne 0) {
+    throw "Windows release staging contains forbidden content: $($forbiddenStaging[0].FullName)"
 }
 
 $zipPath = Join-Path $distRoot "PokemonTCG-Windows-x86_64-$version.zip"
-if (Test-Path -LiteralPath $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
-}
+if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
 Compress-Archive -LiteralPath $packageRoot -DestinationPath $zipPath -CompressionLevel Optimal
 
-$releaseFiles = @(
-    $zipPath,
-    $windowsExe,
-    $windowsPck,
-    (Join-Path $windowsRoot 'libpokemon_ai.windows.template_release.x86_64.dll')
-)
-if ($deepEnabled) {
-    $releaseFiles += (Join-Path $windowsRoot 'onnxruntime.dll')
-}
+$releaseFiles = @($zipPath, $windowsExe, $windowsPck, $windowsDll)
 if ($AndroidSigning -ne 'none') {
     $androidApk = Join-Path $androidRoot 'PokemonTCG.apk'
-    if (-not (Test-Path -LiteralPath $androidApk)) {
+    if (-not (Test-Path -LiteralPath $androidApk -PathType Leaf)) {
         throw 'Android release APK is missing.'
     }
-    $namedApk = Join-Path $distRoot (
-        "PokemonTCG-Android-arm64-$version-$AndroidSigning.apk"
-    )
+    $namedApk = Join-Path $distRoot "PokemonTCG-Android-arm64-$version-$AndroidSigning.apk"
     Copy-Item -LiteralPath $androidApk -Destination $namedApk -Force
     $releaseFiles += $namedApk
 }
@@ -263,7 +199,5 @@ $manifestRows | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifestPath
 
 Write-Host "RELEASE_PACKAGE_OK version=$version"
 Write-Host "WINDOWS_ZIP=$zipPath"
-if ($AndroidSigning -ne 'none') {
-    Write-Host "ANDROID_APK=$namedApk"
-}
+if ($AndroidSigning -ne 'none') { Write-Host "ANDROID_APK=$namedApk" }
 Write-Host "CHECKSUMS=$manifestPath"

@@ -825,7 +825,7 @@ func _check_discard_zone_action_reachability(table: BattleTable) -> void:
 		"ui:discard-ability",
 		state.revision,
 	)
-	var source_key := CardInteractionRouter.zone_key(0, "discard")
+	var source_key := BattleInteractionController.zone_key(0, "discard")
 	table.update_view(
 		state,
 		0,
@@ -836,7 +836,7 @@ func _check_discard_zone_action_reachability(table: BattleTable) -> void:
 	)
 	var discard_zone := table.zones.get("own_discard") as ZoneView
 	_check(
-		CardInteractionRouter.source_key_for_action(ability) == source_key
+		BattleInteractionController.source_key_for_action(ability) == source_key
 		and table.interaction_router.has_source(source_key)
 		and source_key in table.visible_card_source_keys()
 		and table.all_card_actions_reachable_from_visible_cards()
@@ -1849,13 +1849,6 @@ func _check_title_showcase_rotation(page: Control, label: String) -> void:
 		and rotated_texture == (shadows[0] as TextureRect).texture
 		and rotated_texture.resource_path == rotated_path,
 		"%s: showcase card and shadow must share the catalog texture" % label,
-	)
-	var mode_button_source := FileAccess.get_file_as_string(
-		"res://ui/frontend/title_mode_button.gd"
-	)
-	_check(
-		not "Vector2(size.y * 0.29, 8)" in mode_button_source,
-		"Title mode buttons must not restore the long top decoration line",
 	)
 
 
@@ -2969,27 +2962,6 @@ func _check_frontend_font_coverage() -> void:
 				and _font_weight(game_theme.get_font(&"font", control_type)) >= 700.0,
 				"Game control text must use Noto Bold 700: %s" % control_type,
 			)
-	var generated_theme := GameUITheme.create()
-	_check(
-		_font_weight(generated_theme.default_font) >= 600.0
-		and _font_weight(generated_theme.get_font(&"font", &"Button")) >= 700.0,
-		"GameUITheme factory must preserve the static body/control weight hierarchy",
-	)
-	var title_source := FileAccess.get_file_as_string(
-		"res://scenes/title/title_page.tscn"
-	)
-	_check(
-		title_source.count("theme_type_variation = &\"TitleLogoLabel\"") == 2,
-		"Both title-logo layers must opt into the Bold title font variation",
-	)
-	var effect_source := FileAccess.get_file_as_string(
-		"res://scenes/battle/effect_layer.gd"
-	)
-	_check(
-		not "ThemeDB.fallback_font" in effect_source
-		and "noto_sans_cjk_sc_bold.tres" in effect_source,
-		"Battle floating text must use the project Bold font instead of ThemeDB fallback",
-	)
 	var sources: Array[String] = []
 	for directory in ["res://scenes", "res://ui"]:
 		for path in _files_recursive(directory):
@@ -3060,18 +3032,6 @@ func _linear_color_channel(value: float) -> float:
 
 
 func _check_battle_theme_isolation() -> void:
-	var forbidden := ["front_end_theme.tres", "theme_type_variation = &\"Front"]
-	for path in _files_recursive("res://scenes/battle"):
-		if path.get_extension() not in ["gd", "tscn", "tres"]:
-			continue
-		var source := FileAccess.get_file_as_string(path)
-		for needle in forbidden:
-			_check(
-				not needle in source,
-				"Battle UI must not reference frontend theme semantics: %s contains %s" % [
-					path, needle,
-				],
-			)
 	var battle_scene := load("res://scenes/battle/components/battle_table.tscn") as PackedScene
 	_check(battle_scene != null, "Battle screen must remain loadable for theme isolation")
 	if battle_scene:

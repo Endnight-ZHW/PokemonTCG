@@ -79,6 +79,15 @@ godot/native/**/*.obj.import
 godot/native/**/.sconsign.dblite
 godot/native/ptcg_core/lib/
 godot/native/ptcg_core/bin/
+native/**/.sconsign.dblite
+native/**/bin/
+native/**/lib/
+native/**/*.obj
+native/**/*.o
+native/**/*.os
+research/deep_ai/native/**/.sconsign.dblite
+research/deep_ai/native/**/bin/
+research/deep_ai/native/**/lib/
 godot/bin/**/*.exp
 godot/bin/**/*.lib
 godot/bin/**/*.TMP

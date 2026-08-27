@@ -28,7 +28,6 @@ const SCREEN_GAME := "game"
 const SCREEN_END := "end"
 const MODE_LOCAL := "local"
 const MODE_CHALLENGE := "challenge"
-const MODE_DEEP := "deep"
 const MODE_NETWORK := "network"
 const MODAL_SHADE_ALPHA := 0.72
 const MODAL_SHADE_OPAQUE_ALPHA := 1.0
@@ -40,6 +39,8 @@ const SYNTHETIC_WINDOW_FLOOR := Vector2i(320, 240)
 
 var catalog: CardCatalog = CardDatabase.catalog
 var native_rules := NativeRulesSessionAdapter.new(catalog)
+var match_flow := MatchFlowController.new(native_rules)
+var choice_flow := ChoiceFlowController.new()
 var state: GameState
 var rng := PortableRandomSource.new(1)
 var last_match_seed := 0
@@ -49,19 +50,20 @@ var current_view_player := 0
 var action_sequence := 0
 var selected_entity_key := ""
 var selected_entity_identity := ""
-var selected_choice_ids: Array[String] = []
+var selected_choice_ids: Array[String]:
+	get:
+		return choice_flow.selected_ids
+	set(value):
+		choice_flow.replace(value)
 var option_buttons: Array[Button] = []
 var game_mode := MODE_LOCAL
 var ai_deck_key := ""
 var ai_thinking := false
 var ai_request_sequence := 0
-var ai_emergency_fallback_count := 0
 var active_ai_request_id := ""
 var ai_match_generation := 0
 var ai_match_instance_id := ""
 var ai_coordinator := AICoordinator.new()
-var ai_inference: Variant
-var deep_runtime := DeepAIRuntime.new()
 var network_controller := NetworkMatchController.new(catalog)
 var network_legal_actions: Array[GameAction] = []
 var network_choice_view: ChoiceView
@@ -108,10 +110,8 @@ var _modal_close_completion_generation := -1
 var _modal_closing := false
 var _toast_tween: Tween
 var _toast_generation := 0
-var _deep_start_generation := 0
 var _presented_coin_request_ids: Dictionary = {}
 var _pending_ai_resume_revision := -1
-var _pending_ai_runtime_unload := false
 var _startup_choreography_generation := 0
 var _startup_choreography_running := false
 var _responsive_canvas_window: Window
@@ -133,9 +133,6 @@ func _ready() -> void:
 	elif ExportSmokeRunner.PHASE_SIX_FLAG in user_args:
 		_run_phase_six_export_smoke()
 		return
-	elif ExportSmokeRunner.CANDIDATE_RUNTIME_FLAG in user_args:
-		_run_export_smoke(ExportSmokeRunner.CANDIDATE_RUNTIME_FLAG)
-		return
 	initialize_ui()
 
 
@@ -154,7 +151,6 @@ func _run_phase_six_export_smoke() -> void:
 func _run_export_smoke(flag: String) -> void:
 	var smoke_result := ExportSmokeRunner.new().run_if_requested(
 		PackedStringArray([flag]),
-		deep_runtime,
 		_export_smoke_services(),
 	)
 	if bool(smoke_result.get("handled", false)):
@@ -171,22 +167,6 @@ func _export_smoke_services() -> Dictionary:
 
 
 func _finish_export_smoke(result: Dictionary) -> void:
-	var evidence_value: Variant = result.get("evidence_payload", null)
-	if evidence_value is Dictionary:
-		var encoded := Marshalls.utf8_to_base64(
-			JSON.stringify(evidence_value))
-		var chunk_size := 1800
-		var chunk_count := maxi(1, ceili(
-			float(encoded.length()) / float(chunk_size)))
-		for index in range(chunk_count):
-			print(
-				"CANDIDATE_RUNTIME_EVIDENCE_CHUNK %d/%d %s"
-				% [
-					index + 1,
-					chunk_count,
-					encoded.substr(index * chunk_size, chunk_size),
-				]
-			)
 	var message := str(result.get("message", "EXPORT_SMOKE_FAILED"))
 	if bool(result.get("success", false)):
 		print(message)
@@ -202,7 +182,6 @@ func _process(_delta: float) -> void:
 		var result := ai_coordinator.poll_result()
 		if ai_thinking and not result.is_empty():
 			_apply_ai_result(result)
-	_finalize_ai_runtime_unload_if_idle()
 	_refresh_process_state()
 
 
@@ -758,61 +737,15 @@ func _on_match_start_requested(
 		start_local_match_for_test(
 			first_key, second_key, -1, forced_first, true, apply_type_matchups)
 		return
-	if mode == MODE_DEEP:
-		_start_deep_match_with_loading(
-			first_key,
-			second_key,
-			forced_first,
-			apply_type_matchups,
-		)
-	else:
-		start_ai_match_for_test(
-			mode,
-			first_key,
-			second_key,
-			forced_first,
-			-1,
-			true,
-			apply_type_matchups,
-		)
-
-
-func _start_deep_match_with_loading(
-	human_key: String,
-	opponent_key: String,
-	forced_first: int,
-	apply_type_matchups: bool = false,
-) -> void:
-	_deep_start_generation += 1
-	var request_generation := _deep_start_generation
-	var source_page := (
-		screen_host.get_child(0)
-		if screen_host and screen_host.get_child_count() > 0
-		else null
-	)
-	_show_loading("正在校验并加载 Deep AI 模型…")
-	await get_tree().process_frame
-	if (
-		request_generation != _deep_start_generation
-		or current_screen != SCREEN_DECKS
-		or game_mode != MODE_DEEP
-		or source_page == null
-		or not is_instance_valid(source_page)
-		or source_page.get_parent() != screen_host
-	):
-		if request_generation == _deep_start_generation:
-			_hide_loading()
-		return
 	start_ai_match_for_test(
-		MODE_DEEP,
-		human_key,
-		opponent_key,
+		MODE_CHALLENGE,
+		first_key,
+		second_key,
 		forced_first,
 		-1,
 		true,
 		apply_type_matchups,
 	)
-	_hide_loading()
 
 
 func start_local_match_for_test(
@@ -843,7 +776,7 @@ func start_ai_match_for_test(
 	play_startup: bool = false,
 	apply_type_matchups: bool = false,
 ) -> bool:
-	game_mode = mode if mode in [MODE_CHALLENGE, MODE_DEEP] else MODE_CHALLENGE
+	game_mode = MODE_CHALLENGE if mode != MODE_LOCAL else MODE_LOCAL
 	ai_deck_key = opponent_key
 	return _start_match(
 		human_key,
@@ -860,7 +793,7 @@ func match_journal() -> Dictionary:
 
 
 func _canonical_type_matchups_for_mode(mode: String, requested: bool) -> bool:
-	if mode in [MODE_CHALLENGE, MODE_DEEP]:
+	if mode == MODE_CHALLENGE:
 		return false
 	return requested
 
@@ -882,8 +815,8 @@ func _start_match(
 	ai_match_generation += 1
 	ai_match_instance_id = "runtime:%d:%d" % [ai_match_generation, actual_seed]
 	ai_request_sequence = 0
-	ai_emergency_fallback_count = 0
 	native_rules = NativeRulesSessionAdapter.new(catalog)
+	match_flow.bind_session(native_rules)
 	if not native_rules.is_available():
 		_show_toast("原生规则会话不可用。", true)
 		return false
@@ -891,7 +824,7 @@ func _start_match(
 		game_mode, apply_type_matchups)
 	var player_names: Array[String] = ["玩家 1", "玩家 2"]
 	if game_mode != MODE_LOCAL:
-		player_names[1] = "Deep AI" if game_mode == MODE_DEEP else "Challenge AI"
+		player_names[1] = "Challenge AI"
 	var result := native_rules.start_match(
 		first_key,
 		second_key,
@@ -905,29 +838,10 @@ func _start_match(
 	if not result.success:
 		_show_toast(result.message, true)
 		return false
-	if game_mode != MODE_LOCAL:
-		if game_mode == MODE_DEEP:
-			if _pending_ai_runtime_unload:
-				# A cancelled native worker may still own the previous backend. Do
-				# not mutate it; this match safely uses the Challenge fallback.
-				ai_inference = null
-			elif deep_runtime.load_for_deck(second_key):
-				ai_inference = deep_runtime.get_backend()
-			else:
-				ai_inference = null
-		else:
-			if not _pending_ai_runtime_unload:
-				deep_runtime.unload()
-			ai_inference = null
 	current_view_player = 0
 	selected_entity_key = ""
 	selected_entity_identity = ""
 	_build_game_screen()
-	if game_mode == MODE_DEEP and ai_inference == null:
-		_show_toast(
-			"Deep AI 模型不可用，将自动回退 Challenge AI：%s" % deep_runtime.last_error,
-			true,
-		)
 	if play_startup:
 		_begin_startup_choreography(
 			Callable(self, "_continue_after_fresh_match_start"),
@@ -1345,26 +1259,26 @@ func _run_presentation_continuation(
 
 
 func _rules_legal_actions(actor: int) -> LegalActionQueryResult:
-	return native_rules.legal_actions(actor)
+	return match_flow.legal_actions(actor)
 
 
 func _rules_pending_choice(viewer: int) -> ChoiceView:
-	return native_rules.pending_choice(viewer)
+	return match_flow.pending_choice(viewer)
 
 
 func _rules_apply_action(action: GameAction) -> StepResult:
-	var result := native_rules.apply_action(action.to_dict())
-	state = native_rules.state
+	var result := match_flow.apply_action(action)
+	state = match_flow.current_state()
 	if state != null:
-		rng.set_state(native_rules.rng_state)
+		rng.set_state(match_flow.rng_state())
 	return result
 
 
 func _rules_apply_choice(response: ChoiceResponse) -> StepResult:
-	var result := native_rules.apply_choice(response.to_dict())
-	state = native_rules.state
+	var result := match_flow.apply_choice(response)
+	state = match_flow.current_state()
 	if state != null:
-		rng.set_state(native_rules.rng_state)
+		rng.set_state(match_flow.rng_state())
 	return result
 
 
@@ -2433,7 +2347,7 @@ func _choice_field_target_options(request: ChoiceView) -> Dictionary:
 			or state.get_player(player_idx).get_pokemon(slot) == null
 		):
 			return {}
-		var key := CardInteractionRouter.pokemon_key(player_idx, slot)
+		var key := BattleInteractionController.pokemon_key(player_idx, slot)
 		# Attachment choices may expose several energies on one Pokémon; in that
 		# case the card alone is not a unique option, so keep the card grid panel.
 		if result.has(key):
@@ -2460,7 +2374,7 @@ func _choice_attachment_target_groups(request: ChoiceView) -> Dictionary:
 			or state.get_player(player_idx).get_pokemon(slot) == null
 		):
 			return {}
-		var key := CardInteractionRouter.pokemon_key(player_idx, slot)
+		var key := BattleInteractionController.pokemon_key(player_idx, slot)
 		if not result.has(key):
 			result[key] = {
 				"kind": "attachment_group",
@@ -3324,7 +3238,7 @@ func _complete_pass_overlay(confirmed: Callable) -> void:
 
 
 func _show_pause_overlay(resume_choice_context: Dictionary = {}) -> void:
-	if game_mode in [MODE_CHALLENGE, MODE_DEEP]:
+	if game_mode == MODE_CHALLENGE:
 		ai_coordinator.cancel_request()
 		ai_thinking = false
 		_refresh_game()
@@ -3353,7 +3267,7 @@ func _show_pause_overlay(resume_choice_context: Dictionary = {}) -> void:
 	pause_panel.help_requested.connect(func() -> void:
 		_play_click()
 		_show_help(
-			game_mode in [MODE_CHALLENGE, MODE_DEEP],
+			game_mode == MODE_CHALLENGE,
 			field_choice_context,
 		)
 	)
@@ -3803,7 +3717,6 @@ func _show_end_screen() -> void:
 	var mode_label: String = str({
 		MODE_LOCAL: "本地双人",
 		MODE_CHALLENGE: "Challenge AI",
-		MODE_DEEP: "Deep AI",
 		MODE_NETWORK: "Relay 联机" if network_kind == "relay" else "LAN 联机",
 	}.get(game_mode, "自定义对局"))
 	victory.configure(
@@ -4358,7 +4271,7 @@ func _schedule_ai_action() -> void:
 	active_ai_request_id = "ai:%d:%d" % [state.revision, ai_request_sequence]
 	var request := {
 		"kind": "action",
-		"engine": NativeChallengeAI.TRADITIONAL_ENGINE_ID,
+		"engine": ChallengeAIClient.TRADITIONAL_ENGINE_ID,
 		"state": _ai_state_snapshot(1),
 		"actor": 1,
 		"revision": state.revision,
@@ -4376,10 +4289,10 @@ func _schedule_ai_action() -> void:
 		),
 		"actions": rows,
 	}
-	ai_thinking = ai_coordinator.start_request(request, ai_inference)
+	ai_thinking = ai_coordinator.start_request(request)
 	_refresh_process_state()
 	if not ai_thinking:
-		_apply_ai_fallback_action(
+		_show_ai_failure(
 			"无法启动 AI 后台线程（%s）。" % ai_coordinator.last_start_error)
 		return
 	_refresh_game()
@@ -4395,7 +4308,7 @@ func _schedule_ai_choice(request: ChoiceView) -> void:
 	active_ai_request_id = "ai-choice:%d:%d" % [state.revision, ai_request_sequence]
 	var payload := {
 		"kind": "choice",
-		"engine": NativeChallengeAI.TRADITIONAL_ENGINE_ID,
+		"engine": ChallengeAIClient.TRADITIONAL_ENGINE_ID,
 		"state": _ai_state_snapshot(1),
 		"choice": request.to_dict(),
 		"actor": 1,
@@ -4413,11 +4326,10 @@ func _schedule_ai_choice(request: ChoiceView) -> void:
 			active_ai_request_id,
 		),
 	}
-	ai_thinking = ai_coordinator.start_request(payload, ai_inference)
+	ai_thinking = ai_coordinator.start_request(payload)
 	_refresh_process_state()
 	if not ai_thinking:
-		_apply_ai_fallback_choice(
-			request,
+		_show_ai_failure(
 			"无法启动 AI 选择线程（%s）。" % ai_coordinator.last_start_error,
 		)
 		return
@@ -4442,21 +4354,8 @@ func _apply_ai_result(result: Dictionary) -> void:
 		_maybe_start_ai()
 		return
 	if not bool(result.get("success", false)):
-		var pending_on_failure := _rules_pending_choice(1)
-		if pending_on_failure != null and pending_on_failure.player == 1:
-			_apply_ai_fallback_choice(
-				pending_on_failure,
-				"AI 决策失败：%s" % result.get("error", "unknown"),
-			)
-		else:
-			_apply_ai_fallback_action(
-				"AI 决策失败：%s" % result.get("error", "unknown"))
+		_show_ai_failure("AI 决策失败：%s" % result.get("error", "unknown"))
 		return
-	if bool(result.get("deep_fallback", false)):
-		_show_toast(
-			"Deep AI 已回退 Challenge AI：%s" % result.get("fallback_reason", ""),
-			true,
-		)
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
 	var step: StepResult
@@ -4480,14 +4379,7 @@ func _apply_ai_result(result: Dictionary) -> void:
 		origin_action_id = action.action_id
 		step = _rules_apply_action(action)
 	if not step.success:
-		var pending_after_reject := _rules_pending_choice(1)
-		if pending_after_reject != null and pending_after_reject.player == 1:
-			_apply_ai_fallback_choice(
-				pending_after_reject,
-				"AI 选择被规则拒绝：%s" % step.message,
-			)
-		else:
-			_apply_ai_fallback_action("AI 动作被规则拒绝：%s" % step.message)
+		_show_ai_failure("AI 决策被规则拒绝：%s" % step.message)
 		return
 	_show_toast(step.message if not step.message.is_empty() else "AI 完成动作。")
 	var handle := _submit_battle_transition(
@@ -4504,104 +4396,12 @@ func _apply_ai_result(result: Dictionary) -> void:
 	)
 
 
-func _apply_ai_fallback_action(reason: String) -> void:
-	if state == null or current_screen != SCREEN_GAME or _current_actor() != 1:
-		return
-	ai_emergency_fallback_count += 1
-	var query := _rules_legal_actions(1)
-	if not query.success:
-		_show_toast("%s 合法动作查询失败：%s" % [reason, query.code], true)
-		_refresh_game()
-		return
-	var actions := query.concrete_actions()
-	if actions.is_empty():
-		_show_toast("%s AI 没有合法动作。" % reason, true)
-		_refresh_game()
-		return
-	for action in _ordered_ai_fallback_actions(actions):
-		var previous_active := state.active_player_idx
-		var previous_phase := state.phase
-		ai_request_sequence += 1
-		action.action_id = "ai-fallback:%d:%d" % [state.revision, ai_request_sequence]
-		var step := _rules_apply_action(action)
-		if not step.success:
-			continue
-		var message := step.message if not step.message.is_empty() else "AI 完成兜底动作。"
-		_show_toast("%s %s" % [reason, message], true)
-		var handle := _submit_battle_transition(
-			step.events,
-			1,
-			BattleTransitionRequest.CAUSE_AI_ACTION,
-			action.action_id,
-		)
-		_continue_when_presented(
-			handle,
-			state.revision,
-			_continue_after_ai_step.bind(step, previous_active, previous_phase),
-		)
-		return
-	_show_toast("%s AI 兜底动作全部被规则拒绝。" % reason, true)
+func _show_ai_failure(reason: String) -> void:
+	# Native Challenge is the only product policy. A failed request remains
+	# visible and recoverable through match restart instead of executing a
+	# second, divergent policy inside Main.
+	_show_toast(reason, true)
 	_refresh_game()
-
-
-func _ordered_ai_fallback_actions(actions: Array[GameAction]) -> Array[GameAction]:
-	return NativeChallengeAI.ordered_tactical_fallback_actions(
-		state, 1, actions, ai_deck_key, catalog)
-
-
-func _apply_ai_fallback_choice(request: ChoiceView, reason: String) -> void:
-	if state == null or current_screen != SCREEN_GAME:
-		return
-	ai_emergency_fallback_count += 1
-	var response := _fallback_choice_response(request)
-	var previous_active := state.active_player_idx
-	var previous_phase := state.phase
-	var step := _rules_apply_choice(response)
-	if not step.success:
-		_show_toast("%s AI 兜底选择被规则拒绝：%s" % [reason, step.message], true)
-		_refresh_game()
-		return
-	var message := step.message if not step.message.is_empty() else "AI 完成兜底选择。"
-	_show_toast("%s %s" % [reason, message], true)
-	var handle := _submit_battle_transition(
-		step.events,
-		request.player,
-		BattleTransitionRequest.CAUSE_CHOICE,
-		"",
-		request.request_id,
-	)
-	_continue_when_presented(
-		handle,
-		state.revision,
-		_continue_after_ai_step.bind(step, previous_active, previous_phase),
-	)
-
-
-func _fallback_choice_response(request: ChoiceView) -> ChoiceResponse:
-	if request.options.is_empty():
-		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
-	if request.request_type == "select_retreat_payment":
-		return NativeChallengeAI.retreat_payment_response(state, request, catalog)
-	if request.request_type == "choose_turn_order":
-		return ChoiceResponse.new(request.request_id, ["turn:first"])
-	if request.request_type == "choose_mulligan_draw_count":
-		return ChoiceResponse.new(
-			request.request_id,
-			["draw:%d" % maxi(0, request.options.size() - 1)],
-		)
-	if request.request_type == "select_prize":
-		return ChoiceResponse.new(request.request_id, ["prize:0"])
-	var count: int = maxi(request.min_select, request.max_select)
-	if not request.allow_duplicates:
-		count = mini(request.options.size(), count)
-	var selected: Array[String] = []
-	if request.allow_duplicates and count > 0:
-		for _index in range(count):
-			selected.append(str(request.options[0]["option_id"]))
-	else:
-		for index in range(count):
-			selected.append(str(request.options[index]["option_id"]))
-	return ChoiceResponse.new(request.request_id, selected)
 
 
 func _continue_after_ai_step(
@@ -4677,21 +4477,10 @@ func _resume_ai_after_presentation(expected_revision: int) -> void:
 
 func _stop_ai() -> void:
 	ai_coordinator.cancel_request()
-	_pending_ai_runtime_unload = true
-	_finalize_ai_runtime_unload_if_idle()
 	ai_thinking = false
 	active_ai_request_id = ""
 	_pending_ai_resume_revision = -1
 	_refresh_process_state()
-
-
-func _finalize_ai_runtime_unload_if_idle() -> void:
-	if not _pending_ai_runtime_unload or ai_coordinator.needs_poll():
-		return
-	deep_runtime.unload()
-	ai_inference = null
-	_pending_ai_runtime_unload = false
-
 
 func _show_toast(message: String, is_error: bool = false) -> void:
 	if message.strip_edges().is_empty():
@@ -5235,7 +5024,7 @@ func _toast_content_height(width: float, minimum: float, maximum: float) -> floa
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED:
 		CardTextureCache.clear()
-		if game_mode in [MODE_CHALLENGE, MODE_DEEP]:
+		if game_mode == MODE_CHALLENGE:
 			if battle_screen:
 				battle_screen.clear_presentation_for_resync()
 			ai_coordinator.cancel_request()
@@ -5260,7 +5049,7 @@ func _notification(what: int) -> void:
 				network_controller.begin_reconnect("application_resumed")
 			_show_toast("正在恢复联机对局…")
 			_refresh_process_state()
-		elif game_mode in [MODE_CHALLENGE, MODE_DEEP]:
+		elif game_mode == MODE_CHALLENGE:
 			_maybe_start_ai()
 	elif what == NOTIFICATION_OS_MEMORY_WARNING:
 		CardTextureCache.clear()
@@ -5289,7 +5078,7 @@ func _notification(what: int) -> void:
 			elif current_screen == SCREEN_GAME:
 				_close_modal(
 					Callable(self, "_resume_after_pause")
-					if game_mode in [MODE_CHALLENGE, MODE_DEEP]
+					if game_mode == MODE_CHALLENGE
 					else Callable()
 				)
 			else:

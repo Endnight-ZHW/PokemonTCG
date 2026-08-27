@@ -117,21 +117,6 @@ func _run_contract() -> void:
 		session.native_rules.catalog == repository,
 		"authoritative native session must share the injected catalog",
 	)
-	_check(
-		_source_contains(
-			"res://scenes/battle/components/battle_table.gd",
-			"var catalog: CardCatalog = CardCatalog.shared()",
-		),
-		"battle table default must reuse runtime repository",
-	)
-	_check(
-		_source_contains(
-			"res://ai/challenge_ai.gd",
-			"_catalog_cache = CardCatalog.shared()",
-		),
-		"Challenge AI cache must reuse runtime repository",
-	)
-
 	for zone in zones:
 		zone.free()
 	database.free()
@@ -140,11 +125,6 @@ func _run_contract() -> void:
 func _check(condition: bool, message: String) -> void:
 	if not condition:
 		failures.append(message)
-
-
-func _source_contains(path: String, expected: String) -> bool:
-	var file := FileAccess.open(path, FileAccess.READ)
-	return file != null and expected in file.get_as_text()
 
 
 func _cache_sizes(catalog: CardCatalog) -> Array[int]:

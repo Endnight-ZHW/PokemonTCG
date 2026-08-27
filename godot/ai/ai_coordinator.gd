@@ -18,8 +18,7 @@ var _revision := -1
 ## Keep one worker for the lifetime of the coordinator.  Challenge decisions
 ## are serialized by this class, so the worker can safely retain a validated
 ## turn plan and immutable catalog caches between atomic actions.
-var _worker := NativeChallengeAI.new()
-var _deep_worker := InformationSetPUCT.new()
+var _worker := ChallengeAIClient.new()
 
 
 ## A pooled task can outlive its logical request after explicit cancellation.
@@ -31,7 +30,7 @@ func needs_poll() -> bool:
 	return pending
 
 
-func start_request(request: Dictionary, inference: Variant = null) -> bool:
+func start_request(request: Dictionary, _inference: Variant = null) -> bool:
 	# Reaping is non-blocking: _reap_finished_task only waits after the global
 	# pool has reported completion. A still-running worker is never waited on.
 	_reap_finished_task()
@@ -55,7 +54,7 @@ func start_request(request: Dictionary, inference: Variant = null) -> bool:
 	_mutex.unlock()
 
 	var task_id := WorkerThreadPool.add_task(
-		_worker_main.bind(request.duplicate(true), inference, generation),
+		_worker_main.bind(request.duplicate(true), generation),
 		false,
 		"Pokemon TCG AI decision",
 	)
@@ -120,26 +119,21 @@ func cancel_request() -> void:
 	_reap_finished_task()
 
 
-## The authoritative evaluation runner is synchronous, but must exercise the
-## exact same Deep/fallback branch as the asynchronous gameplay boundary.
-## Keeping this thin adapter here prevents candidate evidence from silently
-## bypassing the production infoset_puct_v3 path.
+## Test tools use the same worker as asynchronous gameplay.
 func decide_sync_for_evaluation(
 	request: Dictionary,
-	inference: Variant = null,
+	_inference: Variant = null,
 ) -> Dictionary:
-	return _decide(request, Callable(), inference)
+	return _decide(request, Callable())
 
 
 func _worker_main(
 	request: Dictionary,
-	inference: Variant,
 	generation: int,
 ) -> void:
 	var result := _decide(
 		request,
 		_is_cancelled.bind(generation),
-		inference,
 	)
 	_mutex.lock()
 	_task_result = result if result is Dictionary else {
@@ -155,43 +149,8 @@ func _worker_main(
 func _decide(
 	request: Dictionary,
 	cancel_check: Callable,
-	inference: Variant,
 ) -> Dictionary:
-	if str(request.get("mode", "challenge")) == "deep" and inference == null:
-		var fallback_request := request.duplicate(true)
-		fallback_request["mode"] = "challenge"
-		var unavailable_fallback := _worker.decide(
-			fallback_request, cancel_check, null)
-		unavailable_fallback["deep_fallback"] = true
-		unavailable_fallback["fallback_reason"] = "runtime_unavailable"
-		unavailable_fallback["deep_failure"] = {
-			"planner": InformationSetPUCT.PLANNER_ID,
-			"reason": "runtime_unavailable",
-			"elapsed_ms": 0.0,
-		}
-		return unavailable_fallback
-	if str(request.get("mode", "challenge")) == "deep":
-		var deep_result := _deep_worker.decide(
-			request, cancel_check, inference)
-		if bool(deep_result.get("success", false)) or bool(
-			deep_result.get("cancelled", false)):
-			return deep_result
-		var reason := str(deep_result.get(
-			"deep_failure_reason",
-			deep_result.get("error", "deep_unknown_failure"),
-		))
-		var fallback_request := request.duplicate(true)
-		fallback_request["mode"] = "challenge"
-		var fallback := _worker.decide(fallback_request, cancel_check, null)
-		fallback["deep_fallback"] = true
-		fallback["fallback_reason"] = reason
-		fallback["deep_failure"] = {
-			"planner": InformationSetPUCT.PLANNER_ID,
-			"reason": reason,
-			"elapsed_ms": float(deep_result.get("elapsed_ms", 0.0)),
-		}
-		return fallback
-	return _worker.decide(request, cancel_check, inference)
+	return _worker.decide(request, cancel_check)
 
 
 func _is_cancelled(generation: int) -> bool:

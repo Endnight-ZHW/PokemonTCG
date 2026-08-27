@@ -151,7 +151,6 @@ func _mode_label() -> String:
 	return {
 		"local": "本地双人",
 		"challenge": "Challenge AI",
-		"deep": "Deep AI",
 		"network": "联机对战",
 		"lan": "LAN 联机",
 		"relay": "Relay 联机",

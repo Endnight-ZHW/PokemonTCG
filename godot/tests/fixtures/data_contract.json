@@ -1,16 +1,4 @@
 {
-  "ai_card_index_samples": {
-    "sv1-153": 15,
-    "sv1-ener-2": 27,
-    "sv2-grex": 40,
-    "svg2-tort": 86,
-    "svi-chim": 92
-  },
-  "card_vocab": {
-    "format_version": 1,
-    "sha256": "b6f3a3faa78dfbf0fb706fdfea26f6b92359dcc3fd937c61849ea359eb0dd0d9",
-    "size": 139
-  },
   "compiled_effect_examples": {
     "ability_discard_revive": {
       "args": {
@@ -59,16 +47,16 @@
           "op": "add",
           "terms": [
             {
-              "const": 100
+              "const": 50
             },
             {
-              "condition": "own_bench_damaged",
+              "condition": "opponent_active_damaged",
               "else": {
                 "const": 0
               },
               "op": "if",
               "then": {
-                "const": 120
+                "const": 70
               }
             }
           ]
@@ -548,7 +536,7 @@
     },
     "draw": {
       "args": {
-        "amount": 1,
+        "amount": 2,
         "player": "self"
       },
       "branches": {},
@@ -657,11 +645,13 @@
     },
     "look_top_deck": {
       "args": {
-        "count": 7,
-        "filter": "water_pokemon_and_energy",
+        "count": 5,
+        "destination": "bench_energy",
+        "filter": "lightning_energy",
         "min_select": 0,
         "shuffle_rest": true,
-        "take": 99
+        "take": 2,
+        "target_pokemon_type": "Lightning"
       },
       "branches": {},
       "op": "look_top_deck"
@@ -873,10 +863,10 @@
     "attack_damage_formula": {
       "effect_type": "attack_damage_formula",
       "params": {
-        "base": 100,
+        "base": 50,
         "condition_bonus": {
-          "bonus": 120,
-          "condition": "own_bench_damaged",
+          "bonus": 70,
+          "condition": "opponent_active_damaged",
           "consume": false
         }
       }
@@ -1160,7 +1150,7 @@
     "draw": {
       "effect_type": "draw",
       "params": {
-        "amount": 1,
+        "amount": 2,
         "player": "self"
       }
     },
@@ -1255,11 +1245,13 @@
     "look_top_deck": {
       "effect_type": "look_top_deck",
       "params": {
-        "count": 7,
-        "filter": "water_pokemon_and_energy",
+        "count": 5,
+        "destination": "bench_energy",
+        "filter": "lightning_energy",
         "min_select": 0,
         "shuffle_rest": true,
-        "take": 99
+        "take": 2,
+        "target_pokemon_type": "Lightning"
       }
     },
     "mill_and_damage_per_energy": {
@@ -1486,7 +1478,6 @@
     ]
   },
   "schema": {
-    "encoder_version": 6,
     "godot_action_version": 4,
     "godot_rules_version": 6,
     "protocol_version": 6,

@@ -16,32 +16,26 @@ $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $lock = Get-ToolchainLock -RepoRoot $repoRoot
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
-Assert-ReleaseDeepFallbackContract -Manifest $release
-$modelCount = [int]$release.model_count
-$deepState = if ([bool]$release.deep_runtime_enabled) { 'enabled' } else { 'disabled' }
+Assert-ProductReleaseContract -Manifest $release
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
+$jar = Join-Path $jdkRoot 'bin\jar.exe'
 Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
 
-if (-not (Test-Path -LiteralPath $windowsExe)) {
-    throw 'Windows export is missing.'
-}
-if (-not (Test-Path -LiteralPath $androidApk)) {
-    throw 'Android export is missing.'
+foreach ($required in @($windowsExe, $windowsConsole, $androidApk, $androidSmokeApk, $aapt, $jar)) {
+    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+        throw "Smoke-test input is missing: $required"
+    }
 }
 
-$process = Start-Process `
-    -FilePath $windowsExe `
-    -PassThru `
-    -WindowStyle Hidden
+$process = Start-Process -FilePath $windowsExe -PassThru -WindowStyle Hidden
 try {
     Start-Sleep -Seconds $WindowsSeconds
     if ($process.HasExited) {
         throw "Windows export exited during startup smoke test (exit $($process.ExitCode))."
     }
     Write-Host 'WINDOWS_STARTUP_OK'
-}
-finally {
+} finally {
     if (-not $process.HasExited) {
         Stop-Process -Id $process.Id -Force
         $process.WaitForExit()
@@ -49,12 +43,12 @@ finally {
 }
 
 $badging = & $aapt dump badging $androidApk
-if ($LASTEXITCODE -ne 0) {
-    throw 'Unable to inspect Android APK.'
-}
+if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect Android APK.' }
 $badgingText = $badging -join "`n"
 foreach ($expected in @(
     "package: name='com.pokemontcg.game'",
+    "versionCode='$([int]$release.android_version_code)'",
+    "versionName='$([string]$release.version)'",
     "sdkVersion:'28'",
     "targetSdkVersion:'35'",
     "native-code: 'arm64-v8a'"
@@ -65,29 +59,22 @@ foreach ($expected in @(
 }
 Write-Host 'ANDROID_APK_METADATA_OK'
 
-if (-not (Test-Path -LiteralPath $windowsConsole)) {
-    throw 'Windows console export is missing.'
-}
-$aiSmoke = & $windowsConsole -- --phase4-ai-smoke 2>&1
-$aiSmokeText = $aiSmoke -join "`n"
+$nativeSmoke = & $windowsConsole -- --phase4-ai-smoke 2>&1
+$nativeSmokeText = $nativeSmoke -join "`n"
 if (
     $LASTEXITCODE -ne 0 -or
-    -not $aiSmokeText.Contains('PHASE4_EXPORT_AI_OK') -or
-    -not $aiSmokeText.Contains("deep=$deepState") -or
-    -not $aiSmokeText.Contains('fallback=challenge') -or
-    -not $aiSmokeText.Contains("onnx_assets=$modelCount")
+    -not $nativeSmokeText.Contains('PHASE4_EXPORT_AI_OK') -or
+    -not $nativeSmokeText.Contains('challenge=native') -or
+    -not $nativeSmokeText.Contains('onnx_assets=0')
 ) {
-    throw "Exported Windows AI runtime smoke test failed.`n$aiSmokeText"
+    throw "Exported Windows native runtime smoke failed.`n$nativeSmokeText"
 }
-Write-Host "WINDOWS_AI_RUNTIME_OK deep=$deepState fallback=challenge onnx_assets=$modelCount"
+Write-Host 'WINDOWS_NATIVE_RUNTIME_OK challenge=native onnx_assets=0'
 
 $networkSmoke = & $windowsConsole -- --phase5-network-smoke 2>&1
 $networkSmokeText = $networkSmoke -join "`n"
-if (
-    $LASTEXITCODE -ne 0 -or
-    -not $networkSmokeText.Contains('PHASE6_EXPORT_NETWORK_OK')
-) {
-    throw "Exported Windows network smoke test failed.`n$networkSmokeText"
+if ($LASTEXITCODE -ne 0 -or -not $networkSmokeText.Contains('PHASE6_EXPORT_NETWORK_OK')) {
+    throw "Exported Windows network smoke failed.`n$networkSmokeText"
 }
 Write-Host 'WINDOWS_NETWORK_OK protocol=6 transports=enet,websocket'
 
@@ -96,43 +83,32 @@ $releaseSmokeText = $releaseSmoke -join "`n"
 if (
     $LASTEXITCODE -ne 0 -or
     -not $releaseSmokeText.Contains('PHASE6_EXPORT_RELEASE_OK') -or
-    -not $releaseSmokeText.Contains("models=$modelCount") -or
-    -not $releaseSmokeText.Contains("onnx_assets=$modelCount")
+    -not $releaseSmokeText.Contains("version=$([string]$release.version)") -or
+    -not $releaseSmokeText.Contains('challenge=native') -or
+    -not $releaseSmokeText.Contains('onnx_assets=0')
 ) {
-    throw "Exported Windows release model smoke test failed.`n$releaseSmokeText"
+    throw "Exported Windows release smoke failed.`n$releaseSmokeText"
 }
-Write-Host "WINDOWS_RELEASE_AI_OK models=$modelCount onnx_assets=$modelCount"
+Write-Host 'WINDOWS_RELEASE_CONTRACT_OK'
 
-$jar = Join-Path $jdkRoot 'bin\jar.exe'
-$apkEntries = & $jar tf $androidApk
-if ($LASTEXITCODE -ne 0) {
-    throw 'Unable to list Android APK contents.'
+$apkEntries = @(& $jar tf $androidApk)
+if ($LASTEXITCODE -ne 0) { throw 'Unable to list Android APK contents.' }
+$nativeEntry = 'lib/arm64-v8a/libpokemon_ai.android.template_debug.arm64.so'
+if ($nativeEntry -notin $apkEntries) {
+    throw "Android APK is missing native library: $nativeEntry"
 }
-foreach ($nativeEntry in @(
-    'lib/arm64-v8a/libonnxruntime.so',
-    'lib/arm64-v8a/libpokemon_ai.android.template_debug.arm64.so'
-)) {
-    if ($nativeEntry -notin $apkEntries) {
-        throw "Android APK is missing native library: $nativeEntry"
+$forbiddenEntries = @(
+    $apkEntries | Where-Object {
+        $_ -match '(?i)(\.onnx$|onnxruntime|(^|/)(research|deep_ai)(/|$))'
     }
-}
-$actualApkModels = @(
-    $apkEntries |
-        Where-Object { $_ -match '^assets/data/ai_models/[^/]+\.onnx$' } |
-        ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) } |
-        Sort-Object
 )
-if ($actualApkModels.Count -ne $modelCount) {
-    throw "Android APK contains $($actualApkModels.Count) models; expected $modelCount."
+if ($forbiddenEntries.Count -ne 0) {
+    throw "Android APK contains forbidden research/runtime content: $($forbiddenEntries[0])"
 }
-Write-Host "ANDROID_AI_ASSETS_OK models=$modelCount abi=arm64-v8a"
+Write-Host 'ANDROID_PRODUCT_PAYLOAD_OK abi=arm64-v8a onnx_assets=0'
 
 & (Join-Path $PSScriptRoot 'test_android_runtime.ps1') `
-    -ApkPath $androidApk `
-    -SmokeApkPath $androidSmokeApk `
-    -ExpectedModels $modelCount `
+    -ApkPath $androidApk -SmokeApkPath $androidSmokeApk `
     -RequireDevice:$RequireAndroidDevice `
-    -AllowCleanInstall:$AllowAndroidCleanInstall
-if ($LASTEXITCODE -ne 0) {
-    throw 'Android runtime smoke failed.'
-}
+    -AllowAndroidCleanInstall:$AllowAndroidCleanInstall
+if ($LASTEXITCODE -ne 0) { throw 'Android runtime smoke failed.' }

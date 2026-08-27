@@ -1,0 +1,5925 @@
+{
+  "decks": {
+    "colorless": [
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-stan",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "colorless_setup_tandemaus",
+        "over": {
+          "card_id": "svi-stan",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "svi-tand",
+          "kind": "PLAY_BASIC"
+        },
+        "stage": "fill_bench",
+        "surface": "action"
+      },
+      {
+        "category": "evolution",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-stan",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "colorless_evolve_maushold",
+        "over": {
+          "card_id": "svi-ambi",
+          "kind": "EVOLVE"
+        },
+        "preferred": {
+          "card_id": "svi-maus",
+          "kind": "EVOLVE"
+        },
+        "stage": "fill_bench",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-stan",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "colorless_search_maushold",
+        "over": {
+          "card_id": "svi-dtur"
+        },
+        "preferred": {
+          "card_id": "svi-maus"
+        },
+        "stage": "fill_bench",
+        "surface": "choice"
+      },
+      {
+        "category": "switch",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-stan",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "confused"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "colorless_status_switch",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-150",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "fill_bench",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-ambi",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "svi-dtur"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svi-maus",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svi-tand",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svi-tand",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [
+              "svi-nemb",
+              "svi-cait",
+              "sv1-151",
+              "sv1-153",
+              "sv1-176",
+              "sv1-189"
+            ],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "colorless_ambipom_large_hand",
+        "over": {
+          "attack_index": 0,
+          "card_id": "svi-ambi",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "svi-ambi",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "family_pressure",
+        "surface": "action"
+      },
+      {
+        "category": "prize_route",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-maus",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "svi-dtur",
+                "svi-dtur"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svi-tand",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svi-maus",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [
+              "svi-nemb",
+              "svi-nemb",
+              "svi-nemb",
+              "svi-nemb",
+              "svi-nemb",
+              "svi-nemb"
+            ],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "colorless_family_prize_route",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svi-maus",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "family_pressure",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-stan",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "colorless_discard_non_family",
+        "over": {
+          "card_id": "svi-maus"
+        },
+        "preferred": {
+          "card_id": "svi-stan"
+        },
+        "stage": "fill_bench",
+        "surface": "choice"
+      },
+      {
+        "category": "loss_avoidance",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-gree",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "svi-dtur",
+                "svi-dtur",
+                "svi-dtur"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svi-maus",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [
+              "sv1-151",
+              "sv1-153"
+            ],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "colorless_avoid_greedent_dump",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svi-gree",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svi-gree",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "grow_hand",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-ambi",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "svi-dtur"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svi-maus",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svi-tand",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svi-tand",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [
+              "svi-nemb",
+              "svi-cait",
+              "sv1-151",
+              "sv1-153",
+              "sv1-176",
+              "sv1-189"
+            ],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "colorless_greedent_full_hand",
+        "over": {
+          "attack_index": 0,
+          "card_id": "svi-gree",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "svi-gree",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "family_pressure",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-maus",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "svi-dtur"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svi-tand",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [
+              "svi-nemb",
+              "sv1-151"
+            ],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "colorless_special_energy_maushold",
+        "over": {
+          "card_id": "svi-dtur",
+          "kind": "ATTACH_ENERGY",
+          "target_card_id": "svi-ambi"
+        },
+        "preferred": {
+          "card_id": "svi-dtur",
+          "kind": "ATTACH_ENERGY",
+          "target_card_id": "svi-maus"
+        },
+        "stage": "grow_hand",
+        "surface": "action"
+      }
+    ],
+    "darkness": [
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svd-seviper",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "darkness_setup_maschiff",
+        "over": {
+          "card_id": "svd-seviper",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "svd-maschiff",
+          "kind": "PLAY_BASIC"
+        },
+        "stage": "build_dual_lines",
+        "surface": "action"
+      },
+      {
+        "category": "evolution",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svd-seviper",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "darkness_evolve_mabosstiff",
+        "over": {
+          "card_id": "svd-dodrio",
+          "kind": "EVOLVE"
+        },
+        "preferred": {
+          "card_id": "svd-mabosstiff-ex",
+          "kind": "EVOLVE"
+        },
+        "stage": "build_dual_lines",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svd-seviper",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "darkness_search_mabosstiff",
+        "over": {
+          "card_id": "sv1-ener-7"
+        },
+        "preferred": {
+          "card_id": "svd-mabosstiff-ex"
+        },
+        "stage": "build_dual_lines",
+        "surface": "choice"
+      },
+      {
+        "category": "switch",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svd-seviper",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "confused"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "darkness_status_switch",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-150",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "build_dual_lines",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svd-mabosstiff-ex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-7",
+                "sv1-ener-7",
+                "sv1-ener-7"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svd-dodrio",
+                "damage_counters": 2,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "darkness_pride_damaged_bench",
+        "over": {
+          "attack_index": 0,
+          "card_id": "svd-mabosstiff-ex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "svd-mabosstiff-ex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "pride_finish",
+        "surface": "action"
+      },
+      {
+        "category": "prize_route",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svd-mabosstiff-ex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-7",
+                "sv1-ener-7",
+                "sv1-ener-7"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svd-dodrio",
+                "damage_counters": 2,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "darkness_pride_prize_route",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "svd-mabosstiff-ex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "pride_finish",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svd-seviper",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "darkness_discard_patch_energy",
+        "over": {
+          "card_id": "svd-mabosstiff-ex"
+        },
+        "preferred": {
+          "card_id": "sv1-ener-7"
+        },
+        "stage": "build_dual_lines",
+        "surface": "choice"
+      },
+      {
+        "category": "loss_avoidance",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svd-mabosstiff-ex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-7",
+                "sv1-ener-7",
+                "sv1-ener-7"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svd-dodrio",
+                "damage_counters": 9,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "darkness_avoid_dodrio_self_ko",
+        "over": {
+          "card_id": "svd-dodrio",
+          "kind": "USE_ABILITY"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "svd-mabosstiff-ex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "pride_finish",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svd-mabosstiff-ex",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svd-dodrio",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [
+              "sv1-ener-7",
+              "sv1-ener-7"
+            ],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "darkness_patch_live_resource",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "svd-dark-patch",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "prime_damage_engine",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svd-mabosstiff-ex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-7",
+                "sv1-ener-7",
+                "sv1-ener-7"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svd-dodrio",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "darkness_intimidate_without_damage",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svd-mabosstiff-ex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svd-mabosstiff-ex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "prime_damage_engine",
+        "surface": "action"
+      }
+    ],
+    "dragon": [
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-dram",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "dragon_setup_swablu",
+        "over": {
+          "card_id": "svg-dram",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "svg-swa",
+          "kind": "PLAY_BASIC"
+        },
+        "stage": "build_healing_core",
+        "surface": "action"
+      },
+      {
+        "category": "evolution",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-dram",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "dragon_evolve_altaria",
+        "over": {
+          "card_id": "svg-ceti",
+          "kind": "EVOLVE"
+        },
+        "preferred": {
+          "card_id": "svg-alt",
+          "kind": "EVOLVE"
+        },
+        "stage": "build_healing_core",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-dram",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg-swa",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "dragon_search_altaria",
+        "over": {
+          "card_id": "sv1-ener-3"
+        },
+        "preferred": {
+          "card_id": "svg-alt"
+        },
+        "stage": "build_healing_core",
+        "surface": "choice"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-dram",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "dragon_search_swablu_without_prerequisite",
+        "over": {
+          "card_id": "svg-alt"
+        },
+        "preferred": {
+          "card_id": "svg-swa"
+        },
+        "stage": "build_healing_core",
+        "surface": "choice"
+      },
+      {
+        "category": "switch",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-dram",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "asleep"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "dragon_status_switch",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-150",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "build_healing_core",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-ceti",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-3",
+                "sv1-ener-3",
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg-alt",
+                "damage_counters": 0,
+                "energy_card_ids": [
+                  "sv1-ener-3",
+                  "sv1-ener-8"
+                ],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "dragon_cetitan_full_power",
+        "over": {
+          "attack_index": 0,
+          "card_id": "svg-ceti",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "svg-ceti",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "healing_lock",
+        "surface": "action"
+      },
+      {
+        "category": "prize_route",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-milt",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-3",
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": true,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg-alt",
+                "damage_counters": 0,
+                "energy_card_ids": [
+                  "sv1-ener-3",
+                  "sv1-ener-8"
+                ],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "dragon_miltank_healed_route",
+        "over": {
+          "attack_index": 0,
+          "card_id": "svg-dram",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svg-milt",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "healing_lock",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-dram",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "dragon_discard_energy_not_altaria",
+        "over": {
+          "card_id": "svg-alt"
+        },
+        "preferred": {
+          "card_id": "sv1-ener-3"
+        },
+        "stage": "build_healing_core",
+        "surface": "choice"
+      },
+      {
+        "category": "loss_avoidance",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-ceti",
+              "damage_counters": 14,
+              "energy_card_ids": [
+                "sv1-ener-3",
+                "sv1-ener-3",
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg-alt",
+                "damage_counters": 0,
+                "energy_card_ids": [
+                  "sv1-ener-3",
+                  "sv1-ener-8"
+                ],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "dragon_avoid_damaged_sweeping",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svg-ceti",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svg-ceti",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "healing_lock",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-alt",
+              "damage_counters": 8,
+              "energy_card_ids": [
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "dragon_heal_damaged_board",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "svg-alt",
+          "kind": "USE_ABILITY"
+        },
+        "stage": "balance_energy",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg-alt",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg-ceto",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "dragon_balance_second_energy",
+        "over": {
+          "card_id": "sv1-ener-3",
+          "kind": "ATTACH_ENERGY",
+          "target_card_id": "svg-alt"
+        },
+        "preferred": {
+          "card_id": "sv1-ener-8",
+          "kind": "ATTACH_ENERGY",
+          "target_card_id": "svg-alt"
+        },
+        "stage": "balance_energy",
+        "surface": "action"
+      }
+    ],
+    "fighting": [
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svf-terr",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "fighting_setup_riolu",
+        "over": {
+          "card_id": "svf-terr",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "svf-rio",
+          "kind": "PLAY_BASIC"
+        },
+        "stage": "build_lucario",
+        "surface": "action"
+      },
+      {
+        "category": "evolution",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svf-terr",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "fighting_evolve_lucario",
+        "over": {
+          "card_id": "svf-klea",
+          "kind": "EVOLVE"
+        },
+        "preferred": {
+          "card_id": "svf-luca",
+          "kind": "EVOLVE"
+        },
+        "stage": "build_lucario",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svf-terr",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "fighting_search_lucario",
+        "over": {
+          "card_id": "sv1-ener-6"
+        },
+        "preferred": {
+          "card_id": "svf-luca"
+        },
+        "stage": "build_lucario",
+        "surface": "choice"
+      },
+      {
+        "category": "switch",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svf-terr",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "asleep"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fighting_status_switch",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-150",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "build_lucario",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svf-terr",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "fighting_kleavor_guillotine",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svf-klea",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svf-klea",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "build_lucario",
+        "surface": "action"
+      },
+      {
+        "category": "prize_route",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svf-luca",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-6",
+                "sv1-ener-6",
+                "sv1-ener-6",
+                "sv1-ener-6",
+                "sv1-ener-6",
+                "sv1-ener-6"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fighting_lucario_prize_route",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svf-luca",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "aura_burst",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svf-terr",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "fighting_discard_energy_not_lucario",
+        "over": {
+          "card_id": "svf-luca"
+        },
+        "preferred": {
+          "card_id": "sv1-ener-6"
+        },
+        "stage": "build_lucario",
+        "surface": "choice"
+      },
+      {
+        "category": "loss_avoidance",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svf-luca",
+              "damage_counters": 10,
+              "energy_card_ids": [
+                "sv1-ener-6",
+                "sv1-ener-6"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svf-klea",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fighting_avoid_lucario_self_ko",
+        "over": {
+          "card_id": "svf-luca",
+          "kind": "USE_ABILITY"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svf-luca",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "aura_burst",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svf-luca",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svf-klea",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fighting_safe_lucario_engine",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "svf-luca",
+          "kind": "USE_ABILITY"
+        },
+        "stage": "stack_fighting_energy",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svf-luca",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-6",
+                "sv1-ener-6",
+                "sv1-ener-6"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svf-klea",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fighting_aura_attack",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svf-luca",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "aura_burst",
+        "surface": "action"
+      }
+    ],
+    "fire": [
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-ente",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "fire_setup_chain",
+        "over": {
+          "card_id": "svi-ente",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "svi-chim",
+          "kind": "PLAY_BASIC"
+        },
+        "stage": "establish_chain",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "fire_bench_chimchar_chain",
+        "over": {
+          "card_id": "svi-chim",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "active"
+          }
+        },
+        "preferred": {
+          "card_id": "svi-chim",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "bench_0"
+          }
+        },
+        "stage": "establish_chain",
+        "surface": "action"
+      },
+      {
+        "category": "evolution",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-ente",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "fire_core_evolution",
+        "over": {
+          "card_id": "svi-monf",
+          "kind": "EVOLVE"
+        },
+        "preferred": {
+          "card_id": "svi-infr",
+          "kind": "EVOLVE"
+        },
+        "stage": "establish_chain",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-ente",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "fire_search_infernape",
+        "over": {
+          "card_id": "sv1-ener-2"
+        },
+        "preferred": {
+          "card_id": "svi-infr"
+        },
+        "stage": "establish_chain",
+        "surface": "choice"
+      },
+      {
+        "category": "switch",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-ente",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "paralyzed"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fire_status_switch",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-150",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "establish_chain",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-infr",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-2",
+                "sv1-ener-2",
+                "sv1-ener-2",
+                "sv1-ener-2"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fire_spiral_preserves_energy",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svi-infr",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svi-infr",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "ignite_engine",
+        "surface": "action"
+      },
+      {
+        "category": "prize_route",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-chiy",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-2",
+                "sv1-ener-2"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": [
+                {
+                  "cause_kind": "damage",
+                  "defeated_player": 0,
+                  "source_kind": "attack_damage",
+                  "source_player": 1
+                }
+              ]
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fire_chiyu_revenge_route",
+        "over": {
+          "attack_index": 0,
+          "card_id": "svi-chiy",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "svi-chiy",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "closeout",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-ente",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [
+              "sv1-ener-2",
+              "sv1-ener-2",
+              "sv1-ener-2"
+            ],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fire_discard_recyclable_energy",
+        "over": {
+          "card_id": "svi-infr"
+        },
+        "preferred": {
+          "card_id": "sv1-ener-2"
+        },
+        "stage": "establish_chain",
+        "surface": "choice"
+      },
+      {
+        "category": "loss_avoidance",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-ente",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [
+              "sv1-ener-2",
+              "sv1-ener-2",
+              "sv1-ener-2"
+            ],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fire_keep_squawk_engine",
+        "over": {
+          "card_id": "svi-sqwk"
+        },
+        "preferred": {
+          "card_id": "sv1-ener-2"
+        },
+        "stage": "establish_chain",
+        "surface": "choice"
+      },
+      {
+        "category": "resource_preservation",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-ente",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [
+              "sv1-ener-2",
+              "sv1-ener-2",
+              "sv1-ener-2"
+            ],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fire_recover_three_energy",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "svi-mela",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "establish_chain",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-infr",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "fire_closeout_infernape",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svi-infr",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "closeout",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svi-sqwk",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 2
+        },
+        "expected": "higher",
+        "id": "fire_squawk_opening_search",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svi-sqwk",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svi-sqwk",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "establish_chain",
+        "surface": "action"
+      }
+    ],
+    "grass": [
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-zaru",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "grass_setup_turtwig",
+        "over": {
+          "card_id": "svg2-zaru",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "svg2-turt",
+          "kind": "PLAY_BASIC"
+        },
+        "stage": "fill_evolution_board",
+        "surface": "action"
+      },
+      {
+        "category": "evolution",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-turt",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg2-grot",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svg2-shro",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svg2-zaru",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "grass_evolve_torterra",
+        "over": {
+          "card_id": "svg2-brel",
+          "kind": "EVOLVE"
+        },
+        "preferred": {
+          "card_id": "svg2-tort",
+          "kind": "EVOLVE"
+        },
+        "stage": "evolve_swarm",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-zaru",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg2-grot",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "grass_search_torterra",
+        "over": {
+          "card_id": "sv1-ener-1"
+        },
+        "preferred": {
+          "card_id": "svg2-tort"
+        },
+        "stage": "fill_evolution_board",
+        "surface": "choice"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-zaru",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "grass_search_turtwig_without_prerequisite",
+        "over": {
+          "card_id": "svg2-tort"
+        },
+        "preferred": {
+          "card_id": "svg2-turt"
+        },
+        "stage": "fill_evolution_board",
+        "surface": "choice"
+      },
+      {
+        "category": "switch",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-zaru",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "confused"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "grass_status_switch",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-150",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "fill_evolution_board",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-tort",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-1",
+                "sv1-ener-1",
+                "sv1-ener-1"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg2-grot",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svg2-brel",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svg2-empo",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "grass_torterra_evolved_board",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svg2-tort",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svg2-tort",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "evolution_pressure",
+        "surface": "action"
+      },
+      {
+        "category": "prize_route",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-tort",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg2-grot",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svg2-brel",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svg2-empo",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "grass_torterra_prize_route",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svg2-tort",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "evolution_pressure",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-zaru",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg2-grot",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "grass_discard_empoleon",
+        "over": {
+          "card_id": "svg2-tort"
+        },
+        "preferred": {
+          "card_id": "svg2-empo"
+        },
+        "stage": "fill_evolution_board",
+        "surface": "choice"
+      },
+      {
+        "category": "loss_avoidance",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-zaru",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "paralyzed"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "grass_retreat_special_condition",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "svg2-zaru",
+          "kind": "RETREAT"
+        },
+        "stage": "fill_evolution_board",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-tort",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svg2-brel",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svg2-zaru",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [
+              "svg2-empo"
+            ],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "grass_empoleon_empty_hand_revival",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "svg2-empo",
+          "kind": "USE_ABILITY"
+        },
+        "stage": "evolve_swarm",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svg2-zaru",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "grass_zarude_opening_search",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svg2-zaru",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svg2-zaru",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "fill_evolution_board",
+        "surface": "action"
+      }
+    ],
+    "lightning": [
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svl-thun",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "lightning_setup_mareep",
+        "over": {
+          "card_id": "svl-thun",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "svl-mare2",
+          "kind": "PLAY_BASIC"
+        },
+        "stage": "charge_bench",
+        "surface": "action"
+      },
+      {
+        "category": "evolution",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svl-thun",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "lightning_evolve_flaaffy",
+        "over": {
+          "card_id": "svl-lant",
+          "kind": "EVOLVE"
+        },
+        "preferred": {
+          "card_id": "svl-flaa2",
+          "kind": "EVOLVE"
+        },
+        "stage": "charge_bench",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svl-thun",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "lightning_search_pikachu",
+        "over": {
+          "card_id": "sv1-ener-4"
+        },
+        "preferred": {
+          "card_id": "svl-pikaex"
+        },
+        "stage": "charge_bench",
+        "surface": "choice"
+      },
+      {
+        "category": "switch",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svl-thun",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "paralyzed"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "lightning_status_switch",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-150",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "charge_bench",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svl-pikaex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-4",
+                "sv1-ener-4",
+                "sv1-ener-4"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svl-flaa2",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "lightning_strong_volt_ready",
+        "over": {
+          "attack_index": 0,
+          "card_id": "svl-pikaex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "svl-pikaex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "prepare_pikachu",
+        "surface": "action"
+      },
+      {
+        "category": "prize_route",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svl-pikaex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-4",
+                "sv1-ener-4",
+                "sv1-ener-4"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svl-flaa2",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "lightning_burst_last_prize",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "svl-pikaex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "burst_finish",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svl-thun",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "lightning_discard_acceleration_energy",
+        "over": {
+          "card_id": "svl-pikaex"
+        },
+        "preferred": {
+          "card_id": "sv1-ener-4"
+        },
+        "stage": "charge_bench",
+        "surface": "choice"
+      },
+      {
+        "category": "loss_avoidance",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svl-pikaex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-4",
+                "sv1-ener-4",
+                "sv1-ener-4",
+                "sv1-ener-4",
+                "sv1-ener-4",
+                "sv1-ener-4"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "lightning_avoid_overcommitted_volt",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svl-pikaex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svl-pikaex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "charge_bench",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svl-thun",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "lightning_generator_setup",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-170",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "charge_bench",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svl-pikaex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-4",
+                "sv1-ener-4",
+                "sv1-ener-4"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svl-flaa2",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "lightning_flaaffy_engine",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "svl-flaa2",
+          "kind": "USE_ABILITY"
+        },
+        "stage": "prepare_pikachu",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand": [
+              "svl-mare2",
+              "svl-zera"
+            ],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "lightning_frontline_over_bench_engine",
+        "over": {
+          "card_id": "svl-mare2",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "active"
+          }
+        },
+        "preferred": {
+          "card_id": "svl-zera",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "active"
+          }
+        },
+        "stage": "charge_bench",
+        "surface": "action"
+      }
+    ],
+    "psychic": [
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-109",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "psychic_setup_natu",
+        "over": {
+          "card_id": "sv1-109",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "sv1-107",
+          "kind": "PLAY_BASIC"
+        },
+        "stage": "build_xatu_engine",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "psychic_open_with_cresselia",
+        "over": {
+          "card_id": "sv1-109",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "active"
+          }
+        },
+        "preferred": {
+          "card_id": "sv1-113",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "active"
+          }
+        },
+        "stage": "build_xatu_engine",
+        "surface": "action"
+      },
+      {
+        "category": "evolution",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-109",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "psychic_evolve_xatu",
+        "over": {
+          "card_id": "sv1-106",
+          "kind": "EVOLVE"
+        },
+        "preferred": {
+          "card_id": "sv1-108",
+          "kind": "EVOLVE"
+        },
+        "stage": "build_xatu_engine",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-109",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv1-107",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "psychic_search_xatu",
+        "over": {
+          "card_id": "sv1-ener-5"
+        },
+        "preferred": {
+          "card_id": "sv1-108"
+        },
+        "stage": "build_xatu_engine",
+        "surface": "choice"
+      },
+      {
+        "category": "switch",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-109",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "confused"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "psychic_status_switch",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-150",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "build_xatu_engine",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-111",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv1-108",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "psychic_latios_clean_light",
+        "over": {
+          "attack_index": 0,
+          "card_id": "sv1-111",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "sv1-111",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "scale_attackers",
+        "surface": "action"
+      },
+      {
+        "category": "prize_route",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-106",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv1-108",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [
+              "sv1-104",
+              "sv1-109",
+              "sv1-114"
+            ],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "psychic_houndstone_graveyard",
+        "over": {
+          "attack_index": 0,
+          "card_id": "sv1-111",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "sv1-106",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "scale_attackers",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-106",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv1-108",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [
+              "sv1-104",
+              "sv1-109",
+              "sv1-114"
+            ],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "psychic_discard_scaling_pokemon",
+        "over": {
+          "card_id": "sv1-108"
+        },
+        "preferred": {
+          "card_id": "sv1-104"
+        },
+        "stage": "scale_attackers",
+        "surface": "choice"
+      },
+      {
+        "category": "loss_avoidance",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-109",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "psychic_keep_xatu_engine",
+        "over": {
+          "card_id": "sv1-108"
+        },
+        "preferred": {
+          "card_id": "sv1-109"
+        },
+        "stage": "build_xatu_engine",
+        "surface": "choice"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-111",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv1-108",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [
+              "sv1-ener-5",
+              "sv1-ener-5"
+            ],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "psychic_xatu_acceleration",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-108",
+          "kind": "USE_ABILITY"
+        },
+        "stage": "accelerate_energy",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-111",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv1-108",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "psychic_closeout_clean_light",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "sv1-111",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "scale_attackers",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv1-113",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-5"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv1-107",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 2
+        },
+        "expected": "higher",
+        "id": "psychic_first_turn_cresselia_growth",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "sv1-113",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "build_xatu_engine",
+        "surface": "action"
+      }
+    ],
+    "steel": [
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svm-skarmory",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "steel_setup_bronzor",
+        "over": {
+          "card_id": "svm-skarmory",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "svm-bronzor",
+          "kind": "PLAY_BASIC"
+        },
+        "stage": "build_metal_board",
+        "surface": "action"
+      },
+      {
+        "category": "evolution",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svm-zamazenta",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svm-bronzor",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "steel_evolve_bronzong",
+        "over": {
+          "card_id": "svm-bronzor",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "svm-bronzong",
+          "kind": "EVOLVE"
+        },
+        "stage": "enable_transfer",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svm-skarmory",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "steel_search_zacian",
+        "over": {
+          "card_id": "sv1-ener-8"
+        },
+        "preferred": {
+          "card_id": "svm-zacian"
+        },
+        "stage": "build_metal_board",
+        "surface": "choice"
+      },
+      {
+        "category": "switch",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svm-skarmory",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "asleep"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "steel_status_switch",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-150",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "build_metal_board",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svm-zacian",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "steel_zacian_blade_empty_bench",
+        "over": {
+          "attack_index": 0,
+          "card_id": "svm-zacian",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "svm-zacian",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "build_metal_board",
+        "surface": "action"
+      },
+      {
+        "category": "prize_route",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svm-zamazenta",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-8",
+                "sv1-ener-8",
+                "sv1-ener-8"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svm-bronzong",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 1
+          },
+          "own_prize_count": 1,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": [
+                {
+                  "cause_kind": "damage",
+                  "defeated_player": 0,
+                  "source_kind": "attack_damage",
+                  "source_player": 1
+                }
+              ]
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "steel_zamazenta_revenge",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svm-zacian",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svm-zamazenta",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "fortress_pressure",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svm-skarmory",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "steel_discard_metal_for_recovery",
+        "over": {
+          "card_id": "svm-zacian"
+        },
+        "preferred": {
+          "card_id": "sv1-ener-8"
+        },
+        "stage": "build_metal_board",
+        "surface": "choice"
+      },
+      {
+        "category": "loss_avoidance",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svm-skarmory",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "paralyzed"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "steel_retreat_special_condition",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "svm-skarmory",
+          "kind": "RETREAT"
+        },
+        "stage": "build_metal_board",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svm-zamazenta",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svm-bronzong",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svm-orthworm",
+                "damage_counters": 0,
+                "energy_card_ids": [
+                  "sv1-ener-8",
+                  "sv1-ener-8"
+                ],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svm-zacian",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "steel_orthworm_third_energy",
+        "over": {
+          "card_id": "sv1-ener-8",
+          "kind": "ATTACH_ENERGY",
+          "target_card_id": "svm-zacian"
+        },
+        "preferred": {
+          "card_id": "sv1-ener-8",
+          "kind": "ATTACH_ENERGY",
+          "target_card_id": "svm-orthworm"
+        },
+        "stage": "fortress_pressure",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "svm-zacian",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-8",
+                "sv1-ener-8",
+                "sv1-ener-8"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "svm-bronzong",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svm-zamazenta",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svm-orthworm",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svm-skarmory",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "svm-cobalion",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "steel_zacian_wide_legion",
+        "over": {
+          "attack_index": 1,
+          "card_id": "svm-zacian",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "svm-zacian",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "fortress_pressure",
+        "surface": "action"
+      }
+    ],
+    "water": [
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv2-grex",
+              "damage_counters": 10,
+              "energy_card_ids": [
+                "sv1-ener-3",
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv2-staryu",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "water_avoid_duplicate_staryu",
+        "over": {
+          "card_id": "sv2-staryu",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "bench_1"
+          }
+        },
+        "preferred": {
+          "card_id": "sv2-38",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "bench_1"
+          }
+        },
+        "stage": "enable_shuriken",
+        "surface": "action"
+      },
+      {
+        "category": "setup",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand": [
+              "sv2-tatsu",
+              "sv2-staryu"
+            ],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "water_open_with_tatsugiri",
+        "over": {
+          "card_id": "sv2-staryu",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "active"
+          }
+        },
+        "preferred": {
+          "card_id": "sv2-tatsu",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "active"
+          }
+        },
+        "stage": "establish_board",
+        "surface": "action"
+      },
+      {
+        "category": "evolution",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv2-keldeo",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "water_evolve_greninja",
+        "over": {
+          "card_id": "sv2-39",
+          "kind": "EVOLVE"
+        },
+        "preferred": {
+          "card_id": "sv2-grex",
+          "kind": "EVOLVE"
+        },
+        "stage": "establish_board",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "choice_context": {
+          "presentation": {
+            "purpose": "search"
+          },
+          "request_type": "search_deck"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv2-grex",
+              "damage_counters": 10,
+              "energy_card_ids": [
+                "sv1-ener-3",
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv2-staryu",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "water_search_froakie_backup",
+        "over": {
+          "card_id": "sv2-staryu"
+        },
+        "preferred": {
+          "card_id": "sv2-38"
+        },
+        "stage": "enable_shuriken",
+        "surface": "choice"
+      },
+      {
+        "category": "switch",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv2-keldeo",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": [
+                "asleep"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "water_status_switch",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv1-150",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "establish_board",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "sv2-glast",
+              "damage_counters": 2,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv2-grex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-3",
+                "sv1-ener-3",
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "water_torrent_damaged_active",
+        "over": {
+          "attack_index": 0,
+          "card_id": "sv2-grex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 1,
+          "card_id": "sv2-grex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "take_multi_prize",
+        "surface": "action"
+      },
+      {
+        "category": "resource_preservation",
+        "choice_context": {
+          "presentation": {
+            "purpose": "discard_cards"
+          },
+          "request_type": "select_card"
+        },
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv2-keldeo",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "water_discard_energy_not_core",
+        "over": {
+          "card_id": "sv2-grex"
+        },
+        "preferred": {
+          "card_id": "sv1-ener-3"
+        },
+        "stage": "establish_board",
+        "surface": "choice"
+      },
+      {
+        "category": "loss_avoidance",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv2-starm",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "water_avoid_starmie_no_backup",
+        "over": {
+          "card_id": "sv2-starm",
+          "kind": "USE_ABILITY"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "sv2-grex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "establish_board",
+        "surface": "action"
+      },
+      {
+        "category": "prize_route",
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "sv2-glast",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 1
+          },
+          "opponent_prize_count": 1,
+          "own": {
+            "active": {
+              "card_id": "sv2-grex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-3",
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv2-starm",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "water_starmie_enables_torrent",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv2-starm",
+          "kind": "USE_ABILITY"
+        },
+        "stage": "enable_shuriken",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "sv2-glast",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv2-staryu",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "sv2-keldeo",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "sv2-tatsu",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              },
+              {
+                "card_id": "sv2-delib",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv2-grex",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-3",
+                "sv1-ener-3",
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3
+        },
+        "expected": "higher",
+        "id": "water_shuriken_wide_board",
+        "over": {
+          "attack_index": 1,
+          "card_id": "sv2-grex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "sv2-grex",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "enable_shuriken",
+        "surface": "action"
+      },
+      {
+        "category": "search",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv2-keldeo",
+              "damage_counters": 0,
+              "energy_card_ids": [],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 1
+        },
+        "expected": "higher",
+        "id": "water_candice_search",
+        "over": {
+          "kind": "END_TURN"
+        },
+        "preferred": {
+          "card_id": "sv2-cand",
+          "kind": "PLAY_TRAINER"
+        },
+        "stage": "establish_board",
+        "surface": "action"
+      },
+      {
+        "category": "attack",
+        "context": {
+          "opponent": {
+            "active": {},
+            "bench": [],
+            "discard": [],
+            "hand_count": 0,
+            "prizes_remaining": 6
+          },
+          "opponent_prize_count": 6,
+          "own": {
+            "active": {
+              "card_id": "sv2-tatsu",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-3"
+              ],
+              "healed_this_turn": false,
+              "status_conditions": []
+            },
+            "bench": [
+              {
+                "card_id": "sv2-38",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "healed_this_turn": false,
+                "status_conditions": []
+              }
+            ],
+            "discard": [],
+            "hand": [],
+            "prizes_remaining": 6
+          },
+          "own_prize_count": 6,
+          "perspective": 0,
+          "turn_fact_book": {
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 2
+        },
+        "expected": "higher",
+        "id": "water_tatsugiri_opening_acceleration",
+        "over": {
+          "attack_index": 1,
+          "card_id": "sv2-tatsu",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "sv2-tatsu",
+          "kind": "DECLARE_ATTACK"
+        },
+        "stage": "establish_board",
+        "surface": "action"
+      }
+    ]
+  },
+  "schema": "ptcg.challenge_tactics",
+  "version": 1
+}

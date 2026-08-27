@@ -1,0 +1,21 @@
+# Deep AI research
+
+This directory is an opt-in research project. It is not imported by the game,
+the default build, release packaging, or regular CI.
+
+The Python teacher and Godot both call the same dependency-free
+`native/challenge_core/ChallengeController`. Generated replay, checkpoints and
+ONNX files stay under `research/deep_ai/build` unless an explicit output path is
+provided.
+
+On Windows, install the pinned environment with `tools/setup_ai_toolchain.ps1`,
+then run the manual smoke workflow:
+
+```powershell
+.\tools\test_research_smoke.ps1
+```
+
+That workflow builds the pybind research binding, samples the shared Challenge
+teacher, round-trips replay, performs one CPU learner step, and checks Torch to
+ONNX numerical parity. Longer actor, learner and dashboard workflows remain
+explicit commands under `tools/`.

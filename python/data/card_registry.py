@@ -17,7 +17,7 @@ class CardRegistry:
         """Load cards from built-in templates."""
 
         for card_id in card_ids:
-            template = OFFLINE_CARD_TEMPLATES.get(card_id)
+            template = CARD_DEFINITIONS.get(card_id)
             if template is None:
                 logger.warning("no template for: %s", card_id)
                 continue
@@ -35,8 +35,6 @@ class CardRegistry:
     @classmethod
     def _build_card(cls, raw: dict, card_id: str) -> Card:
         """Convert raw template data + effects to a Card object."""
-        from card_data.effects import CARD_EFFECT_SPECS
-
         effect_spec = CARD_EFFECT_SPECS.get(card_id)
         effects_data = (
             effect_spec.to_authoring_dict() if effect_spec is not None else {}
@@ -215,9 +213,7 @@ class CardRegistry:
         return cls._initialized
 
 # ============================================================
-# OFFLINE CARD TEMPLATES - Real Pokemon TCG card data
+# SINGLE-SOURCE CARD DEFINITIONS - printed data and effects
 # ============================================================
 # Card IDs are from pokemontcg.io API v2 format (e.g., 'sv1-26').
-# Card effects are normalized by card_data.effects into typed authoring specs.
-
-from card_data.templates import OFFLINE_CARD_TEMPLATES
+from card_data.cards import CARD_DEFINITIONS, CARD_EFFECT_SPECS

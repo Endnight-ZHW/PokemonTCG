@@ -1,0 +1,32 @@
+{
+  "encoder": {
+    "candidate_numeric_size": 48,
+    "candidate_ref_fields": 8,
+    "entity_numeric_size": 24,
+    "entity_slots": 160,
+    "entity_type_fields": 4,
+    "schema_version": 8,
+    "state_global_size": 192,
+    "wdl_size": 3
+  },
+  "format_version": 1,
+  "model": {
+    "card_semantic_size": 53,
+    "dropout": 0.0,
+    "ffn_dimension": 512,
+    "heads": 8,
+    "layers": 4,
+    "model_dimension": 128,
+    "variant": "universal_infoset_transformer_v3"
+  },
+  "planner": {
+    "c_puct": 1.4,
+    "planner_id": "infoset_puct_v3",
+    "schema_version": 3,
+    "training_simulations": 128
+  },
+  "schemas": {
+    "python_actions": 4,
+    "python_rules": 5
+  }
+}

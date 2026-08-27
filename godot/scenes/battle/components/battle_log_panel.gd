@@ -71,7 +71,6 @@ func _localize_entry(value: String) -> String:
 	# half-localized player name. Card-name suffixes such as "ex" are not part
 	# of this map and therefore remain untouched.
 	result = result.replace("Challenge AI", "挑战电脑")
-	result = result.replace("Deep AI", "深度搜索电脑")
 	for bench_index in range(10):
 		result = _replace_ascii_token(
 			result,
@@ -81,7 +80,6 @@ func _localize_entry(value: String) -> String:
 	var labels := {
 		"active": "战斗区",
 		"Challenge": "挑战",
-		"Deep": "深度搜索",
 		"AI": "电脑",
 		"CPU": "电脑",
 		"KO": "气绝",

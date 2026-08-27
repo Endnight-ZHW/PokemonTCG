@@ -23,22 +23,17 @@ $env:PYTHONNOUSERSITE = '1'
 $modules = @()
 if ($Tier -eq 'core') {
     $modules = @(
-		'tests.test_card_authoring_dsl',
-		'tests.test_card_rules_consistency',
-		'tests.test_vm_descriptors',
-		'tests.test_native_rules_session',
-		'tests.test_native_game_engine_facade',
+        'tests.test_card_authoring_dsl',
+        'tests.test_card_rules_consistency',
+        'tests.test_vm_descriptors',
         'tests.test_godot_export',
         'tests.test_release_manifest',
         'tests.test_android_release_gate',
         'tests.test_snapshot_schema',
-        'tests.test_draw_ai_semantics',
-		'tests.test_energy_view',
-		'tests.test_ai_strategy_definitions',
-		'tests.test_ai_evaluation_report',
-		'tests.test_alphazero_v3',
+        'tests.test_energy_view',
+        'tests.test_ai_strategy_definitions',
         'tests.test_python_tool_boundary',
-		'tests.test_relay_server'
+        'tests.test_relay_server'
     )
 }
 

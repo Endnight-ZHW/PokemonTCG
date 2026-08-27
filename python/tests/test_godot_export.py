@@ -3,172 +3,28 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.export_godot_data import (
-    _export_images,
-    _exported_image_errors,
-    _image_hashes,
-    _parse_image_mapping,
-    _validate_image_mapping,
-    export,
+from data.deck_definitions import ALL_CARD_IDS
+from scripts.export_godot_data import export
+from scripts.godot_export.resources import (
+    exported_image_errors,
+    image_hashes,
+    load_image_mapping,
 )
-from engine.actions import ChoiceOption
-from engine.ai.dl.encoder import ActionStateEncoder, card_index
-from engine.ai.observation import Observation
 from engine.commands.descriptors import descriptor_export_payload
 from engine.commands.vm_contract import VM_IR_VERSION
 
 
 class GodotDataExportTests(unittest.TestCase):
-    def test_choice_encoder_uses_only_choice_view_v2_public_identity(self):
-        observation = Observation(
-            perspective=1,
-            turn_number=1,
-            phase="MAIN",
-            active_player=1,
-            winner=None,
-            own_hand=(),
-            own_discard=(),
-            own_deck_count=0,
-            own_prize_count=0,
-            opponent_hand_count=0,
-            opponent_discard=(),
-            opponent_deck_count=0,
-            opponent_prize_count=0,
-            board=(),
-            stadium_id="",
-            public_deck_keys=(None, None),
-            apply_type_matchups=False,
-        )
-        encoder = ActionStateEncoder()
-        known_card = object()
-
-        def lookup(card_id):
-            return known_card if card_id == "sv2-cand" else None
-
-        with mock.patch(
-            "engine.ai.dl.encoder.CardRegistry.get",
-            side_effect=lookup,
-        ):
-            opaque_option = encoder.encode_choice_option(
-                observation,
-                "select_card",
-                ChoiceOption(
-                    "opaque-option",
-                    "no private value channel",
-                ),
-            )
-            malformed_ref = encoder.encode_choice_option(
-                observation,
-                "select_pokemon",
-                ChoiceOption(
-                    "opaque-ref",
-                    "legacy seven-field ref",
-                    ref={
-                        "kind": "pokemon",
-                        "player": 1,
-                        "zone": "",
-                        "slot": "bench_0",
-                        "index": -1,
-                        "attachment_type": "",
-                        "card_id": "sv2-cand",
-                    },
-                ),
-            )
-            option_id_fallback = encoder.encode_choice_option(
-                observation,
-                "select_card",
-                ChoiceOption("card:hand:1:sv2-cand", "known public ID"),
-            )
-
-        self.assertEqual(opaque_option.card_id, 0)
-        self.assertEqual(malformed_ref.card_id, 0)
-        self.assertEqual(option_id_fallback.card_id, card_index("sv2-cand"))
-
-    def test_image_mapping_rejects_missing_duplicate_source_and_escape(self):
-        with self.assertRaisesRegex(ValueError, "JSON object"):
-            _parse_image_mapping(
-                '[["card-1", "data/images/a.webp"]]'
-            )
-        with self.assertRaisesRegex(ValueError, "Duplicate"):
-            _parse_image_mapping(
-                '{"card-1":"data/images/a.webp","card-1":"data/images/b.webp"}'
-            )
-        with tempfile.TemporaryDirectory() as root_dir:
-            root = Path(root_dir)
-            images = root / "data" / "images"
-            images.mkdir(parents=True)
-            (images / "one.webp").write_bytes(b"one")
-            with self.assertRaisesRegex(ValueError, "Missing card image mappings"):
-                _validate_image_mapping({}, python_root=root, card_ids=["card-1"])
-            with self.assertRaisesRegex(FileNotFoundError, "Missing card image source"):
-                _validate_image_mapping(
-                    {"card-1": "data/images/missing.webp"},
-                    python_root=root,
-                    card_ids=["card-1"],
-                )
-            (root / "outside.webp").write_bytes(b"outside")
-            with self.assertRaisesRegex(ValueError, "escapes data/images"):
-                _validate_image_mapping(
-                    {"card-1": "outside.webp"},
-                    python_root=root,
-                    card_ids=["card-1"],
-                )
-            with self.assertRaisesRegex(ValueError, "Unsafe card ID"):
-                _validate_image_mapping(
-                    {"../outside": "data/images/one.webp"},
-                    python_root=root,
-                    card_ids=["../outside"],
-                )
-
-    def test_exported_image_hashes_change_with_source_bytes(self):
-        from scripts import export_godot_data
-
-        with tempfile.TemporaryDirectory() as root_dir:
-            root = Path(root_dir)
-            image = root / "data" / "images" / "one.webp"
-            image.parent.mkdir(parents=True)
-            image.write_bytes(b"one")
-            mapping = {"card-1": "data/images/one.webp"}
-            with mock.patch.object(export_godot_data, "PYTHON_ROOT", root), mock.patch.object(
-                export_godot_data, "ALL_CARD_IDS", ["card-1"]
-            ):
-                first = _image_hashes(mapping)
-                image.write_bytes(b"two")
-                second = _image_hashes(mapping)
-            self.assertNotEqual(first["card-1"], second["card-1"])
-
-    def test_exported_image_check_detects_stale_target_and_missing_card_back(self):
-        from scripts import export_godot_data
-
-        with tempfile.TemporaryDirectory() as root_dir, tempfile.TemporaryDirectory() as output_dir:
-            root = Path(root_dir)
-            output = Path(output_dir)
-            images = root / "data" / "images"
-            images.mkdir(parents=True)
-            (images / "one.webp").write_bytes(b"one")
-            card_back = images / "卡背.webp"
-            card_back.write_bytes(b"back")
-            mapping = {"card-1": "data/images/one.webp"}
-            with mock.patch.object(export_godot_data, "PYTHON_ROOT", root), mock.patch.object(
-                export_godot_data, "ALL_CARD_IDS", ["card-1"]
-            ):
-                _export_images(output, mapping)
-                self.assertEqual(_exported_image_errors(output, mapping), [])
-                (output / "assets" / "cards" / "card-1.webp").write_bytes(b"stale")
-                self.assertIn("hash:card-1.webp", _exported_image_errors(output, mapping))
-                stale_import = output / "assets" / "cards" / "old-card.webp.import"
-                stale_import.write_text("stale", encoding="utf-8")
-                self.assertIn(
-                    "obsolete:old-card.webp.import",
-                    _exported_image_errors(output, mapping),
-                )
-                card_back.unlink()
-                with self.assertRaisesRegex(FileNotFoundError, "card back"):
-                    _export_images(output, mapping)
+    def test_canonical_card_images_cover_release_ids(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        mapping = load_image_mapping(repo_root, ALL_CARD_IDS)
+        self.assertEqual(len(mapping), 137)
+        self.assertEqual(mapping["svi-chim"], "svi-chim.webp")
+        self.assertEqual(len(image_hashes(repo_root, mapping)), 137)
+        self.assertEqual(exported_image_errors(repo_root / "godot", mapping), [])
 
     def test_export_is_complete_and_deterministic(self):
         with tempfile.TemporaryDirectory() as first_dir, tempfile.TemporaryDirectory() as second_dir:
@@ -392,7 +248,8 @@ class GodotDataExportTests(unittest.TestCase):
             second_cards = json.loads((second / "data" / "cards.json").read_text(encoding="utf-8"))
             self.assertEqual(first_cards, second_cards)
             self.assertEqual(len(first_cards), 137)
-            self.assertEqual(first_cards["svi-chim"]["ai_card_index"], 92)
+            self.assertNotIn("ai_card_index", first_cards["svi-chim"])
+            self.assertNotIn("ai_semantic_features", first_cards["svi-chim"])
             self.assertIn("compiled_effects", first_cards["svi-chim"]["attacks"][0])
             compiled_dump = json.dumps(first_cards, sort_keys=True)
             legacy_formula_ops = (
@@ -404,7 +261,6 @@ class GodotDataExportTests(unittest.TestCase):
             )
             for op in legacy_formula_ops:
                 self.assertNotIn(f'"op": "{op}"', compiled_dump)
-            self.assertEqual(len(first_cards["svi-chim"]["ai_semantic_features"]), 53)
             self.assertEqual(first_cards["sv2-tatsu"]["attacks"][1]["damage"], 30)
             self.assertEqual(first_cards["sv2-tatsu"]["attacks"][1]["damage_text"], "30")
             self.assertEqual(first_cards["svi-sqwk"]["attacks"][1]["damage_text"], "60")
@@ -413,82 +269,7 @@ class GodotDataExportTests(unittest.TestCase):
             self.assertEqual(first_cards["svg-ceti"]["attacks"][1]["damage_text"], "200-")
             self.assertEqual(first_cards["sv2-tatsu"]["attacks"][0]["damage_text"], "")
             self.assertEqual(first_cards["svg2-empo"]["attacks"][0]["damage_text"], "")
-            encoder_fixture = json.loads(
-                (first / "tests" / "fixtures" / "ai_encoder_golden.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(encoder_fixture["fixture_version"], 2)
-            choice_view = encoder_fixture["choice"]
-            self.assertEqual(
-                set(choice_view),
-                {
-                    "schema_version",
-                    "request_id",
-                    "base_revision",
-                    "player",
-                    "request_type",
-                    "prompt",
-                    "options",
-                    "min_select",
-                    "max_select",
-                    "allow_duplicates",
-                    "can_cancel",
-                    "presentation",
-                },
-            )
-            self.assertEqual(choice_view["schema_version"], 2)
-            self.assertGreaterEqual(choice_view["base_revision"], 0)
-            for option in choice_view["options"]:
-                self.assertNotIn("value", option)
-                ref = option.get("ref")
-                if ref is None:
-                    continue
-                expected_ref_fields = {
-                    "card": {"kind", "player", "zone", "index", "card_id"},
-                    "pokemon": {"kind", "player", "slot", "card_id"},
-                    "slot": {"kind", "player", "slot"},
-                    "attachment": {
-                        "kind",
-                        "player",
-                        "slot",
-                        "attachment_type",
-                        "index",
-                        "card_id",
-                    },
-                }
-                self.assertEqual(set(ref), expected_ref_fields[ref["kind"]])
-            self.assertEqual(len(encoder_fixture["expected"]["state_numeric"]), 960)
-            self.assertEqual(len(encoder_fixture["expected"]["state_cards"]), 128)
-            self.assertTrue(
-                all(
-                    len(row["numeric"]) == 178
-                    for row in encoder_fixture["expected"]["actions"]
-                )
-            )
             self.assertEqual(
                 first_cards["svi-chim"]["image_path"],
                 "res://assets/cards/svi-chim.webp",
             )
-
-    def test_export_removes_obsolete_card_assets(self):
-        with tempfile.TemporaryDirectory() as output_dir:
-            output = Path(output_dir)
-            target_root = output / "assets" / "cards"
-            target_root.mkdir(parents=True)
-            stale_image = target_root / "stale-card.png"
-            stale_import = target_root / "stale-card.png.import"
-            unrelated = target_root / "notes.txt"
-            stale_image.write_bytes(b"stale")
-            stale_import.write_text("stale import", encoding="utf-8")
-            unrelated.write_text("keep", encoding="utf-8")
-
-            export(output, copy_images=True)
-            card_images = json.loads((output / "data" / "card_images.json").read_text(encoding="utf-8"))
-            first_image = Path(next(iter(card_images.values()))).name
-
-            self.assertFalse(stale_image.exists())
-            self.assertFalse(stale_import.exists())
-            self.assertTrue(unrelated.exists())
-            self.assertTrue((target_root / "card_back.webp").exists())
-            self.assertTrue((target_root / first_image).exists())

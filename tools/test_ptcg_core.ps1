@@ -23,7 +23,7 @@ $pythonCommand = if (Test-Path -LiteralPath $Python -PathType Leaf) {
     }
     $resolvedPython.Source
 }
-$sourceRoot = Join-Path $repoRoot 'godot\native\ptcg_core'
+$sourceRoot = Join-Path $repoRoot 'native\ptcg_core'
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsPath = if (Test-Path -LiteralPath $vswhere) {
     & $vswhere -latest -products * `
