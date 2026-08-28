@@ -378,8 +378,9 @@ func _stale_outputs(outputs: Dictionary) -> Array[String]:
 	for key_value in paths:
 		var key := str(key_value)
 		var path := str(paths[key])
-		if not FileAccess.file_exists(path) \
-				or FileAccess.get_file_as_string(path) != _pretty_json(outputs[key]):
+		var existing := FileAccess.get_file_as_string(path).replace("\r\n", "\n") \
+			if FileAccess.file_exists(path) else ""
+		if existing != _pretty_json(outputs[key]):
 			stale.append(path.trim_prefix("res://"))
 	return stale
 
