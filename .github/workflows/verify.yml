@@ -30,7 +30,7 @@ jobs:
         shell: pwsh
         run: |
           .\tools\setup_native_ai_deps.ps1
-          .\tools\setup_godot_toolchain.ps1
+          .\tools\setup_godot_toolchain.ps1 -SkipExportTemplates
 
       - name: Run fast verification
         shell: pwsh
@@ -68,7 +68,7 @@ jobs:
         shell: pwsh
         run: |
           .\tools\setup_native_ai_deps.ps1
-          .\tools\setup_godot_toolchain.ps1
+          .\tools\setup_godot_toolchain.ps1 -SkipExportTemplates
 
       - name: Run authoring, Godot UI, LAN and Relay contracts
         shell: pwsh

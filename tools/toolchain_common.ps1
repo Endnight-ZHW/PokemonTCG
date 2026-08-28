@@ -111,7 +111,7 @@ function Get-VerifiedDownload {
         [string]$Sha256 = '',
         [string]$Sha1 = '',
         [switch]$Force,
-        [ValidateRange(1, 10)] [int]$MaxAttempts = 4,
+        [ValidateRange(1, 10)] [int]$MaxAttempts = 6,
         [ValidateRange(0, 60)] [int]$RetryDelaySeconds = 5
     )
 
@@ -125,25 +125,78 @@ function Get-VerifiedDownload {
     }
 
     $partial = "$Destination.part"
+    if ($Force -and (Test-Path -LiteralPath $partial)) {
+        Remove-Item -LiteralPath $partial -Force
+    }
+    $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -eq $curl) {
+        $curl = Get-Command curl -CommandType Application -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+    }
+
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $downloadCompleted = $false
         try {
-            if (Test-Path -LiteralPath $partial) {
-                Remove-Item -LiteralPath $partial -Force
+            if (
+                (Test-Path -LiteralPath $partial) -and
+                (-not [string]::IsNullOrWhiteSpace($Sha256) -or
+                    -not [string]::IsNullOrWhiteSpace($Sha1))
+            ) {
+                try {
+                    Test-ArchiveDigest -Path $partial -Sha256 $Sha256 -Sha1 $Sha1
+                    Move-Item -LiteralPath $partial -Destination $Destination -Force
+                    return
+                } catch {
+                    # A valid partial is promoted above. Otherwise curl resumes it.
+                }
             }
             Write-Host "Downloading $Uri (attempt $attempt/$MaxAttempts)"
-            Invoke-WebRequest -Uri $Uri -OutFile $partial
+            if ($null -ne $curl) {
+                & $curl.Source `
+                    --fail `
+                    --location `
+                    --silent `
+                    --show-error `
+                    --connect-timeout 30 `
+                    --continue-at - `
+                    --output $partial `
+                    $Uri
+                $curlExitCode = $LASTEXITCODE
+                if ($curlExitCode -ne 0) {
+                    if ($curlExitCode -eq 33 -and (Test-Path -LiteralPath $partial)) {
+                        Remove-Item -LiteralPath $partial -Force
+                    }
+                    throw "curl exited with code $curlExitCode"
+                }
+            } else {
+                if (Test-Path -LiteralPath $partial) {
+                    Remove-Item -LiteralPath $partial -Force
+                }
+                Invoke-WebRequest -Uri $Uri -OutFile $partial
+            }
+            $downloadCompleted = $true
             Test-ArchiveDigest -Path $partial -Sha256 $Sha256 -Sha1 $Sha1
             Move-Item -LiteralPath $partial -Destination $Destination -Force
             return
         } catch {
-            if (Test-Path -LiteralPath $partial) {
+            $failure = $_.Exception.Message
+            if ($downloadCompleted -and (Test-Path -LiteralPath $partial)) {
                 Remove-Item -LiteralPath $partial -Force
             }
             if ($attempt -eq $MaxAttempts) {
-                throw "Failed to download and verify $Uri after $MaxAttempts attempts: $($_.Exception.Message)"
+                if (Test-Path -LiteralPath $partial) {
+                    Remove-Item -LiteralPath $partial -Force
+                }
+                throw "Failed to download and verify $Uri after $MaxAttempts attempts: $failure"
             }
             $delay = $RetryDelaySeconds * $attempt
-            Write-Warning "Download attempt $attempt/$MaxAttempts failed: $($_.Exception.Message). Retrying in $delay seconds."
+            $resumeBytes = if (Test-Path -LiteralPath $partial) {
+                (Get-Item -LiteralPath $partial).Length
+            } else {
+                0
+            }
+            Write-Warning "Download attempt $attempt/$MaxAttempts failed: $failure. Retrying in $delay seconds (resume_bytes=$resumeBytes)."
             if ($delay -gt 0) {
                 Start-Sleep -Seconds $delay
             }

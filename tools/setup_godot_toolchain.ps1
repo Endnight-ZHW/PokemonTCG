@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [switch]$IncludeAndroid,
+    [switch]$SkipExportTemplates,
     [switch]$Force
 )
 
@@ -26,23 +27,28 @@ if ($Force -or -not (Test-Path -LiteralPath $godotExe)) {
     Expand-Archive -LiteralPath $godotZip -DestinationPath $godotRoot -Force
 }
 
-$templateArchive = Join-Path $downloads (
-    "Godot_v$($lock.godot.version)_export_templates.tpz"
-)
-Get-VerifiedDownload -Uri $lock.godot.templates_url -Destination $templateArchive `
-    -Sha256 $lock.godot.templates_sha256 -Force:$Force
+if ($IncludeAndroid -and $SkipExportTemplates) {
+    throw 'Android setup requires Godot export templates.'
+}
+if (-not $SkipExportTemplates) {
+    $templateArchive = Join-Path $downloads (
+        "Godot_v$($lock.godot.version)_export_templates.tpz"
+    )
+    Get-VerifiedDownload -Uri $lock.godot.templates_url -Destination $templateArchive `
+        -Sha256 $lock.godot.templates_sha256 -Force:$Force
 
-$templateRoot = $godotPaths.TemplateRoot
-if ($Force -or -not (Test-Path -LiteralPath (Join-Path $templateRoot 'version.txt'))) {
-    $templateTemp = Join-Path $toolsRoot 'template-extract'
-    Assert-PathUnderRoot -Root $toolsRoot -Path $templateTemp
-    if (Test-Path -LiteralPath $templateTemp) {
-        Remove-Item -LiteralPath $templateTemp -Recurse -Force
+    $templateRoot = $godotPaths.TemplateRoot
+    if ($Force -or -not (Test-Path -LiteralPath (Join-Path $templateRoot 'version.txt'))) {
+        $templateTemp = Join-Path $toolsRoot 'template-extract'
+        Assert-PathUnderRoot -Root $toolsRoot -Path $templateTemp
+        if (Test-Path -LiteralPath $templateTemp) {
+            Remove-Item -LiteralPath $templateTemp -Recurse -Force
+        }
+        New-Item -ItemType Directory -Force -Path $templateTemp, $templateRoot | Out-Null
+        Expand-Archive -LiteralPath $templateArchive -DestinationPath $templateTemp -Force
+        $source = Join-Path $templateTemp 'templates'
+        Copy-Item -Path (Join-Path $source '*') -Destination $templateRoot -Recurse -Force
     }
-    New-Item -ItemType Directory -Force -Path $templateTemp, $templateRoot | Out-Null
-    Expand-Archive -LiteralPath $templateArchive -DestinationPath $templateTemp -Force
-    $source = Join-Path $templateTemp 'templates'
-    Copy-Item -Path (Join-Path $source '*') -Destination $templateRoot -Recurse -Force
 }
 
 if ($IncludeAndroid) {

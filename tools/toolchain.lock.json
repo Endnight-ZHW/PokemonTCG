@@ -2,9 +2,9 @@
   "godot": {
     "version": "4.7-stable",
     "full_config": "4.7.stable",
-    "editor_url": "https://godot-releases.nbg1.your-objectstorage.com/4.7-stable/Godot_v4.7-stable_win64.exe.zip",
+    "editor_url": "https://github.com/godotengine/godot-builds/releases/download/4.7-stable/Godot_v4.7-stable_win64.exe.zip",
     "editor_sha256": "02a5312236f4e0209c78bcb2f52135b1963e6b8888c873c9cee81459e60bcd71",
-    "templates_url": "https://godot-releases.nbg1.your-objectstorage.com/4.7-stable/Godot_v4.7-stable_export_templates.tpz",
+    "templates_url": "https://github.com/godotengine/godot-builds/releases/download/4.7-stable/Godot_v4.7-stable_export_templates.tpz",
     "templates_sha256": "9714459dc071907c0f3d5f17d608faf69e7cda21331fc5d39c4503ffa4e99eec"
   },
   "java": {
