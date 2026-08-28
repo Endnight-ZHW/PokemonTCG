@@ -110,13 +110,45 @@ function Get-VerifiedDownload {
         [Parameter(Mandatory)] [string]$Destination,
         [string]$Sha256 = '',
         [string]$Sha1 = '',
-        [switch]$Force
+        [switch]$Force,
+        [ValidateRange(1, 10)] [int]$MaxAttempts = 4,
+        [ValidateRange(0, 60)] [int]$RetryDelaySeconds = 5
     )
-    if ($Force -or -not (Test-Path -LiteralPath $Destination)) {
-        Write-Host "Downloading $Uri"
-        Invoke-WebRequest -Uri $Uri -OutFile $Destination
+
+    if (-not $Force -and (Test-Path -LiteralPath $Destination)) {
+        try {
+            Test-ArchiveDigest -Path $Destination -Sha256 $Sha256 -Sha1 $Sha1
+            return
+        } catch {
+            Write-Warning "Cached download failed verification and will be replaced: $Destination"
+        }
     }
-    Test-ArchiveDigest -Path $Destination -Sha256 $Sha256 -Sha1 $Sha1
+
+    $partial = "$Destination.part"
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            if (Test-Path -LiteralPath $partial) {
+                Remove-Item -LiteralPath $partial -Force
+            }
+            Write-Host "Downloading $Uri (attempt $attempt/$MaxAttempts)"
+            Invoke-WebRequest -Uri $Uri -OutFile $partial
+            Test-ArchiveDigest -Path $partial -Sha256 $Sha256 -Sha1 $Sha1
+            Move-Item -LiteralPath $partial -Destination $Destination -Force
+            return
+        } catch {
+            if (Test-Path -LiteralPath $partial) {
+                Remove-Item -LiteralPath $partial -Force
+            }
+            if ($attempt -eq $MaxAttempts) {
+                throw "Failed to download and verify $Uri after $MaxAttempts attempts: $($_.Exception.Message)"
+            }
+            $delay = $RetryDelaySeconds * $attempt
+            Write-Warning "Download attempt $attempt/$MaxAttempts failed: $($_.Exception.Message). Retrying in $delay seconds."
+            if ($delay -gt 0) {
+                Start-Sleep -Seconds $delay
+            }
+        }
+    }
 }
 
 function Set-PortableGodotEnvironment {
