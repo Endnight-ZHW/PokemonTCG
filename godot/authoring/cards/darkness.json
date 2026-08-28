@@ -118,7 +118,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Grass",
+          "value": "×2"
+        }
+      ]
     },
     "svd-dark-patch": {
       "abilities": [],
@@ -273,7 +278,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Grass",
+          "value": "×2"
+        }
+      ]
     },
     "svd-dodrio": {
       "abilities": [
@@ -384,7 +394,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 1,
       "rules": [],
       "set_id": "",
@@ -396,7 +411,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
     },
     "svd-doduo": {
       "abilities": [],
@@ -452,7 +472,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 1,
       "rules": [],
       "set_id": "",
@@ -464,7 +489,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
     },
     "svd-hard-belt": {
       "abilities": [],
@@ -636,7 +666,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Grass",
+          "value": "×2"
+        }
+      ]
     },
     "svd-maschiff": {
       "abilities": [],
@@ -702,7 +737,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Grass",
+          "value": "×2"
+        }
+      ]
     },
     "svd-morpeko": {
       "abilities": [],
@@ -823,7 +863,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Grass",
+          "value": "×2"
+        }
+      ]
     },
     "svd-seviper": {
       "abilities": [],
@@ -922,7 +967,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
     }
   },
   "family": "darkness",

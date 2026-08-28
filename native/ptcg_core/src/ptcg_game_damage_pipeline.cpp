@@ -1108,31 +1108,9 @@ void finish_attack_resolution(
              group_index < groups.size();
              ++group_index) {
             const auto [owner, count] = groups[group_index];
-            if (count > 1) {
-                Array remaining_groups;
-                for (
-                    std::size_t remaining = group_index + 1;
-                    remaining < groups.size();
-                    ++remaining
-                ) {
-                    if (groups[remaining].second <= 0) {
-                        continue;
-                    }
-                    remaining_groups.emplace_back(Object{
-                        {"owner", Value(groups[remaining].first)},
-                        {"count", Value(groups[remaining].second)},
-                    });
-                }
-                suspend_after_damage_trigger_order(
-                    result,
-                    actor,
-                    owner,
-                    count,
-                    std::move(remaining_groups),
-                    context
-                );
-                return;
-            }
+            // Lucky Energy copies all perform the same mandatory draw. Their
+            // relative order cannot change the state, so resolve the full group
+            // directly instead of asking the player to rank identical effects.
             for (std::int64_t index = 0; index < count; ++index) {
                 draw_one_with_payload(
                     result, owner, "after_damage_trigger");

@@ -52,11 +52,7 @@ func _add_card_grid_section(
 		var card_view := CARD_SCENE.instantiate() as CardView
 		card_view.custom_minimum_size = Vector2(82, 116)
 		card_view.configure(card_id, null, is_hidden, -1, -1, "", true)
-		card_view.tooltip_text = (
-			"隐藏卡牌"
-			if is_hidden
-			else str(catalog.get_card(card_id).get("name", card_id))
-		)
+		card_view.tooltip_text = ""
 		if not is_hidden and not card_id.is_empty():
 			card_view.activated.connect(func(
 				_selected_id: String,

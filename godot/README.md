@@ -57,6 +57,10 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   由调用方保留文字或中性徽章回退，不自动替换成无色；夜光能量按 `svg2-lume` 卡 ID 精确
   映射，不会覆盖通用 `Rainbow`。标题页仅使用草、火、水、雷、超、斗、恶、钢八枚基础
   能量图标，并以无黑色外框的透明素材直接组成能量带。完整来源表见该目录 `README.md`。
+- 137 张发布卡牌已按 `res://authoring/card_review_manifest.json` 与卡图 SHA-256
+  完成对战字段审核；内容 `lint` 会拒绝缺卡、缺图、哈希覆盖不完整或残留 `G/M/D/[C]`
+  等内部能量符号的作者数据。卡牌详情统一由 `CardPresentation` 生成，战斗预览、选择弹窗
+  与完整检查器不会再各自维护一套卡文格式。
 - 标题页按安全区尺寸选择布局：Wide 要求宽度至少 1180、高度至少 650 且纵横比至少 1.5；
   Compact landscape 要求宽度至少 900、高度至少 600 且纵横比至少 1.15；其余使用 Dense 并隐藏展示卡扇。
   标题内容最大宽度为 1440。Wide/Compact 中的三张展示卡通过 `CardCatalog.shared()` 只选择
@@ -101,6 +105,18 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   --path .\godot `
   --script res://tests/ui_preview.gd
 
+# 只生成卡牌效果选择基线，不运行依赖桌面焦点的鼠标状态截图
+.\.tools\godot-4.7\Godot_v4.7-stable_win64.exe `
+  --path .\godot `
+  --script res://tests/ui_preview.gd `
+  -- --semantic-choice-only
+
+# 只生成战斗卡牌详情的宽屏、720p 与紧凑屏基线
+.\.tools\godot-4.7\Godot_v4.7-stable_win64.exe `
+  --path .\godot `
+  --script res://tests/ui_preview.gd `
+  -- --battle-detail-only
+
 .\tools\build_native_ai.ps1 -Target all -Configuration all
 .\tools\build_godot.ps1 -Target all -Configuration debug
 .\tools\smoke_godot_build.ps1
@@ -115,7 +131,9 @@ LAN 与 Relay 另有完整实战回归；研究模型不参与产品门禁。
 `title-low-reduced.png` 检查静态降级；目录还包含 LAN/Relay 概览、网络状态、设置滚动、加载和
 Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 `choice-energy-compact.png` 的逐张能量分配基线，用于人工检查全屏背景、视觉层级、目标状态、
-溢出和长文案。它不代替 Windows/Android
+溢出和长文案。`choice-switch-confirm.png`、`choice-treasure-energy.png`、
+`choice-treasure-energy-compact.png` 与 `choice-exp-share-confirm.png` 额外覆盖换位、宝藏能量和
+学习装置的真实语义选择。它不代替 Windows/Android
 调试导出与真机烟雾测试。
 
 发布包构建：

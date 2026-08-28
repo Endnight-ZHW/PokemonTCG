@@ -171,7 +171,7 @@
       "hp": 70,
       "image_url_large": "",
       "image_url_small": "",
-      "name": "摔跤鹰人",
+      "name": "摔角鹰人",
       "number": "",
       "prize_value": 1,
       "provides_energy": [],
@@ -282,12 +282,7 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [
-        {
-          "energy_type": "Fighting",
-          "value": "-30"
-        }
-      ],
+      "resistances": [],
       "retreat_cost": 1,
       "rules": [],
       "set_id": "",
@@ -301,7 +296,7 @@
       "trainer_type": "",
       "weaknesses": [
         {
-          "energy_type": "Lightning",
+          "energy_type": "Fighting",
           "value": "×2"
         }
       ]
@@ -982,7 +977,7 @@
             }
           ],
           "name": "团结一致",
-          "text": "当这只宝可梦在战斗场上受到对手宝可梦的招式的伤害时，将自己场上「一对鼠」和「一家鼠」的数量×3个伤害指示物，放置于使用了招式的宝可梦身上。",
+          "text": "当这只宝可梦在战斗场上受到对手宝可梦的招式的伤害时，将自己场上「一对鼠」和「一家鼠」（包含「宝可梦ex」）的数量×3个伤害指示物，放置于使用了招式的宝可梦身上。",
           "trigger": "on_damaged"
         }
       ],

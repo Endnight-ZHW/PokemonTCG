@@ -4,6 +4,7 @@ func _initialize() -> void:
 	_run_protocol_boundaries()
 	_run_modifier_wire_number_contract()
 	_run_direct_knockout_protocol_contract()
+	_run_lucky_energy_auto_resolution_contract()
 	_run_setup_hidden_information_contract()
 	_run_mulligan_presentation_contract()
 	_run_setup_stage_recovery_contract()

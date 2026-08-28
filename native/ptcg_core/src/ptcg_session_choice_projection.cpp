@@ -71,6 +71,91 @@ Value public_option_ref(
     return Value(std::move(reference));
 }
 
+std::string default_choice_prompt(
+    const std::string &request_type,
+    const std::string &purpose
+) {
+    if (purpose == "search_any_switch_confirm") {
+        return "是否将当前战斗宝可梦与备战宝可梦互换？";
+    }
+    if (purpose == "switch_confirm") {
+        return "是否进行宝可梦换位？";
+    }
+    if (purpose == "confirm_exp_share_trigger") {
+        return "是否发动学习装置的效果？";
+    }
+    static const std::unordered_map<std::string, std::string> prompts{
+        {"arven", "请选择要加入手牌的物品卡和宝可梦道具。"},
+        {"clara", "请选择要从弃牌区加入手牌的宝可梦和基本能量。"},
+        {"coin_flip", "硬币结果已确定，继续结算。"},
+        {"confirm", "请选择要执行的操作。"},
+        {"confirm_trigger", "请选择是否发动这个效果。"},
+        {"choose_trigger_order", "请选择下一个要结算的效果。"},
+        {"damage_target", "请选择招式伤害的目标。"},
+        {"bench_damage_target", "请选择备战区伤害的目标。"},
+        {"discard_cards", "请选择要丢弃的卡牌。"},
+        {"discard_then_draw", "请选择要丢弃的手牌。"},
+        {"distribute_energy", "请为每张能量选择附着目标。"},
+        {"evolve_skip_stage", "请选择要进化的宝可梦。"},
+        {"hand_bottom_draw", "请选择要放回牌库底的手牌。"},
+        {"houb", "请选择要放回牌库底的手牌。"},
+        {"look_top", "请选择要处理的牌库顶卡牌。"},
+        {"look_top_attach_energy", "请选择要附着的基本能量。"},
+        {"place_counters_self_discard", "请选择伤害指示物的放置目标。"},
+        {"search_any_switch", "请选择要从牌库加入手牌的卡牌。"},
+        {"search_move", "请选择要搜寻的卡牌。"},
+        {"select_attachment", "请选择要处理的附着卡牌。"},
+        {"select_bench", "请选择要换上场的备战宝可梦。"},
+        {"select_bench_slot", "请选择要放置宝可梦的备战席。"},
+        {"select_opponent_bench", "请选择对手要换上场的备战宝可梦。"},
+        {"select_energy_source", "请选择能量来源。"},
+        {"select_energy_target", "请选择能量的附着目标。"},
+        {"select_heal_target", "请选择回复目标。"},
+        {"select_own_bench_energy", "请选择要附着能量的备战宝可梦。"},
+        {"select_prize_energy_target", "请选择宝藏能量的附着目标，或不发动效果。"},
+        {"select_retreat_payment", "请选择用于支付撤退费用的能量。"},
+        {"shuffle_from_discard", "请选择要洗回牌库的卡牌。"},
+        {"zinnia", "请选择要丢弃的2张手牌。"},
+    };
+    const auto found = prompts.find(request_type);
+    return found != prompts.end() ? found->second : "请选择要执行的操作。";
+}
+
+std::string default_id_option_label(
+    const std::string &option_id,
+    const std::string &request_type,
+    const std::string &purpose,
+    std::size_t index
+) {
+    if (option_id == "confirm:yes") {
+        if (purpose == "search_any_switch_confirm"
+            || purpose == "switch_confirm") {
+            return "进行换位";
+        }
+        if (purpose == "confirm_exp_share_trigger") {
+            return "发动学习装置";
+        }
+        return request_type == "confirm_trigger" ? "发动效果" : "是";
+    }
+    if (option_id == "confirm:no") {
+        if (purpose == "search_any_switch_confirm"
+            || purpose == "switch_confirm") {
+            return "不进行换位";
+        }
+        if (purpose == "confirm_exp_share_trigger") {
+            return "不发动";
+        }
+        return request_type == "confirm_trigger" ? "不发动" : "否";
+    }
+    if (option_id.rfind("trigger:", 0) == 0) {
+        return "效果 " + std::to_string(index + 1);
+    }
+    if (option_id.rfind("draw:", 0) == 0) {
+        return "抽取 " + option_id.substr(5) + " 张卡牌";
+    }
+    return "选项 " + std::to_string(index + 1);
+}
+
 Value public_choice(
     Value &state,
     const Value &raw,
@@ -152,7 +237,12 @@ Value public_choice(
                 label = string_field(source, "slot");
             }
             if (label.empty()) {
-                label = "option " + std::to_string(index + 1);
+                label = default_id_option_label(
+                    option_id,
+                    request_type,
+                    presentation_purpose,
+                    index
+                );
             }
             const Value reference = public_option_ref(
                 source, actor, request_type);
@@ -238,7 +328,14 @@ Value public_choice(
             "prompt",
             Value(request_type == "select_prize"
                 ? "请选择奖励牌。"
-                : string_field(raw, "prompt", "请选择。")),
+                : string_field(
+                    raw,
+                    "prompt",
+                    default_choice_prompt(
+                        request_type,
+                        presentation_purpose
+                    )
+                )),
         },
         {"options", Value(std::move(options))},
         {"min_select", Value(integer_field(raw, "min_select", 1))},

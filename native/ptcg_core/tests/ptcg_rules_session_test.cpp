@@ -1,4 +1,6 @@
 #include "ptcg_rules_session.hpp"
+#include "ptcg_rules.hpp"
+#include "ptcg_session_internal.hpp"
 #include "ptcg_content_compiler.hpp"
 #include "ptcg_typed_ir.hpp"
 #include "ptcg_typed_state.hpp"
@@ -166,6 +168,349 @@ const Value &active_of(const Value &state, std::size_t owner) {
     return *state.find("players")->as_array()[owner].find("active");
 }
 
+void verify_trekking_shoes_choice_contract(const Value &cards) {
+    using ptcg::ai::NativeRulesKernel;
+    using namespace ptcg::ai::session_detail;
+
+    Value state(Object{
+        {
+            "players",
+            Value(Array{
+                empty_player(
+                    "Player 1",
+                    Array{Value("test-weak"), Value("test-basic")}
+                ),
+                empty_player("Player 2", Array{Value("test-basic")}),
+            }),
+        },
+        {"choice_sequence", Value(0)},
+    });
+    const Value command(Object{
+        {"op", Value("trekking_shoes")},
+        {"args", Value::make_object()},
+        {"branches", Value::make_object()},
+    });
+    NativeRulesKernel kernel(cards.deep_clone());
+    const auto started = kernel.execute(
+        state, command, 0, "", 1775U, "trainer");
+    require(started.success, "Trekking Shoes did not suspend successfully");
+    const Value &pending = started.pending;
+    const Array &options = pending.find("options")->as_array();
+    const Value *presentation = pending.find("presentation");
+    require(
+        pending.find("request_type")->string_or() == "confirm"
+            && pending.find("prompt")->string_or()
+                == "查看了牌库顶的卡牌。请选择处理方式。"
+            && options.size() == 2
+            && options[0].find("option_id")->string_or() == "confirm:yes"
+            && options[0].find("label")->string_or()
+                == "将这张卡牌加入手牌"
+            && options[1].find("option_id")->string_or() == "confirm:no"
+            && options[1].find("label")->string_or()
+                == "丢弃这张卡牌，再抽1张卡牌"
+            && presentation != nullptr && presentation->is_object()
+            && presentation->find("purpose")->string_or()
+                == "trekking_shoes"
+            && presentation->find("top_card_id")->string_or()
+                == "test-basic"
+            && presentation->find("revealed_card_ids")->as_array().size() == 1,
+        "Trekking Shoes pending choice lost its revealed card or UI semantics"
+    );
+
+    Value projected_state = started.state.deep_clone();
+    const Value projected = public_choice(projected_state, pending);
+    require(
+        projected.find("prompt")->string_or()
+                == "查看了牌库顶的卡牌。请选择处理方式。"
+            && projected.find("options")->as_array()[0]
+                .find("label")->string_or() == "将这张卡牌加入手牌"
+            && projected.find("presentation")->find("top_card_id")
+                ->string_or() == "test-basic",
+        "Trekking Shoes ChoiceView projection lost owner-visible UI data"
+    );
+
+    const auto kept = kernel.resume(
+        started.state.deep_clone(),
+        started.context.deep_clone(),
+        started.continuation,
+        Value(Array{options[0].deep_clone()}),
+        false,
+        started.rng_state
+    );
+    const Value &kept_owner = kept.state.find("players")->as_array()[0];
+    require(
+        kept.success
+            && kept_owner.find("deck")->as_array().size() == 1
+            && kept_owner.find("hand")->as_array().back().string_or()
+                == "test-basic",
+        "Trekking Shoes keep option did not move the revealed card to hand"
+    );
+
+    const auto discarded = kernel.resume(
+        started.state.deep_clone(),
+        started.context.deep_clone(),
+        started.continuation,
+        Value(Array{options[1].deep_clone()}),
+        false,
+        started.rng_state
+    );
+    const Value &discarded_owner =
+        discarded.state.find("players")->as_array()[0];
+    require(
+        discarded.success
+            && discarded_owner.find("deck")->as_array().empty()
+            && discarded_owner.find("discard")->as_array().back().string_or()
+                == "test-basic"
+            && discarded_owner.find("hand")->as_array().back().string_or()
+                == "test-weak",
+        "Trekking Shoes discard option did not discard then draw the next card"
+    );
+}
+
+void verify_choice_projection_localization() {
+    using namespace ptcg::ai::session_detail;
+
+    Value state(Object{
+        {"revision", Value(7)},
+        {"choice_sequence", Value(0)},
+    });
+    const Value switch_choice = public_choice(
+        state,
+        Value(Object{
+            {"request_type", Value("confirm")},
+            {"player", Value(0)},
+            {"min_select", Value(1)},
+            {"max_select", Value(1)},
+            {"allow_duplicates", Value(false)},
+            {"can_cancel", Value(false)},
+            {"options", Value(Array{
+                Value(Object{
+                    {"kind", Value("id")},
+                    {"option_id", Value("confirm:yes")},
+                }),
+                Value(Object{
+                    {"kind", Value("id")},
+                    {"option_id", Value("confirm:no")},
+                }),
+            })},
+            {"continuation_kind", Value("switch_confirm")},
+        })
+    );
+    require(
+        switch_choice.find("prompt")->string_or()
+                == "是否进行宝可梦换位？"
+            && switch_choice.find("options")->as_array()[0]
+                .find("label")->string_or() == "进行换位"
+            && switch_choice.find("options")->as_array()[1]
+                .find("label")->string_or() == "不进行换位",
+        "ChoiceView did not localize a legacy switch confirmation"
+    );
+
+    const Value trigger_order = public_choice(
+        state,
+        Value(Object{
+            {"request_type", Value("choose_trigger_order")},
+            {"player", Value(0)},
+            {"min_select", Value(1)},
+            {"max_select", Value(1)},
+            {"allow_duplicates", Value(false)},
+            {"can_cancel", Value(false)},
+            {"options", Value(Array{
+                Value(Object{
+                    {"kind", Value("id")},
+                    {"option_id", Value("trigger:0")},
+                }),
+                Value(Object{
+                    {"kind", Value("id")},
+                    {"option_id", Value("trigger:1")},
+                }),
+            })},
+            {"continuation_kind", Value("public_trigger_order")},
+        })
+    );
+    require(
+        trigger_order.find("prompt")->string_or()
+                == "请选择下一个要结算的效果。"
+            && trigger_order.find("options")->as_array()[0]
+                .find("label")->string_or() == "效果 1"
+            && trigger_order.find("options")->as_array()[1]
+                .find("label")->string_or() == "效果 2",
+        "ChoiceView retained an internal trigger option placeholder"
+    );
+}
+
+void verify_optional_switch_choice_contract(const Value &cards) {
+    using ptcg::ai::NativeRulesKernel;
+    using namespace ptcg::ai::session_detail;
+
+    Value owner = empty_player("Player 1", Array{Value("test-basic")});
+    owner["active"] = Value(Object{{"card_id", Value("test-basic")}});
+    owner.find("bench")->as_array()[0] = Value(Object{
+        {"card_id", Value("test-weak")},
+    });
+    Value state(Object{
+        {"players", Value(Array{
+            std::move(owner),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+    });
+    const Value command(Object{
+        {"op", Value("switch_pokemon")},
+        {"args", Value(Object{
+            {"optional", Value(true)},
+            {"target", Value("self")},
+        })},
+        {"branches", Value::make_object()},
+    });
+    NativeRulesKernel kernel(cards.deep_clone());
+    const auto started = kernel.execute(
+        state, command, 0, "active", 99U, "attack");
+    const Value &pending = started.pending;
+    const Array &options = pending.find("options")->as_array();
+    require(
+        started.success
+            && pending.find("prompt")->string_or()
+                == "是否将这只宝可梦与备战宝可梦互换？"
+            && options.size() == 2
+            && options[0].find("label")->string_or() == "进行换位"
+            && options[1].find("label")->string_or() == "不进行换位"
+            && pending.find("presentation")->find("source_card_id")
+                ->string_or() == "test-basic",
+        "Optional switch choice lost its source Pokemon or action labels"
+    );
+}
+
+void verify_search_bench_slot_choice_contract(const Value &cards) {
+    using ptcg::ai::NativeRulesKernel;
+    using namespace ptcg::ai::session_detail;
+
+    Value owner = empty_player(
+        "Player 1",
+        Array{Value("test-basic"), Value("test-weak")}
+    );
+    owner.find("bench")->as_array()[0] = Value(Object{
+        {"card_id", Value("test-resistant")},
+    });
+    Value state(Object{
+        {"players", Value(Array{
+            std::move(owner),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+        {"revision", Value(0)},
+    });
+    const Value command(Object{
+        {"op", Value("search_cards")},
+        {"args", Value(Object{
+            {"count", Value(2)},
+            {"min_select", Value(0)},
+            {"destination", Value("bench")},
+            {"filter", Value("basic_pokemon")},
+            {"from_zone", Value("deck")},
+            {"reveal", Value(true)},
+        })},
+        {"branches", Value::make_object()},
+    });
+    NativeRulesKernel kernel(cards.deep_clone());
+    const auto started = kernel.execute(
+        state, command, 0, "active", 151U, "trainer");
+    require(
+        started.success
+            && started.pending.find("request_type")->string_or()
+                == "search_move"
+            && started.pending.find("options")->as_array().size() == 2,
+        "Bench search did not begin with card selection"
+    );
+
+    const Array selected_cards = started.pending.find("options")->as_array();
+    const std::string first_card_id = selected_cards[0]
+        .find("card_id")->string_or();
+    const std::string second_card_id = selected_cards[1]
+        .find("card_id")->string_or();
+    const auto slots_started = kernel.resume(
+        started.state.deep_clone(),
+        started.context.deep_clone(),
+        started.continuation,
+        Value(selected_cards),
+        false,
+        started.rng_state
+    );
+    require(
+        slots_started.success
+            && slots_started.pending.find("request_type")->string_or()
+                == "select_bench_slot"
+            && slots_started.pending.find("options")->as_array().size() == 4
+            && slots_started.state.find("players")->as_array()[0]
+                .find("deck")->as_array().empty(),
+        "Selected searched Pokemon were not suspended for empty Bench slots"
+    );
+    Value projected_state = slots_started.state.deep_clone();
+    const Value projected = public_choice(
+        projected_state,
+        slots_started.pending
+    );
+    require(
+        projected.find("prompt")->string_or().find(first_card_id)
+                != std::string::npos
+            || projected.find("prompt")->string_or().find("Test")
+                != std::string::npos,
+        "Bench-slot ChoiceView did not identify the Pokemon being placed"
+    );
+    require(
+        projected.find("options")->as_array()[0].find("ref")
+                ->find("kind")->string_or() == "slot"
+            && projected.find("options")->as_array()[0].find("label")
+                ->string_or() == "备战席 2",
+        "Bench-slot ChoiceView lost its public empty-slot reference"
+    );
+
+    auto option_for_slot = [](const Value &pending, const std::string &slot) {
+        for (const Value &option : pending.find("options")->as_array()) {
+            if (option.find("slot")->string_or() == slot) {
+                return option.deep_clone();
+            }
+        }
+        throw std::runtime_error("requested Bench slot option is missing");
+    };
+    const auto first_placed = kernel.resume(
+        slots_started.state.deep_clone(),
+        slots_started.context.deep_clone(),
+        slots_started.continuation,
+        Value(Array{option_for_slot(slots_started.pending, "bench_3")}),
+        false,
+        slots_started.rng_state
+    );
+    require(
+        first_placed.success
+            && first_placed.state.find("players")->as_array()[0]
+                .find("bench")->as_array()[3].find("card_id")->string_or()
+                == first_card_id
+            && first_placed.pending.find("request_type")->string_or()
+                == "select_bench_slot"
+            && first_placed.pending.find("options")->as_array().size() == 3,
+        "The first searched Pokemon ignored its selected Bench slot"
+    );
+    const auto second_placed = kernel.resume(
+        first_placed.state.deep_clone(),
+        first_placed.context.deep_clone(),
+        first_placed.continuation,
+        Value(Array{option_for_slot(first_placed.pending, "bench_1")}),
+        false,
+        first_placed.rng_state
+    );
+    require(
+        second_placed.success
+            && second_placed.pending.as_object().empty()
+            && second_placed.state.find("players")->as_array()[0]
+                .find("bench")->as_array()[1].find("card_id")->string_or()
+                == second_card_id
+            && second_placed.state.find("players")->as_array()[0]
+                .find("bench")->as_array()[2].is_null(),
+        "Multi-card Bench search did not preserve each selected destination"
+    );
+}
+
 } // namespace
 
 int main() {
@@ -183,6 +528,10 @@ int main() {
                 && !rejected_content.find("diagnostics")->as_array().empty(),
             "native content compiler accepted a non-object bundle");
         const Value cards = catalog();
+        verify_trekking_shoes_choice_contract(cards);
+        verify_choice_projection_localization();
+        verify_optional_switch_choice_contract(cards);
+        verify_search_bench_slot_choice_contract(cards);
         const Value match_decks = decks();
         const Value config(Object{
             {"forced_first", Value(0)},

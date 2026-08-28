@@ -321,20 +321,44 @@ bool execute_vm_trigger_pipeline(
                 early_return = true; return true;
             }
             if (optional) {
+                Value request = pending_request(
+                    "confirm",
+                    actor,
+                    1,
+                    1,
+                    false,
+                    false,
+                    {
+                        id_option("confirm:yes", "进行换位"),
+                        id_option("confirm:no", "不进行换位"),
+                    },
+                    "switch_confirm"
+                );
+                request["prompt"] = Value(
+                    opponent_target
+                        ? "是否让对手的战斗宝可梦与备战宝可梦互换？"
+                        : "是否将这只宝可梦与备战宝可梦互换？"
+                );
+                Object presentation{
+                    {"domain", Value("effect")},
+                    {"purpose", Value("switch_confirm")},
+                    {"source_player", Value(actor)},
+                    {"source_slot", Value(source_slot)},
+                    {
+                        "target_player",
+                        Value(opponent_target ? 1 - actor : actor),
+                    },
+                };
+                if (source != nullptr) {
+                    presentation["source_card_id"] = Value(
+                        string_arg(*source, "card_id")
+                    );
+                }
+                request["presentation"] = Value(
+                    std::move(presentation)
+                );
                 suspend(
-                    pending_request(
-                        "confirm",
-                        actor,
-                        1,
-                        1,
-                        false,
-                        false,
-                        {
-                            id_option("confirm:yes"),
-                            id_option("confirm:no"),
-                        },
-                        "switch_confirm"
-                    ),
+                    std::move(request),
                     make_continuation(
                         op,
                         command_spec,
@@ -381,17 +405,41 @@ bool execute_vm_trigger_pipeline(
                 );
             }
         } else if (op == "trekking_shoes") {
+            Value keep_option = id_option("confirm:yes");
+            keep_option["label"] = Value("将这张卡牌加入手牌");
+            Value discard_option = id_option("confirm:no");
+            discard_option["label"] = Value("丢弃这张卡牌，再抽1张卡牌");
+            Value request = pending_request(
+                "confirm",
+                actor,
+                1,
+                1,
+                false,
+                false,
+                {
+                    std::move(keep_option),
+                    std::move(discard_option),
+                },
+                "trekking_shoes"
+            );
+            request["prompt"] = Value(
+                "查看了牌库顶的卡牌。请选择处理方式。"
+            );
+            const Array &deck = required(self, "deck").as_array();
+            if (!deck.empty()) {
+                const std::string top_card_id = deck.back().string_or();
+                request["presentation"] = Value(Object{
+                    {"domain", Value("effect")},
+                    {"purpose", Value("trekking_shoes")},
+                    {"top_card_id", Value(top_card_id)},
+                    {
+                        "revealed_card_ids",
+                        Value(Array{Value(top_card_id)}),
+                    },
+                });
+            }
             suspend(
-                pending_request(
-                    "confirm",
-                    actor,
-                    1,
-                    1,
-                    false,
-                    false,
-                    {id_option("confirm:yes"), id_option("confirm:no")},
-                    "trekking_shoes"
-                ),
+                std::move(request),
                 make_continuation(
                     op,
                     command_spec,

@@ -24,7 +24,7 @@
             }
           ],
           "name": "金属转移",
-          "text": "在自己的回合可以使用任意次。选择附着于自己场上宝可梦身上的1个M能量，转附于自己其他宝可梦身上。",
+          "text": "在自己的回合可以使用任意次。选择附着于自己场上宝可梦身上的1个钢能量，转附于自己其他宝可梦身上。",
           "trigger": "repeatable"
         }
       ],
@@ -63,7 +63,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 3,
       "rules": [],
       "set_id": "",
@@ -75,7 +80,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
     },
     "svm-bronzor": {
       "abilities": [],
@@ -146,7 +156,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 1,
       "rules": [],
       "set_id": "",
@@ -158,7 +173,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
     },
     "svm-cobalion": {
       "abilities": [
@@ -186,7 +206,7 @@
             }
           ],
           "name": "正义法则",
-          "text": "只要这只宝可梦在场上，自己的基础宝可梦使用的招式，给对手战斗场上的D宝可梦造成的伤害「+30」。",
+          "text": "只要这只宝可梦在场上，自己的基础宝可梦使用的招式，给对手战斗场上的恶宝可梦造成的伤害「+30」。",
           "trigger": "passive"
         }
       ],
@@ -251,7 +271,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 2,
       "rules": [],
       "set_id": "",
@@ -263,7 +288,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
     },
     "svm-dialga": {
       "abilities": [],
@@ -354,7 +384,7 @@
             }
           ],
           "name": "金属爆破",
-          "text": "追加造成这只宝可梦身上附有的M能量数量×20点伤害。"
+          "text": "追加造成这只宝可梦身上附有的钢能量数量×20点伤害。"
         }
       ],
       "commands": [],
@@ -374,7 +404,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 2,
       "rules": [],
       "set_id": "",
@@ -386,7 +421,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
     },
     "svm-klefki": {
       "abilities": [],
@@ -440,7 +480,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 1,
       "rules": [],
       "set_id": "",
@@ -452,7 +497,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
     },
     "svm-orthworm": {
       "abilities": [
@@ -480,7 +530,7 @@
             }
           ],
           "name": "营养铁质",
-          "text": "如果这只宝可梦身上附着了3个及以上M能量的话，则这只宝可梦的最大HP「+100」。",
+          "text": "如果这只宝可梦身上附着了3个及以上钢能量的话，则这只宝可梦的最大HP「+100」。",
           "trigger": "passive"
         }
       ],
@@ -541,7 +591,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 2,
       "rules": [],
       "set_id": "",
@@ -553,7 +608,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
     },
     "svm-skarmory": {
       "abilities": [],
@@ -621,7 +681,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 1,
       "rules": [],
       "set_id": "",
@@ -633,7 +698,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
     },
     "svm-smeargle": {
       "abilities": [],
@@ -718,7 +788,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
     },
     "svm-zacian": {
       "abilities": [],
@@ -809,7 +884,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 2,
       "rules": [],
       "set_id": "",
@@ -821,7 +901,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
     },
     "svm-zamazenta": {
       "abilities": [
@@ -922,7 +1007,12 @@
       "provides_energy": [],
       "rarity": "",
       "regulation_mark": "",
-      "resistances": [],
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
       "retreat_cost": 2,
       "rules": [],
       "set_id": "",
@@ -934,7 +1024,12 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": []
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
     }
   },
   "family": "metal",

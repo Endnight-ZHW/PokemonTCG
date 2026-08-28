@@ -259,12 +259,7 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": [
-        {
-          "energy_type": "Lightning",
-          "value": "×2"
-        }
-      ]
+      "weaknesses": []
     }
   },
   "family": "dragon",

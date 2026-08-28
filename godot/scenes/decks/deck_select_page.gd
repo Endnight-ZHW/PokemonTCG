@@ -454,7 +454,8 @@ func _add_detail_card(card_id: String) -> void:
 	frame.custom_minimum_size = Vector2(94, 132)
 	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	frame.theme_type_variation = &"FrontCardFrame"
-	frame.tooltip_text = str(card.get("name", card_id))
+	frame.tooltip_text = ""
+	frame.accessibility_name = str(card.get("name", card_id))
 	var image := TextureRect.new()
 	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE

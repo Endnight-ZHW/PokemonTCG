@@ -1,5 +1,69 @@
 extends "res://tests/network_contract_support.gd"
 
+
+func _run_lucky_energy_auto_resolution_contract() -> void:
+	var session := AuthoritativeSession.new("lucky-energy-auto-contract")
+	var direct_state := GameState.new()
+	direct_state.setup_stage = GameState.SETUP_COMPLETE
+	direct_state.phase = "MAIN"
+	direct_state.turn_number = 2
+	direct_state.first_player_idx = 0
+	direct_state.active_player_idx = 0
+	direct_state.players[0].active = PokemonState.new("sv1-104")
+	direct_state.players[0].active.placed_this_turn = false
+	direct_state.players[0].active.energy_card_ids = ["sv1-ener-5"]
+	direct_state.players[0].prizes = ["sv1-ener-1"]
+	direct_state.players[1].active = PokemonState.new("svf-klea")
+	direct_state.players[1].active.placed_this_turn = false
+	direct_state.players[1].active.energy_card_ids = ["svi-mirc", "svi-mirc"]
+	direct_state.players[1].deck = [
+		"sv1-ener-1", "sv1-ener-2", "sv1-ener-3",
+	]
+	direct_state.players[1].prizes = ["sv1-ener-4"]
+	_expect(
+		session.native_rules.restore(direct_state.snapshot(), 17),
+		"Lucky Energy fixture could not load into Native ABI 2",
+	)
+	session.state = session.native_rules.state
+	session.rng = PortableRandomSource.new(session.native_rules.rng_state)
+
+	var attack_action: GameAction = null
+	for candidate in session.native_rules.legal_actions(0).concrete_actions():
+		if candidate.kind == "DECLARE_ATTACK" and candidate.attack_index() == 0:
+			attack_action = candidate
+			break
+	_expect(attack_action != null, "Lucky Energy fixture has no legal attack")
+	if attack_action == null:
+		return
+	attack_action.action_id = "lucky-energy:auto-resolve"
+	var step := session.submit_action(0, attack_action.to_dict())
+	var trigger_draw_events := 0
+	for event_value in step.events:
+		var event: Dictionary = event_value
+		if (
+			str(event.get("event_type", "")) == "cards_drawn"
+			and str(Dictionary(event.get("data", {})).get("purpose", ""))
+			== "after_damage_trigger"
+		):
+			trigger_draw_events += 1
+	_expect(
+		step.success
+		and step.pending_choice == null
+		and session.state.players[1].hand.size() == 3
+		and session.state.players[1].deck.is_empty()
+		and trigger_draw_events == 2,
+		"Identical Lucky Energy draws did not auto-resolve without an order choice: success=%s error=%s pending=%s hand=%d deck=%d draws=%d events=%s" % [
+			step.success,
+			step.error_code,
+			step.pending_choice.to_dict() if step.pending_choice != null else null,
+			session.state.players[1].hand.size(),
+			session.state.players[1].deck.size(),
+			trigger_draw_events,
+			step.events,
+		],
+	)
+
+
 func _run_direct_knockout_protocol_contract() -> void:
 	var session := AuthoritativeSession.new("direct-ko-contract")
 	var direct_state := GameState.new()

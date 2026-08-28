@@ -46,6 +46,8 @@ const REVEAL_CARD_GAP := 14.0
 const REVEAL_MIN_READ_HOLD := 0.90
 const HAND_CARD_MAX_Z := 78
 const SELECTED_HAND_CARD_Z := 80
+const PRESENTATION_INSPECTION_MOUSE_MARGIN := 16.0
+const PRESENTATION_INSPECTION_TOUCH_MARGIN := 28.0
 const CARD_MOTION_EVENT_TYPES: Array[String] = [
 	"cards_drawn",
 	"cards_revealed",
@@ -181,6 +183,7 @@ var _last_action_rows_signature := ""
 var _last_selected_entity_identity := ""
 var _detail_content_signature := ""
 var _detail_passthrough_key := ""
+var _read_only_detail_key := ""
 var _board_origin := Vector2.ZERO
 var _initialized := false
 var card_motion_controller := BattleCardMotionController.new()
@@ -527,7 +530,10 @@ func update_view(
 	if not _initialized or state_ref == null:
 		return
 	table_renderer.render_current_view()
-	if selected_entity_key.is_empty():
+	if not _read_only_detail_key.is_empty():
+		if detail_panel and detail_panel.visible:
+			_sync_visible_card_detail()
+	elif selected_entity_key.is_empty():
 		hide_card_detail()
 	elif detail_panel and detail_panel.visible:
 		_sync_visible_card_detail()
@@ -848,6 +854,42 @@ func clear_presentation_visuals_for_resync() -> void:
 
 
 func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
+	_read_only_detail_key = ""
+	_show_card_detail_content(card_id, pokemon)
+
+
+func show_read_only_card_detail(
+	card_id: String,
+	pokemon: PokemonState,
+	player: int,
+	slot_name: String,
+) -> void:
+	if card_id.is_empty() or pokemon == null or player not in [0, 1] or slot_name.is_empty():
+		return
+	var key := BattleInteractionController.pokemon_key(player, slot_name)
+	var component := detail_panel as BattleDetailPanel
+	if (
+		_read_only_detail_key == key
+		and component != null
+		and component.visible
+		and component.current_card_id == card_id
+	):
+		# Read-only inspection is idempotent. A quick double click must not look as
+		# if the first click was ignored by immediately closing the panel again.
+		return
+	_read_only_detail_key = key
+	if action_popover != null and action_popover.visible:
+		action_popover.dismiss(false)
+	_show_card_detail_content(card_id, pokemon)
+
+
+func release_read_only_card_detail() -> void:
+	# Main calls this immediately before a real local selection refresh. Keeping
+	# the panel visible lets that refresh replace its content without a flash.
+	_read_only_detail_key = ""
+
+
+func _show_card_detail_content(card_id: String, pokemon: PokemonState = null) -> void:
 	if card_id.is_empty():
 		hide_card_detail()
 		return
@@ -871,6 +913,7 @@ func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
 
 func hide_card_detail() -> void:
 	_detail_content_signature = ""
+	_read_only_detail_key = ""
 	var component := detail_panel as BattleDetailPanel
 	if component:
 		component.hide_card()
@@ -882,6 +925,9 @@ func hide_card_detail() -> void:
 
 func _on_detail_close_requested() -> void:
 	_detail_content_signature = ""
+	if not _read_only_detail_key.is_empty():
+		_read_only_detail_key = ""
+		return
 	var expected_key := selected_entity_key
 	_reset_action_interaction_state()
 	selection_clear_requested.emit(expected_key)
@@ -891,22 +937,27 @@ func _sync_visible_card_detail(force_show := false) -> void:
 	var component := detail_panel as BattleDetailPanel
 	if component == null or (not component.visible and not force_show) or state_ref == null:
 		return
+	var detail_key := (
+		_read_only_detail_key
+		if not _read_only_detail_key.is_empty()
+		else selected_entity_key
+	)
 	var card_id := ""
 	var pokemon: PokemonState
-	if selected_entity_key.begins_with("hand:"):
-		var hand_index := selected_entity_key.trim_prefix("hand:").to_int()
+	if detail_key.begins_with("hand:"):
+		var hand_index := detail_key.trim_prefix("hand:").to_int()
 		var hand := state_ref.get_player(view_player).hand
 		if hand_index >= 0 and hand_index < hand.size():
 			card_id = str(hand[hand_index])
-	elif selected_entity_key.begins_with("pokemon:"):
-		var parts := selected_entity_key.split(":")
+	elif detail_key.begins_with("pokemon:"):
+		var parts := detail_key.split(":")
 		if parts.size() >= 3:
 			var player := int(parts[1])
 			if player in [0, 1]:
 				pokemon = state_ref.get_player(player).get_pokemon(str(parts[2]))
 				if pokemon:
 					card_id = pokemon.card_id
-	elif selected_entity_key == "stadium":
+	elif detail_key == "stadium":
 		card_id = state_ref.stadium_card_id
 	if card_id.is_empty():
 		hide_card_detail()
@@ -1177,6 +1228,13 @@ func _bind_scene_nodes() -> void:
 		detail_component.hide_card()
 		if not detail_component.close_requested.is_connected(_on_detail_close_requested):
 			detail_component.close_requested.connect(_on_detail_close_requested)
+	if (
+		input_blocker != null
+		and not input_blocker.gui_input.is_connected(
+			_on_presentation_input_blocker_gui_input
+		)
+	):
+		input_blocker.gui_input.connect(_on_presentation_input_blocker_gui_input)
 	if log_panel:
 		log_panel.z_index = 0
 		log_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1387,12 +1445,117 @@ func _sync_local_hand_privacy() -> void:
 
 func _sync_input_blocker() -> void:
 	if input_blocker != null:
-		input_blocker.visible = (
+		var blocked := (
 			_transition_input_blocked
 			or _director_input_blocked
 			or _startup_input_blocked
 			or _recovery_input_blocked
 		)
+		input_blocker.visible = blocked
+		if not blocked:
+			input_blocker.mouse_default_cursor_shape = Control.CURSOR_ARROW
+
+
+func _on_presentation_input_blocker_gui_input(event: InputEvent) -> void:
+	# Presentation remains mutation-locked, but public field cards stay available
+	# for read-only inspection. The blocker consumes every other gesture exactly
+	# as before, so playing, dragging and target selection cannot race the staged
+	# presentation snapshot.
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if (
+			mouse_event.button_index != MOUSE_BUTTON_LEFT
+			or not mouse_event.pressed
+		):
+			return
+		# Resolve on press. Waiting for release made a moving card or a blocker state
+		# transition invalidate a perfectly good initial hit 1-2 frames later.
+		_inspect_public_field_card_at(
+			_blocker_global_point(mouse_event.position),
+			PRESENTATION_INSPECTION_MOUSE_MARGIN,
+		)
+		return
+	if event is InputEventMouseMotion:
+		var motion_event := event as InputEventMouseMotion
+		input_blocker.mouse_default_cursor_shape = (
+			Control.CURSOR_POINTING_HAND
+			if _public_field_card_at(
+				_blocker_global_point(motion_event.position),
+				PRESENTATION_INSPECTION_MOUSE_MARGIN,
+			) != null
+			else Control.CURSOR_ARROW
+		)
+		return
+	if event is InputEventScreenTouch:
+		var touch_event := event as InputEventScreenTouch
+		if not touch_event.pressed:
+			return
+		_inspect_public_field_card_at(
+			_blocker_global_point(touch_event.position),
+			PRESENTATION_INSPECTION_TOUCH_MARGIN,
+		)
+
+
+func _blocker_global_point(local_point: Vector2) -> Vector2:
+	if input_blocker == null:
+		return local_point
+	return input_blocker.get_global_transform_with_canvas() * local_point
+
+
+func _inspect_public_field_card_at(global_point: Vector2, hit_margin: float) -> void:
+	var view := _public_field_card_at(global_point, hit_margin)
+	if view == null:
+		return
+	show_read_only_card_detail(
+		view.card_id,
+		view.pokemon,
+		view.owner_player,
+		view.slot,
+	)
+
+
+func _public_field_card_at(global_point: Vector2, hit_margin: float = 0.0) -> CardView:
+	var candidates: Array[CardView] = []
+	# Switch/retreat/evolution animations temporarily replace a slot with a live
+	# CardView mover. It is the card the player sees and therefore owns the first
+	# inspection opportunity.
+	for value in _active_flyers:
+		var mover := _valid_card_view(value)
+		if mover != null and mover not in candidates:
+			candidates.append(mover)
+	# Staged covers represent what is actually visible while an action is being
+	# presented. Prefer them over the authoritative landing views underneath.
+	for value in _presentation_slot_covers.values():
+		var cover := _valid_card_view(value)
+		if cover != null:
+			candidates.append(cover)
+	for value in slot_views.values():
+		var field_view := _valid_card_view(value)
+		if field_view != null and field_view not in candidates:
+			candidates.append(field_view)
+	var best_view: CardView
+	var best_score := INF
+	for view in candidates:
+		if (
+			not view.is_visible_in_tree()
+			or view.modulate.a <= 0.05
+			or view.card_id.is_empty()
+			or view.pokemon == null
+			or view.is_hidden_card
+			or view.is_presentation_hidden()
+		):
+			continue
+		var bounds := view.visual_global_bounds()
+		var exact_hit := view.contains_visual_global_point(global_point)
+		if not exact_hit and not bounds.grow(maxf(0.0, hit_margin)).has_point(global_point):
+			continue
+		var score := bounds.get_center().distance_squared_to(global_point)
+		if not exact_hit:
+			score += 1000000.0
+		if score < best_score:
+			best_score = score
+			best_view = view
+	return best_view
 
 
 func _on_presentation_event_completion_requested(
@@ -1842,7 +2005,8 @@ func _refresh_opponent_hand() -> void:
 		view.configure("", null, true, -1, opponent_player, "", true)
 		view.set_selected(false)
 		view.set_targetable(false)
-		view.tooltip_text = "对手手牌（隐藏）"
+		view.tooltip_text = ""
+		view.accessibility_name = "对手手牌（隐藏）"
 	opponent_hand_surface.visible = hand_count > 0
 	opponent_hand_count_badge.visible = hand_count > 0
 	opponent_hand_count_badge.text = str(hand_count)
@@ -2125,7 +2289,8 @@ func _layout_player_hands(metrics: Dictionary) -> void:
 
 	var own_hand_y := float(metrics["own_hand_y"])
 	var hand_width := float(metrics["hand_width"])
-	hand_scroll.position = Vector2(center_x - hand_width * 0.5, own_hand_y)
+	var hand_center_x := float(metrics.get("hand_center_x", center_x))
+	hand_scroll.position = Vector2(hand_center_x - hand_width * 0.5, own_hand_y)
 	hand_scroll.size = Vector2(hand_width, float(metrics["own_hand_height"]))
 	hand_surface.custom_minimum_size.y = float(metrics["own_hand_height"]) - 8.0
 
@@ -2299,10 +2464,15 @@ func _layout_pile_docks(metrics: Dictionary) -> void:
 	var horizontal_padding := clampf(4.8 * layout_scale, 4.0, 5.5)
 	var vertical_padding := clampf(7.5 * layout_scale, 6.0, 9.0)
 	var pile_gap := float(metrics["pile_gap"])
-	var outer_right := float(metrics["command_dock_left"]) - float(metrics["zone_gap"])
-	var right_safe_edge := (
+	var outer_right := minf(
 		float(metrics["command_dock_left"])
-		- clampf(10.0 * layout_scale, 8.0, 12.0)
+		- float(metrics["zone_gap"])
+		+ float(metrics.get("pile_dock_shift", 0.0)),
+		float(metrics["width"]) - float(metrics["side_margin"]),
+	)
+	var right_safe_edge := minf(
+		outer_right + clampf(2.0 * layout_scale, 1.5, 2.5),
+		float(metrics["width"]) - float(metrics["side_margin"]),
 	)
 	var top_safe_edge := maxf(
 		70.0,
@@ -2501,6 +2671,8 @@ func _layout_overlay_drawers() -> void:
 			68.0,
 		)
 		hud.size = Vector2(overlay_width, overlay_height)
+	if action_popover and action_popover.visible:
+		_reposition_action_popover()
 	if detail_panel and detail_panel.visible:
 		_layout_detail_panel()
 	if action_popover and action_popover.visible:
@@ -2604,10 +2776,24 @@ func _layout_detail_panel() -> void:
 		)
 		bottom_size.x = maxf(1.0, bottom_size.x)
 		bottom_size.y = maxf(1.0, bottom_size.y)
-		detail_panel.position = Vector2(
+		var bottom_position := Vector2(
 			roundf(safe_rect.position.x + (safe_rect.size.x - bottom_size.x) * 0.5),
 			roundf(safe_rect.end.y - bottom_size.y - detail_halo),
 		)
+		if action_popover and action_popover.visible:
+			var popover_global := action_popover.panel_global_rect()
+			var popover_start := inverse * popover_global.position
+			var popover_end := inverse * popover_global.end
+			var popover_rect := Rect2(popover_start, popover_end - popover_start)
+			var candidate_rect := Rect2(bottom_position, bottom_size)
+			if candidate_rect.intersects(popover_rect.grow(8.0)):
+				var right_x := popover_rect.end.x + 12.0
+				var left_x := popover_rect.position.x - bottom_size.x - 12.0
+				if right_x + bottom_size.x <= safe_rect.end.x - detail_halo:
+					bottom_position.x = right_x
+				elif left_x >= safe_rect.position.x + detail_halo:
+					bottom_position.x = left_x
+		detail_panel.position = bottom_position
 		detail_panel.size = bottom_size
 		return
 	var panel_size := base_panel_size
@@ -3343,6 +3529,10 @@ func _target_hint_for_action(action: GameAction) -> String:
 func _refresh_action_popover() -> void:
 	if action_popover == null:
 		return
+	if not _read_only_detail_key.is_empty():
+		action_popover.dismiss(false)
+		_popover_source_key = ""
+		return
 	if selected_entity_key.is_empty():
 		action_popover.dismiss(false)
 		_popover_source_key = ""
@@ -3565,6 +3755,12 @@ func _reposition_action_popover() -> void:
 	if source_control == null:
 		action_popover.dismiss(false)
 		return
+	var detail_component := detail_panel as BattleDetailPanel
+	action_popover.set_compact_preferred(
+		detail_component != null
+		and detail_component.visible
+		and detail_component.is_compact_layout()
+	)
 	var avoidance_rows := interaction_router.rows_for_source(_popover_source_key)
 	if _forced_popover_source_key == _popover_source_key:
 		avoidance_rows = _forced_popover_rows
@@ -9683,11 +9879,7 @@ func _create_paper_card_token(
 	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	image.texture = texture
 	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	image.stretch_mode = (
-		TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		if single_face
-		else TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	)
+	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	image.position = Vector2(inset, inset)
 	image.size = Vector2(
 		maxf(1.0, size_value.x - inset * 2.0),

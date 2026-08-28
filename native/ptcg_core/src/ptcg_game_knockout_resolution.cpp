@@ -809,6 +809,10 @@ void suspend_after_damage_trigger_order(
                 "option_id",
                 Value("trigger:" + std::to_string(index)),
             },
+            {
+                "label",
+                Value("幸运能量：抽取1张卡牌"),
+            },
         });
     }
     increment(result.state, "choice_sequence");
@@ -822,6 +826,13 @@ void suspend_after_damage_trigger_order(
         "after_damage_trigger_order",
         true
     );
+    result.pending["prompt"] = Value(
+        "幸运能量效果将依次结算。"
+    );
+    result.pending["presentation"] = Value(Object{
+        {"domain", Value("trigger")},
+        {"purpose", Value("lucky_energy_order")},
+    });
     result.continuation = Value(Object{
         {"kind", Value("after_damage_trigger_order")},
         {"actor", Value(trigger_owner)},
@@ -849,12 +860,31 @@ void suspend_public_trigger_order(
     Array options;
     options.reserve(trigger_specs.size());
     for (std::size_t index = 0; index < trigger_specs.size(); ++index) {
+        const Value &spec = trigger_specs[index];
+        const std::string op = string_arg(spec, "op");
+        const Value *args = spec.find("args");
+        std::string label = "效果 " + std::to_string(index + 1);
+        if (args != nullptr && args->is_object()) {
+            if (op == "trigger_draw_cards") {
+                label = "抽取 " + std::to_string(
+                    integer_arg(*args, "amount")
+                ) + " 张卡牌";
+            } else if (op == "trigger_place_damage_counters") {
+                const std::string slot = string_arg(*args, "slot");
+                std::string target = slot == "active"
+                    ? "战斗宝可梦" : "备战宝可梦";
+                label = "在" + target + "身上放置 " + std::to_string(
+                    integer_arg(*args, "count")
+                ) + " 个伤害指示物";
+            }
+        }
         options.emplace_back(Object{
             {"kind", Value("id")},
             {
                 "option_id",
                 Value("trigger:" + std::to_string(index)),
             },
+            {"label", Value(std::move(label))},
         });
     }
     increment(result.state, "choice_sequence");
@@ -868,6 +898,13 @@ void suspend_public_trigger_order(
         "public_trigger_order",
         true
     );
+    result.pending["prompt"] = Value(
+        "请选择下一个要结算的效果。"
+    );
+    result.pending["presentation"] = Value(Object{
+        {"domain", Value("trigger")},
+        {"purpose", Value("trigger_order")},
+    });
     result.continuation = Value(Object{
         {"kind", Value("public_trigger_order")},
         {"actor", Value(trigger_owner)},

@@ -243,8 +243,10 @@
               "op": "draw_cards"
             }
           ],
-          "converted_energy_cost": 0,
-          "cost": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
           "damage": 0,
           "damage_text": "",
           "effects": [
@@ -281,7 +283,7 @@
       "evolves_from": "",
       "evolves_to": [],
       "flavor_text": "",
-      "hp": 60,
+      "hp": 90,
       "image_url_large": "",
       "image_url_small": "",
       "name": "信使鸟",
@@ -304,7 +306,7 @@
       "trainer_type": "",
       "weaknesses": [
         {
-          "energy_type": "Lightning",
+          "energy_type": "Metal",
           "value": "×2"
         }
       ]
@@ -443,7 +445,7 @@
               }
             }
           ],
-          "name": "隐蔽手里剑",
+          "name": "隐秘手里剑",
           "text": "对对手的1只宝可梦造成40点伤害。（对备战宝可梦不计算弱点·抗性）"
         },
         {

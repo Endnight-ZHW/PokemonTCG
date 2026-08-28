@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://ui/panels/card_inspector_panel.gd" id="1_inspector"]
 
 [node name="CardInspectorPanel" type="VBoxContainer"]
-custom_minimum_size = Vector2(800, 620)
+custom_minimum_size = Vector2(320, 0)
 layout_mode = 2
 theme_override_constants/separation = 12
 editor_description = "卡牌检查器内容。接收 card_id、位置和可选 PokemonState，展示大图、完整卡文、进化链、能量和道具。"

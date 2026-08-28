@@ -420,17 +420,40 @@ bool resume_vm_triggers(
                 }
                 Value continued = continuation;
                 continued["stage"] = Value(1);
+                Value request = pending_request(
+                    "confirm",
+                    actor,
+                    1,
+                    1,
+                    false,
+                    false,
+                    {
+                        id_option("confirm:yes", "进行换位"),
+                        id_option("confirm:no", "不进行换位"),
+                    },
+                    "search_any_switch_confirm"
+                );
+                request["prompt"] = Value(
+                    "是否将这只宝可梦与备战宝可梦互换？"
+                );
+                Object presentation{
+                    {"domain", Value("effect")},
+                    {"purpose", Value("search_any_switch_confirm")},
+                    {"source_player", Value(actor)},
+                    {"source_slot", Value(source_slot)},
+                    {"target_player", Value(actor)},
+                };
+                const Value *source = pokemon(self, source_slot);
+                if (source != nullptr) {
+                    presentation["source_card_id"] = Value(
+                        string_arg(*source, "card_id")
+                    );
+                }
+                request["presentation"] = Value(
+                    std::move(presentation)
+                );
                 next(
-                    pending_request(
-                        "confirm",
-                        actor,
-                        1,
-                        1,
-                        false,
-                        false,
-                        {id_option("confirm:yes"), id_option("confirm:no")},
-                        "search_any_switch_confirm"
-                    ),
+                    std::move(request),
                     std::move(continued)
                 );
             } else if (stage == 1) {

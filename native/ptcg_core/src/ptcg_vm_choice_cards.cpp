@@ -17,6 +17,107 @@ namespace ptcg::ai::rules_detail {
 using Array = Value::Array;
 using Object = Value::Object;
 
+namespace {
+
+Array empty_bench_slot_options(
+    const Value &owner,
+    std::int32_t actor
+) {
+    const Array &bench = required(owner, "bench").as_array();
+    Array options;
+    for (std::size_t index = 0; index < bench.size(); ++index) {
+        if (!bench[index].is_null()) {
+            continue;
+        }
+        const std::string slot = "bench_" + std::to_string(index);
+        options.emplace_back(Object{
+            {"kind", Value("slot")},
+            {"player", Value(actor)},
+            {"slot", Value(slot)},
+            {"option_id", Value("slot:" + slot)},
+            {
+                "label",
+                Value("备战席 " + std::to_string(index + 1)),
+            },
+        });
+    }
+    return options;
+}
+
+Value search_bench_slot_request(
+    const Value &cards,
+    const Value &owner,
+    std::int32_t actor,
+    const std::string &card_id
+) {
+    Array options = empty_bench_slot_options(owner, actor);
+    Array target_slots;
+    target_slots.reserve(options.size());
+    for (const Value &option : options) {
+        target_slots.emplace_back(string_arg(option, "slot"));
+    }
+    const Value *definition = card_definition(cards, card_id);
+    const std::string card_name = definition == nullptr
+        ? card_id
+        : string_arg(*definition, "name", card_id);
+    Value request = pending_request(
+        "select_bench_slot",
+        actor,
+        1,
+        1,
+        false,
+        false,
+        std::move(options),
+        "search_bench_slot"
+    );
+    request["prompt"] = Value(
+        "请选择「" + card_name + "」要放置的备战席。"
+    );
+    request["presentation"] = Value(Object{
+        {"domain", Value("effect")},
+        {"purpose", Value("search_bench_slot")},
+        {"source_player", Value(actor)},
+        {"source_card_id", Value(card_id)},
+        {"target_player", Value(actor)},
+        {"target_slots", Value(std::move(target_slots))},
+    });
+    return request;
+}
+
+std::size_t selected_empty_bench_index(
+    const Value &owner,
+    const Value &selected_options,
+    std::int32_t actor
+) {
+    if (
+        !selected_options.is_array()
+        || selected_options.as_array().size() != 1
+    ) {
+        throw std::invalid_argument("bench_slot_selection_required");
+    }
+    const Value &selection = selected_options.as_array().front();
+    const std::string slot = string_arg(selection, "slot");
+    if (
+        !selection.is_object()
+        || string_arg(selection, "kind") != "slot"
+        || integer_arg(selection, "player", -1) != actor
+        || slot.size() != 7
+        || slot.rfind("bench_", 0) != 0
+        || slot[6] < '0'
+        || slot[6] > '4'
+    ) {
+        throw std::invalid_argument("bench_slot_selection_invalid");
+    }
+    const std::size_t index = static_cast<std::size_t>(slot[6] - '0');
+    const Array &bench = required(owner, "bench").as_array();
+    if (index >= bench.size() || !bench[index].is_null()) {
+        throw std::invalid_argument("bench_slot_no_longer_empty");
+    }
+    return index;
+}
+
+} // namespace
+
 bool resume_vm_cards(
     const NativeRulesKernel &kernel,
     const Value &cards,
@@ -606,6 +707,95 @@ bool resume_vm_cards(
             || op == "search_cards"
             || op == "search_item_and_tool"
         ) {
+            const bool searches_to_bench = (
+                op == "search_cards"
+                && string_arg(args, "destination", "hand") == "bench"
+            );
+            if (searches_to_bench && stage > 0) {
+                const Value *stored_cards = continuation.find(
+                    "bench_card_ids"
+                );
+                const std::int64_t cursor = integer_arg(
+                    continuation,
+                    "bench_card_cursor",
+                    -1
+                );
+                if (
+                    stored_cards == nullptr
+                    || !stored_cards->is_array()
+                    || cursor < 0
+                    || static_cast<std::size_t>(cursor)
+                        >= stored_cards->as_array().size()
+                ) {
+                    throw std::invalid_argument(
+                        "search_bench_continuation_invalid"
+                    );
+                }
+                const std::size_t bench_index = selected_empty_bench_index(
+                    self,
+                    selected_options,
+                    actor
+                );
+                const std::string card_id = stored_cards->as_array()[
+                    static_cast<std::size_t>(cursor)
+                ].string_or();
+                if (
+                    card_id.empty()
+                    || !card_matches_filter(
+                        cards,
+                        card_id,
+                        string_arg(args, "filter", "any")
+                    )
+                ) {
+                    throw std::invalid_argument(
+                        "search_bench_card_invalid"
+                    );
+                }
+                Array &bench = required(self, "bench").as_array();
+                bench[bench_index] = new_pokemon(cards, card_id);
+                const std::string target_slot = (
+                    "bench_" + std::to_string(bench_index)
+                );
+                append_event(result, "card_moved", Object{
+                    {"player", Value(actor)},
+                    {"card_id", Value(card_id)},
+                    {"card_ids", Value(Array{Value(card_id)})},
+                    {"count", Value(1)},
+                    {
+                        "source_zone",
+                        Value(string_arg(args, "from_zone", "deck")),
+                    },
+                    {"target_zone", Value("bench")},
+                    {"target_slot", Value(target_slot)},
+                    {"visibility", Value("public")},
+                });
+                result.event_types.emplace_back("card_moved");
+
+                const std::size_t next_cursor = (
+                    static_cast<std::size_t>(cursor) + 1
+                );
+                if (next_cursor < stored_cards->as_array().size()) {
+                    Value continued = continuation;
+                    continued["bench_card_cursor"] = Value(
+                        static_cast<std::int64_t>(next_cursor)
+                    );
+                    next(
+                        search_bench_slot_request(
+                            cards,
+                            self,
+                            actor,
+                            stored_cards->as_array()[next_cursor].string_or()
+                        ),
+                        std::move(continued)
+                    );
+                } else if (
+                    string_arg(args, "from_zone", "deck") == "deck"
+                ) {
+                    shuffle_array(required(self, "deck").as_array(), rng);
+                    result.event_types.emplace_back("deck_shuffled");
+                }
+                return true;
+            }
             std::vector<Value> removed;
             if (op == "search_item_and_tool") {
                 const std::vector<std::string> selected_ids =
@@ -724,6 +914,35 @@ bool resume_vm_cards(
                     source_zone,
                     selected_options
                 );
+                if (searches_to_bench) {
+                    if (removed.empty()) {
+                        if (source_zone == "deck") {
+                            shuffle_array(
+                                required(self, "deck").as_array(),
+                                rng
+                            );
+                            result.event_types.emplace_back(
+                                "deck_shuffled"
+                            );
+                        }
+                        return true;
+                    }
+                    Array selected_ids = card_id_values(removed);
+                    Value continued = continuation;
+                    continued["stage"] = Value(1);
+                    continued["bench_card_ids"] = Value(selected_ids);
+                    continued["bench_card_cursor"] = Value(0);
+                    next(
+                        search_bench_slot_request(
+                            cards,
+                            self,
+                            actor,
+                            selected_ids.front().string_or()
+                        ),
+                        std::move(continued)
+                    );
+                    return true;
+                }
             }
             const std::string destination = op == "search_cards"
                 ? string_arg(args, "destination", "hand")

@@ -43,7 +43,7 @@ func configure(
 		if texture_cache
 		else null
 	)
-	artwork.tooltip_text = str(card.get("name", representative_card_id))
+	artwork.tooltip_text = ""
 	tooltip_text = "%s\n%s" % [deck_name_label.text, tagline_label.text]
 	accessibility_name = "牌组：%s，%s，%s" % [
 		deck_name_label.text,

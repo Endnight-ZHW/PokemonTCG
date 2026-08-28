@@ -109,7 +109,7 @@ func _add_core_card(card_id: String) -> void:
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.focus_mode = Control.FOCUS_NONE
 	button.theme_type_variation = &"FrontGhostButton"
-	button.tooltip_text = catalog.card_name(card_id)
+	button.tooltip_text = ""
 	button.accessibility_name = "查看卡牌：%s" % catalog.card_name(card_id)
 	button.pressed.connect(_on_core_card_pressed.bind(card_id))
 	var center := CenterContainer.new()
@@ -188,7 +188,7 @@ func _add_category(supertype: String, rows: Array, total_count: int) -> void:
 			str(row.get("name", card_id)),
 			card_id,
 		]
-		item.tooltip_text = "查看卡牌 · %s" % str(row.get("name", card_id))
+		item.tooltip_text = ""
 		item.accessibility_name = "%d 张 %s" % [
 			int(row.get("count", 0)),
 			str(row.get("name", card_id)),

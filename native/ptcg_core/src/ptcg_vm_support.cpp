@@ -1406,10 +1406,13 @@ Value attachment_option(
     return Value(std::move(option));
 }
 
-Value id_option(const std::string &id) {
+Value id_option(const std::string &id, const std::string &label) {
     Object option;
     option["kind"] = Value("id");
     option["option_id"] = Value(id);
+    if (!label.empty()) {
+        option["label"] = Value(label);
+    }
     return Value(std::move(option));
 }
 

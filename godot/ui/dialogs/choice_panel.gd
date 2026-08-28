@@ -193,7 +193,7 @@ func add_card_option(
 	card_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card_view.set_catalog(catalog)
 	card_view.configure(card_id, null, false, -1, player, "", true)
-	card_view.tooltip_text = caption_text if not caption_text.is_empty() else card_id
+	card_view.tooltip_text = ""
 	card_view.detail_requested.connect(func(_card_id: String) -> void:
 		_preview_card(card_id)
 	)
@@ -219,7 +219,7 @@ func add_card_option(
 	badge.visible = false
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.text = "✓"
-	badge.tooltip_text = "已选择"
+	badge.tooltip_text = ""
 	badge.accessibility_name = "已选择"
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -252,7 +252,8 @@ func add_card_option(
 	caption.custom_minimum_size = Vector2(CARD_TILE_SIZE.x - 12.0, 24.0)
 	caption.mouse_filter = Control.MOUSE_FILTER_PASS
 	caption.text = caption_text
-	caption.tooltip_text = caption_text
+	caption.tooltip_text = ""
+	caption.accessibility_description = caption_text
 	caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -410,7 +411,8 @@ func _add_preview_cards(
 			card.selected_scale = 1.0
 			card.set_catalog(self.catalog)
 			card.configure(card_id, null, false, -1, -1, "", true)
-			card.tooltip_text = _card_name(card_id)
+			card.tooltip_text = ""
+			card.accessibility_name = _card_name(card_id)
 			card.detail_requested.connect(func(_card_id: String) -> void:
 				_preview_card(preview_card_id)
 				if interactive_distribution and _compact_choice_layout:
@@ -435,7 +437,8 @@ func _add_preview_cards(
 		assignment.custom_minimum_size = Vector2(130, 20)
 		assignment.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		assignment.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		assignment.tooltip_text = "尚未分配"
+		assignment.tooltip_text = ""
+		assignment.accessibility_description = "尚未分配"
 		assignment.add_theme_font_size_override("font_size", 10)
 		assignment.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
 		assignment.text = "第 %d 张 · 等待" % (index + 1)
@@ -552,7 +555,8 @@ func _add_energy_target_tile(model: Dictionary) -> void:
 	var title := Label.new()
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title.text = str(model.get("name", model.get("label", "宝可梦")))
-	title.tooltip_text = title.text
+	title.tooltip_text = ""
+	title.accessibility_name = title.text
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title.add_theme_font_size_override("font_size", 15)
 	title.add_theme_color_override("font_color", DesignTokens.TEXT)
@@ -692,7 +696,8 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 		if status:
 			if not blocked_reason.is_empty():
 				status.text = "不可选择 · %s" % blocked_reason
-				status.tooltip_text = blocked_reason
+				status.tooltip_text = ""
+				status.accessibility_description = blocked_reason
 				status.add_theme_color_override("font_color", DesignTokens.RED)
 			elif current_index >= _selection_max:
 				status.text = (
@@ -700,7 +705,8 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 					if assigned_count > 0
 					else "本次未分配"
 				)
-				status.tooltip_text = status.text
+				status.tooltip_text = ""
+				status.accessibility_description = status.text
 				status.add_theme_color_override(
 					"font_color",
 					DesignTokens.GOLD if assigned_count > 0 else DesignTokens.TEXT_MUTED,
@@ -710,14 +716,16 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 					"已分配 +%d 张 · " % assigned_count if assigned_count > 0 else "",
 					current_index + 1,
 				]
-				status.tooltip_text = status.text
+				status.tooltip_text = ""
+				status.accessibility_description = status.text
 				status.add_theme_color_override("font_color", DesignTokens.CYAN)
-		tile.tooltip_text = blocked_reason if not blocked_reason.is_empty() else str(
+		var status_description := blocked_reason if not blocked_reason.is_empty() else str(
 			status.text if status else model.get("label", "分配目标")
 		)
+		tile.tooltip_text = ""
 		tile.accessibility_name = "%s，%s" % [
 			str(model.get("label", "分配目标")),
-			tile.tooltip_text,
+			status_description,
 		]
 		tile.mouse_default_cursor_shape = (
 			Control.CURSOR_FORBIDDEN
@@ -816,7 +824,8 @@ func _energy_summary_chip(
 	count.add_theme_color_override(
 		"font_color", DesignTokens.GOLD if highlighted else DesignTokens.TEXT)
 	content.add_child(count)
-	chip.tooltip_text = "%s：附着 %d 张，提供 %d 个能量%s" % [
+	chip.tooltip_text = ""
+	chip.accessibility_name = "%s：附着 %d 张，提供 %d 个能量%s" % [
 		descriptor.display_name,
 		descriptor.count,
 		provided_count,
@@ -935,7 +944,8 @@ func refresh_selection(
 		if badge:
 			badge.visible = count > 0
 			badge.text = "✓%d" % count if count > 1 else "✓"
-			badge.tooltip_text = "已选择 %d 次" % count if count > 1 else "已选择"
+			badge.tooltip_text = ""
+			badge.accessibility_name = "已选择 %d 次" % count if count > 1 else "已选择"
 			badge.accessibility_name = badge.tooltip_text
 			badge.offset_left = -36 if count > 1 else -30
 		_refresh_card_tile_visual(str(option_id))
@@ -1206,163 +1216,15 @@ func _hide_preview() -> void:
 
 func _card_detail_bbcode(card_id: String) -> String:
 	var card := _card_data(card_id)
-	var rows: Array[String] = []
-	rows.append("[color=#9eb0ca]%s[/color]" % _card_type_text(card))
-	if int(card.get("hp", 0)) > 0:
-		rows.append("HP %d" % int(card.get("hp", 0)))
-	if int(card.get("retreat_cost", 0)) > 0:
-		rows.append("撤退费用：%d" % int(card.get("retreat_cost", 0)))
-	if not str(card.get("evolves_from", "")).is_empty():
-		rows.append("进化自：%s" % str(card.get("evolves_from", "")))
-	var provides := _string_array(card.get("provides_energy", []))
-	if not provides.is_empty():
-		var localized_provides: Array[String] = []
-		for energy_type in provides:
-			localized_provides.append(_localized_energy_type(energy_type))
-		rows.append("提供能量：%s" % " / ".join(localized_provides))
-	for ability_value in card.get("abilities", []):
-		var ability: Dictionary = ability_value
-		rows.append("[color=#62d7ff]特性 · %s[/color]\n%s" % [
-			str(ability.get("name", "")),
-			str(ability.get("text", "")),
-		])
-	for attack_value in card.get("attacks", []):
-		var attack: Dictionary = attack_value
-		var damage_label := str(attack.get("damage_text", ""))
-		if damage_label.is_empty() and int(attack.get("damage", 0)) > 0:
-			damage_label = str(attack.get("damage", 0))
-		rows.append("[color=#f4c84a]%s · %s[/color]\n%s" % [
-			str(attack.get("name", "")),
-			damage_label,
-			str(attack.get("text", "")),
-		])
-	if not str(card.get("trainer_text", "")).is_empty():
-		rows.append(str(card.get("trainer_text", "")))
-	for rule_value in card.get("rules", []):
-		var rule := str(rule_value)
-		if not rule.is_empty() and rule not in rows:
-			rows.append(rule)
-	for effect_value in card.get("energy_effects", []):
-		var effect: Dictionary = effect_value
-		var effect_text := _energy_effect_text(effect)
-		if not effect_text.is_empty() and effect_text not in rows:
-			rows.append(effect_text)
-	return "\n\n".join(rows)
-
-
-func _card_type_text(card: Dictionary) -> String:
-	var supertype := _localized_supertype(str(card.get("supertype", "")))
-	var subtypes := _string_array(card.get("subtypes", []))
-	var localized_subtypes: Array[String] = []
-	for subtype in subtypes:
-		var localized := _localized_subtype(subtype)
-		if not localized.is_empty() and localized not in localized_subtypes:
-			localized_subtypes.append(localized)
-	return "%s%s" % [
-		supertype,
-		" · %s" % " / ".join(localized_subtypes) if not localized_subtypes.is_empty() else "",
+	return "[color=#9eb0ca]%s[/color]\n\n%s" % [
+		CardPresentation.meta_text(card),
+		CardPresentation.detail_bbcode(
+			card,
+			catalog,
+			null,
+			CardPresentation.DetailLevel.FULL,
+		),
 	]
-
-
-func _energy_effect_text(effect: Dictionary) -> String:
-	var kind := str(effect.get("kind", ""))
-	match kind:
-		"provide_energy":
-			var types := _string_array(effect.get("types", []))
-			var localized_types: Array[String] = []
-			for energy_type in types:
-				localized_types.append(_localized_energy_type(energy_type))
-			return (
-				"能量效果：提供 %s" % " / ".join(localized_types)
-				if not localized_types.is_empty()
-				else ""
-			)
-		"modifier":
-			return "能量效果：参与伤害计算时应用卡面所述修正。"
-		"trigger":
-			return "能量效果：附着时触发卡面所述效果。"
-	return "此能量具有卡面所述的特殊效果。" if not effect.is_empty() else ""
-
-
-func _localized_supertype(value: String) -> String:
-	match value.strip_edges().to_lower():
-		"pokemon", "pokémon":
-			return "宝可梦"
-		"trainer":
-			return "训练家"
-		"energy":
-			return "能量"
-	return "卡牌"
-
-
-func _localized_subtype(value: String) -> String:
-	match value.strip_edges().to_lower().replace("_", " "):
-		"basic":
-			return "基础"
-		"stage 1", "stage1":
-			return "1 阶"
-		"stage 2", "stage2":
-			return "2 阶"
-		"item":
-			return "物品"
-		"supporter":
-			return "支援者"
-		"stadium":
-			return "竞技场"
-		"tool", "pokemon tool", "pokémon tool":
-			return "宝可梦道具"
-		"special":
-			return "特殊"
-		"basic energy":
-			return "基本能量"
-		"special energy":
-			return "特殊能量"
-		"v":
-			return "宝可梦 V"
-		"ex":
-			return "宝可梦 ex"
-	return ""
-
-
-func _localized_energy_type(value: String) -> String:
-	match value.strip_edges().to_lower():
-		"grass":
-			return "草"
-		"fire":
-			return "火"
-		"water":
-			return "水"
-		"lightning", "electric":
-			return "雷"
-		"psychic":
-			return "超"
-		"fighting":
-			return "斗"
-		"darkness", "dark":
-			return "恶"
-		"metal", "steel":
-			return "钢"
-		"dragon":
-			return "龙"
-		"fairy":
-			return "妖"
-		"colorless":
-			return "无色"
-		"rainbow":
-			return "全属性"
-		"any", "all":
-			return "任意属性"
-	return "特殊"
-
-
-func _string_array(values: Variant) -> Array[String]:
-	var result: Array[String] = []
-	if values is Array:
-		for value in values:
-			var text := str(value)
-			if not text.is_empty():
-				result.append(text)
-	return result
 
 
 func _card_name(card_id: String) -> String:
@@ -1467,7 +1329,8 @@ func _refresh_card_tile_visual(option_id: String) -> void:
 	var blocked := not blocked_reason.is_empty()
 	tile.set_meta("choice_blocked", blocked)
 	tile.set_meta("choice_disabled_reason", blocked_reason)
-	tile.tooltip_text = blocked_reason if blocked else ""
+	tile.tooltip_text = ""
+	tile.accessibility_description = blocked_reason if blocked else ""
 	tile.mouse_default_cursor_shape = (
 		Control.CURSOR_FORBIDDEN if blocked else Control.CURSOR_POINTING_HAND
 	)
@@ -1489,7 +1352,10 @@ func _refresh_card_tile_visual(option_id: String) -> void:
 			if hovered
 			else DesignTokens.TEXT_MUTED,
 		)
-		caption.tooltip_text = blocked_reason if blocked else str(_option_labels.get(option_id, ""))
+		caption.tooltip_text = ""
+		caption.accessibility_description = (
+			blocked_reason if blocked else str(_option_labels.get(option_id, ""))
+		)
 
 
 func _apply_card_tile_style(
@@ -1628,6 +1494,27 @@ func _update_selection_hint(selected_count: int) -> void:
 	var item_name := "卡牌" if has_card_options else "选项"
 	var counter := "张" if has_card_options else "项"
 	var quantified_item := "张卡牌" if has_card_options else "项"
+	if _request_type in [
+		"select_energy_target",
+		"select_energy_source",
+		"select_own_bench_energy",
+		"select_prize_energy_target",
+		"evolve_skip_stage",
+		"select_heal_target",
+		"damage_target",
+		"bench_damage_target",
+		"place_counters_self_discard",
+		"select_bench",
+		"select_bench_slot",
+		"select_opponent_bench",
+	]:
+		item_name = "目标"
+		counter = "个"
+		quantified_item = "个目标"
+	elif _request_type == "select_attachment":
+		item_name = "附着物"
+		counter = "个"
+		quantified_item = "个附着物"
 	var minimum := _effective_min_select()
 	if _selection_max == 1:
 		if selected_count > 0:

@@ -3,6 +3,7 @@ extends SceneTree
 const AUTHORING_ROOT := "res://authoring"
 const CARD_ROOT := AUTHORING_ROOT + "/cards"
 const DATA_ROOT := "res://data"
+const CARD_REVIEW_MANIFEST := AUTHORING_ROOT + "/card_review_manifest.json"
 const EXPECTED_CARDS := 137
 const EXPECTED_DECKS := 10
 const EXPECTED_EFFECTS := 160
@@ -39,6 +40,10 @@ func _run() -> int:
 		printerr("CONTENT_ERROR %s" % str(finalized.get("error", "content_finalize_failed")))
 		return 1
 	var outputs: Dictionary = finalized["outputs"]
+	var review_error := _card_review_error(outputs)
+	if not review_error.is_empty():
+		printerr("CONTENT_ERROR %s" % review_error)
+		return 1
 	var summary: Dictionary = Dictionary(result.get("summary", {})).duplicate(true)
 	summary["content_fingerprint"] = str(
 		Dictionary(outputs["card_ir"]).get("content_fingerprint", ""))
@@ -346,6 +351,57 @@ func _finalize_outputs(outputs: Dictionary) -> Dictionary:
 		"card_image_hashes": image_hashes,
 		"release_manifest": manifest,
 	}}
+
+
+func _card_review_error(outputs: Dictionary) -> String:
+	var review_value: Variant = _read_json(CARD_REVIEW_MANIFEST)
+	if not review_value is Dictionary:
+		return "card_review_manifest_missing"
+	var review: Dictionary = review_value
+	if (
+		str(review.get("schema", "")) != "ptcg.card_visual_audit/1"
+		or str(review.get("image_hash_algorithm", "")) != "sha256"
+		or str(review.get("image_hash_manifest", ""))
+			!= "res://data/card_image_hashes.json"
+	):
+		return "card_review_manifest_contract_invalid"
+	var cards: Dictionary = outputs.get("cards", {})
+	var images: Dictionary = outputs.get("card_images", {})
+	var hashes: Dictionary = outputs.get("card_image_hashes", {})
+	var reviewed: Array = review.get("reviewed_card_ids", [])
+	if (
+		int(review.get("card_count", -1)) != cards.size()
+		or reviewed.size() != cards.size()
+		or images.size() != cards.size()
+		or hashes.size() != cards.size()
+	):
+		return "card_review_manifest_coverage_invalid"
+	var reviewed_set: Dictionary = {}
+	for card_id_value in reviewed:
+		var card_id := str(card_id_value)
+		if reviewed_set.has(card_id):
+			return "card_review_manifest_duplicate:%s" % card_id
+		reviewed_set[card_id] = true
+	for card_id_value in cards:
+		var card_id := str(card_id_value)
+		if not reviewed_set.has(card_id):
+			return "card_review_manifest_missing_card:%s" % card_id
+		if not images.has(card_id) or not hashes.has(card_id):
+			return "card_review_manifest_missing_image:%s" % card_id
+		var digest := str(hashes[card_id])
+		if digest.length() != 64 or not digest.is_valid_hex_number(false):
+			return "card_review_manifest_invalid_hash:%s" % card_id
+	var corrected: Dictionary = review.get("corrected_cards", {})
+	for card_id_value in corrected:
+		var card_id := str(card_id_value)
+		if not cards.has(card_id) or not corrected[card_id_value] is Array \
+				or Array(corrected[card_id_value]).is_empty():
+			return "card_review_manifest_invalid_correction:%s" % card_id
+	var serialized_cards := JSON.stringify(cards)
+	for token in ["[C]", "G能量", "G宝可梦", "M能量", "D宝可梦"]:
+		if token in serialized_cards:
+			return "card_review_internal_energy_token:%s" % token
+	return ""
 
 
 func _output_paths() -> Dictionary:

@@ -69,7 +69,7 @@ void return_pokemon_to_hand(Value &player_value, const std::string &slot);
 Value pokemon_option( const Value &pokemon_value, std::int32_t owner, const std::string &slot );
 Value card_option( const std::string &id, std::int32_t owner, const std::string &zone, std::int64_t index );
 Value attachment_option( const std::string &id, std::int32_t owner, const std::string &slot, std::int64_t index );
-Value id_option(const std::string &id);
+Value id_option(const std::string &id, const std::string &label = {});
 void decorate_energy_distribution_option( Value &option, std::int32_t actor, std::int64_t energy_index, const std::string &energy_card_id );
 std::int64_t energy_option_index(const Value &option);
 std::string energy_option_card_id(const Value &option);

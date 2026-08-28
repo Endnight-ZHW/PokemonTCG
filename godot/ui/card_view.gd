@@ -516,6 +516,12 @@ func contains_visual_global_point(global_point: Vector2) -> bool:
 	return _minimum_touch_rect(visual_root.size).has_point(local_point)
 
 
+func _get_tooltip(_at_position: Vector2) -> String:
+	# Card details have dedicated click/long-press surfaces. Native hover tooltips
+	# duplicate that content, obscure the board, and behave poorly on touch.
+	return ""
+
+
 func attachment_anchor_global(
 	attachment_type: String,
 	attachment_card_id: String = "",
@@ -1422,7 +1428,7 @@ func _ensure_overlay_nodes() -> void:
 	overlay_parent.add_child(energy_row)
 
 	tool_badge = _new_overlay_label("ToolBadge")
-	tool_badge.text = "TOOL"
+	tool_badge.text = "道具"
 	tool_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tool_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	tool_badge.z_index = 8
@@ -1489,7 +1495,8 @@ func _refresh_battle_overlay(card: Dictionary, border_color: Color) -> void:
 		else DesignTokens.RED
 	)
 	hp_pill.text = "HP%d" % current
-	hp_pill.tooltip_text = "HP %d/%d" % [current, maximum]
+	hp_pill.tooltip_text = ""
+	hp_pill.accessibility_name = "HP %d/%d" % [current, maximum]
 	hp_pill.add_theme_color_override("font_color", DesignTokens.BG_DEEP)
 	hp_pill.add_theme_stylebox_override(
 		"normal",
@@ -1499,7 +1506,8 @@ func _refresh_battle_overlay(card: Dictionary, border_color: Color) -> void:
 	if damage > 0:
 		damage_badge.visible = true
 		damage_badge.text = "%d" % damage
-		damage_badge.tooltip_text = "%d damage" % damage
+		damage_badge.tooltip_text = ""
+		damage_badge.accessibility_name = "伤害 %d" % damage
 		damage_badge.add_theme_color_override("font_color", DesignTokens.BG_DEEP)
 		damage_badge.add_theme_stylebox_override(
 			"normal",
@@ -1515,7 +1523,8 @@ func _refresh_battle_overlay(card: Dictionary, border_color: Color) -> void:
 	_refresh_energy_badges()
 	if not pokemon.attached_tool_id.is_empty():
 		tool_badge.visible = true
-		tool_badge.tooltip_text = "Tool: %s" % _card_data(
+		tool_badge.tooltip_text = ""
+		tool_badge.accessibility_name = "宝可梦道具：%s" % _card_data(
 			pokemon.attached_tool_id
 		).get("name", pokemon.attached_tool_id)
 		tool_badge.add_theme_color_override("font_color", DesignTokens.TEXT)
@@ -1649,8 +1658,8 @@ func _new_energy_badge(
 		if not display_name.is_empty()
 		else ENERGY_ICONS.display_name_for(energy_type)
 	)
-	badge.tooltip_text = "%s x%d" % [accessible_name, count]
-	badge.accessibility_name = badge.tooltip_text
+	badge.tooltip_text = ""
+	badge.accessibility_name = "%s x%d" % [accessible_name, count]
 
 	var texture: Texture2D = texture_override
 	if texture == null:
@@ -1779,8 +1788,8 @@ func _new_energy_overflow_badge(count: int, badge_size: float) -> Control:
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.custom_minimum_size = Vector2(badge_size, badge_size)
 	badge.size = badge.custom_minimum_size
-	badge.tooltip_text = "另有 %d 张附加能量" % count
-	badge.accessibility_name = badge.tooltip_text
+	badge.tooltip_text = ""
+	badge.accessibility_name = "另有 %d 张附加能量" % count
 
 	var plate := Panel.new()
 	plate.name = "Plate"
@@ -1864,7 +1873,7 @@ func _refresh_accessibility_summary(energy_groups: Array[Dictionary] = []) -> vo
 	elif targetable and not _legal_target_hint.is_empty():
 		parts.append(_legal_target_hint)
 	var summary := "；".join(parts)
-	tooltip_text = summary
+	tooltip_text = ""
 	accessibility_description = summary
 	accessibility_name = parts[0] if not parts.is_empty() else "卡牌"
 

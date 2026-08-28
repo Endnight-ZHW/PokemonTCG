@@ -1541,6 +1541,21 @@ GameExecutionResult NativeGameKernel::resume_choice(
                         "treasure_prize_target",
                         true
                     );
+                    result.pending["prompt"] = Value(
+                        "请选择宝藏能量的附着目标，或不发动效果。"
+                    );
+                    result.pending["presentation"] = Value(Object{
+                        {"domain", Value("trigger")},
+                        {"purpose", Value("treasure_energy_target")},
+                        {"source_player", Value(actor)},
+                        {"source_zone", Value("prizes")},
+                        {"source_card_id", Value(prize_card_id)},
+                        {"card_id", Value(prize_card_id)},
+                        {
+                            "revealed_card_ids",
+                            Value(Array{Value(prize_card_id)}),
+                        },
+                    });
                     result.continuation = continuation;
                     result.continuation["kind"] = Value(
                         "treasure_prize_target"

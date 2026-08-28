@@ -1308,6 +1308,18 @@ func _on_battle_pokemon_selected(
 	slot: String,
 	card_id: String,
 ) -> void:
+	if _battle_card_inspection_is_read_only():
+		if battle_screen == null or state == null:
+			return
+		var pokemon := state.get_player(player_idx).get_pokemon(slot)
+		if pokemon != null and not card_id.is_empty():
+			battle_screen.show_read_only_card_detail(
+				card_id,
+				pokemon,
+				player_idx,
+				slot,
+			)
+		return
 	# Re-selecting the source is an explicit UI toggle, never a target choice.
 	# This keeps cancellation deterministic even for actions that can target the
 	# source Pokemon itself.
@@ -1329,6 +1341,19 @@ func _on_battle_pokemon_selected(
 			_execute_action(candidates[0])
 			return
 	_select_pokemon(player_idx, slot, card_id)
+
+
+func _battle_card_inspection_is_read_only() -> bool:
+	if state == null:
+		return true
+	if battle_screen != null and battle_screen.is_presentation_busy():
+		return true
+	var actor := _current_actor()
+	if game_mode == MODE_LOCAL:
+		return false
+	if game_mode == MODE_NETWORK:
+		return actor != network_player_idx
+	return actor != 0 or ai_thinking
 
 
 func _on_battle_card_dropped(
@@ -1936,8 +1961,9 @@ func _show_choice_overlay(request: ChoiceView) -> void:
 			else ModalSpec.SizeMode.PREFERRED
 		),
 	)
+	var display_prompt := _choice_prompt_text(request)
 	_open_modal(
-		request.prompt,
+		display_prompt,
 		_choice_confirm_cta(request, 0),
 		_choice_cancel_cta(request),
 		false,
@@ -1953,7 +1979,7 @@ func _show_choice_overlay(request: ChoiceView) -> void:
 		not request.options.is_empty(),
 		catalog,
 		{
-			"prompt": request.prompt,
+			"prompt": display_prompt,
 			"min_select": request.min_select,
 			"max_select": request.max_select,
 			"request_type": request.request_type,
@@ -1993,7 +2019,7 @@ func _show_choice_overlay(request: ChoiceView) -> void:
 			option_buttons.append(
 				panel.add_text_option(
 					option_id,
-					str(option.get("label", option_id)),
+					_choice_text_option_label(option, request),
 				)
 			)
 	modal_confirm.pressed.connect(_confirm_choice, CONNECT_ONE_SHOT)
@@ -2333,18 +2359,29 @@ func _choice_field_target_options(request: ChoiceView) -> Dictionary:
 		var option_id := str(option.get("option_id", ""))
 		var player_idx := request.player
 		var slot := ""
+		var ref_kind := ""
 		var ref_value: Variant = option.get("ref")
 		if ref_value is Dictionary:
 			var ref := ref_value as Dictionary
-			if str(ref.get("kind", "")) == "pokemon":
+			ref_kind = str(ref.get("kind", ""))
+			if ref_kind in ["pokemon", "slot"]:
 				player_idx = int(ref.get("player", player_idx))
 				slot = str(ref.get("slot", ""))
+		var target_pokemon := (
+			state.get_player(player_idx).get_pokemon(slot)
+			if state != null and player_idx in [0, 1] and not slot.is_empty()
+			else null
+		)
+		var target_matches_ref := (
+			(ref_kind == "pokemon" and target_pokemon != null)
+			or (ref_kind == "slot" and target_pokemon == null)
+		)
 		if (
 			option_id.is_empty()
 			or player_idx not in [0, 1]
 			or slot.is_empty()
 			or state == null
-			or state.get_player(player_idx).get_pokemon(slot) == null
+			or not target_matches_ref
 		):
 			return {}
 		var key := BattleInteractionController.pokemon_key(player_idx, slot)
@@ -2582,6 +2619,16 @@ func _choice_revealed_cards(request: ChoiceView) -> Array[String]:
 		var top_card_id := str(presentation.get("top_card_id", ""))
 		if not top_card_id.is_empty():
 			result.append(top_card_id)
+	if (
+		result.is_empty()
+		and str(presentation.get("purpose", "")) in [
+			"switch_confirm",
+			"search_any_switch_confirm",
+		]
+	):
+		var source_card_id := str(presentation.get("source_card_id", ""))
+		if not source_card_id.is_empty():
+			result.append(source_card_id)
 	return result
 
 
@@ -2633,13 +2680,16 @@ func _choice_confirm_cta(request: ChoiceView, selected_count: int) -> String:
 		var paid_units := _retreat_payment_selected_units(
 			request, selected_choice_ids)
 		return "确认支付（%d/%d 点）" % [paid_units, required_units]
-	if request.request_type == "confirm":
+	if request.request_type in ["confirm", "confirm_trigger"]:
 		if selected_count == 1:
 			var selected_option := _choice_option_by_id(
 				request,
 				selected_choice_ids[0] if not selected_choice_ids.is_empty() else "",
 			)
-			var selected_label := str(selected_option.get("label", ""))
+			var selected_label := _choice_text_option_label(
+				selected_option,
+				request,
+			)
 			if not selected_label.is_empty():
 				return "确认“%s”" % selected_label
 		return "确认决定"
@@ -3933,6 +3983,8 @@ func _finish_modal_close(generation: int) -> void:
 
 func _select_hand_card(index: int, card_id: String) -> void:
 	_play_click()
+	if battle_screen:
+		battle_screen.release_read_only_card_detail()
 	var key := "hand:%d" % index
 	if selected_entity_key == key:
 		selected_entity_key = ""
@@ -4026,6 +4078,8 @@ func _entity_identity_for_key(key: String) -> String:
 
 func _select_pokemon(player_idx: int, slot: String, card_id: String) -> void:
 	_play_click()
+	if battle_screen:
+		battle_screen.release_read_only_card_detail()
 	var key := "pokemon:%d:%s" % [player_idx, slot]
 	if selected_entity_key == key:
 		selected_entity_key = ""
@@ -4110,6 +4164,16 @@ func _source_card_name(action: GameAction) -> String:
 func _choice_title(request: ChoiceView) -> String:
 	var presentation := _choice_presentation(request)
 	var purpose := str(presentation.get("purpose", ""))
+	if purpose == "trekking_shoes":
+		return "健行鞋"
+	if purpose in ["switch_confirm", "search_any_switch_confirm"]:
+		return "确认换位"
+	if purpose == "confirm_exp_share_trigger":
+		return "学习装置"
+	if purpose == "exp_share_order":
+		return "选择学习装置结算顺序"
+	if purpose == "treasure_energy_target":
+		return "宝藏能量"
 	if purpose in ["discard_hand_then_draw", "discard_cards", "zinnia"]:
 		return "选择要弃置的手牌"
 	if purpose in ["discard_energy", "discard_energy_attachments", "discard_attachment"]:
@@ -4140,6 +4204,8 @@ func _choice_title(request: ChoiceView) -> String:
 		"distribute_energy": "分配能量",
 		"select_energy_target": "选择附能目标",
 		"select_energy_source": "选择能量来源",
+		"select_own_bench_energy": "选择能量附着目标",
+		"select_prize_energy_target": "选择宝藏能量附着目标",
 		"select_attachment": "选择附着能量",
 		"select_retreat_payment": "支付撤退费用",
 		"evolve_skip_stage": "选择进化目标",
@@ -4148,6 +4214,7 @@ func _choice_title(request: ChoiceView) -> String:
 		"bench_damage_target": "选择备战区伤害目标",
 		"place_counters_self_discard": "选择伤害指示物目标",
 		"select_bench": "选择替换上场的宝可梦",
+		"select_bench_slot": "选择备战席",
 		"select_opponent_bench": "选择对手替换上场的宝可梦",
 	}.get(
 		request.request_type,
@@ -4155,8 +4222,77 @@ func _choice_title(request: ChoiceView) -> String:
 	)
 
 
+func _choice_prompt_text(request: ChoiceView) -> String:
+	if request == null:
+		return "请选择。"
+	var purpose := str(_choice_presentation(request).get("purpose", ""))
+	if purpose == "trekking_shoes":
+		var prompt := request.prompt.strip_edges()
+		if prompt.is_empty() or prompt == "请选择。":
+			return "查看了牌库顶的卡牌。请选择处理方式。"
+	if request.prompt.strip_edges() in ["", "请选择。"]:
+		return {
+			"switch_confirm": "是否将这只宝可梦与备战宝可梦互换？",
+			"search_any_switch_confirm": "是否将这只宝可梦与备战宝可梦互换？",
+			"confirm_exp_share_trigger": "是否发动学习装置，将基本能量转附到备战宝可梦？",
+			"exp_share_order": "请选择先发动哪只备战宝可梦的学习装置。",
+			"treasure_energy_target": "请选择宝藏能量的附着目标，或不发动效果。",
+		}.get(purpose, "请选择要执行的操作。")
+	return request.prompt
+
+
+func _choice_text_option_label(option: Dictionary, request: ChoiceView) -> String:
+	var option_id := str(option.get("option_id", ""))
+	if (
+		request != null
+		and str(_choice_presentation(request).get("purpose", ""))
+		== "trekking_shoes"
+	):
+		if option_id == "confirm:yes":
+			return "将这张卡牌加入手牌"
+		if option_id == "confirm:no":
+			return "丢弃这张卡牌，再抽1张卡牌"
+	var purpose := (
+		str(_choice_presentation(request).get("purpose", ""))
+		if request != null
+		else ""
+	)
+	if purpose in ["switch_confirm", "search_any_switch_confirm"]:
+		if option_id == "confirm:yes":
+			return "进行换位"
+		if option_id == "confirm:no":
+			return "不进行换位"
+	if purpose == "confirm_exp_share_trigger":
+		if option_id == "confirm:yes":
+			return "发动学习装置"
+		if option_id == "confirm:no":
+			return "不发动"
+	var label := str(option.get("label", "")).strip_edges()
+	if label.begins_with("option "):
+		if option_id.begins_with("trigger:"):
+			return "效果 %d" % (int(option_id.trim_prefix("trigger:")) + 1)
+		if option_id == "confirm:yes":
+			return (
+				"发动效果"
+				if request != null and request.request_type == "confirm_trigger"
+				else "是"
+			)
+		if option_id == "confirm:no":
+			return (
+				"不发动"
+				if request != null and request.request_type == "confirm_trigger"
+				else "否"
+			)
+		return label.replace("option ", "选项 ")
+	return label if not label.is_empty() else option_id
+
+
 func _choice_metadata_text(request: ChoiceView) -> String:
 	var presentation := _choice_presentation(request)
+	if str(presentation.get("purpose", "")) == "trekking_shoes":
+		# The prompt, revealed-card preview and live selection hint already carry
+		# the full decision. Repeating "请选择 1 项" here adds no information.
+		return ""
 	if request.request_type == "coin_flip":
 		var results: Array = presentation.get("predetermined_flips", [])
 		var labels: Array[String] = []
@@ -4192,6 +4328,8 @@ func _choice_metadata_text(request: ChoiceView) -> String:
 				"每个目标最多可分配 %d 张能量。" % max_per_target
 			)
 		return " ".join(distribution_lines)
+	if request.max_select == 1 and request.min_select in [0, 1]:
+		return ""
 	var unit := _choice_count_unit(request)
 	if request.min_select == request.max_select:
 		return "请选择 %d %s。" % [request.max_select, unit]
@@ -4222,12 +4360,15 @@ func _choice_count_unit(request: ChoiceView) -> String:
 		"distribute_energy",
 		"select_energy_target",
 		"select_energy_source",
+		"select_own_bench_energy",
+		"select_prize_energy_target",
 		"evolve_skip_stage",
 		"select_heal_target",
 		"damage_target",
 		"bench_damage_target",
 		"place_counters_self_discard",
 		"select_bench",
+		"select_bench_slot",
 		"select_opponent_bench",
 	]:
 		return "个目标"

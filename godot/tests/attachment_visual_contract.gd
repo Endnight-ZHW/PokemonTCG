@@ -109,6 +109,13 @@ func _run() -> void:
 	card.configure("sv1-104", pokemon, false, -1, 0, "active")
 	await process_frame
 	await process_frame
+	_check(
+		card.tooltip_text.is_empty()
+		and card.get_tooltip(Vector2(20, 20)).is_empty()
+		and not card.accessibility_description.is_empty()
+		and "附加能量" in card.accessibility_description,
+		"CardView must suppress hover text while preserving full accessibility text",
+	)
 
 	var energy_row := card.find_child("EnergyRow", true, false) as HBoxContainer
 	var overflow := card.find_child("EnergyOverflowBadge", true, false) as Control
@@ -134,6 +141,8 @@ func _run() -> void:
 		]
 		and int(colorless_badge.get_meta("provided_unit_count", 0)) == 6
 		and int(colorless_badge.get_meta("physical_card_count", 0)) == 5
+		and colorless_badge.tooltip_text.is_empty()
+		and not colorless_badge.accessibility_name.is_empty()
 		and colorless_count_badge != null
 		and str(colorless_count_badge.get_meta("count_text", "")) == "6",
 		"CardView did not render one marker-free Colorless badge with the effective unit count",

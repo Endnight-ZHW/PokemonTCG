@@ -127,6 +127,8 @@ func _check_main_shell_contract() -> void:
 		"ModalSpec semantic button-role defaults changed",
 	)
 	_check_generic_choice_category_limits(main)
+	await _check_trekking_shoes_choice(main)
+	await _check_semantic_effect_choices(main)
 	await _check_native_energy_distribution_choice(main)
 	await _check_retreat_payment_ui(main)
 	await _check_pointer_only_input_contract(main)
@@ -363,6 +365,212 @@ func _check_generic_choice_category_limits(main: Control) -> void:
 	main.selected_choice_ids.clear()
 
 
+func _check_trekking_shoes_choice(main: Control) -> void:
+	var request := ChoiceView.new(
+		"choice:trekking-shoes-ui",
+		1,
+		"confirm",
+		0,
+		"请选择。",
+		[
+			{"option_id": "confirm:yes", "label": "option 1"},
+			{"option_id": "confirm:no", "label": "option 2"},
+		],
+		1,
+		1,
+		false,
+		false,
+		{
+			"domain": "effect",
+			"purpose": "trekking_shoes",
+			"top_card_id": "svf-potion",
+			"revealed_card_ids": ["svf-potion"],
+		},
+	)
+	main._show_choice_overlay(request)
+	await _settle_layout(3)
+	var panel := main.active_choice_panel as ChoicePanel
+	var keep_button := (
+		panel._option_buttons.get("confirm:yes") as Button
+		if panel != null
+		else null
+	)
+	var discard_button := (
+		panel._option_buttons.get("confirm:no") as Button
+		if panel != null
+		else null
+	)
+	var revealed_card := (
+		panel._energy_preview_cards[0] as CardView
+		if panel != null and not panel._energy_preview_cards.is_empty()
+		else null
+	)
+	_check(
+		panel != null
+		and main.modal_title.text == "健行鞋"
+		and panel.prompt_label.text == "查看了牌库顶的卡牌。请选择处理方式。"
+		and not panel.metadata_label.visible
+		and panel.energy_preview.visible
+		and revealed_card != null
+		and revealed_card.card_id == "svf-potion"
+		and keep_button != null
+		and keep_button.text == "将这张卡牌加入手牌"
+		and discard_button != null
+		and discard_button.text == "丢弃这张卡牌，再抽1张卡牌"
+		and main.modal_confirm.disabled,
+		"Trekking Shoes choice did not show the revealed card and localized actions",
+	)
+	main._toggle_choice("confirm:no")
+	_check(
+		not main.modal_confirm.disabled
+		and main.modal_confirm.text == "确认“丢弃这张卡牌，再抽1张卡牌”",
+		"Trekking Shoes selected action was not reflected by the confirm CTA",
+	)
+	main._close_modal()
+	main._finish_modal_close(main._modal_generation)
+	main.selected_choice_ids.clear()
+
+
+func _check_semantic_effect_choices(main: Control) -> void:
+	var switch_request := ChoiceView.new(
+		"choice:switch-confirm-ui", 1, "confirm", 0, "请选择。",
+		[
+			{"option_id": "confirm:yes", "label": "option 1"},
+			{"option_id": "confirm:no", "label": "option 2"},
+		],
+		1, 1, false, false,
+		{
+			"domain": "effect",
+			"purpose": "switch_confirm",
+			"source_player": 0,
+			"source_slot": "active",
+			"source_card_id": "sv1-114",
+			"target_player": 0,
+		},
+	)
+	main._show_choice_overlay(switch_request)
+	await _settle_layout(3)
+	var switch_panel := main.active_choice_panel as ChoicePanel
+	var switch_card := (
+		switch_panel._energy_preview_cards[0] as CardView
+		if switch_panel != null and not switch_panel._energy_preview_cards.is_empty()
+		else null
+	)
+	_check(
+		switch_panel != null
+		and main.modal_title.text == "确认换位"
+		and switch_panel.prompt_label.text
+			== "是否将这只宝可梦与备战宝可梦互换？"
+		and (switch_panel._option_buttons["confirm:yes"] as Button).text
+			== "进行换位"
+		and (switch_panel._option_buttons["confirm:no"] as Button).text
+			== "不进行换位"
+		and switch_card != null
+		and switch_card.card_id == "sv1-114",
+		"Optional switch UI retained generic labels or hid its source Pokemon",
+	)
+	main._close_modal()
+	main._finish_modal_close(main._modal_generation)
+
+	var preview_state := UIPreviewStateFactory.battle_state()
+	main.state = preview_state
+	main.current_view_player = 0
+	var treasure_options: Array[Dictionary] = []
+	for row in [
+		{"slot": "active", "card_id": preview_state.players[0].active.card_id},
+		{"slot": "bench_0", "card_id": preview_state.players[0].bench[0].card_id},
+	]:
+		treasure_options.append({
+			"option_id": "pokemon:0:%s:%s" % [row["slot"], row["card_id"]],
+			"label": main.catalog.card_name(row["card_id"]),
+			"ref": EntityRef.new(
+				"pokemon", 0, "", row["slot"], -1, "", row["card_id"],
+			).to_dict(),
+		})
+	var treasure_request := ChoiceView.new(
+		"choice:treasure-energy-ui", 1, "select_prize_energy_target", 0,
+		"请选择。", treasure_options, 0, 1, false, true,
+		{
+			"domain": "trigger",
+			"purpose": "treasure_energy_target",
+			"source_player": 0,
+			"source_zone": "prizes",
+			"source_card_id": "svi-trea",
+			"card_id": "svi-trea",
+			"revealed_card_ids": ["svi-trea"],
+		},
+	)
+	main._show_choice_overlay(treasure_request)
+	await _settle_layout(3)
+	var treasure_panel := main.active_choice_panel as ChoicePanel
+	var treasure_card := (
+		treasure_panel._energy_preview_cards[0] as CardView
+		if treasure_panel != null and not treasure_panel._energy_preview_cards.is_empty()
+		else null
+	)
+	_check(
+		treasure_panel != null
+		and main.modal_title.text == "宝藏能量"
+		and main._choice_count_unit(treasure_request) == "个目标"
+		and "目标" in treasure_panel.selection_hint_label.text
+		and "张卡牌" not in treasure_panel.selection_hint_label.text
+		and treasure_card != null
+		and treasure_card.card_id == "svi-trea",
+		"Treasure Energy UI did not identify its source card and Pokemon targets",
+	)
+	main._close_modal()
+	main._finish_modal_close(main._modal_generation)
+
+	var exp_share_request := ChoiceView.new(
+		"choice:exp-share-ui", 1, "confirm_trigger", 0, "请选择。",
+		[
+			{"option_id": "confirm:yes", "label": "option 1"},
+			{"option_id": "confirm:no", "label": "option 2"},
+		],
+		1, 1, false, false,
+		{
+			"domain": "trigger",
+			"purpose": "confirm_exp_share_trigger",
+			"source_player": 0,
+			"source_slot": "active",
+			"source_card_id": preview_state.players[0].active.card_id,
+			"target_player": 0,
+			"target_slot": "bench_0",
+			"card_id": "svg2-exps",
+			"revealed_card_ids": ["svg2-exps"],
+		},
+	)
+	main._show_choice_overlay(exp_share_request)
+	main._toggle_choice("confirm:yes")
+	await _settle_layout(3)
+	var exp_share_panel := main.active_choice_panel as ChoicePanel
+	_check(
+		exp_share_panel != null
+		and main.modal_title.text == "学习装置"
+		and str((exp_share_panel._option_buttons["confirm:yes"] as Button).text).ends_with(
+			"发动学习装置"
+		)
+		and (exp_share_panel._option_buttons["confirm:no"] as Button).text
+			== "不发动"
+		and main.modal_confirm.text == "确认“发动学习装置”"
+		and not exp_share_panel._energy_preview_cards.is_empty()
+		and (exp_share_panel._energy_preview_cards[0] as CardView).card_id
+			== "svg2-exps",
+		"Exp. Share confirmation UI retained placeholders or hid the Tool card: title=%s yes=%s no=%s cta=%s preview=%s" % [
+			main.modal_title.text,
+			(exp_share_panel._option_buttons["confirm:yes"] as Button).text,
+			(exp_share_panel._option_buttons["confirm:no"] as Button).text,
+			main.modal_confirm.text,
+			(exp_share_panel._energy_preview_cards[0] as CardView).card_id
+				if not exp_share_panel._energy_preview_cards.is_empty()
+				else "<none>",
+		],
+	)
+	main._close_modal()
+	main._finish_modal_close(main._modal_generation)
+	main.selected_choice_ids.clear()
+
+
 func _check_native_energy_distribution_choice(main: Control) -> void:
 	var preview_state := UIPreviewStateFactory.battle_state()
 	main.state = preview_state
@@ -590,6 +798,60 @@ func _check_field_choice_inspector_resume(main: Control) -> void:
 	await _check_card_action_detail_separation(table)
 	_check_discard_zone_action_reachability(table)
 	_check_same_id_hand_motion_staging(table)
+	var slot_state := UIPreviewStateFactory.battle_state()
+	main.state = slot_state
+	main.current_view_player = 0
+	table.update_view(
+		slot_state,
+		0,
+		UIPreviewStateFactory.action_rows(slot_state),
+		"",
+		false,
+		"local",
+	)
+	await _check_presentation_read_only_inspection(main, table, slot_state)
+	var slot_options: Array[Dictionary] = []
+	for bench_index in [2, 3, 4]:
+		var slot := "bench_%d" % bench_index
+		slot_options.append({
+			"option_id": "slot:%s" % slot,
+			"label": "备战席 %d" % (bench_index + 1),
+			"ref": EntityRef.new("slot", 0, "", slot).to_dict(),
+		})
+	var slot_request := ChoiceView.new(
+		"choice:nest-ball-slot",
+		slot_state.revision,
+		"select_bench_slot",
+		0,
+		"请选择「基础宝可梦」要放置的备战席。",
+		slot_options,
+		1,
+		1,
+		false,
+		false,
+		{
+			"domain": "effect",
+			"purpose": "search_bench_slot",
+			"source_card_id": "svi-chim",
+			"target_player": 0,
+			"target_slots": ["bench_2", "bench_3", "bench_4"],
+		},
+	)
+	main._show_choice_overlay(slot_request)
+	await _settle_layout(2)
+	_check(
+		main.active_request == slot_request
+		and not main.modal_layer.visible
+		and table.choice_target_options.get("pokemon:0:bench_2")
+			== "slot:bench_2"
+		and table.choice_target_options.get("pokemon:0:bench_4")
+			== "slot:bench_4"
+		and table.get_slot_view(0, "bench_3").empty
+		and table.get_slot_view(0, "bench_3").targetable,
+		"Nest Ball slot ChoiceView did not expose empty Bench slots on the table",
+	)
+	main.active_request = null
+	table.clear_choice_targets()
 	var request := ChoiceView.new(
 		"choice:prize-inspector-resume",
 		-1,
@@ -802,6 +1064,140 @@ func _check_card_action_detail_separation(table: BattleTable) -> void:
 	table.hide_card_detail()
 	if table.action_popover:
 		table.action_popover.dismiss(false)
+
+
+func _check_presentation_read_only_inspection(
+	main: Control,
+	table: BattleTable,
+	base_state: GameState,
+) -> void:
+	var previous_state: GameState = main.state
+	var previous_mode: String = str(main.game_mode)
+	var previous_ai_thinking: bool = bool(main.ai_thinking)
+	var previous_selected_key: String = str(main.selected_entity_key)
+	var previous_selected_identity: String = str(main.selected_entity_identity)
+	var inspection_state := base_state.clone_state()
+	inspection_state.active_player_idx = 1
+	main.state = inspection_state
+	main.game_mode = "challenge"
+	main.ai_thinking = true
+	main.selected_entity_key = ""
+	main.selected_entity_identity = ""
+	table.update_view(inspection_state, 0, [], "", true, "challenge")
+	var opponent := inspection_state.get_player(1).active
+	_check(opponent != null,
+		"Read-only presentation inspection fixture has no opponent Active Pokemon")
+	if opponent == null:
+		return
+	main._on_battle_pokemon_selected(1, "active", opponent.card_id)
+	await _settle_layout(2)
+	var detail := table.detail_panel as BattleDetailPanel
+	_check(
+		detail != null
+		and detail.visible
+		and detail.current_card_id == opponent.card_id
+		and table._read_only_detail_key == "pokemon:1:active"
+		and table.selected_entity_key.is_empty()
+		and main.selected_entity_key.is_empty(),
+		"Opponent-turn inspection mutated selection or failed to open lightweight detail",
+	)
+	# A stale source selection may survive from the outgoing local turn. The
+	# read-only opponent inspection must remain authoritative until the player
+	# explicitly closes it instead of snapping back to that old source.
+	table.update_view(
+		inspection_state,
+		0,
+		[],
+		"pokemon:0:active",
+		true,
+		"challenge",
+	)
+	_check(
+		detail != null
+		and detail.visible
+		and detail.current_card_id == opponent.card_id
+		and table._read_only_detail_key == "pokemon:1:active",
+		"Read-only detail was replaced by stale selection during presentation refresh",
+	)
+	_check(
+		table.action_popover == null or not table.action_popover.visible,
+		"Stale interactive action popover covered read-only opponent inspection",
+	)
+	table.update_view(inspection_state, 0, [], "", true, "challenge")
+	table.hide_card_detail()
+	var blocker := table.input_blocker
+	_check(
+		blocker != null
+		and blocker.gui_input.is_connected(
+			Callable(table, "_on_presentation_input_blocker_gui_input")
+		),
+		"Presentation blocker does not expose the read-only inspection route",
+	)
+	_check(
+		detail != null
+		and not detail.z_as_relative
+		and detail.z_index > blocker.z_index,
+		"Read-only detail must remain interactive above the presentation blocker",
+	)
+	table.set_transition_blocked(true)
+	var opponent_view := table.get_slot_view(1, "active")
+	if blocker != null and opponent_view != null:
+		var local_point := (
+			blocker.get_global_transform_with_canvas().affine_inverse()
+			* opponent_view.global_center()
+		)
+		var press := InputEventMouseButton.new()
+		press.button_index = MOUSE_BUTTON_LEFT
+		press.pressed = true
+		press.position = local_point
+		blocker.gui_input.emit(press)
+		_check(
+			detail != null
+			and detail.visible
+			and detail.current_card_id == opponent.card_id,
+			"Presentation inspection did not respond on pointer press",
+		)
+		blocker.gui_input.emit(press)
+		_check(
+			detail != null
+			and detail.visible
+			and detail.current_card_id == opponent.card_id,
+			"Rapid repeated inspection closed the detail it had just opened",
+		)
+		var release := InputEventMouseButton.new()
+		release.button_index = MOUSE_BUTTON_LEFT
+		release.pressed = false
+		release.position = local_point
+		blocker.gui_input.emit(release)
+	await _settle_layout(2)
+	_check(
+		detail != null
+		and detail.visible
+		and detail.current_card_id == opponent.card_id
+		and table._read_only_detail_key == "pokemon:1:active",
+		"Blocked opponent animation did not allow public card inspection",
+	)
+	table.set_transition_blocked(false)
+	if detail != null and detail.close_button != null:
+		detail.close_button.pressed.emit()
+	_check(
+		table._read_only_detail_key.is_empty()
+		and (detail == null or not detail.visible),
+		"Closing read-only detail leaked its presentation inspection context",
+	)
+	main.state = previous_state
+	main.game_mode = previous_mode
+	main.ai_thinking = previous_ai_thinking
+	main.selected_entity_key = previous_selected_key
+	main.selected_entity_identity = previous_selected_identity
+	table.update_view(
+		base_state,
+		0,
+		UIPreviewStateFactory.action_rows(base_state),
+		"",
+		false,
+		"local",
+	)
 
 
 func _check_discard_zone_action_reachability(table: BattleTable) -> void:
@@ -1595,7 +1991,19 @@ func _check_compact_battle_detail_layout() -> void:
 	battle.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	battle.initialize_ui()
 	await _settle_layout(5)
-	battle.show_card_detail("sv1-104")
+	var state := UIPreviewStateFactory.battle_state()
+	var pokemon := state.players[0].active
+	pokemon.damage_counters = 2
+	pokemon.status_conditions.assign(["POISONED"])
+	battle.update_view(
+		state,
+		0,
+		UIPreviewStateFactory.action_rows(state),
+		"pokemon:0:active",
+		false,
+		"local",
+	)
+	battle.show_card_detail(pokemon.card_id, pokemon)
 	await _settle_layout(4)
 	var detail := battle.detail_panel as BattleDetailPanel
 	var board_rect := battle.board_panel.get_global_rect()
@@ -1613,7 +2021,7 @@ func _check_compact_battle_detail_layout() -> void:
 		and detail.size.is_equal_approx(BattleDetailPanel.COMPACT_PANEL_SIZE)
 		and detail_rect.position.y >= board_rect.position.y + board_rect.size.y * 0.4
 		and detail_rect.end.y <= board_rect.end.y + EPSILON,
-		"900x540 battle detail must use the unscaled 560x240 bottom layout: detail=%s board=%s" % [
+		"900x540 battle detail must use the unscaled 440x220 bottom layout: detail=%s board=%s" % [
 			detail_rect, board_rect,
 		],
 	)
@@ -1625,6 +2033,37 @@ func _check_compact_battle_detail_layout() -> void:
 	_check(
 		detail != null and detail.detail_text.scroll_active,
 		"Compact battle detail must keep its body internally scrollable",
+	)
+	_check(
+		detail != null
+		and detail.state_panel.visible
+		and "当前状态" in detail.state_text.text
+		and "当前状态" not in detail.detail_text.text
+		and detail.detail_text.tooltip_text.is_empty()
+		and detail.state_text.get_content_height() <= detail.state_text.size.y + EPSILON,
+		"Compact battle detail must separate unclipped live state from printed rules: "
+		+ "visible=%s state=%s rules=%s tooltip=%s content=%s size=%s" % [
+			detail.state_panel.visible if detail else false,
+			detail.state_text.text if detail else "<missing>",
+			detail.detail_text.text if detail else "<missing>",
+			detail.detail_text.tooltip_text if detail else "<missing>",
+			detail.state_text.get_content_height() if detail else -1,
+			detail.state_text.size if detail else Vector2.ZERO,
+		],
+	)
+	_check(
+		battle.action_popover != null
+		and battle.action_popover.visible
+		and battle.action_popover.is_compact_layout()
+		and not detail_rect.intersects(
+			battle.action_popover.panel_global_rect().grow(4.0)
+		),
+		"Compact card actions must use the short action strip without covering details: "
+		+ "detail=%s actions=%s placement=%s" % [
+			detail_rect,
+			battle.action_popover.panel_global_rect() if battle.action_popover else Rect2(),
+			battle.action_popover.current_placement if battle.action_popover else "<missing>",
+		],
 	)
 	host.queue_free()
 	await _settle_layout(2)

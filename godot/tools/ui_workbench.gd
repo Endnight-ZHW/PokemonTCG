@@ -924,7 +924,8 @@ func _card_thumb(card_id: String, hidden: bool) -> CardView:
 	var card := load("res://ui/card_view.tscn").instantiate() as CardView
 	card.custom_minimum_size = Vector2(76, 107)
 	card.configure(card_id, null, hidden, -1, -1, "", true)
-	card.tooltip_text = "隐藏卡牌" if hidden else catalog.card_name(card_id)
+	card.tooltip_text = ""
+	card.accessibility_name = "隐藏卡牌" if hidden else catalog.card_name(card_id)
 	return card
 
 

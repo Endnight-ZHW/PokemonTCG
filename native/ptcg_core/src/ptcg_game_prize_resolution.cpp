@@ -232,14 +232,41 @@ void suspend_exp_share_confirmation(
             Value(Object{
                 {"kind", Value("id")},
                 {"option_id", Value("confirm:yes")},
+                {"label", Value("发动学习装置")},
             }),
             Value(Object{
                 {"kind", Value("id")},
                 {"option_id", Value("confirm:no")},
+                {"label", Value("不发动")},
             }),
         },
         "confirm_exp_share_trigger",
         true
+    );
+    result.pending["prompt"] = Value(
+        "是否发动学习装置，将昏厥宝可梦的1张基本能量转附到备战宝可梦？"
+    );
+    Object presentation{
+        {"domain", Value("trigger")},
+        {"purpose", Value("confirm_exp_share_trigger")},
+        {"source_player", Value(defeated_owner)},
+        {"source_slot", Value(string_arg(continuation, "from_slot", "active"))},
+        {"source_card_id", Value(string_arg(continuation, "from_card_id"))},
+        {"target_player", Value(defeated_owner)},
+        {"target_slot", Value(string_arg(continuation, "to_slot"))},
+    };
+    const std::string tool_id = string_arg(
+        continuation,
+        "target_tool_id"
+    );
+    if (!tool_id.empty()) {
+        presentation["card_id"] = Value(tool_id);
+        presentation["revealed_card_ids"] = Value(
+            Array{Value(tool_id)}
+        );
+    }
+    result.pending["presentation"] = Value(
+        std::move(presentation)
     );
     result.continuation = continuation;
     result.continuation["kind"] = Value(
@@ -272,6 +299,10 @@ void suspend_exp_share_order(
                 "option_id",
                 Value("trigger:" + std::to_string(index)),
             },
+            {
+                "label",
+                Value("学习装置效果 " + std::to_string(index + 1)),
+            },
         });
     }
     increment(result.state, "choice_sequence");
@@ -285,6 +316,13 @@ void suspend_exp_share_order(
         "public_exp_share_order",
         true
     );
+    result.pending["prompt"] = Value(
+        "请选择先发动的学习装置效果。"
+    );
+    result.pending["presentation"] = Value(Object{
+        {"domain", Value("trigger")},
+        {"purpose", Value("exp_share_order")},
+    });
     result.continuation = continuation;
     result.continuation["kind"] = Value(
         "public_exp_share_order"
@@ -349,9 +387,30 @@ void suspend_public_exp_share_spec_order(
     options.reserve(trigger_specs.size());
     for (std::size_t index = 0; index < trigger_specs.size(); ++index) {
         validate_public_exp_share_spec(result.state, actor, trigger_specs[index]);
+        const Value &spec = trigger_specs[index];
+        const std::string slot = string_arg(spec, "to_slot");
+        std::string slot_label = "备战宝可梦";
+        if (slot.rfind("bench_", 0) == 0) {
+            try {
+                slot_label = "备战区 " + std::to_string(
+                    std::stoll(slot.substr(6)) + 1
+                );
+            } catch (const std::exception &) {
+            }
+        }
         options.emplace_back(Object{
             {"kind", Value("id")},
             {"option_id", Value("trigger:" + std::to_string(index))},
+            {"label", Value(slot_label + "的学习装置")},
+            {
+                "ref",
+                Value(Object{
+                    {"kind", Value("pokemon")},
+                    {"player", Value(actor)},
+                    {"slot", Value(slot)},
+                    {"card_id", Value(string_arg(spec, "to_card_id"))},
+                }),
+            },
         });
     }
     increment(result.state, "choice_sequence");
@@ -365,6 +424,13 @@ void suspend_public_exp_share_spec_order(
         "public_exp_share_spec_order",
         true
     );
+    result.pending["prompt"] = Value(
+        "请选择先发动哪只备战宝可梦的学习装置。"
+    );
+    result.pending["presentation"] = Value(Object{
+        {"domain", Value("trigger")},
+        {"purpose", Value("exp_share_order")},
+    });
     result.continuation = continuation;
     result.continuation["kind"] = Value(
         "public_exp_share_spec_order"

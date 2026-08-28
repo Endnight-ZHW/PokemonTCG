@@ -50662,14 +50662,25 @@
               "options": [
                 {
                   "kind": "id",
+                  "label": "进行换位",
                   "option_id": "confirm:yes"
                 },
                 {
                   "kind": "id",
+                  "label": "不进行换位",
                   "option_id": "confirm:no"
                 }
               ],
               "player": 0,
+              "presentation": {
+                "domain": "effect",
+                "purpose": "search_any_switch_confirm",
+                "source_card_id": "sv1-104",
+                "source_player": 0,
+                "source_slot": "active",
+                "target_player": 0
+              },
+              "prompt": "是否将这只宝可梦与备战宝可梦互换？",
               "request_type": "confirm"
             },
             "revision": 1,
@@ -51455,14 +51466,25 @@
             "options": [
               {
                 "kind": "id",
+                "label": "进行换位",
                 "option_id": "confirm:yes"
               },
               {
                 "kind": "id",
+                "label": "不进行换位",
                 "option_id": "confirm:no"
               }
             ],
             "player": 0,
+            "presentation": {
+              "domain": "effect",
+              "purpose": "search_any_switch_confirm",
+              "source_card_id": "sv1-104",
+              "source_player": 0,
+              "source_slot": "active",
+              "target_player": 0
+            },
+            "prompt": "是否将这只宝可梦与备战宝可梦互换？",
             "request_type": "confirm"
           },
           "response": {
@@ -51470,6 +51492,7 @@
             "selected_options": [
               {
                 "kind": "id",
+                "label": "进行换位",
                 "option_id": "confirm:yes"
               }
             ]
@@ -58976,14 +58999,25 @@
             "options": [
               {
                 "kind": "id",
+                "label": "将这张卡牌加入手牌",
                 "option_id": "confirm:yes"
               },
               {
                 "kind": "id",
+                "label": "丢弃这张卡牌，再抽1张卡牌",
                 "option_id": "confirm:no"
               }
             ],
             "player": 0,
+            "presentation": {
+              "domain": "effect",
+              "purpose": "trekking_shoes",
+              "revealed_card_ids": [
+                "sv1-ener-1"
+              ],
+              "top_card_id": "sv1-ener-1"
+            },
+            "prompt": "查看了牌库顶的卡牌。请选择处理方式。",
             "request_type": "confirm"
           },
           "response": {
@@ -58991,6 +59025,7 @@
             "selected_options": [
               {
                 "kind": "id",
+                "label": "将这张卡牌加入手牌",
                 "option_id": "confirm:yes"
               }
             ]
@@ -59046,14 +59081,25 @@
           "options": [
             {
               "kind": "id",
+              "label": "将这张卡牌加入手牌",
               "option_id": "confirm:yes"
             },
             {
               "kind": "id",
+              "label": "丢弃这张卡牌，再抽1张卡牌",
               "option_id": "confirm:no"
             }
           ],
           "player": 0,
+          "presentation": {
+            "domain": "effect",
+            "purpose": "trekking_shoes",
+            "revealed_card_ids": [
+              "sv1-ener-1"
+            ],
+            "top_card_id": "sv1-ener-1"
+          },
+          "prompt": "查看了牌库顶的卡牌。请选择处理方式。",
           "request_type": "confirm"
         },
         "revision": 0,

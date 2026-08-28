@@ -889,7 +889,7 @@
         ],
         "converted_energy_cost": 1,
         "cost": [
-          "Colorless"
+          "Psychic"
         ],
         "damage": 0,
         "damage_text": "",
@@ -2391,8 +2391,10 @@
             "op": "draw_cards"
           }
         ],
-        "converted_energy_cost": 0,
-        "cost": [],
+        "converted_energy_cost": 1,
+        "cost": [
+          "Colorless"
+        ],
         "damage": 0,
         "damage_text": "",
         "effects": [
@@ -2429,7 +2431,7 @@
     "evolves_from": "",
     "evolves_to": [],
     "flavor_text": "",
-    "hp": 60,
+    "hp": 90,
     "image_path": "res://assets/cards/sv2-delib.webp",
     "image_url_large": "",
     "image_url_small": "",
@@ -2453,7 +2455,7 @@
     "trainer_type": "",
     "weaknesses": [
       {
-        "energy_type": "Lightning",
+        "energy_type": "Metal",
         "value": "×2"
       }
     ]
@@ -2593,7 +2595,7 @@
             }
           }
         ],
-        "name": "隐蔽手里剑",
+        "name": "隐秘手里剑",
         "text": "对对手的1只宝可梦造成40点伤害。（对备战宝可梦不计算弱点·抗性）"
       },
       {
@@ -3258,7 +3260,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Grass",
+        "value": "×2"
+      }
+    ]
   },
   "svd-dark-patch": {
     "abilities": [],
@@ -3415,7 +3422,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Grass",
+        "value": "×2"
+      }
+    ]
   },
   "svd-dodrio": {
     "abilities": [
@@ -3527,7 +3539,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Fighting",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 1,
     "rules": [],
     "set_id": "",
@@ -3539,7 +3556,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Lightning",
+        "value": "×2"
+      }
+    ]
   },
   "svd-doduo": {
     "abilities": [],
@@ -3596,7 +3618,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Fighting",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 1,
     "rules": [],
     "set_id": "",
@@ -3608,7 +3635,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Lightning",
+        "value": "×2"
+      }
+    ]
   },
   "svd-hard-belt": {
     "abilities": [],
@@ -3782,7 +3814,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Grass",
+        "value": "×2"
+      }
+    ]
   },
   "svd-maschiff": {
     "abilities": [],
@@ -3849,7 +3886,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Grass",
+        "value": "×2"
+      }
+    ]
   },
   "svd-morpeko": {
     "abilities": [],
@@ -3971,7 +4013,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Grass",
+        "value": "×2"
+      }
+    ]
   },
   "svd-seviper": {
     "abilities": [],
@@ -4071,7 +4118,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Fighting",
+        "value": "×2"
+      }
+    ]
   },
   "svf-ensw2": {
     "abilities": [],
@@ -4300,7 +4352,7 @@
     "image_path": "res://assets/cards/svf-hawl.webp",
     "image_url_large": "",
     "image_url_small": "",
-    "name": "摔跤鹰人",
+    "name": "摔角鹰人",
     "number": "",
     "prize_value": 1,
     "provides_energy": [],
@@ -4475,7 +4527,7 @@
     "trainer_type": "",
     "weaknesses": [
       {
-        "energy_type": "Psychic",
+        "energy_type": "Grass",
         "value": "×2"
       }
     ]
@@ -5163,12 +5215,7 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [
-      {
-        "energy_type": "Fighting",
-        "value": "-30"
-      }
-    ],
+    "resistances": [],
     "retreat_cost": 1,
     "rules": [],
     "set_id": "",
@@ -5182,7 +5229,7 @@
     "trainer_type": "",
     "weaknesses": [
       {
-        "energy_type": "Lightning",
+        "energy_type": "Fighting",
         "value": "×2"
       }
     ]
@@ -5721,12 +5768,7 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": [
-      {
-        "energy_type": "Lightning",
-        "value": "×2"
-      }
-    ]
+    "weaknesses": []
   },
   "svg2-brel": {
     "abilities": [],
@@ -5961,7 +6003,7 @@
     "resistances": [],
     "retreat_cost": 0,
     "rules": [
-      "从自己牌库上方抽取2张卡牌。然后，选择自己手牌中最多2张G能量，附着于1只备战宝可梦身上。"
+      "从自己牌库上方抽取2张卡牌。然后，选择自己手牌中最多2张草能量，附着于1只备战宝可梦身上。"
     ],
     "set_id": "",
     "set_name": "",
@@ -6013,7 +6055,7 @@
           }
         ],
         "name": "日光甲壳",
-        "text": "在自己的回合可以使用1次。选择自己牌库中的1张G宝可梦，在给对手看过之后，加入手牌。并重洗牌库。",
+        "text": "在自己的回合可以使用1次。选择自己牌库中的1张草宝可梦，在给对手看过之后，加入手牌。并重洗牌库。",
         "trigger": "on_turn"
       }
     ],
@@ -6155,7 +6197,7 @@
     "retreat_cost": 0,
     "rules": [
       "只要这张卡牌，被附着于宝可梦身上，就被视作1个所有属性的能量。",
-      "如果身上附着了这张卡牌的宝可梦，身上还附着了除这张卡牌以外的特殊能量的话，则这张卡牌被视作1个普通能量。"
+      "如果身上附着了这张卡牌的宝可梦，身上还附着了除这张卡牌以外的特殊能量的话，则这张卡牌被视作1个无色能量。"
     ],
     "set_id": "",
     "set_name": "",
@@ -6439,7 +6481,7 @@
           }
         ],
         "name": "唤群之歌",
-        "text": "选择自己牌库中的1张G宝可梦，在给对手看过之后，加入手牌。并重洗牌库。如果是后攻玩家的最初回合的话，则可加入手牌的G宝可梦的张数变为最多3张。"
+        "text": "选择自己牌库中的1张草宝可梦，在给对手看过之后，加入手牌。并重洗牌库。如果是后攻玩家的最初回合的话，则可加入手牌的草宝可梦的张数变为最多3张。"
       },
       {
         "compiled_effects": [
@@ -6490,7 +6532,7 @@
           }
         ],
         "name": "反复鞭挞",
-        "text": "追加造成这只宝可梦身上附有的G能量数量×20点伤害。"
+        "text": "追加造成这只宝可梦身上附有的草能量数量×20点伤害。"
       }
     ],
     "compiled_trainer_effects": [],
@@ -6999,7 +7041,7 @@
     "resistances": [],
     "retreat_cost": 0,
     "rules": [
-      "只要这张卡牌被附着于宝可梦身上，就被视作2个[C]能量。",
+      "只要这张卡牌被附着于宝可梦身上，就被视作2个无色能量。",
       "身上附有这张卡牌的宝可梦所使用的招式，给对手的宝可梦造成的伤害「-20」。"
     ],
     "set_id": "",
@@ -7777,7 +7819,7 @@
     "resistances": [],
     "retreat_cost": 0,
     "rules": [
-      "只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。",
+      "只要这张卡牌被附着于宝可梦身上，就被视作1个无色能量。",
       "当将这张卡牌从手牌附着于备战宝可梦身上时，将该宝可梦与战斗宝可梦互换。"
     ],
     "set_id": "",
@@ -7823,7 +7865,7 @@
           }
         ],
         "name": "团结一致",
-        "text": "当这只宝可梦在战斗场上受到对手宝可梦的招式的伤害时，将自己场上「一对鼠」和「一家鼠」的数量×3个伤害指示物，放置于使用了招式的宝可梦身上。",
+        "text": "当这只宝可梦在战斗场上受到对手宝可梦的招式的伤害时，将自己场上「一对鼠」和「一家鼠」（包含「宝可梦ex」）的数量×3个伤害指示物，放置于使用了招式的宝可梦身上。",
         "trigger": "on_damaged"
       }
     ],
@@ -8036,7 +8078,7 @@
     "resistances": [],
     "retreat_cost": 0,
     "rules": [
-      "只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。",
+      "只要这张卡牌被附着于宝可梦身上，就被视作1个无色能量。",
       "身上附有这张卡牌的宝可梦，在战斗场上受到对手宝可梦的招式的伤害时，从自己的牌库上方抽取1张卡牌。"
     ],
     "set_id": "",
@@ -8680,7 +8722,7 @@
     "resistances": [],
     "retreat_cost": 0,
     "rules": [
-      "只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。",
+      "只要这张卡牌被附着于宝可梦身上，就被视作1个无色能量。",
       "在自己的回合，当从反面朝上的自己的奖赏卡中拿取了这张卡牌时，在加入手牌前，可将这张卡牌附着于自己的宝可梦身上。"
     ],
     "set_id": "",
@@ -9686,7 +9728,7 @@
           }
         ],
         "name": "金属转移",
-        "text": "在自己的回合可以使用任意次。选择附着于自己场上宝可梦身上的1个M能量，转附于自己其他宝可梦身上。",
+        "text": "在自己的回合可以使用任意次。选择附着于自己场上宝可梦身上的1个钢能量，转附于自己其他宝可梦身上。",
         "trigger": "repeatable"
       }
     ],
@@ -9726,7 +9768,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Grass",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 3,
     "rules": [],
     "set_id": "",
@@ -9738,7 +9785,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Fire",
+        "value": "×2"
+      }
+    ]
   },
   "svm-bronzor": {
     "abilities": [],
@@ -9810,7 +9862,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Grass",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 1,
     "rules": [],
     "set_id": "",
@@ -9822,7 +9879,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Fire",
+        "value": "×2"
+      }
+    ]
   },
   "svm-cobalion": {
     "abilities": [
@@ -9850,7 +9912,7 @@
           }
         ],
         "name": "正义法则",
-        "text": "只要这只宝可梦在场上，自己的基础宝可梦使用的招式，给对手战斗场上的D宝可梦造成的伤害「+30」。",
+        "text": "只要这只宝可梦在场上，自己的基础宝可梦使用的招式，给对手战斗场上的恶宝可梦造成的伤害「+30」。",
         "trigger": "passive"
       }
     ],
@@ -9916,7 +9978,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Grass",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 2,
     "rules": [],
     "set_id": "",
@@ -9928,7 +9995,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Fire",
+        "value": "×2"
+      }
+    ]
   },
   "svm-dialga": {
     "abilities": [],
@@ -10019,7 +10091,7 @@
           }
         ],
         "name": "金属爆破",
-        "text": "追加造成这只宝可梦身上附有的M能量数量×20点伤害。"
+        "text": "追加造成这只宝可梦身上附有的钢能量数量×20点伤害。"
       }
     ],
     "compiled_trainer_effects": [],
@@ -10040,7 +10112,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Grass",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 2,
     "rules": [],
     "set_id": "",
@@ -10052,7 +10129,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Fire",
+        "value": "×2"
+      }
+    ]
   },
   "svm-klefki": {
     "abilities": [],
@@ -10107,7 +10189,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Grass",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 1,
     "rules": [],
     "set_id": "",
@@ -10119,7 +10206,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Fire",
+        "value": "×2"
+      }
+    ]
   },
   "svm-marnie-pride": {
     "abilities": [],
@@ -10147,7 +10239,7 @@
     "image_path": "res://assets/cards/svm-marnie-pride.webp",
     "image_url_large": "",
     "image_url_small": "",
-    "name": "玛俐的自尊",
+    "name": "玛俐的骄傲",
     "number": "",
     "prize_value": 0,
     "provides_energy": [],
@@ -10205,7 +10297,7 @@
           }
         ],
         "name": "营养铁质",
-        "text": "如果这只宝可梦身上附着了3个及以上M能量的话，则这只宝可梦的最大HP「+100」。",
+        "text": "如果这只宝可梦身上附着了3个及以上钢能量的话，则这只宝可梦的最大HP「+100」。",
         "trigger": "passive"
       }
     ],
@@ -10267,7 +10359,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Grass",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 2,
     "rules": [],
     "set_id": "",
@@ -10279,7 +10376,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Fire",
+        "value": "×2"
+      }
+    ]
   },
   "svm-skarmory": {
     "abilities": [],
@@ -10348,7 +10450,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Fighting",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 1,
     "rules": [],
     "set_id": "",
@@ -10360,7 +10467,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Lightning",
+        "value": "×2"
+      }
+    ]
   },
   "svm-smeargle": {
     "abilities": [],
@@ -10446,7 +10558,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Fighting",
+        "value": "×2"
+      }
+    ]
   },
   "svm-zacian": {
     "abilities": [],
@@ -10538,7 +10655,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Grass",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 2,
     "rules": [],
     "set_id": "",
@@ -10550,7 +10672,12 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Fire",
+        "value": "×2"
+      }
+    ]
   },
   "svm-zamazenta": {
     "abilities": [
@@ -10652,7 +10779,12 @@
     "provides_energy": [],
     "rarity": "",
     "regulation_mark": "",
-    "resistances": [],
+    "resistances": [
+      {
+        "energy_type": "Grass",
+        "value": "-30"
+      }
+    ],
     "retreat_cost": 2,
     "rules": [],
     "set_id": "",
@@ -10664,6 +10796,11 @@
     "trainer_effects": [],
     "trainer_text": "",
     "trainer_type": "",
-    "weaknesses": []
+    "weaknesses": [
+      {
+        "energy_type": "Fire",
+        "value": "×2"
+      }
+    ]
   }
 }

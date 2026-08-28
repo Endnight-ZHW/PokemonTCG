@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_detail_panel.gd" id="1_detail"]
 
@@ -84,13 +84,25 @@ corner_radius_bottom_left = 9
 color = Color(0.18, 0.29, 0.41, 0.9)
 thickness = 1
 
+[sub_resource type="StyleBoxFlat" id="Style_state"]
+bg_color = Color(0.035, 0.105, 0.12, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.235, 0.66, 0.52, 0.62)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
 [node name="DetailPanel" type="PanelContainer"]
 unique_name_in_owner = true
 visible = false
-custom_minimum_size = Vector2(372, 312)
+custom_minimum_size = Vector2(420, 336)
 layout_mode = 0
-offset_right = 372.0
-offset_bottom = 312.0
+offset_right = 420.0
+offset_bottom = 336.0
 mouse_filter = 0
 z_index = 90
 theme_override_styles/panel = SubResource("Style_panel")
@@ -154,12 +166,12 @@ size_flags_vertical = 3
 theme_override_constants/separation = 10
 
 [node name="ImageColumn" type="VBoxContainer" parent="Content/Body"]
-custom_minimum_size = Vector2(126, 0)
+custom_minimum_size = Vector2(112, 0)
 layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="ImageFrame" type="PanelContainer" parent="Content/Body/ImageColumn"]
-custom_minimum_size = Vector2(126, 176)
+custom_minimum_size = Vector2(112, 157)
 layout_mode = 2
 theme_override_styles/panel = SubResource("Style_image")
 
@@ -186,9 +198,14 @@ text = "战斗区"
 horizontal_alignment = 1
 text_overrun_behavior = 3
 
-[node name="DetailText" type="RichTextLabel" parent="Content/Body"]
+[node name="DetailColumn" type="VBoxContainer" parent="Content/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="DetailText" type="RichTextLabel" parent="Content/Body/DetailColumn"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(212, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -202,6 +219,31 @@ bbcode_enabled = true
 selection_enabled = false
 scroll_active = true
 scroll_following = false
+text = ""
+
+[node name="StatePanel" type="PanelContainer" parent="Content/Body/DetailColumn"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 62)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Style_state")
+
+[node name="StateMargin" type="MarginContainer" parent="Content/Body/DetailColumn/StatePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 9
+theme_override_constants/margin_top = 7
+theme_override_constants/margin_right = 9
+theme_override_constants/margin_bottom = 7
+
+[node name="StateText" type="RichTextLabel" parent="Content/Body/DetailColumn/StatePanel/StateMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/default_color = Color(0.86, 0.91, 0.97, 1)
+theme_override_font_sizes/normal_font_size = 11
+bbcode_enabled = true
+fit_content = false
+scroll_active = false
 text = ""
 
 [connection signal="pressed" from="Content/Header/CloseButton" to="." method="_on_close_pressed"]

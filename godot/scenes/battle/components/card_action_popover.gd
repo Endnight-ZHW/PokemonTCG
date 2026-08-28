@@ -33,6 +33,7 @@ var _source_control_ref: WeakRef
 var _avoid_control_refs: Array[WeakRef] = []
 var _uses_viewport_safe_rect := false
 var _compact_layout := false
+var _compact_preferred := false
 var _last_tracked_source_rect := Rect2()
 var _icon_thumbnail_cache: Dictionary[int, Texture2D] = {}
 var _visibility_tween: Tween
@@ -40,6 +41,8 @@ var _visibility_tween: Tween
 const SOURCE_OVERLAP_BASE_PENALTY := 1_000_000_000.0
 const SOURCE_OVERLAP_AREA_WEIGHT := 1000.0
 const PANEL_CONTENT_HORIZONTAL_MARGIN := 20.0
+const COMPACT_ACTION_WIDTH := 172.0
+const COMPACT_ACTION_GAP := 4.0
 
 
 func _ready() -> void:
@@ -175,6 +178,14 @@ func panel_global_rect() -> Rect2:
 
 func is_compact_layout() -> bool:
 	return _compact_layout
+
+
+func set_compact_preferred(value: bool) -> void:
+	if _compact_preferred == value:
+		return
+	_compact_preferred = value
+	if visible:
+		_layout_popover()
 
 
 func button_count() -> int:
@@ -369,10 +380,10 @@ func _thumbnail_icon(texture: Texture2D) -> Texture2D:
 func _layout_popover() -> void:
 	if panel == null or _safe_rect.size.x <= 0.0 or _safe_rect.size.y <= 0.0:
 		return
-	_set_compact_layout(false)
-	var panel_size := _desired_panel_size(false)
+	_set_compact_layout(_compact_preferred)
+	var panel_size := _desired_panel_size(_compact_layout)
 	var placement := _preferred_placement(panel_size)
-	if not bool(placement.get("valid", false)):
+	if not bool(placement.get("valid", false)) and not _compact_layout:
 		_set_compact_layout(true)
 		panel_size = _desired_panel_size(true)
 		placement = _preferred_placement(panel_size)
@@ -391,6 +402,14 @@ func _layout_popover() -> void:
 
 func _desired_panel_size(compact_layout: bool) -> Vector2:
 	var width := clampf(preferred_width, minimum_width, maximum_width)
+	if compact_layout and not _rows.is_empty():
+		var visible_columns := mini(2, _rows.size())
+		width = maxf(
+			width,
+			PANEL_CONTENT_HORIZONTAL_MARGIN
+			+ float(visible_columns) * COMPACT_ACTION_WIDTH
+			+ float(maxi(0, visible_columns - 1)) * COMPACT_ACTION_GAP,
+		)
 	width = minf(width, _safe_rect.size.x)
 	var content_height := action_button_height
 	if not _rows.is_empty() and not compact_layout:
@@ -505,6 +524,10 @@ func _set_compact_layout(value: bool) -> void:
 	if _compact_layout == value:
 		return
 	_compact_layout = value
+	# The horizontal compact action strip is already visually tied to its source
+	# card. Omitting the redundant title saves enough height to keep it above the
+	# card and clear of the compact detail sheet.
+	title_label.visible = not value and not title_label.text.is_empty()
 	var from_container: Container = (
 		action_buttons if value else compact_action_buttons
 	)
@@ -522,7 +545,7 @@ func _set_compact_layout(value: bool) -> void:
 				else Control.SIZE_EXPAND_FILL
 			)
 			(child as Button).custom_minimum_size = Vector2(
-				112.0 if value else 0.0,
+				COMPACT_ACTION_WIDTH if value else 0.0,
 				action_button_height,
 			)
 	action_scroll.visible = not value and not _rows.is_empty()

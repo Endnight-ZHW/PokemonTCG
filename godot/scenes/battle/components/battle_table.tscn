@@ -386,6 +386,8 @@ grow_vertical = 2
 editor_description = "牌桌根层的瞬态信息浮层，不参与 Board 或右侧 HUD 的容器布局。"
 
 [node name="DetailPanel" parent="OverlayPanels" instance=ExtResource("9_detail")]
+z_index = 310
+z_as_relative = false
 
 [node name="CardActionPopover" parent="." instance=ExtResource("13_popover")]
 

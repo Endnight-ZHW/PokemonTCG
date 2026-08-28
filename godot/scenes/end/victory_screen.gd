@@ -136,7 +136,8 @@ func _refresh_card() -> void:
 	elif resolved_name.is_empty():
 		resolved_name = "本局未记录代表卡"
 	card_name_label.text = resolved_name
-	card_image.tooltip_text = resolved_name
+	card_image.tooltip_text = ""
+	card_image.accessibility_name = resolved_name
 
 
 func _is_draw() -> bool:

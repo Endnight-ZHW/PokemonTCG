@@ -193,6 +193,14 @@ func _run() -> void:
 			== before_state.players[1].active.damage_counters + 9,
 		"Damage feedback mutated the attacker before the defender",
 	)
+	var target_cover_view := workbench.current_battle._presentation_slot_covers.get(
+		"1:active"
+	) as CardView
+	_check_presentation_inspection_hit(
+		workbench.current_battle,
+		target_cover_view,
+		"damage checkpoint target cover",
+	)
 
 	_stage = "checkpoint_identical_retreat_50"
 	await workbench.capture_presentation_checkpoint(50, "retreat_identical")
@@ -204,6 +212,17 @@ func _run() -> void:
 	_check_identical_slot_swap_motion(
 		workbench.current_battle,
 		"identical retreat checkpoint",
+	)
+	var retreat_mover: CardView
+	for value in workbench.current_battle._active_flyers:
+		var candidate := value as CardView
+		if candidate != null and bool(candidate.get_meta("slot_composite_motion", false)):
+			retreat_mover = candidate
+			break
+	_check_presentation_inspection_hit(
+		workbench.current_battle,
+		retreat_mover,
+		"retreat checkpoint moving Pokemon",
 	)
 	_stage = "checkpoint_identical_retreat_100"
 	await workbench.capture_presentation_checkpoint(100, "retreat_identical")
@@ -219,6 +238,59 @@ func _run() -> void:
 		and rendered_state.players[0].bench[0].card_id == "svi-chim",
 		"Identical retreat did not reconcile after the visible slot swap",
 	)
+	_stage = "live_pointer_dispatch"
+	var live_handle: Variant = workbench.call("trigger_presentation", "damage")
+	var live_battle: BattleTable = workbench.current_battle
+	var live_target: CardView
+	for _attempt in range(24):
+		await create_timer(0.01, true, false, true).timeout
+		live_target = live_battle._presentation_slot_covers.get("1:active") as CardView
+		if (
+			live_target != null
+			and live_battle.input_blocker != null
+			and live_battle.input_blocker.visible
+		):
+			break
+	_check(
+		live_handle != null
+		and live_target != null
+		and live_battle.input_blocker.visible,
+		"Live presentation did not expose a clickable target behind its blocker",
+	)
+	if live_target != null and live_battle.input_blocker != null:
+		var live_point := live_target.global_center()
+		Input.warp_mouse(live_point)
+		var live_press := InputEventMouseButton.new()
+		live_press.button_index = MOUSE_BUTTON_LEFT
+		live_press.pressed = true
+		live_press.position = live_point
+		live_press.global_position = live_point
+		root.push_input(live_press, true)
+		await process_frame
+		var live_detail := live_battle.detail_panel as BattleDetailPanel
+		_check(
+			live_detail != null
+			and live_detail.visible
+			and live_detail.current_card_id == live_target.card_id,
+			"Real GUI pointer dispatch did not open detail during live presentation: "
+			+ "hovered=%s point=%s blocker=%s rect=%s target=%s target_rect=%s" % [
+				root.gui_get_hovered_control(),
+				live_point,
+				live_battle.input_blocker.visible,
+				live_battle.input_blocker.get_global_rect(),
+				live_target,
+				live_target.visual_global_bounds(),
+			],
+		)
+		var live_release := InputEventMouseButton.new()
+		live_release.button_index = MOUSE_BUTTON_LEFT
+		live_release.pressed = false
+		live_release.position = live_point
+		live_release.global_position = live_point
+		root.push_input(live_release, true)
+		live_battle.hide_card_detail()
+	if live_handle != null and not bool(live_handle.call("is_completed")):
+		await live_handle.completed
 	for kind in ["attach_energy", "evolve", "attack", "damage", "ko"]:
 		_stage = "atomic_%s" % kind
 		var handle: Variant = workbench.call("trigger_presentation", kind)
@@ -369,6 +441,46 @@ func _check_identical_slot_swap_motion(
 		and progressed_count >= 1,
 		"%s did not create both directions of the slot exchange" % context,
 	)
+
+
+func _check_presentation_inspection_hit(
+	battle: BattleTable,
+	visible_card: CardView,
+	context: String,
+) -> void:
+	_check(battle != null and visible_card != null, "%s has no visible CardView" % context)
+	if battle == null or visible_card == null:
+		return
+	var blocker := battle.input_blocker
+	var point := visible_card.global_center()
+	var resolved := battle.call(
+		"_public_field_card_at",
+		point,
+		BattleTable.PRESENTATION_INSPECTION_MOUSE_MARGIN,
+	) as CardView
+	_check(
+		blocker != null
+		and blocker.visible
+		and resolved != null
+		and resolved.card_id == visible_card.card_id,
+		"%s was not resolved through the real presentation hit map" % context,
+	)
+	if blocker == null:
+		return
+	var local_point := blocker.get_global_transform_with_canvas().affine_inverse() * point
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = local_point
+	blocker.gui_input.emit(press)
+	var detail := battle.detail_panel as BattleDetailPanel
+	_check(
+		detail != null
+		and detail.visible
+		and detail.current_card_id == visible_card.card_id,
+		"%s did not open detail immediately on pointer press" % context,
+	)
+	battle.hide_card_detail()
 
 
 func _finish() -> void:

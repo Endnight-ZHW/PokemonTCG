@@ -39,6 +39,12 @@ func _render_previews() -> void:
 	# Give fonts, card textures and the procedural gradient one extra upload pass
 	# before the first GPU readback. Later captures reuse these resources.
 	await _settle_frontend(8)
+	if "--semantic-choice-only" in OS.get_cmdline_user_args():
+		await _render_semantic_choice_previews(ui)
+		return
+	if "--battle-detail-only" in OS.get_cmdline_user_args():
+		await _render_battle_detail_previews(ui)
+		return
 	if not _capture("title.png"):
 		_finish(1)
 		return
@@ -931,7 +937,7 @@ func _render_previews() -> void:
 		)
 	):
 		push_error(
-			"Compact battle detail did not use an unscaled 560x240 bottom surface: "
+			"Compact battle detail did not use the configured unscaled bottom surface: "
 			+ "detail=%s physical=%s expected=%s close=%s" % [
 				compact_detail.size if compact_detail else Vector2.ZERO,
 				_physical_control_rect(compact_detail).size if compact_detail else Vector2.ZERO,
@@ -939,6 +945,17 @@ func _render_previews() -> void:
 				compact_detail.close_button.get_global_rect() if compact_detail else Rect2(),
 			]
 		)
+		_finish(1)
+		return
+	var compact_action_popover := ui.battle_screen.action_popover as CardActionPopover
+	if (
+		compact_action_popover
+		and compact_action_popover.visible
+		and compact_detail.get_global_rect().intersects(
+			compact_action_popover.panel_global_rect()
+		)
+	):
+		push_error("Compact battle detail overlaps the card action popover")
 		_finish(1)
 		return
 	if not _capture("battle-card-preview-compact.png"):
@@ -1055,7 +1072,13 @@ func _render_previews() -> void:
 			and not preview_action_button.is_ancestor_of(hovered_action_control)
 		)
 	):
-		push_error("Card action button became unreachable through its transparent root")
+		push_error("Card action button became unreachable through its transparent root: button=%s hovered=%s popover=%s detail=%s window=%s" % [
+			_physical_control_rect(preview_action_button),
+			hovered_action_control.get_path() if hovered_action_control else "<none>",
+			ui.battle_screen.action_popover.panel_global_rect(),
+			ui.battle_screen.detail_panel.get_global_rect(),
+			root.size,
+		])
 		_finish(1)
 		return
 	# Reproduce the reported state exactly: a card action popover and detail panel
@@ -1117,6 +1140,39 @@ func _render_previews() -> void:
 	if not _capture("card-inspector.png"):
 		_finish(1)
 		return
+	var inspector_panel := ui.modal_body.get_child(0) as CardInspectorPanel
+	if inspector_panel == null or inspector_panel._image_button == null:
+		push_error("Card inspector did not expose its image zoom action")
+		_finish(1)
+		return
+	inspector_panel._image_button.pressed.emit()
+	await _settle_rendered(3)
+	if inspector_panel.get_node_or_null("CardArtZoom") == null:
+		push_error("Card inspector image action did not open the art zoom surface")
+		_finish(1)
+		return
+	if not _capture("card-inspector-art-zoom.png"):
+		_finish(1)
+		return
+	(inspector_panel.get_node("CardArtZoom") as PopupPanel).hide()
+	await _settle_rendered(2)
+	root.size = Vector2i(560, 720)
+	await _settle_rendered(4)
+	inspector_panel._apply_responsive_layout()
+	if inspector_panel._content_grid.columns != 1:
+		push_error("Compact card inspector did not switch to a single-column layout: panel=%s window=%s viewport=%s columns=%d" % [
+			inspector_panel.size,
+			inspector_panel.get_window().size,
+			inspector_panel.get_viewport_rect().size,
+			inspector_panel._content_grid.columns,
+		])
+		_finish(1)
+		return
+	if not _capture("card-inspector-compact.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(3)
 	ui._close_modal()
 	await _wait_until_hidden(ui.modal_layer)
 	ui._show_zone_inspector({
@@ -1669,16 +1725,18 @@ func _render_previews() -> void:
 		demo.revision,
 		"confirm",
 		0,
-		"要将查看到的卡牌加入手牌吗？",
+		"查看了牌库顶的卡牌。请选择处理方式。",
 		[
-			{"option_id": "confirm:yes", "label": "是，加入手牌"},
-			{"option_id": "confirm:no", "label": "否，放入弃牌"},
+			{"option_id": "confirm:yes", "label": "将这张卡牌加入手牌"},
+			{"option_id": "confirm:no", "label": "丢弃这张卡牌，再抽1张卡牌"},
 		],
 		1,
 		1,
 		false,
 		false,
 		{
+			"domain": "effect",
+			"purpose": "trekking_shoes",
 			"top_card_id": "svf-potion",
 			"revealed_card_ids": ["svf-potion"],
 		},
@@ -1687,6 +1745,173 @@ func _render_previews() -> void:
 	ui._toggle_choice("confirm:no")
 	await _settle_rendered(4)
 	if not _capture("choice-confirm-revealed.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(900, 540)
+	await _settle_rendered(4)
+	if not _capture("choice-confirm-revealed-compact.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(4)
+	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
+
+	var switch_choice := ChoiceView.new(
+		"preview-switch-confirm",
+		demo.revision,
+		"confirm",
+		0,
+		"是否将这只宝可梦与备战宝可梦互换？",
+		[
+			{"option_id": "confirm:yes", "label": "进行换位"},
+			{"option_id": "confirm:no", "label": "不进行换位"},
+		],
+		1,
+		1,
+		false,
+		false,
+		{
+			"domain": "effect",
+			"purpose": "switch_confirm",
+			"source_player": 0,
+			"source_slot": "active",
+			"source_card_id": "sv1-114",
+			"target_player": 0,
+		},
+	)
+	ui.show_choice(switch_choice)
+	ui._toggle_choice("confirm:yes")
+	await _settle_rendered(4)
+	if not _capture("choice-switch-confirm.png"):
+		_finish(1)
+		return
+	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
+
+	var treasure_options: Array[Dictionary] = []
+	for row in [
+		{"slot": "active", "card_id": demo.players[0].active.card_id},
+		{"slot": "bench_0", "card_id": demo.players[0].bench[0].card_id},
+	]:
+		treasure_options.append({
+			"option_id": "pokemon:0:%s:%s" % [row["slot"], row["card_id"]],
+			"label": ui.catalog.card_name(row["card_id"]),
+			"ref": EntityRef.new(
+				"pokemon", 0, "", row["slot"], -1, "", row["card_id"],
+			).to_dict(),
+		})
+	var treasure_choice := ChoiceView.new(
+		"preview-treasure-energy",
+		demo.revision,
+		"select_prize_energy_target",
+		0,
+		"请选择宝藏能量的附着目标，或不发动效果。",
+		treasure_options,
+		0,
+		1,
+		false,
+		true,
+		{
+			"domain": "trigger",
+			"purpose": "treasure_energy_target",
+			"source_player": 0,
+			"source_zone": "prizes",
+			"source_card_id": "svi-trea",
+			"card_id": "svi-trea",
+			"revealed_card_ids": ["svi-trea"],
+		},
+	)
+	ui.show_choice(treasure_choice)
+	ui._toggle_choice(str(treasure_options[1]["option_id"]))
+	await _settle_rendered(4)
+	if not _capture("choice-treasure-energy.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(900, 540)
+	await _settle_rendered(4)
+	if not _capture("choice-treasure-energy-compact.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(3)
+	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
+
+	if ui.battle_screen == null:
+		ui.state = demo
+		ui.current_view_player = 0
+		ui.game_mode = "local"
+		ui._build_game_screen()
+		ui.battle_screen.set_local_hand_privacy_hidden(false)
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
+	await _settle_rendered(4)
+	var bench_slot_options: Array[Dictionary] = []
+	for bench_index in [2, 3, 4]:
+		var bench_slot := "bench_%d" % bench_index
+		bench_slot_options.append({
+			"option_id": "slot:%s" % bench_slot,
+			"label": "备战席 %d" % (bench_index + 1),
+			"ref": EntityRef.new(
+				"slot", 0, "", bench_slot,
+			).to_dict(),
+		})
+	var nest_ball_slot_choice := ChoiceView.new(
+		"preview-nest-ball-slot-only",
+		demo.revision,
+		"select_bench_slot",
+		0,
+		"请选择「小火焰猴」要放置的备战席。",
+		bench_slot_options,
+		1,
+		1,
+		false,
+		false,
+		{
+			"domain": "effect",
+			"purpose": "search_bench_slot",
+			"source_player": 0,
+			"source_card_id": "svi-chim",
+			"target_player": 0,
+			"target_slots": ["bench_2", "bench_3", "bench_4"],
+		},
+	)
+	ui.show_choice(nest_ball_slot_choice)
+	await _settle_rendered(4)
+	if not _capture("choice-nest-ball-bench-slot.png"):
+		_finish(1)
+		return
+
+	var exp_share_choice := ChoiceView.new(
+		"preview-exp-share-confirm",
+		demo.revision,
+		"confirm_trigger",
+		0,
+		"是否发动学习装置，将昏厥宝可梦的1张基本能量转附到备战宝可梦？",
+		[
+			{"option_id": "confirm:yes", "label": "发动学习装置"},
+			{"option_id": "confirm:no", "label": "不发动"},
+		],
+		1,
+		1,
+		false,
+		false,
+		{
+			"domain": "trigger",
+			"purpose": "confirm_exp_share_trigger",
+			"source_player": 0,
+			"source_slot": "active",
+			"source_card_id": demo.players[0].active.card_id,
+			"target_player": 0,
+			"target_slot": "bench_0",
+			"card_id": "svg2-exps",
+			"revealed_card_ids": ["svg2-exps"],
+		},
+	)
+	ui.show_choice(exp_share_choice)
+	ui._toggle_choice("confirm:yes")
+	await _settle_rendered(4)
+	if not _capture("choice-exp-share-confirm.png"):
 		_finish(1)
 		return
 	ui._close_modal()
@@ -2287,6 +2512,193 @@ func _energy_badge_for_group(card: CardView, group_key: String) -> Control:
 		if child != null and str(child.get_meta("energy_group_key", "")) == group_key:
 			return child
 	return null
+
+
+func _render_semantic_choice_previews(ui: Control) -> void:
+	var demo := UIPreviewStateFactory.battle_state()
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
+	await _settle_rendered(4)
+
+	var switch_choice := ChoiceView.new(
+		"preview-switch-confirm-only", demo.revision, "confirm", 0,
+		"是否将这只宝可梦与备战宝可梦互换？",
+		[
+			{"option_id": "confirm:yes", "label": "进行换位"},
+			{"option_id": "confirm:no", "label": "不进行换位"},
+		],
+		1, 1, false, false,
+		{
+			"domain": "effect",
+			"purpose": "switch_confirm",
+			"source_player": 0,
+			"source_slot": "active",
+			"source_card_id": "sv1-114",
+			"target_player": 0,
+		},
+	)
+	ui.show_choice(switch_choice)
+	ui._toggle_choice("confirm:yes")
+	await _settle_rendered(4)
+	if not _capture("choice-switch-confirm.png"):
+		_finish(1)
+		return
+	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
+
+	var treasure_options: Array[Dictionary] = []
+	for row in [
+		{"slot": "active", "card_id": demo.players[0].active.card_id},
+		{"slot": "bench_0", "card_id": demo.players[0].bench[0].card_id},
+	]:
+		treasure_options.append({
+			"option_id": "pokemon:0:%s:%s" % [row["slot"], row["card_id"]],
+			"label": ui.catalog.card_name(row["card_id"]),
+			"ref": EntityRef.new(
+				"pokemon", 0, "", row["slot"], -1, "", row["card_id"],
+			).to_dict(),
+		})
+	var treasure_choice := ChoiceView.new(
+		"preview-treasure-energy-only", demo.revision,
+		"select_prize_energy_target", 0,
+		"请选择宝藏能量的附着目标，或不发动效果。",
+		treasure_options, 0, 1, false, true,
+		{
+			"domain": "trigger",
+			"purpose": "treasure_energy_target",
+			"source_player": 0,
+			"source_zone": "prizes",
+			"source_card_id": "svi-trea",
+			"card_id": "svi-trea",
+			"revealed_card_ids": ["svi-trea"],
+		},
+	)
+	ui.show_choice(treasure_choice)
+	ui._toggle_choice(str(treasure_options[1]["option_id"]))
+	await _settle_rendered(4)
+	if not _capture("choice-treasure-energy.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(900, 540)
+	await _settle_rendered(4)
+	if not _capture("choice-treasure-energy-compact.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(3)
+	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
+
+	var bench_slot_options: Array[Dictionary] = []
+	for bench_index in [2, 3, 4]:
+		var bench_slot := "bench_%d" % bench_index
+		bench_slot_options.append({
+			"option_id": "slot:%s" % bench_slot,
+			"label": "备战席 %d" % (bench_index + 1),
+			"ref": EntityRef.new(
+				"slot", 0, "", bench_slot,
+			).to_dict(),
+		})
+	var nest_ball_slot_choice := ChoiceView.new(
+		"preview-nest-ball-slot-semantic-only",
+		demo.revision,
+		"select_bench_slot",
+		0,
+		"请选择「小火焰猴」要放置的备战席。",
+		bench_slot_options,
+		1,
+		1,
+		false,
+		false,
+		{
+			"domain": "effect",
+			"purpose": "search_bench_slot",
+			"source_player": 0,
+			"source_card_id": "svi-chim",
+			"target_player": 0,
+			"target_slots": ["bench_2", "bench_3", "bench_4"],
+		},
+	)
+	if ui.battle_screen == null:
+		ui.state = demo
+		ui.current_view_player = 0
+		ui.game_mode = "local"
+		ui._build_game_screen()
+		ui.battle_screen.set_local_hand_privacy_hidden(false)
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
+	await _settle_rendered(4)
+	ui.show_choice(nest_ball_slot_choice)
+	await _settle_rendered(4)
+	if not _capture("choice-nest-ball-bench-slot.png"):
+		_finish(1)
+		return
+
+	var exp_share_choice := ChoiceView.new(
+		"preview-exp-share-confirm-only", demo.revision,
+		"confirm_trigger", 0,
+		"是否发动学习装置，将昏厥宝可梦的1张基本能量转附到备战宝可梦？",
+		[
+			{"option_id": "confirm:yes", "label": "发动学习装置"},
+			{"option_id": "confirm:no", "label": "不发动"},
+		],
+		1, 1, false, false,
+		{
+			"domain": "trigger",
+			"purpose": "confirm_exp_share_trigger",
+			"source_player": 0,
+			"source_slot": "active",
+			"source_card_id": demo.players[0].active.card_id,
+			"target_player": 0,
+			"target_slot": "bench_0",
+			"card_id": "svg2-exps",
+			"revealed_card_ids": ["svg2-exps"],
+		},
+	)
+	ui.show_choice(exp_share_choice)
+	ui._toggle_choice("confirm:yes")
+	await _settle_rendered(4)
+	if not _capture("choice-exp-share-confirm.png"):
+		_finish(1)
+		return
+	print("SEMANTIC_CHOICE_PREVIEWS_OK")
+	_finish(0)
+
+
+func _render_battle_detail_previews(ui: Control) -> void:
+	var demo := UIPreviewStateFactory.battle_state()
+	demo.players[0].active.damage_counters = 2
+	demo.players[0].active.status_conditions.assign(["BURNED"])
+	demo.players[0].active.attached_tool_id = "sv1-202"
+	ui.state = demo
+	ui.current_view_player = 0
+	ui.game_mode = "local"
+	ui._build_game_screen()
+	ui.battle_screen.set_local_hand_privacy_hidden(false)
+	_update_battle_preview(
+		ui,
+		demo,
+		UIPreviewStateFactory.action_rows(demo),
+		"pokemon:0:active",
+	)
+	ui.battle_screen.show_card_detail(
+		demo.players[0].active.card_id,
+		demo.players[0].active,
+	)
+	await _settle_rendered(5)
+	if not _capture("battle-card-detail-redesign.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1280, 720)
+	await _settle_rendered(4)
+	if not _capture("battle-card-detail-redesign-1280x720.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(900, 540)
+	await _settle_rendered(4)
+	if not _capture("battle-card-detail-redesign-compact.png"):
+		_finish(1)
+		return
+	print("BATTLE_DETAIL_PREVIEWS_OK")
+	_finish(0)
 
 
 func _settle_rendered(frame_count := 3) -> void:

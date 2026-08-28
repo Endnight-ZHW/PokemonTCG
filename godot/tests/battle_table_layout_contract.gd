@@ -335,6 +335,19 @@ static func _check_hand_centering(failures: Array[String]) -> void:
 				0.01,
 				"%s hand content is not centered in the viewport" % label,
 			)
+			if card_count == 15 and items.size() > 1:
+				var dense_spacing := float(items[1]["position"].x) - float(
+					items[0]["position"].x
+				)
+				_expect(
+					failures,
+					dense_spacing + EPSILON >= maxf(
+						52.0,
+						card_size.x * 0.49,
+					),
+					"%s dense hand spacing fell below its readable card-width ratio"
+					% label,
+				)
 
 
 static func _check_layout_case(
@@ -409,6 +422,16 @@ static func _check_layout_case(
 		<= content_size.x - required_command_reserve + EPSILON,
 		"%s did not reserve %.0fpx for the command rail and right margin"
 		% [label, required_command_reserve],
+	)
+	_expect(
+		failures,
+		float(metrics.get("pile_dock_shift", 0.0)) >= 32.0 - EPSILON,
+		"%s did not retain the expanded right-shift for pile docks" % label,
+	)
+	_expect(
+		failures,
+		BattlePhaseHud.PHASE_PANEL_OFFSET_Y >= 112.0,
+		"%s phase rail was not lowered beneath the upper pile row" % label,
 	)
 
 	_check_field_slots(failures, label, metrics, field, content_rect)
@@ -636,8 +659,17 @@ static func _check_zone_plan(
 		_expect(
 			failures,
 			discard_position.x + zone_size.x
-			<= float(metrics["command_dock_left"]) + EPSILON,
-			"%s %s discard pile entered the command dock reserve" % [label, prefix],
+			<= content_rect.end.x - float(metrics["side_margin"]) + EPSILON,
+			"%s %s discard pile escaped the right table edge" % [label, prefix],
+		)
+		_expect(
+			failures,
+			discard_position.x + zone_size.x
+			<= float(metrics["command_dock_left"])
+			+ float(metrics.get("pile_dock_shift", 0.0))
+			+ EPSILON,
+			"%s %s discard pile exceeded its reclaimed right-edge band"
+			% [label, prefix],
 		)
 
 	_expect_close(

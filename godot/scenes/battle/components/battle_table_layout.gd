@@ -34,8 +34,19 @@ static func board_metrics(width: float, height: float, config: Dictionary) -> Di
 	# between their top cards, matching two separate piles on the same tray.
 	var pile_gap := clampf(8.0 * layout_scale, 7.0, 9.0)
 	var command_dock_left := layout_origin_x + layout_width - side_margin - command_dock_width
+	# The phase rail only occupies the middle-right band. Let both pile docks use
+	# more of the otherwise empty upper/lower edge, with a smaller shift on dense
+	# layouts where the rail and piles have little vertical separation.
+	var pile_dock_shift := clampf(
+		32.0 + maxf(0.0, width - 900.0) * 0.045,
+		32.0,
+		64.0,
+	)
 	var left_zone_x := layout_origin_x + side_margin
-	var side_zone_x := command_dock_left - zone_visual_size.x - zone_gap
+	var side_zone_x := minf(
+		command_dock_left - zone_visual_size.x - zone_gap + pile_dock_shift,
+		layout_origin_x + layout_width - side_margin - zone_visual_size.x,
+	)
 	var discard_zone_x := side_zone_x - zone_visual_size.x - pile_gap
 	var field_left := left_zone_x + zone_visual_size.x + 36.0 * layout_scale
 	var field_right := discard_zone_x - 28.0 * layout_scale
@@ -84,6 +95,26 @@ static func board_metrics(width: float, height: float, config: Dictionary) -> Di
 		hand_width_lower,
 		hand_width_upper,
 	)
+	var hand_center_x := center_x
+	if width >= 1100.0:
+		var hand_corridor_left := (
+			left_zone_x + zone_visual_size.x + 16.0 * layout_scale
+		)
+		var hand_corridor_right := discard_zone_x - 10.0 * layout_scale
+		var hand_corridor_width := maxf(
+			220.0,
+			hand_corridor_right - hand_corridor_left,
+		)
+		hand_width = minf(hand_corridor_width, 900.0 * layout_scale)
+		var hand_half_width := hand_width * 0.5
+		hand_center_x = clampf(
+			viewport_center_x,
+			hand_corridor_left + hand_half_width,
+			maxf(
+				hand_corridor_left + hand_half_width,
+				hand_corridor_right - hand_half_width,
+			),
+		)
 	# The floating header owns the first visual row. Keep the lower half of the
 	# hidden hand peeking out beneath it so cards remain readable without
 	# competing with the round/task labels.
@@ -115,6 +146,7 @@ static func board_metrics(width: float, height: float, config: Dictionary) -> Di
 		"top_interaction_clearance": top_interaction_clearance,
 		"command_dock_width": command_dock_width,
 		"command_dock_left": command_dock_left,
+		"pile_dock_shift": pile_dock_shift,
 		"left_zone_x": left_zone_x,
 		"side_zone_x": side_zone_x,
 		"discard_zone_x": discard_zone_x,
@@ -123,6 +155,7 @@ static func board_metrics(width: float, height: float, config: Dictionary) -> Di
 		"field_right": field_right,
 		"table_width": table_width,
 		"center_x": center_x,
+		"hand_center_x": hand_center_x,
 		"top_hand_height": top_hand_height,
 		"opponent_hand_y": opponent_hand_y,
 		"opponent_hand_visible_height": hidden_hand_visible_height,
@@ -374,10 +407,14 @@ static func own_hand_plan(
 ) -> Dictionary:
 	var available := maxf(220.0, available_width)
 	var spacing := card_size.x
+	var readable_minimum_spacing := maxf(
+		minimum_spacing,
+		card_size.x * 0.49,
+	)
 	if visible_count > 1:
 		spacing = clampf(
 			(available - card_size.x) / float(visible_count - 1),
-			minimum_spacing,
+			readable_minimum_spacing,
 			card_size.x + 6.0,
 		)
 	var content_width := 0.0

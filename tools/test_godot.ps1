@@ -104,6 +104,11 @@ Invoke-GodotCheckedScript `
     -ContractName 'Card catalog contract'
 
 Invoke-GodotCheckedScript `
+    -Script 'res://tests/card_presentation_contract.gd' `
+    -SuccessMarker 'CARD_PRESENTATION_CONTRACT_OK' `
+    -ContractName 'Card visual audit coverage and shared presentation contract'
+
+Invoke-GodotCheckedScript `
     -Script 'res://tests/network_protocol_contract.gd' `
     -SuccessMarker 'NETWORK_PROTOCOL_CONTRACT_OK' `
     -ContractName 'Network protocol contract'

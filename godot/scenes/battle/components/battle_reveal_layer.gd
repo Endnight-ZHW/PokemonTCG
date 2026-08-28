@@ -266,7 +266,7 @@ func _create_card(
 	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	image.texture = card_back
 	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	image.size = size_value
 	card.add_child(image)
 
