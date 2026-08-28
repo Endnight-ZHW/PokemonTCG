@@ -135,8 +135,7 @@ static func validate_payload(message_type: String, payload: Dictionary) -> Dicti
 				or not _bounded_int(payload, "rules_version", 1, 2147483647)
 				or not _bounded_int(payload, "action_version", 1, 2147483647)
 				or (payload.has("resume") and not payload["resume"] is bool)
-				or (payload.has("core_fingerprint") and not _valid_sha256(
-					payload["core_fingerprint"]))
+				or not _valid_sha256(payload.get("core_fingerprint"))
 				or str(payload.get("rules_profile_id", "")) != RULES_PROFILE_ID
 				or not _validate_rules_options(payload.get("rules_options", {}))
 			):
@@ -149,8 +148,7 @@ static func validate_payload(message_type: String, payload: Dictionary) -> Dicti
 				or not _bounded_int(payload, "rules_version", 1, 2147483647)
 				or not _bounded_int(payload, "action_version", 1, 2147483647)
 				or (payload.has("resume") and not payload["resume"] is bool)
-				or (payload.has("core_fingerprint") and not _valid_sha256(
-					payload["core_fingerprint"]))
+				or not _valid_sha256(payload.get("core_fingerprint"))
 				or str(payload.get("rules_profile_id", "")) != RULES_PROFILE_ID
 				or not _validate_rules_options(payload.get("rules_options", {}))
 			):

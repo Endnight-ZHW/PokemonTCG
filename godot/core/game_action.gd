@@ -28,7 +28,7 @@ func _init(
 	p_schema_version: int = SCHEMA_VERSION,
 ) -> void:
 	kind = p_kind
-	payload = p_payload.duplicate(true)
+	payload = normalize_wire_payload(p_kind, p_payload)
 	actor = p_actor
 	source = p_source
 	target = p_target
@@ -109,6 +109,33 @@ static func from_dict(data: Dictionary) -> GameAction:
 	return strict
 
 
+static func normalize_wire_payload(
+	action_kind: String,
+	raw_payload: Dictionary,
+) -> Dictionary:
+	# Godot's JSON parser represents protocol numbers as floats. Keep the public
+	# wire format permissive, then canonicalize schema-declared integers at the
+	# DTO boundary so attack variants remain distinct after a network round trip.
+	var result := raw_payload.duplicate(true)
+	var definition := ActionDefinitionRegistry.shared().definition(action_kind)
+	var payload_schema: Dictionary = definition.get("payload", {})
+	for field_value in payload_schema:
+		var field := str(field_value)
+		if str(payload_schema[field]) != "int" or not result.has(field):
+			continue
+		var value: Variant = result[field]
+		if (
+			(value is int or value is float)
+			and not value is bool
+			and is_finite(float(value))
+			and float(value) >= -2147483648.0
+			and float(value) <= 2147483647.0
+			and float(value) == floorf(float(value))
+		):
+			result[field] = int(value)
+	return result
+
+
 func hand_index(default_value: int = -1) -> int:
 	if source != null and source.kind == "card" and source.zone == "hand":
 		return source.index
@@ -141,7 +168,18 @@ func bench_index(default_value: int = -1) -> int:
 
 func attack_index(default_value: int = -1) -> int:
 	var value: Variant = payload.get("attack_index", default_value)
-	return int(value) if value is int else default_value
+	return (
+		int(value)
+		if (
+			(value is int or value is float)
+			and not value is bool
+			and is_finite(float(value))
+			and float(value) >= -2147483648.0
+			and float(value) <= 2147483647.0
+			and float(value) == floorf(float(value))
+		)
+		else default_value
+	)
 
 
 func ability_name(default_value: String = "") -> String:

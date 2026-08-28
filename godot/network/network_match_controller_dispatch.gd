@@ -118,7 +118,7 @@ func _handle_host_message(
 				!= GameState.RULES_PROFILE_ID
 				or not _peer_core_compatible(payload)
 			):
-				_reject("schema_mismatch", "规则或动作版本不兼容。")
+				_reject("schema_mismatch", "卡牌内容或规则核心版本不兼容。")
 				return
 			var peer_rules_options: Dictionary = Dictionary(
 				payload.get("rules_options", {})).duplicate(true)
@@ -140,7 +140,12 @@ func _handle_host_message(
 				remote_deck_key = deck_key
 				reconnecting = false
 				resync_in_progress = false
-				connection_phase = ConnectionPhase.PLAYING
+				var resumed_terminal := session.state.is_terminal()
+				connection_phase = (
+					ConnectionPhase.FINISHING
+					if resumed_terminal
+					else ConnectionPhase.PLAYING
+				)
 				events.append({"type": "reconnected", "player_idx": 0})
 				events.append({
 					"type": "state",
@@ -152,6 +157,8 @@ func _handle_host_message(
 					"is_resync": true,
 				})
 				_send_state_to_client()
+				if resumed_terminal:
+					_begin_terminal_delivery(session.state.revision)
 				return
 			if resume_requested:
 				_reject("resume_unavailable", "房主已无法恢复该对局。")
@@ -214,7 +221,7 @@ func _handle_host_message(
 				str(row.get("request_id", "")),
 			)
 		ProtocolV6.RESYNC_REQUEST:
-			if _remote_message_allowed_while_playing(row):
+			if _remote_state_sync_allowed(row):
 				_send_state_to_client()
 		ProtocolV6.SURRENDER:
 			if not _remote_message_allowed_while_playing(row):
@@ -225,7 +232,16 @@ func _handle_host_message(
 				return
 			_broadcast_state(step.events)
 		ProtocolV6.PING:
-			_send(ProtocolV6.PONG)
+			_send(ProtocolV6.PONG, {}, get_revision())
+		ProtocolV6.PONG:
+			if (
+				connection_phase == ConnectionPhase.FINISHING
+				and session != null
+				and session.state != null
+				and session.state.is_terminal()
+				and int(row.get("state_revision", -1)) == terminal_revision
+			):
+				_finish_terminal_connection()
 		_:
 			_reject("unexpected_message", "房主不接受该消息。")
 
@@ -264,7 +280,7 @@ func _handle_client_message(
 				events.append({
 					"type": "error",
 					"code": "schema_mismatch",
-					"message": "规则或动作版本不兼容。",
+					"message": "卡牌内容或规则核心版本不兼容。",
 				})
 				events.append({"type": "disconnected", "reason": "schema_mismatch"})
 				return
@@ -298,6 +314,7 @@ func _handle_client_message(
 			if connection_phase not in [
 				ConnectionPhase.LOBBY,
 				ConnectionPhase.PLAYING,
+				ConnectionPhase.FINISHING,
 			]:
 				events.append({
 					"type": "error",
@@ -327,7 +344,7 @@ func _handle_client_message(
 			reconnect_deadline_msec = 0
 			next_reconnect_attempt_msec = 0
 			connection_phase = (
-				ConnectionPhase.CLOSED
+				ConnectionPhase.FINISHING
 				if str(state_payload.get("phase", "")) == "GAME_OVER"
 				else ConnectionPhase.PLAYING
 			)
@@ -342,7 +359,8 @@ func _handle_client_message(
 				"origin_request_id": str(origins.get("request_id", "")),
 				"matched_pending": bool(origins.get("matched", false)),
 			})
-			if connection_phase == ConnectionPhase.CLOSED:
+			if connection_phase == ConnectionPhase.FINISHING:
+				_begin_terminal_delivery(next_revision)
 				_clear_pending_submission()
 		ProtocolV6.ERROR:
 			var origins := _resolve_pending_error(row)
@@ -359,7 +377,7 @@ func _handle_client_message(
 			]:
 				request_resync()
 		ProtocolV6.PING:
-			_send(ProtocolV6.PONG)
+			_send(ProtocolV6.PONG, {}, get_revision())
 		ProtocolV6.PONG:
 			pass
 		_:

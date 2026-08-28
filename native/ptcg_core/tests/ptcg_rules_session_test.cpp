@@ -1,5 +1,6 @@
 #include "ptcg_rules_session.hpp"
 #include "ptcg_rules.hpp"
+#include "ptcg_game.hpp"
 #include "ptcg_session_internal.hpp"
 #include "ptcg_content_compiler.hpp"
 #include "ptcg_typed_ir.hpp"
@@ -64,6 +65,60 @@ Value catalog() {
             })})},
             {"hp", Value(120)},
             {"attacks", Value::make_array()},
+            {"abilities", Value::make_array()},
+            {"prize_value", Value(1)},
+        })},
+        {"test-water-energy", Value(Object{
+            {"name", Value("Test Water Energy")},
+            {"supertype", Value("Energy")},
+            {"subtypes", Value(Array{Value("Basic")})},
+            {"provides_energy", Value(Array{Value("Water")})},
+        })},
+        {"test-colorless-energy", Value(Object{
+            {"name", Value("Test Colorless Energy")},
+            {"supertype", Value("Energy")},
+            {"subtypes", Value(Array{Value("Special")})},
+            {"provides_energy", Value(Array{Value("Colorless")})},
+        })},
+        {"test-double-energy", Value(Object{
+            {"name", Value("Test Double Energy")},
+            {"supertype", Value("Energy")},
+            {"subtypes", Value(Array{Value("Special")})},
+            {"provides_energy", Value(Array{
+                Value("Colorless"), Value("Colorless"),
+            })},
+        })},
+        {"test-tatsugiri", Value(Object{
+            {"name", Value("Test Tatsugiri")},
+            {"supertype", Value("Pok\xC3\xA9mon")},
+            {"subtypes", Value(Array{Value("Basic")})},
+            {"energy_types", Value(Array{Value("Dragon")})},
+            {"hp", Value(70)},
+            {"retreat_cost", Value(1)},
+            {"attacks", Value(Array{
+                Value(Object{
+                    {"name", Value("Water Gun")},
+                    {"cost", Value(Array{Value("Water")})},
+                    {"damage", Value(20)},
+                    {"compiled_effects", Value::make_array()},
+                }),
+                Value(Object{
+                    {"name", Value("Survival Strategy")},
+                    {"cost", Value(Array{
+                        Value("Colorless"), Value("Colorless"),
+                    })},
+                    {"damage", Value(0)},
+                    {"compiled_effects", Value(Array{Value(Object{
+                        {"op", Value("search_any_and_switch")},
+                        {"args", Value(Object{
+                            {"count", Value(2)},
+                            {"min_select", Value(0)},
+                            {"switch_optional", Value(true)},
+                        })},
+                        {"branches", Value::make_object()},
+                    })})},
+                }),
+            })},
             {"abilities", Value::make_array()},
             {"prize_value", Value(1)},
         })},
@@ -166,6 +221,188 @@ Value choose(const Value &pending, const std::string &option_id) {
 
 const Value &active_of(const Value &state, std::size_t owner) {
     return *state.find("players")->as_array()[owner].find("active");
+}
+
+Value test_pokemon(
+    const std::string &card_id,
+    Array energy_card_ids = {}
+) {
+    return Value(Object{
+        {"attached_tool_id", Value("")},
+        {"can_evolve_this_turn", Value(true)},
+        {"card_id", Value(card_id)},
+        {"damage_counters", Value(0)},
+        {"energy_card_ids", Value(std::move(energy_card_ids))},
+        {"evolution_stack_ids", Value::make_array()},
+        {"healed_this_turn", Value(false)},
+        {"paralyzed_since_turn", Value(0)},
+        {"placed_this_turn", Value(false)},
+        {"status_conditions", Value::make_array()},
+        {"used_abilities", Value::make_array()},
+    });
+}
+
+void verify_tatsugiri_action_and_retreat_contract(const Value &cards) {
+    using ptcg::ai::NativeGameKernel;
+    using namespace ptcg::ai::session_detail;
+
+    Value owner = empty_player("Player 1", Array{Value("test-basic")});
+    owner["active"] = test_pokemon(
+        "test-tatsugiri",
+        Array{Value("test-water-energy"), Value("test-colorless-energy")}
+    );
+    owner.find("bench")->as_array()[0] = test_pokemon("test-basic");
+    Value state(Object{
+        {"players", Value(Array{
+            std::move(owner),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"phase", Value("MAIN")},
+        {"turn_number", Value(3)},
+        {"active_player_idx", Value(0)},
+        {"first_player_idx", Value(0)},
+        {"result_status", Value("ONGOING")},
+        {"revision", Value(11)},
+        {"choice_sequence", Value(0)},
+    });
+    NativeGameKernel kernel(cards.deep_clone());
+    const Value legal = kernel.legal_actions(state, 0);
+    std::size_t attack_count = 0;
+    bool water_gun = false;
+    bool survival_strategy = false;
+    const Value *retreat = nullptr;
+    for (const Value &action : legal.as_array()) {
+        const std::string kind = action.find("kind")->string_or();
+        if (kind == "DECLARE_ATTACK") {
+            ++attack_count;
+            const std::int64_t index = action.find("payload")
+                ->find("attack_index")->as_integer(-1);
+            water_gun = water_gun || index == 0;
+            survival_strategy = survival_strategy || index == 1;
+        } else if (kind == "RETREAT") {
+            retreat = &action;
+        }
+    }
+    require(
+        attack_count == 2 && water_gun && survival_strategy,
+        "Tatsugiri lost a payable second attack from legal actions"
+    );
+    require(retreat != nullptr, "Payable retreat action is missing");
+
+    const auto started = kernel.apply_action(
+        state.deep_clone(), retreat->deep_clone(), 0xC0FFEEU);
+    require(
+        started.success
+            && started.pending.find("request_type")->string_or()
+                == "select_retreat_payment",
+        "Retreat did not suspend for energy payment"
+    );
+    Value projected_state = started.state.deep_clone();
+    const Value projected = public_choice(projected_state, started.pending);
+    const Array &public_options = projected.find("options")->as_array();
+    const Array &attachment_refs = projected.find("presentation")
+        ->find("attachment_refs")->as_array();
+    require(
+        public_options.size() == 2 && attachment_refs.size() == 2
+            && public_options[0].find("option_id")->string_or()
+                == attachment_refs[0].find("option_id")->string_or()
+            && public_options[1].find("option_id")->string_or()
+                == attachment_refs[1].find("option_id")->string_or(),
+        "Retreat ChoiceView option IDs diverged from payment metadata"
+    );
+    const Value candidates = NativeGameKernel::choice_candidates(projected);
+    require(
+        candidates.is_array() && !candidates.as_array().empty(),
+        "Retreat ChoiceView exposes no legal minimal payment"
+    );
+}
+
+void verify_look_top_reveal_choice_contract(const Value &cards) {
+    using ptcg::ai::NativeRulesKernel;
+    using namespace ptcg::ai::session_detail;
+
+    Value state(Object{
+        {"players", Value(Array{
+            empty_player("Player 1", Array{
+                Value("test-basic"),
+                Value("test-water-energy"),
+                Value("test-weak"),
+            }),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+        {"revision", Value(4)},
+    });
+    const Value command(Object{
+        {"op", Value("look_top_deck")},
+        {"args", Value(Object{
+            {"count", Value(3)},
+            {"take", Value(1)},
+            {"filter", Value("energy")},
+            {"destination", Value("hand")},
+            {"shuffle_rest", Value(true)},
+        })},
+        {"branches", Value::make_object()},
+    });
+    NativeRulesKernel kernel(cards.deep_clone());
+    const auto started = kernel.execute(
+        state, command, 0, "", 123U, "trainer");
+    require(started.success, "Look-top selector did not suspend");
+    Value projected_state = started.state.deep_clone();
+    const Value projected = public_choice(projected_state, started.pending);
+    const Value *presentation = projected.find("presentation");
+    const Value *revealed_value = presentation != nullptr
+        ? presentation->find("revealed_card_ids") : nullptr;
+    require(
+        revealed_value != nullptr && revealed_value->is_array()
+            && revealed_value->as_array().size() == 3
+            && revealed_value->as_array()[0].string_or() == "test-weak"
+            && revealed_value->as_array()[1].string_or()
+                == "test-water-energy"
+            && revealed_value->as_array()[2].string_or() == "test-basic",
+        "Look-top ChoiceView did not reveal every inspected card in top order"
+    );
+
+    Value no_match_state(Object{
+        {"players", Value(Array{
+            empty_player("Player 1", Array{
+                Value("test-basic"), Value("test-weak"),
+            }),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+        {"revision", Value(5)},
+    });
+    const auto no_match = kernel.execute(
+        no_match_state, command, 0, "", 456U, "trainer");
+    const Value *no_match_type = no_match.pending.find("request_type");
+    const Value *no_match_options = no_match.pending.find("options");
+    const Value *no_match_minimum = no_match.pending.find("min_select");
+    const Value *no_match_maximum = no_match.pending.find("max_select");
+    require(
+        no_match.success
+            && no_match_type != nullptr
+            && no_match_type->string_or() == "look_top"
+            && no_match_options != nullptr && no_match_options->is_array()
+            && no_match_options->as_array().empty()
+            && no_match_minimum != nullptr
+            && no_match_minimum->as_integer(-1) == 0
+            && no_match_maximum != nullptr
+            && no_match_maximum->as_integer(-1) == 0,
+        "A look-top effect with no match skipped its reveal confirmation"
+    );
+    Value no_match_projected_state = no_match.state.deep_clone();
+    const Value no_match_projected = public_choice(
+        no_match_projected_state, no_match.pending);
+    const Value *no_match_presentation = no_match_projected.find(
+        "presentation");
+    const Value *no_match_revealed = no_match_presentation != nullptr
+        ? no_match_presentation->find("revealed_card_ids") : nullptr;
+    require(
+        no_match_revealed != nullptr && no_match_revealed->is_array()
+            && no_match_revealed->as_array().size() == 2,
+        "No-match look-top ChoiceView hid the inspected cards"
+    );
 }
 
 void verify_trekking_shoes_choice_contract(const Value &cards) {
@@ -529,6 +766,8 @@ int main() {
             "native content compiler accepted a non-object bundle");
         const Value cards = catalog();
         verify_trekking_shoes_choice_contract(cards);
+        verify_tatsugiri_action_and_retreat_contract(cards);
+        verify_look_top_reveal_choice_contract(cards);
         verify_choice_projection_localization();
         verify_optional_switch_choice_contract(cards);
         verify_search_bench_slot_choice_contract(cards);

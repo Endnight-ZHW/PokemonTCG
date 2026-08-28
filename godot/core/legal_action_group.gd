@@ -24,7 +24,7 @@ func _init(
 	actor = p_actor
 	kind = p_kind
 	source = p_source
-	payload = p_payload.duplicate(true)
+	payload = GameAction.normalize_wire_payload(p_kind, p_payload)
 	targets.assign(p_targets)
 
 

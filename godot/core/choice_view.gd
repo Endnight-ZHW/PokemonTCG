@@ -182,9 +182,37 @@ static func _project_presentation(
 			continue
 		if raw.has(field):
 			var copied: Variant = _json_copy(raw[field])
+			copied = _normalize_presentation_value(field, copied)
 			if _presentation_value_is_valid(field, copied):
 				result[field] = copied
 	return result
+
+
+static func _normalize_presentation_value(field: String, value: Variant) -> Variant:
+	if field in [
+		"source_player", "target_player", "owner", "required_units",
+		"max_per_target", "pokemon_count", "energy_count", "amount", "count",
+	]:
+		return int(value) if _is_wire_integer(value) else value
+	if field == "category_limits" and value is Dictionary:
+		var limits := Dictionary(value).duplicate(true)
+		for category in limits:
+			if _is_wire_integer(limits[category]):
+				limits[category] = int(limits[category])
+		return limits
+	if field == "attachment_refs" and value is Array:
+		var refs: Array = []
+		for ref_value in Array(value):
+			if not ref_value is Dictionary:
+				refs.append(ref_value)
+				continue
+			var ref := Dictionary(ref_value).duplicate(true)
+			for integer_field in ["player", "index", "units"]:
+				if ref.has(integer_field) and _is_wire_integer(ref[integer_field]):
+					ref[integer_field] = int(ref[integer_field])
+			refs.append(ref)
+		return refs
+	return value
 
 
 static func _public_prompt(raw_prompt: String, request_type: String) -> String:
@@ -248,11 +276,21 @@ static func _presentation_value_is_valid(field: String, value: Variant) -> bool:
 		if not value is Array or Array(value).size() > 256:
 			return false
 		for ref_value in Array(value):
-			if (
-				not ref_value is Dictionary
-				or not EntityRef.validate_dict(ref_value).is_empty()
-				or str(Dictionary(ref_value).get("zone", "")) == "prizes"
-			):
+			if not ref_value is Dictionary:
+				return false
+			var ref := Dictionary(ref_value)
+			var entity_ref_valid := (
+				EntityRef.validate_dict(ref).is_empty()
+				and str(ref.get("zone", "")) != "prizes"
+			)
+			var unit_ref_valid := (
+				ref.size() == 2
+				and ref.get("option_id") is String
+				and not str(ref.get("option_id", "")).is_empty()
+				and ref.get("units") is int
+				and int(ref.get("units", 0)) > 0
+			)
+			if not entity_ref_valid and not unit_ref_valid:
 				return false
 		return true
 	if field == "category_limits":
@@ -267,6 +305,18 @@ static func _presentation_value_is_valid(field: String, value: Variant) -> bool:
 				return false
 		return true
 	return false
+
+
+static func _is_wire_integer(value: Variant) -> bool:
+	if value is int:
+		return true
+	return (
+		value is float
+		and is_finite(value)
+		and value >= -2147483648.0
+		and value <= 2147483647.0
+		and value == floorf(value)
+	)
 
 
 static func _json_copy(value: Variant) -> Variant:

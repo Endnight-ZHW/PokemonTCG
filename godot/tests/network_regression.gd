@@ -68,6 +68,7 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 	var loops := 0
 	var last_revision := -1
 	var same_deck_verified := false
+	var heartbeat_verified := false
 	var action_counts := {}
 	while actions < ACTION_GUARD and loops < POLL_GUARD:
 		loops += 1
@@ -106,6 +107,19 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 				return _failed(transport_kind, "%s board=%s" % [
 					processed["error"], diagnostic,
 				])
+		if (
+			not heartbeat_verified
+			and not latest_views[0].is_empty()
+			and not latest_views[1].is_empty()
+		):
+			var heartbeat_error := _exercise_heartbeat(
+				host, client, latest_views,
+			)
+			if not heartbeat_error.is_empty():
+				host.close()
+				client.close()
+				return _failed(transport_kind, heartbeat_error)
+			heartbeat_verified = true
 
 		for player_idx in [0, 1]:
 			var view: Dictionary = latest_views[player_idx]
@@ -119,6 +133,11 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 					host.close()
 					client.close()
 					return _failed(transport_kind, "same-deck contract was not verified")
+				var terminal_error := _await_terminal_close(host, client)
+				if not terminal_error.is_empty():
+					host.close()
+					client.close()
+					return _failed(transport_kind, terminal_error)
 				var summary := {
 					"success": true,
 					"transport": transport_kind,
@@ -130,6 +149,8 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 					"revision": int(state_payload.get("revision", 0)),
 					"deck_key": deck_key,
 					"same_deck": true,
+					"heartbeat": heartbeat_verified,
+					"terminal_ack": true,
 				}
 				host.close()
 				client.close()
@@ -173,6 +194,78 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 			JSON.stringify(action_counts),
 		],
 	)
+
+
+func _await_terminal_close(
+	host: NetworkMatchController,
+	client: NetworkMatchController,
+) -> String:
+	for _poll in range(3000):
+		for event in host.poll() + client.poll():
+			if str(event.get("type", "")) in [
+				"error", "connection_failed", "transport_error",
+			]:
+				return "terminal delivery failed: %s" % JSON.stringify(event)
+		if (
+			host.connection_phase == NetworkMatchController.ConnectionPhase.CLOSED
+			and client.connection_phase == NetworkMatchController.ConnectionPhase.CLOSED
+			and host.transport == null
+			and client.transport == null
+		):
+			return ""
+		OS.delay_msec(1)
+	return "terminal acknowledgement did not close both transports"
+
+
+func _exercise_heartbeat(
+	host: NetworkMatchController,
+	client: NetworkMatchController,
+	latest_views: Array[Dictionary],
+) -> String:
+	var host_sequence := host.send_sequence
+	host.last_send_msec = (
+		Time.get_ticks_msec() - NetworkMatchController.HEARTBEAT_INTERVAL_MSEC - 1
+	)
+	for _poll in range(100):
+		for event in host.poll():
+			var processed := _capture_event(event, latest_views, 0)
+			if processed.has("error"):
+				return "host heartbeat failed: %s" % processed["error"]
+		for event in client.poll():
+			var processed := _capture_event(event, latest_views, 1)
+			if processed.has("error"):
+				return "client PONG failed: %s" % processed["error"]
+		if host.send_sequence >= host_sequence + 1:
+			break
+		OS.delay_msec(1)
+	var client_sequence := client.send_sequence
+	client.last_send_msec = (
+		Time.get_ticks_msec() - NetworkMatchController.HEARTBEAT_INTERVAL_MSEC - 1
+	)
+	for _poll in range(100):
+		for event in client.poll():
+			var processed := _capture_event(event, latest_views, 1)
+			if processed.has("error"):
+				return "client heartbeat failed: %s" % processed["error"]
+		for event in host.poll():
+			var processed := _capture_event(event, latest_views, 0)
+			if processed.has("error"):
+				return "host PONG failed: %s" % processed["error"]
+		if client.send_sequence >= client_sequence + 1:
+			break
+		OS.delay_msec(1)
+	# Drain the two replies so a delayed rejection cannot be mistaken for a later
+	# gameplay submission.
+	for _poll in range(20):
+		for player_and_controller in [[0, host], [1, client]]:
+			for event in (player_and_controller[1] as NetworkMatchController).poll():
+				var processed := _capture_event(
+					event, latest_views, int(player_and_controller[0]),
+				)
+				if processed.has("error"):
+					return "heartbeat reply failed: %s" % processed["error"]
+		OS.delay_msec(1)
+	return ""
 
 
 func _capture_event(
@@ -283,21 +376,78 @@ func _board_contract_diagnostic(host: NetworkMatchController) -> String:
 					"pokemon": player.bench[bench_idx].to_dict(),
 				})
 		board.append({"player": player_idx, "slots": slots})
-	return JSON.stringify(board)
+	var pending_rows: Array[Dictionary] = []
+	for player_idx in [0, 1]:
+		var pending := host.session.native_rules.pending_choice(player_idx)
+		if pending != null:
+			pending_rows.append({
+				"player": player_idx,
+				"choice": pending.to_dict(),
+			})
+	return JSON.stringify({"board": board, "pending": pending_rows})
 
 
 func _automatic_choice(request: ChoiceView) -> ChoiceResponse:
 	if request.options.is_empty():
 		return ChoiceResponse.new(request.request_id, [])
-	var count := mini(
-		request.options.size(),
-		maxi(request.min_select, request.max_select),
-	)
+	var count := maxi(request.min_select, request.max_select)
+	if not request.allow_duplicates:
+		count = mini(request.options.size(), count)
+	var same_target := bool(request.presentation.get("same_target", false))
+	var max_per_target := maxi(0, int(request.presentation.get(
+		"max_per_target", 2147483647,
+	)))
 	var selected: Array[String] = []
-	for index in range(count):
-		var option_index := 0 if request.allow_duplicates else index
-		selected.append(str(request.options[option_index]["option_id"]))
+	var per_target: Dictionary = {}
+	var selected_sources: Dictionary = {}
+	var selected_target := ""
+	while selected.size() < count:
+		var appended := false
+		for option_value in request.options:
+			var option: Dictionary = option_value
+			var option_id := str(option.get("option_id", ""))
+			if option_id.is_empty():
+				continue
+			if not request.allow_duplicates and option_id in selected:
+				continue
+			var source_key := _choice_energy_source_key(request, option_id)
+			if not source_key.is_empty() and selected_sources.has(source_key):
+				continue
+			var target_key := _choice_target_key(option)
+			if same_target and not selected_target.is_empty() and target_key != selected_target:
+				continue
+			if int(per_target.get(target_key, 0)) >= max_per_target:
+				continue
+			selected.append(option_id)
+			per_target[target_key] = int(per_target.get(target_key, 0)) + 1
+			if not source_key.is_empty():
+				selected_sources[source_key] = true
+			if selected_target.is_empty():
+				selected_target = target_key
+			appended = true
+			break
+		if not appended:
+			break
 	return ChoiceResponse.new(request.request_id, selected)
+
+
+func _choice_target_key(option: Dictionary) -> String:
+	var ref_value: Variant = option.get("ref")
+	if ref_value is Dictionary:
+		var ref := Dictionary(ref_value)
+		var slot := str(ref.get("slot", ""))
+		if not slot.is_empty():
+			return "%d:%s" % [int(ref.get("player", -1)), slot]
+	return str(option.get("option_id", ""))
+
+
+func _choice_energy_source_key(request: ChoiceView, option_id: String) -> String:
+	if request.request_type != "distribute_energy" or not option_id.begins_with("energy:"):
+		return ""
+	var parts := option_id.split(":", false, 2)
+	if parts.size() < 2 or not str(parts[1]).is_valid_int():
+		return ""
+	return "energy:%d" % int(parts[1])
 
 
 func _argument_value(prefix: String) -> String:

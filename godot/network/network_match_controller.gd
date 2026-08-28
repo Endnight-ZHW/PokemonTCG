@@ -109,7 +109,13 @@ func poll() -> Array[Dictionary]:
 		return _drain_events()
 	if transport == null:
 		return _drain_events()
-	for event in transport.poll():
+	var polled_transport := transport
+	var transport_events := polled_transport.poll()
+	for event in transport_events:
+		# A disconnect/error can replace or discard the transport while handling the
+		# current event. Ignore all later events from that retired connection epoch.
+		if transport != polled_transport:
+			break
 		match str(event.get("type", "")):
 			"room_created":
 				room_id = str(event.get("room_id", ""))
@@ -153,7 +159,9 @@ func poll() -> Array[Dictionary]:
 			"message":
 				_handle_message(event.get("message", {}))
 			"disconnected", "connection_failed":
-				if _can_reconnect_match():
+				if connection_phase == ConnectionPhase.FINISHING and not host:
+					_finish_terminal_connection()
+				elif _can_reconnect_match():
 					_begin_reconnect(str(event.get("reason", event.get("type", "disconnected"))))
 				else:
 					connected = false
@@ -163,7 +171,9 @@ func poll() -> Array[Dictionary]:
 					_discard_transport()
 					events.append(event)
 			"transport_error":
-				if _can_reconnect_match():
+				if connection_phase == ConnectionPhase.FINISHING and not host:
+					_finish_terminal_connection()
+				elif _can_reconnect_match():
 					_begin_reconnect("transport_error")
 				else:
 					connected = false
@@ -175,6 +185,7 @@ func poll() -> Array[Dictionary]:
 					events.append({"type": "disconnected", "reason": "transport_error"})
 	var now := Time.get_ticks_msec()
 	_check_pending_submission_timeout(now)
+	_poll_terminal_delivery(now)
 	if (
 		connected
 		and connection_phase != ConnectionPhase.CLOSED

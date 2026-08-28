@@ -11,6 +11,7 @@ func _initialize() -> void:
 	_run_final_setup_publication_contract()
 	_run_submission_correlation_contract()
 	_run_recovery_contract()
+	_run_retired_transport_batch_contract()
 	_run_start_failure_contract()
 	_run_terminal_state_contract()
 	if failures.is_empty():
@@ -55,27 +56,53 @@ func _run_protocol_boundaries() -> void:
 			"envelope accepted malformed %s" % row["field"],
 		)
 
+	var fingerprint_controller := NetworkMatchController.new()
+	var match_fingerprint := fingerprint_controller._core_fingerprint()
+	_expect(
+		ProtocolV6._valid_sha256(match_fingerprint)
+		and match_fingerprint != str(CardCatalog.shared().card_ir.get(
+			"contract_fingerprint", ""))
+		and match_fingerprint != str(CardCatalog.shared().card_ir.get(
+			"content_fingerprint", "")),
+		"network fingerprint does not bind content and native rules together",
+	)
 	var welcome_payload := {
 		"player_idx": 1,
 		"rules_version": AppState.RULES_SCHEMA_VERSION,
 		"action_version": AppState.ACTION_SCHEMA_VERSION,
-		"core_fingerprint": str(CardCatalog.shared().card_ir.get(
-			"contract_fingerprint", "")),
+		"core_fingerprint": match_fingerprint,
 		"rules_profile_id": GameState.RULES_PROFILE_ID,
 		"rules_options": {"apply_type_matchups": false},
 		"resume": false,
 	}
 	_expect(
 		bool(ProtocolV6.validate_payload(
-			ProtocolV6.WELCOME, welcome_payload).get("ok", false)),
-		"valid core contract fingerprint was rejected",
+			ProtocolV6.WELCOME, welcome_payload).get("ok", false))
+		and fingerprint_controller._peer_core_compatible(welcome_payload),
+		"valid content/rules match fingerprint was rejected",
 	)
 	var malformed_fingerprint: Dictionary = welcome_payload.duplicate(true)
 	malformed_fingerprint["core_fingerprint"] = "not-a-sha256"
 	_expect(
 		not bool(ProtocolV6.validate_payload(
 			ProtocolV6.WELCOME, malformed_fingerprint).get("ok", false)),
-		"malformed core contract fingerprint was accepted",
+		"malformed content/rules match fingerprint was accepted",
+	)
+	var missing_fingerprint: Dictionary = welcome_payload.duplicate(true)
+	missing_fingerprint.erase("core_fingerprint")
+	_expect(
+		not bool(ProtocolV6.validate_payload(
+			ProtocolV6.WELCOME, missing_fingerprint).get("ok", false)),
+		"missing match fingerprint was accepted",
+	)
+	var mismatched_fingerprint: Dictionary = welcome_payload.duplicate(true)
+	mismatched_fingerprint["core_fingerprint"] = (
+		("0" if match_fingerprint.substr(0, 1) != "0" else "1")
+		+ match_fingerprint.substr(1)
+	)
+	_expect(
+		not fingerprint_controller._peer_core_compatible(mismatched_fingerprint),
+		"different card/rules build was accepted as compatible",
 	)
 
 	var session := AuthoritativeSession.new("protocol-contract")
@@ -88,16 +115,30 @@ func _run_protocol_boundaries() -> void:
 		bool(ProtocolV6.validate_payload(ProtocolV6.STATE_UPDATE, view).get("ok", false)),
 		"authoritative fixture view is not protocol-valid",
 	)
+	_run_wire_integer_action_contract()
 	var locked_attack_view: Dictionary = view.duplicate(true)
 	locked_attack_view["state"]["your"]["attack_locked_names"] = {
 		"岩窟冲撞": 5,
 	}
+	var wire_locked_value: Variant = JSON.parse_string(
+		JSON.stringify(locked_attack_view),
+	)
+	var wire_locked_view := (
+		Dictionary(wire_locked_value)
+		if wire_locked_value is Dictionary
+		else {}
+	)
+	var parsed_locked_player := PlayerState.from_dict(
+		Dictionary(Dictionary(wire_locked_view.get("state", {})).get("your", {})),
+	)
 	_expect(
 		bool(ProtocolV6.validate_payload(
 			ProtocolV6.STATE_UPDATE,
-			locked_attack_view,
-		).get("ok", false)),
-		"public player-scoped named attack lock was rejected",
+			wire_locked_view,
+		).get("ok", false))
+		and parsed_locked_player.attack_locked_names.get("岩窟冲撞") is int
+		and int(parsed_locked_player.attack_locked_names.get("岩窟冲撞", -1)) == 5,
+		"JSON-round-tripped player attack lock was rejected or not normalized",
 	)
 	for invalid_locks in [
 		{"": 5},
@@ -327,6 +368,54 @@ func _run_protocol_boundaries() -> void:
 			"max_per_target": 1,
 		},
 	).to_dict()
+	var retreat_payment_choice := ChoiceView.new(
+		"choice:retreat-payment-wire",
+		session.state.revision,
+		"select_retreat_payment",
+		0,
+		"选择用于支付撤退费用的能量。",
+		[{
+			"option_id": "retreat:energy:0",
+			"label": "水能量",
+			"ref": attachment_ref,
+		}],
+		1,
+		1,
+		false,
+		false,
+		{
+			"domain": "retreat",
+			"purpose": "retreat_payment",
+			"required_units": 1,
+			"attachment_refs": [{
+				"option_id": "retreat:energy:0",
+				"units": 1,
+			}],
+		},
+	).to_dict()
+	var retreat_wire_value: Variant = JSON.parse_string(
+		JSON.stringify(retreat_payment_choice),
+	)
+	var retreat_wire := (
+		Dictionary(retreat_wire_value)
+		if retreat_wire_value is Dictionary
+		else {}
+	)
+	var retreat_wire_view: Dictionary = view.duplicate(true)
+	retreat_wire_view["choice_request"] = retreat_wire
+	retreat_wire_view["wait_context"] = null
+	var parsed_retreat := ChoiceView.from_dict(retreat_wire)
+	_expect(
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, retreat_wire_view,
+		).get("ok", false))
+		and parsed_retreat.presentation.get("required_units") is int
+		and int(parsed_retreat.presentation.get("required_units", 0)) == 1
+		and Array(parsed_retreat.presentation.get(
+			"attachment_refs", [],
+		)).size() == 1,
+		"JSON-round-tripped retreat payment lost its unit contract",
+	)
 	var chooser_view: Dictionary = view.duplicate(true)
 	chooser_view["choice_request"] = attachment_choice
 	chooser_view["wait_context"] = null
@@ -502,3 +591,40 @@ func _run_protocol_boundaries() -> void:
 			malformed_event_view,
 			"malformed presentation %s" % mutation["path"],
 		)
+
+
+func _run_wire_integer_action_contract() -> void:
+	var raw_groups: Array = []
+	for attack_index in [0, 1]:
+		raw_groups.append({
+			"group_id": "attack:%d" % attack_index,
+			"base_revision": 7,
+			"actor": 0,
+			"kind": "DECLARE_ATTACK",
+			"source": EntityRef.new(
+				"pokemon", 0, "", "active", -1, "", "svg-tatsu",
+			).to_dict(),
+			"payload": {"attack_index": attack_index},
+			"targets": [],
+		})
+	var wire_value: Variant = JSON.parse_string(JSON.stringify(raw_groups))
+	var wire_groups: Array = wire_value if wire_value is Array else []
+	var rows: Array[Dictionary] = []
+	for value in wire_groups:
+		if not value is Dictionary:
+			continue
+		var group := LegalActionGroup.from_dict(Dictionary(value))
+		for action in group.concrete_actions():
+			rows.append({"action": action, "label": "attack"})
+	var router := BattleInteractionController.new()
+	router.rebuild(rows)
+	var action_groups := router.action_groups_for_source("pokemon:0:active")
+	_expect(
+		rows.size() == 2
+		and rows[0]["action"].attack_index() == 0
+		and rows[1]["action"].attack_index() == 1
+		and rows[0]["action"].payload.get("attack_index") is int
+		and rows[1]["action"].payload.get("attack_index") is int
+		and action_groups.size() == 2,
+		"JSON-round-tripped attack indices collapsed distinct attack actions",
+	)

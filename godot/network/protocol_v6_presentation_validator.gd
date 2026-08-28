@@ -154,7 +154,7 @@ static func _validate_choice_presentation(presentation: Dictionary) -> bool:
 		if not refs is Array or Array(refs).size() > MAX_CHOICE_OPTIONS:
 			return false
 		for ref in refs:
-			if not _validate_entity_ref(ref):
+			if not _validate_entity_ref(ref) and not _validate_attachment_unit_ref(ref):
 				return false
 	if presentation.has("predetermined_flips"):
 		var flips: Variant = presentation["predetermined_flips"]
@@ -183,6 +183,18 @@ static func _validate_choice_presentation(presentation: Dictionary) -> bool:
 	):
 		return false
 	return true
+
+
+static func _validate_attachment_unit_ref(value: Variant) -> bool:
+	if not value is Dictionary:
+		return false
+	var row: Dictionary = value
+	return (
+		row.size() == 2
+		and _bounded_string(row.get("option_id"), MAX_IDENTIFIER_BYTES)
+		and not str(row.get("option_id", "")).is_empty()
+		and _bounded_int(row, "units", 1, 64)
+	)
 static func _validate_presentation_event(value: Variant) -> bool:
 	if not value is Dictionary:
 		return false

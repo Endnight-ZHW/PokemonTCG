@@ -33,6 +33,21 @@ class FailingRelayTransport:
 		close_count += 1
 
 
+class QueuedNetworkTransport:
+	extends FakeNetworkTransport
+
+	var queued_events: Array[Dictionary] = []
+	var close_count := 0
+
+	func poll() -> Array[Dictionary]:
+		var result := queued_events.duplicate(true)
+		queued_events.clear()
+		return result
+
+	func close() -> void:
+		close_count += 1
+
+
 class FailingStartController:
 	extends NetworkMatchController
 
@@ -193,6 +208,10 @@ func _prime_controller(controller: NetworkMatchController) -> void:
 	controller.connected = true
 	controller.connection_phase = NetworkMatchController.ConnectionPhase.PLAYING
 	controller.deck_selection_sent = true
+	controller.terminal_revision = 5
+	controller.terminal_delivery_deadline_msec = 123
+	controller.terminal_last_ack_send_msec = 45
+	controller.terminal_last_state_send_msec = 67
 	controller.events.append({"type": "old-event"})
 
 
@@ -213,6 +232,10 @@ func _controller_is_reset(controller: NetworkMatchController) -> bool:
 		and not controller.connected
 		and controller.connection_phase == NetworkMatchController.ConnectionPhase.CLOSED
 		and not controller.deck_selection_sent
+		and controller.terminal_revision == -1
+		and controller.terminal_delivery_deadline_msec == 0
+		and controller.terminal_last_ack_send_msec == 0
+		and controller.terminal_last_state_send_msec == 0
 		and controller.events.is_empty()
 	)
 

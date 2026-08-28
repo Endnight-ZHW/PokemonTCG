@@ -24,6 +24,7 @@ signal transition_finished(handle: PresentationHandle)
 signal presentation_busy_changed(busy: bool)
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
+const CARD_BACK_TEXTURE: Texture2D = preload("res://assets/cards/card_back.webp")
 const CARD_DRAG_SESSION := preload("res://presentation/card_drag_session.gd")
 const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
 const ATTACHMENT_POPOVER := preload(
@@ -3186,10 +3187,19 @@ func _attack_popover_metadata(action: GameAction, row: Dictionary) -> Dictionary
 
 func _retreat_compact_suffix(action: GameAction) -> String:
 	if action == null:
-		return "免费"
+		return "确认后结算"
 	var indices: Array = action.payload.get("energy_indices", [])
 	if indices.is_empty():
-		return "免费"
+		if action.payload.has("energy_indices"):
+			return "免费"
+		var printed_cost := 0
+		if state_ref and action.actor in [0, 1]:
+			var active := state_ref.get_player(action.actor).active
+			if active:
+				printed_cost = maxi(0, int(
+					catalog.get_card(active.card_id).get("retreat_cost", 0),
+				))
+		return "卡面撤退费%d，确认后结算" % printed_cost if printed_cost > 0 else "确认后结算"
 	var names: Array[String] = []
 	if state_ref and action.actor in [0, 1]:
 		var active := state_ref.get_player(action.actor).active
@@ -5676,19 +5686,22 @@ func _reflow_opponent_hand_proxies() -> void:
 func _clear_opponent_hand_transaction(reconcile: bool) -> void:
 	if reconcile:
 		_layout_opponent_hand(_current_opponent_hand_card_size())
-		for node in _presentation_opponent_hand_nodes:
-			var control := _valid_control(node)
-			if control == null:
-				continue
-			_presentation_mask_counts.erase(control.get_instance_id())
-			if control is CardView:
-				(control as CardView).set_presentation_hidden(false)
-			else:
-				control.modulate.a = 1.0
 		if state_ref != null and opponent_hand_count_badge != null:
 			var count_value := state_ref.get_player(1 - view_player).hand.size()
 			opponent_hand_count_badge.visible = count_value > 0
 			opponent_hand_count_badge.text = str(count_value)
+	# A newer network update may supersede a hand transaction before its final
+	# event callback. Always release the old destination masks, even when the
+	# caller intentionally skips an intermediate layout reconciliation.
+	for node in _presentation_opponent_hand_nodes:
+		var control := _valid_control(node)
+		if control == null:
+			continue
+		_presentation_mask_counts.erase(control.get_instance_id())
+		if control is CardView:
+			(control as CardView).set_presentation_hidden(false)
+		else:
+			control.modulate.a = 1.0
 	for proxy in _presentation_opponent_hand_proxies.duplicate():
 		if proxy != null and is_instance_valid(proxy):
 			_cancel_hand_layout_motion(proxy)
@@ -9121,6 +9134,8 @@ func _texture_for_card_id(card_id: String) -> Texture2D:
 			if texture_cache != null
 			else load("res://assets/cards/card_back.webp") as Texture2D
 		)
+	if texture == null:
+		texture = CARD_BACK_TEXTURE
 	return texture
 
 

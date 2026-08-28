@@ -328,9 +328,12 @@ bool execute_vm_card_pipeline(
             || op == "look_top_deck"
         ) {
             Array &deck = required(self, "deck").as_array();
-            const std::int64_t count = std::min<std::int64_t>(
-                integer_arg(args, "count"),
-                static_cast<std::int64_t>(deck.size())
+            const std::int64_t count = std::max<std::int64_t>(
+                0,
+                std::min<std::int64_t>(
+                    integer_arg(args, "count"),
+                    static_cast<std::int64_t>(deck.size())
+                )
             );
             const std::int64_t first = static_cast<std::int64_t>(
                 deck.size()
@@ -360,7 +363,7 @@ bool execute_vm_card_pipeline(
                     : integer_arg(args, "min_select")
             );
             const bool attach = op == "look_top_attach_energy";
-            if (options.empty()) {
+            if (count <= 0) {
                 Array returned;
                 returned.reserve(static_cast<std::size_t>(count));
                 for (
@@ -392,17 +395,37 @@ bool execute_vm_card_pipeline(
                 result.rng_state = rng.state();
                 early_return = true; return true;
             }
+            Array revealed_card_ids;
+            revealed_card_ids.reserve(static_cast<std::size_t>(count));
+            for (std::int64_t offset = 0; offset < count; ++offset) {
+                revealed_card_ids.emplace_back(
+                    deck[static_cast<std::size_t>(
+                        static_cast<std::int64_t>(deck.size()) - 1 - offset
+                    )].string_or()
+                );
+            }
+            Value request = pending_request(
+                attach ? "look_top_attach_energy" : "look_top",
+                actor,
+                options.empty() ? 0 : minimum,
+                options.empty() ? 0 : take,
+                false,
+                !options.empty() && minimum <= 0,
+                std::move(options),
+                attach ? "look_top_attach_energy" : "look_top"
+            );
+            request["presentation"] = Value(Object{
+                {"domain", Value("effect")},
+                {
+                    "purpose",
+                    Value(attach ? "look_top_attach_energy" : "look_top"),
+                },
+                {"revealed_card_ids", Value(std::move(revealed_card_ids))},
+                {"source_player", Value(actor)},
+                {"source_zone", Value("deck")},
+            });
             suspend(
-                pending_request(
-                    attach ? "look_top_attach_energy" : "look_top",
-                    actor,
-                    minimum,
-                    take,
-                    false,
-                    minimum <= 0,
-                    std::move(options),
-                    attach ? "look_top_attach_energy" : "look_top"
-                ),
+                std::move(request),
                 make_continuation(
                     op,
                     command_spec,

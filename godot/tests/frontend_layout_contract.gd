@@ -809,6 +809,8 @@ func _check_field_choice_inspector_resume(main: Control) -> void:
 		false,
 		"local",
 	)
+	await _check_network_attack_variant_menu(table, slot_state)
+	_check_opponent_hand_mask_supersession(table)
 	await _check_presentation_read_only_inspection(main, table, slot_state)
 	var slot_options: Array[Dictionary] = []
 	for bench_index in [2, 3, 4]:
@@ -1064,6 +1066,93 @@ func _check_card_action_detail_separation(table: BattleTable) -> void:
 	table.hide_card_detail()
 	if table.action_popover:
 		table.action_popover.dismiss(false)
+
+
+func _check_network_attack_variant_menu(
+	table: BattleTable,
+	base_state: GameState,
+) -> void:
+	var state := base_state.clone_state()
+	state.players[0].active = PokemonState.new("svg-tatsu")
+	state.players[0].active.energy_card_ids.assign([
+		"sv1-ener-3", "svi-mirc",
+	])
+	var rows: Array[Dictionary] = []
+	for attack_index in [0, 1]:
+		var action := GameAction.create(
+			"DECLARE_ATTACK",
+			{"attack_index": attack_index},
+			0,
+			EntityRef.new(
+				"pokemon", 0, "", "active", -1, "", "svg-tatsu",
+			),
+			null,
+			"attack:%d" % attack_index,
+			state.revision,
+		).to_dict()
+		var wire_value: Variant = JSON.parse_string(JSON.stringify(action))
+		if wire_value is Dictionary:
+			rows.append({
+				"action": GameAction.from_dict(Dictionary(wire_value)),
+				"label": "攻击",
+			})
+	table.hide_card_detail()
+	table.update_view(
+		state,
+		0,
+		rows,
+		"pokemon:0:active",
+		false,
+		"network",
+	)
+	await _settle_layout(2)
+	var groups := table.interaction_router.action_groups_for_source(
+		"pokemon:0:active",
+	)
+	var labels: Array[String] = []
+	if table.action_popover != null:
+		for row in table.action_popover._rows:
+			labels.append(str(Dictionary(row).get("label", "")))
+	var has_second_attack := false
+	for label in labels:
+		if "生存战略" in label:
+			has_second_attack = true
+			break
+	_check(
+		groups.size() == 2
+		and table.action_popover != null
+		and table.action_popover.button_count() == 2
+		and has_second_attack,
+		"Network numeric conversion collapsed Tatsugiri's second attack in the action menu",
+	)
+	table.update_view(
+		base_state,
+		0,
+		UIPreviewStateFactory.action_rows(base_state),
+		"",
+		false,
+		"local",
+	)
+
+
+func _check_opponent_hand_mask_supersession(table: BattleTable) -> void:
+	_check(
+		not table.opponent_hand_views.is_empty(),
+		"Opponent-hand mask fixture has no CardView",
+	)
+	if table.opponent_hand_views.is_empty():
+		return
+	var card := table.opponent_hand_views[0] as CardView
+	card.set_presentation_hidden(true)
+	table._presentation_opponent_hand_nodes.assign([card])
+	table._presentation_mask_counts[card.get_instance_id()] = 1
+	table._clear_opponent_hand_transaction(false)
+	_check(
+		not card.is_presentation_hidden()
+		and is_equal_approx(card.content_root.modulate.a, 1.0)
+		and not table._presentation_mask_counts.has(card.get_instance_id()),
+		"Superseded opponent-hand transaction left card backs masked",
+	)
 
 
 func _check_presentation_read_only_inspection(

@@ -214,12 +214,13 @@ GameExecutionResult NativeGameKernel::apply_action(
                     {"attachment_type", Value("energy")},
                     {"index", Value(static_cast<std::int64_t>(index))},
                 });
+                const std::string option_id = stable_choice_option_id(
+                    option, "select_retreat_payment");
+                option["option_id"] = Value(option_id);
                 attachment_refs.emplace_back(Object{
                     {
                         "option_id",
-                        Value(stable_choice_option_id(
-                            option, "select_retreat_payment"
-                        )),
+                        Value(option_id),
                     },
                     {
                         "units",

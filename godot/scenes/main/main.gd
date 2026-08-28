@@ -14,6 +14,7 @@ const COIN_SHOWCASE := preload("res://scenes/battle/components/coin_showcase.gd"
 const PRIVACY_PANEL_SCENE := preload("res://ui/dialogs/privacy_panel.tscn")
 const COIN_PRESENTATION_TOMBSTONE_TTL_MSEC := 120000
 const COIN_PRESENTATION_TOMBSTONE_LIMIT := 64
+const NETWORK_GRACEFUL_CLOSE_TIMEOUT_MSEC := 2000
 const PAUSE_PANEL_SCENE := preload("res://ui/dialogs/pause_panel.tscn")
 const HELP_PANEL_SCENE := preload("res://ui/panels/help_panel.tscn")
 const CARD_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/card_inspector_panel.tscn")
@@ -3407,10 +3408,15 @@ func _remaining_turn_action_labels() -> Array[String]:
 
 func _surrender_network_and_show_title() -> void:
 	network_controller.surrender()
-	# Give ENet/WebSocket two process turns to flush the surrender/final state
-	# before the title route closes the transport.
-	await get_tree().process_frame
-	await get_tree().process_frame
+	# Wait for the authoritative terminal snapshot and its acknowledgement instead
+	# of assuming two render frames are enough to flush a WAN/WebSocket exchange.
+	var deadline := Time.get_ticks_msec() + NETWORK_GRACEFUL_CLOSE_TIMEOUT_MSEC
+	while (
+		Time.get_ticks_msec() < deadline
+		and network_controller.connection_phase
+		!= NetworkMatchController.ConnectionPhase.CLOSED
+	):
+		await get_tree().process_frame
 	if game_mode != MODE_NETWORK or current_screen not in [SCREEN_GAME, SCREEN_END]:
 		return
 	state = null

@@ -4,6 +4,7 @@ enum ConnectionPhase {
 	CONNECTING,
 	LOBBY,
 	PLAYING,
+	FINISHING,
 	CLOSED,
 }
 
@@ -34,11 +35,18 @@ var lan_port := 0
 var relay_url := ""
 var relay_resume_token := ""
 var rules_options: Dictionary = {"apply_type_matchups": false}
+var terminal_revision := -1
+var terminal_delivery_deadline_msec := 0
+var terminal_last_ack_send_msec := 0
+var terminal_last_state_send_msec := 0
 const HEARTBEAT_INTERVAL_MSEC := 15000
 const PENDING_SUBMISSION_TIMEOUT_MSEC := 10000
 const CONNECTION_TIMEOUT_MSEC := 45000
 const RECONNECT_GRACE_MSEC := 30000
 const RECONNECT_RETRY_MSEC := 1200
+const TERMINAL_DELIVERY_GRACE_MSEC := 30000
+const TERMINAL_ACK_RETRY_MSEC := 1000
+const TERMINAL_STATE_RETRY_MSEC := 1000
 var seed := -1
 var events: Array[Dictionary] = []
 
@@ -47,8 +55,15 @@ func request_resync() -> void:
 	if not host and connection_phase == ConnectionPhase.PLAYING:
 		if resync_in_progress:
 			return
-		resync_in_progress = true
-		_send(ProtocolV6.RESYNC_REQUEST, {}, get_revision())
+		if _send(ProtocolV6.RESYNC_REQUEST, {}, get_revision()):
+			resync_in_progress = true
+		elif _can_reconnect_match():
+			_begin_reconnect("resync_send_failed")
+		else:
+			events.append({
+				"type": "transport_error",
+				"code": "resync_send_failed",
+			})
 
 
 
@@ -87,6 +102,10 @@ func close() -> void:
 	relay_url = ""
 	relay_resume_token = ""
 	rules_options = {"apply_type_matchups": false}
+	terminal_revision = -1
+	terminal_delivery_deadline_msec = 0
+	terminal_last_ack_send_msec = 0
+	terminal_last_state_send_msec = 0
 	events.clear()
 
 
@@ -112,7 +131,21 @@ func _revision_matches(row: Dictionary) -> bool:
 func _remote_message_allowed_while_playing(row: Dictionary = {}) -> bool:
 	if connection_phase == ConnectionPhase.PLAYING:
 		return true
+	if connection_phase == ConnectionPhase.FINISHING:
+		_reject("game_over", "对局已经结束。", row)
+		_send_state_to_client()
+		return false
 	_reject("invalid_phase", "对局尚未开始或已经结束。", row)
+	return false
+
+
+func _remote_state_sync_allowed(row: Dictionary = {}) -> bool:
+	if connection_phase in [
+		ConnectionPhase.PLAYING,
+		ConnectionPhase.FINISHING,
+	]:
+		return true
+	_reject("invalid_phase", "当前阶段无法同步局面。", row)
 	return false
 
 
@@ -136,7 +169,7 @@ func _broadcast_state(
 	if session.state.phase == "GAME_OVER" or session.state.winner >= 0:
 		_clear_pending_submission()
 		resync_in_progress = false
-		connection_phase = ConnectionPhase.CLOSED
+		_begin_terminal_delivery(session.state.revision)
 
 
 func _send_state_to_client(
@@ -146,13 +179,15 @@ func _send_state_to_client(
 ) -> void:
 	if session == null or session.state == null:
 		return
-	_send(
+	var sent := _send(
 		ProtocolV6.STATE_UPDATE,
 		session.view_for(1, presentation_events),
 		session.state.revision,
 		origin_action_id,
 		origin_request_id,
 	)
+	if sent and session.state.is_terminal():
+		terminal_last_state_send_msec = Time.get_ticks_msec()
 
 
 func _reject(
@@ -291,12 +326,6 @@ func _resolve_pending_error(row: Dictionary) -> Dictionary:
 				and incoming_request_id == pending_request_id
 			)
 		)
-	else:
-		# There can only be one in-flight client submission, so an uncorrelated
-		# rejection is still attributable to that submission.
-		origins["action_id"] = pending_action_id
-		origins["request_id"] = pending_request_id
-		matched = true
 	if matched:
 		origins["matched"] = true
 		_clear_pending_submission()
@@ -354,6 +383,68 @@ func _discard_transport() -> void:
 		current_transport.close()
 
 
+func _begin_terminal_delivery(revision: int) -> void:
+	terminal_revision = revision
+	if terminal_delivery_deadline_msec <= 0:
+		terminal_delivery_deadline_msec = (
+			Time.get_ticks_msec() + TERMINAL_DELIVERY_GRACE_MSEC
+		)
+	connection_phase = ConnectionPhase.FINISHING
+	if not host:
+		_send_terminal_ack(Time.get_ticks_msec())
+
+
+func _send_terminal_ack(now_msec: int) -> bool:
+	if host or terminal_revision < 0:
+		return false
+	var sent := _send(
+		ProtocolV6.PONG,
+		{},
+		terminal_revision,
+	)
+	if sent:
+		terminal_last_ack_send_msec = now_msec
+	return sent
+
+
+func _poll_terminal_delivery(now_msec: int) -> void:
+	if connection_phase != ConnectionPhase.FINISHING:
+		return
+	if (
+		terminal_delivery_deadline_msec > 0
+		and now_msec >= terminal_delivery_deadline_msec
+	):
+		_finish_terminal_connection()
+		return
+	if (
+		host
+		and now_msec - terminal_last_state_send_msec
+		>= TERMINAL_STATE_RETRY_MSEC
+	):
+		_send_state_to_client()
+	if (
+		not host
+		and now_msec - terminal_last_ack_send_msec
+		>= TERMINAL_ACK_RETRY_MSEC
+	):
+		_send_terminal_ack(now_msec)
+
+
+func _finish_terminal_connection() -> void:
+	_clear_pending_submission()
+	resync_in_progress = false
+	reconnecting = false
+	reconnect_deadline_msec = 0
+	next_reconnect_attempt_msec = 0
+	connected = false
+	connection_phase = ConnectionPhase.CLOSED
+	_discard_transport()
+	terminal_revision = -1
+	terminal_delivery_deadline_msec = 0
+	terminal_last_ack_send_msec = 0
+	terminal_last_state_send_msec = 0
+
+
 func _can_reconnect_match() -> bool:
 	if transport_kind not in ["lan", "relay"]:
 		return false
@@ -361,8 +452,17 @@ func _can_reconnect_match() -> bool:
 		return (
 			session != null
 			and session.state != null
-			and not session.state.is_terminal()
+			and (
+				not session.state.is_terminal()
+				or (
+					terminal_revision >= 0
+					and Time.get_ticks_msec()
+					< terminal_delivery_deadline_msec
+				)
+			)
 		)
+	if terminal_revision >= 0:
+		return false
 	return (
 		current_revision >= 0
 		and connection_phase != ConnectionPhase.CLOSED
@@ -370,12 +470,40 @@ func _can_reconnect_match() -> bool:
 
 
 func _core_fingerprint() -> String:
-	return str(catalog.card_ir.get("contract_fingerprint", ""))
+	var content_fingerprint := str(catalog.card_ir.get("content_fingerprint", ""))
+	var contract_fingerprint := str(catalog.card_ir.get("contract_fingerprint", ""))
+	var manifest := _release_manifest()
+	var native_rules: Dictionary = Dictionary(manifest.get("native_rules", {}))
+	var native_core_fingerprint := str(native_rules.get("core_fingerprint", ""))
+	if (
+		not ProtocolV6._valid_sha256(content_fingerprint)
+		or not ProtocolV6._valid_sha256(contract_fingerprint)
+		or not ProtocolV6._valid_sha256(native_core_fingerprint)
+		or str(native_rules.get("card_ir_content_fingerprint", ""))
+		!= content_fingerprint
+		or str(native_rules.get("card_ir_contract_fingerprint", ""))
+		!= contract_fingerprint
+	):
+		return ""
+	return ("%s\n%s\n%s" % [
+		content_fingerprint,
+		contract_fingerprint,
+		native_core_fingerprint,
+	]).sha256_text()
+
+
+func _release_manifest() -> Dictionary:
+	var file := FileAccess.open(AppState.RELEASE_MANIFEST_PATH, FileAccess.READ)
+	if file == null:
+		return {}
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	return Dictionary(parsed) if parsed is Dictionary else {}
 
 
 func _peer_core_compatible(payload: Dictionary) -> bool:
 	var peer := str(payload.get("core_fingerprint", ""))
-	return peer.is_empty() or peer == _core_fingerprint()
+	var local := _core_fingerprint()
+	return not local.is_empty() and peer == local
 
 
 func _begin_reconnect(reason: String) -> void:
@@ -407,6 +535,9 @@ func _poll_reconnect() -> void:
 		return
 	var now := Time.get_ticks_msec()
 	if now >= reconnect_deadline_msec:
+		if host and terminal_revision >= 0:
+			_finish_terminal_connection()
+			return
 		reconnecting = false
 		resync_in_progress = false
 		connection_phase = ConnectionPhase.CLOSED

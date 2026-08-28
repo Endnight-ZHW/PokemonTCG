@@ -22,6 +22,7 @@ const MINIMUM_TOUCH_TARGET := 48.0
 const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
 const ATTACHMENT_VISUALS := preload("res://ui/attachment_visual_descriptor.gd")
 const ENERGY_COUNT_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_bold.tres")
+const CARD_BACK_TEXTURE: Texture2D = preload("res://assets/cards/card_back.webp")
 const MIN_CARD_CORNER_RADIUS := 3
 const MAX_CARD_CORNER_RADIUS := 6
 
@@ -873,8 +874,10 @@ func _refresh() -> void:
 		image.texture = (
 			texture_cache.call("get_texture", "res://assets/cards/card_back.webp") as Texture2D
 			if texture_cache
-			else null
+			else CARD_BACK_TEXTURE
 		)
+		if image.texture == null:
+			image.texture = CARD_BACK_TEXTURE
 		empty_label.visible = false
 		frame_color = Color("#15284e")
 		border_color = DesignTokens.GOLD.darkened(0.3)

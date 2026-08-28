@@ -213,6 +213,12 @@ func _run() -> void:
 		not card.is_drag_hidden() and card.content_root.visible,
 		"CardView did not restore content after every drag-mask owner released it",
 	)
+	card.configure("", null, true, -1, 1)
+	await process_frame
+	_check(
+		card.is_hidden_card and card.image.texture != null,
+		"Hidden CardView lost its non-evictable card-back fallback",
+	)
 
 	if popover != null:
 		popover.queue_free()

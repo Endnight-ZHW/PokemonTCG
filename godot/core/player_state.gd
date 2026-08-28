@@ -123,7 +123,18 @@ static func from_dict(data: Dictionary) -> PlayerState:
 	result.healed_this_turn = bool(data.get("healed_this_turn", false))
 	result.vstar_power_used = bool(data.get("vstar_power_used", false))
 	result.was_ko_by_attack = bool(data.get("was_ko_by_attack", false))
-	result.attack_locked_names = Dictionary(
-		data.get("attack_locked_names", {})
-	).duplicate(true)
+	result.attack_locked_names.clear()
+	var wire_attack_locks := Dictionary(data.get("attack_locked_names", {}))
+	for attack_name_value in wire_attack_locks:
+		var expires_value: Variant = wire_attack_locks[attack_name_value]
+		if (
+			attack_name_value is String
+			and (expires_value is int or expires_value is float)
+			and not expires_value is bool
+			and is_finite(float(expires_value))
+			and float(expires_value) == floorf(float(expires_value))
+			and float(expires_value) >= 0.0
+			and float(expires_value) <= 2147483647.0
+		):
+			result.attack_locked_names[str(attack_name_value)] = int(expires_value)
 	return result

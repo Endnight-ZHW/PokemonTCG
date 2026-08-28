@@ -20,21 +20,44 @@ func _run_terminal_state_contract() -> void:
 	_expect(surrendered.success, "first surrender was rejected")
 	host._broadcast_state(surrendered.events)
 	_expect(
-		host.connection_phase == NetworkMatchController.ConnectionPhase.CLOSED,
-		"host remained PLAYING after broadcasting GAME_OVER",
+		host.connection_phase == NetworkMatchController.ConnectionPhase.FINISHING
+		and host.terminal_revision == session.state.revision
+		and host.needs_poll(),
+		"host did not retain a terminal delivery window after GAME_OVER",
 	)
 	_expect(
 		not host_transport.sent_messages.is_empty()
 		and host_transport.sent_messages[-1]["payload"]["state"]["phase"] == "GAME_OVER",
-		"host did not send the terminal state before closing the logical match",
+		"host did not send the terminal state before awaiting acknowledgement",
 	)
-	host._drain_events()
-	var terminal_send_count := host_transport.sent_messages.size()
-	_expect(not host.needs_poll(), "closed host kept polling an idle transport")
+	var first_terminal_send_count := host_transport.sent_messages.size()
+	var retry_now := Time.get_ticks_msec()
+	host.last_receive_msec = retry_now
+	host.terminal_last_state_send_msec = (
+		retry_now - NetworkMatchController.TERMINAL_STATE_RETRY_MSEC - 1
+	)
 	host.poll()
 	_expect(
-		host_transport.sent_messages.size() == terminal_send_count,
-		"closed host emitted a heartbeat after terminal state",
+		host.connection_phase == NetworkMatchController.ConnectionPhase.FINISHING
+		and host_transport.sent_messages.size() == first_terminal_send_count + 1
+		and host_transport.sent_messages[-1]["payload"]["state"]["phase"]
+		== "GAME_OVER",
+		"finishing host did not retry an unacknowledged terminal snapshot",
+	)
+	var retried_terminal_send_count := host_transport.sent_messages.size()
+	host._handle_message(ProtocolV6.envelope(
+		ProtocolV6.RESYNC_REQUEST,
+		"terminal-contract",
+		1,
+		1,
+		maxi(0, session.state.revision - 1),
+	))
+	_expect(
+		host.connection_phase == NetworkMatchController.ConnectionPhase.FINISHING
+		and host_transport.sent_messages.size() == retried_terminal_send_count + 1
+		and host_transport.sent_messages[-1]["payload"]["state"]["phase"]
+		== "GAME_OVER",
+		"finishing host did not serve a terminal recovery snapshot",
 	)
 
 	var terminal_winner := session.state.winner
@@ -51,29 +74,57 @@ func _run_terminal_state_contract() -> void:
 	)
 
 	var client := NetworkMatchController.new(session.catalog)
+	var client_transport := QueuedNetworkTransport.new()
 	client.host = false
 	client.player_idx = 1
 	client.connected = true
 	client.room_id = "terminal-contract"
-	client.transport = FakeNetworkTransport.new()
-	client.connection_phase = NetworkMatchController.ConnectionPhase.LOBBY
+	client.transport = client_transport
+	client.connection_phase = NetworkMatchController.ConnectionPhase.PLAYING
+	client.receive_sequence = int(
+		host_transport.sent_messages[-1].get("sequence", 1)
+	) - 1
+	client.send_sequence = 1
 	client._handle_message(host_transport.sent_messages[-1])
 	_expect(
-		client.connection_phase == NetworkMatchController.ConnectionPhase.CLOSED,
-		"client changed a GAME_OVER state back to PLAYING",
+		client.connection_phase == NetworkMatchController.ConnectionPhase.FINISHING
+		and client.terminal_revision == terminal_revision
+		and not client_transport.sent_messages.is_empty()
+		and client_transport.sent_messages[-1]["message_type"]
+		== ProtocolV6.PONG
+		and int(client_transport.sent_messages[-1]["state_revision"])
+		== terminal_revision,
+		"client did not acknowledge the terminal state",
 	)
 	_expect(
 		client._drain_events().any(func(event: Dictionary) -> bool:
 			return event.get("type", "") == "state"),
 		"client did not publish the terminal state event",
 	)
-	_expect(not client.needs_poll(), "closed client kept polling an idle transport")
+	_expect(client.needs_poll(), "client stopped polling before terminal close")
+
+	host._drain_events()
+	host._handle_message(client_transport.sent_messages[-1])
+	_expect(
+		host.connection_phase == NetworkMatchController.ConnectionPhase.CLOSED
+		and host.transport == null
+		and not host.needs_poll(),
+		"host did not close after the matching terminal acknowledgement",
+	)
+	client_transport.queued_events.append({"type": "disconnected"})
+	client.poll()
+	_expect(
+		client.connection_phase == NetworkMatchController.ConnectionPhase.CLOSED
+		and client.transport == null
+		and not client.needs_poll(),
+		"client treated the acknowledged terminal close as a reconnectable failure",
+	)
 
 	var remote_repeat := ProtocolV6.envelope(
 		ProtocolV6.SURRENDER,
 		"terminal-contract",
 		1,
-		1,
+		3,
 		session.state.revision,
 	)
 	host._handle_message(remote_repeat)
@@ -151,6 +202,19 @@ func _run_submission_correlation_contract() -> void:
 		and host_transport.sent_messages[rejection_index]["action_id"]
 		== rejected_action["action_id"],
 		"authoritative rejection did not echo action_id",
+	)
+	var heartbeat_send_count := host_transport.sent_messages.size()
+	host_controller._handle_message(ProtocolV6.envelope(
+		ProtocolV6.PONG,
+		"correlation-contract",
+		1,
+		3,
+		session.state.revision,
+	))
+	_expect(
+		host_transport.sent_messages.size() == heartbeat_send_count
+		and host_controller._drain_events().is_empty(),
+		"host rejected a valid heartbeat PONG",
 	)
 
 	var client := _new_correlation_client(session)
@@ -298,6 +362,27 @@ func _run_submission_correlation_contract() -> void:
 		== "still-pending-action"
 		and not _has_matched_pending_event(nonmatching_error_events, "error"),
 		"non-matching error cleared or claimed the active submission",
+	)
+
+	var uncorrelated_error_client := _new_correlation_client(session)
+	uncorrelated_error_client._begin_pending_submission(
+		"action", "heartbeat-safe-action", "", session.state.revision
+	)
+	uncorrelated_error_client._handle_message(ProtocolV6.envelope(
+		ProtocolV6.ERROR,
+		"correlation-contract",
+		0,
+		1,
+		session.state.revision,
+		"",
+		"",
+		ProtocolV6.error_payload("protocol_notice", "uncorrelated"),
+	))
+	var uncorrelated_error_events := uncorrelated_error_client._drain_events()
+	_expect(
+		not uncorrelated_error_client.pending_submission.is_empty()
+		and not _has_matched_pending_event(uncorrelated_error_events, "error"),
+		"uncorrelated protocol error claimed the active submission",
 	)
 
 	var request_client := _new_correlation_client(session)
@@ -476,6 +561,7 @@ func _run_recovery_contract() -> void:
 		"deck_key": "water",
 		"rules_version": AppState.RULES_SCHEMA_VERSION,
 		"action_version": AppState.ACTION_SCHEMA_VERSION,
+		"core_fingerprint": host._core_fingerprint(),
 		"rules_profile_id": GameState.RULES_PROFILE_ID,
 		"rules_options": host.rules_options.duplicate(true),
 		"resume": true,
@@ -519,6 +605,7 @@ func _run_recovery_contract() -> void:
 		"deck_key": "water",
 		"rules_version": AppState.RULES_SCHEMA_VERSION,
 		"action_version": AppState.ACTION_SCHEMA_VERSION,
+		"core_fingerprint": locked_rules_host._core_fingerprint(),
 		"rules_profile_id": GameState.RULES_PROFILE_ID,
 		"rules_options": {"apply_type_matchups": false},
 		"resume": false,
@@ -533,6 +620,52 @@ func _run_recovery_contract() -> void:
 		and str(Dictionary(locked_transport.sent_messages[-1].get(
 			"payload", {})).get("code", "")) == "rules_options_mismatch",
 		"challenger was able to change the host-locked matchup option",
+	)
+
+
+func _run_retired_transport_batch_contract() -> void:
+	var session := AuthoritativeSession.new("retired-transport-contract")
+	var started := session.start_match("fire", "water", 20260828, 0)
+	_expect(started.success, "retired transport fixture did not start")
+	if not started.success:
+		return
+	var transport := QueuedNetworkTransport.new()
+	transport.queued_events.assign([
+		{"type": "disconnected", "reason": "test_disconnect"},
+		{"type": "connected", "room_id": "retired-transport-contract"},
+		{
+			"type": "message",
+			"message": ProtocolV6.envelope(
+				ProtocolV6.PING,
+				"retired-transport-contract",
+				1,
+				1,
+				session.state.revision,
+			),
+		},
+	])
+	var host := NetworkMatchController.new(session.catalog)
+	host.host = true
+	host.player_idx = 0
+	host.connected = true
+	host.room_id = "retired-transport-contract"
+	host.local_deck_key = "fire"
+	host.remote_deck_key = "water"
+	host.transport_kind = "relay"
+	host.relay_url = "ws://127.0.0.1:1"
+	host.transport = transport
+	host.session = session
+	host.connection_phase = NetworkMatchController.ConnectionPhase.PLAYING
+	var recovery_events := host.poll()
+	_expect(
+		host.transport == null
+		and host.reconnecting
+		and host.connection_phase == NetworkMatchController.ConnectionPhase.CONNECTING
+		and transport.close_count == 1
+		and transport.sent_messages.is_empty()
+		and not recovery_events.any(func(event: Dictionary) -> bool:
+			return str(event.get("type", "")) == "connected"),
+		"retired transport events crossed into the new connection epoch",
 	)
 
 
