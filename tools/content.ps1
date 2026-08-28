@@ -17,6 +17,44 @@ Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
 if (-not (Test-Path -LiteralPath $godot -PathType Leaf)) {
     throw 'Godot is missing. Run tools/setup_godot_toolchain.ps1 first.'
 }
+$classCache = Join-Path $projectRoot '.godot\global_script_class_cache.cfg'
+$extensionList = Join-Path $projectRoot '.godot\extension_list.cfg'
+$requiresImport = (
+    -not (Test-Path -LiteralPath $classCache -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $extensionList -PathType Leaf)
+)
+if (-not $requiresImport) {
+    $cacheTime = (Get-Item -LiteralPath $classCache).LastWriteTimeUtc
+    $latestClassSource = Get-ChildItem -LiteralPath $projectRoot `
+        -Recurse `
+        -File `
+        -Filter '*.gd' |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1
+    $projectTime = (Get-Item -LiteralPath (
+        Join-Path $projectRoot 'project.godot'
+    )).LastWriteTimeUtc
+    $requiresImport = (
+        ($null -ne $latestClassSource -and
+            $latestClassSource.LastWriteTimeUtc -gt $cacheTime) -or
+        $projectTime -gt $cacheTime
+    )
+}
+if ($requiresImport) {
+    $importOutput = @(& $godot `
+        --headless `
+        --path $projectRoot `
+        --import 2>&1)
+    $importOutput | ForEach-Object { Write-Host $_ }
+    $importExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    $joinedImportOutput = $importOutput -join "`n"
+    if (
+        $importExitCode -ne 0 -or
+        $joinedImportOutput -match '(?m)^(SCRIPT ERROR|ERROR):'
+    ) {
+        throw 'Godot project cache bootstrap failed.'
+    }
+}
 $arguments = @(
     '--headless',
     '--path', $projectRoot,
