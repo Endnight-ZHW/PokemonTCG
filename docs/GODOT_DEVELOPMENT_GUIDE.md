@@ -804,6 +804,11 @@ flowchart LR
 Protocol v6 在欢迎/选牌/状态消息中携带规则配置、合法动作分组与 ChoiceView v2。旧 Protocol v5 和 Snapshot 2 只能返回
 明确不兼容诊断，不做字段猜测或自动迁移。
 
+网络实现按职责拆分但保留原公开类名：`ProtocolV6` 是协议门面，状态/玩家、Action/Choice、
+表现事件和通用边界检查位于其验证基类；`NetworkMatchController` 是唯一可变状态所有者，
+公共连接/提交入口、host/client 消息调度和 transport/reconnect 状态分别位于继承链中的独立脚本。
+新增逻辑应进入对应职责文件，不能把 transport 或 authoritative session 状态复制到第二个对象。
+
 网络大厅的视觉状态由 `NetworkLobbyPage.ConnectionState` 表达：
 
 ```text

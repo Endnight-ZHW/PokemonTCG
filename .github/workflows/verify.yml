@@ -1,7 +1,10 @@
 name: verify
 
 env:
-  CI_PYTHON_VERSION: '3.11.15'
+  # CPython 3.11.10+ security releases in actions/python-versions do not ship
+  # Windows archives. Keep product CI on the final Windows-installable patch;
+  # the independent Conda-based Deep AI research toolchain remains on 3.11.15.
+  CI_PYTHON_VERSION: '3.11.9'
 
 on:
   push:

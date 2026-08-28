@@ -1,0 +1,24 @@
+{
+  "runtime": [
+    "challenge_support.cpp",
+    "challenge_search_provider.cpp",
+    "challenge_search_provider_factory.cpp",
+    "challenge_search_tactical_guard.cpp",
+    "challenge_search_ranking.cpp",
+    "challenge_search_choice_energy.cpp",
+    "challenge_search_choice_cards.cpp",
+    "challenge_search_choice_policy.cpp",
+    "challenge_controller.cpp",
+    "ptcg_traditional_search.cpp",
+    "ptcg_traditional_infoset.cpp",
+    "ptcg_traditional_mandatory.cpp",
+    "ptcg_traditional_evaluator.cpp",
+    "ptcg_traditional_policy.cpp",
+    "ptcg_traditional_strategy.cpp",
+    "ptcg_traditional_battle_evaluation.cpp",
+    "ptcg_traditional_board_evaluation.cpp",
+    "ptcg_traditional_effect_evaluation.cpp",
+    "ptcg_traditional_choice_evaluation.cpp",
+    "ptcg_traditional_trusted.cpp"
+  ]
+}

@@ -2,6 +2,7 @@
 
 import os
 import sys
+import json
 from SCons.Script import Default, Environment
 
 
@@ -13,22 +14,17 @@ else:
     env.Append(CXXFLAGS=["-std=c++17", "-O2", "-pthread"])
     env.Append(LINKFLAGS=["-pthread"])
 
+with open("source_manifest.json", encoding="utf-8") as handle:
+    source_manifest = json.load(handle)
+source_names = source_manifest["runtime"] + source_manifest["product_only"]
+
 core_objects = [
     env.Object(
         os.path.join("build", "core", name),
         os.path.join("src", name + ".cpp"),
     )[0]
-    for name in (
-        "ptcg_random",
-        "ptcg_rules",
-        "ptcg_game",
-        "ptcg_rules_session",
-        "ptcg_rules_queries",
-        "ptcg_rules_projection",
-        "ptcg_typed_state",
-        "ptcg_typed_ir",
-        "ptcg_content_compiler",
-    )
+    for filename in source_names
+    for name in (os.path.splitext(filename)[0],)
 ]
 test_object = env.Object(
     os.path.join("build", "tests", "ptcg_rules_session_test"),

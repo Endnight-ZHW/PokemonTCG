@@ -3,6 +3,7 @@
 import os
 import sys
 import sysconfig
+import json
 
 from SCons.Script import ARGUMENTS, Default, Environment
 
@@ -56,15 +57,14 @@ else:
     )
     extension_suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
 
+with open(
+    os.path.join(repository_root, "native", "ptcg_core", "source_manifest.json"),
+    encoding="utf-8",
+) as handle:
+    core_manifest = json.load(handle)
 core_sources = [
-    os.path.join(core_source_root, "ptcg_random.cpp"),
-    os.path.join(core_source_root, "ptcg_rules.cpp"),
-    os.path.join(core_source_root, "ptcg_game.cpp"),
-    os.path.join(core_source_root, "ptcg_rules_session.cpp"),
-    os.path.join(core_source_root, "ptcg_rules_queries.cpp"),
-    os.path.join(core_source_root, "ptcg_rules_projection.cpp"),
-    os.path.join(core_source_root, "ptcg_typed_state.cpp"),
-    os.path.join(core_source_root, "ptcg_typed_ir.cpp"),
+    os.path.join(core_source_root, filename)
+    for filename in core_manifest["runtime"]
 ]
 core_objects = [
     env.Object(
@@ -82,24 +82,16 @@ core_library = env.StaticLibrary(
 env.NoCache(core_library)
 env.Append(LIBS=[core_library])
 
+with open(
+    os.path.join(
+        repository_root, "native", "challenge_core", "source_manifest.json"
+    ),
+    encoding="utf-8",
+) as handle:
+    challenge_manifest = json.load(handle)
 challenge_sources = [
     os.path.join(challenge_source_root, name)
-    for name in (
-        "challenge_support.cpp",
-        "challenge_search_provider.cpp",
-        "challenge_controller.cpp",
-        "ptcg_traditional_evaluator.cpp",
-        "ptcg_traditional_infoset.cpp",
-        "ptcg_traditional_mandatory.cpp",
-        "ptcg_traditional_policy.cpp",
-        "ptcg_traditional_search.cpp",
-        "ptcg_traditional_strategy.cpp",
-        "ptcg_traditional_battle_evaluation.cpp",
-        "ptcg_traditional_board_evaluation.cpp",
-        "ptcg_traditional_effect_evaluation.cpp",
-        "ptcg_traditional_choice_evaluation.cpp",
-        "ptcg_traditional_trusted.cpp",
-    )
+    for name in challenge_manifest["runtime"]
 ]
 challenge_objects = [
     env.Object(

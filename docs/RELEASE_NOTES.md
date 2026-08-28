@@ -27,6 +27,9 @@ Godot/C++。
 ## 版本与验证
 
 - 产品版本为 0.8.0，Android `versionCode=9`。
+- 验证状态：Python 产品栈迁移后的新 `main` 尚待完整
+  `workflow_dispatch`（fast、standard、relay-linux、release）重新验证；在该运行全绿前，
+  0.8.0 视为发布候选而非已验证发布版本。
 - 内容编译测试覆盖 schema、未知 VM op、非法分支、牌组数量、策略引用、source pointer、
   确定性输出及 fingerprint 范围。
 - Relay 测试覆盖严格 JSON、v5 拒绝、并发加入、断线恢复、限流、可信代理、IPv4/IPv6，

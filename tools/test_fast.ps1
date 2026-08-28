@@ -6,6 +6,9 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $PSScriptRoot 'test_product_boundary.ps1')
 if ($LASTEXITCODE -ne 0) { throw 'Product Python boundary failed.' }
 
+& (Join-Path $PSScriptRoot 'test_source_boundaries.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'Source responsibility boundary failed.' }
+
 & (Join-Path $PSScriptRoot 'test_ptcg_core.ps1')
 if ($LASTEXITCODE -ne 0) { throw 'Dependency-free C++ rules core failed.' }
 

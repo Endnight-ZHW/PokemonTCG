@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import json
 from SCons.Script import ARGUMENTS, Default, SConscript
 
 
@@ -36,33 +37,14 @@ def _objects(group, source_root, names, shared=False):
     ]
 
 
-rules_names = (
-    "ptcg_random.cpp",
-    "ptcg_rules.cpp",
-    "ptcg_game.cpp",
-    "ptcg_rules_session.cpp",
-    "ptcg_rules_queries.cpp",
-    "ptcg_rules_projection.cpp",
-    "ptcg_typed_state.cpp",
-    "ptcg_typed_ir.cpp",
-    "ptcg_content_compiler.cpp",
-)
-challenge_names = (
-    "challenge_support.cpp",
-    "challenge_search_provider.cpp",
-    "challenge_controller.cpp",
-    "ptcg_traditional_search.cpp",
-    "ptcg_traditional_infoset.cpp",
-    "ptcg_traditional_mandatory.cpp",
-    "ptcg_traditional_evaluator.cpp",
-    "ptcg_traditional_policy.cpp",
-    "ptcg_traditional_strategy.cpp",
-    "ptcg_traditional_battle_evaluation.cpp",
-    "ptcg_traditional_board_evaluation.cpp",
-    "ptcg_traditional_effect_evaluation.cpp",
-    "ptcg_traditional_choice_evaluation.cpp",
-    "ptcg_traditional_trusted.cpp",
-)
+with open(os.path.join(rules_root, "source_manifest.json"), encoding="utf-8") as handle:
+    rules_manifest = json.load(handle)
+rules_names = tuple(rules_manifest["runtime"] + rules_manifest["product_only"])
+with open(
+    os.path.join(challenge_root, "source_manifest.json"), encoding="utf-8"
+) as handle:
+    challenge_manifest = json.load(handle)
+challenge_names = tuple(challenge_manifest["runtime"])
 binding_names = (
     "godot_rules_session.cpp",
     "native_challenge_ai.cpp",
