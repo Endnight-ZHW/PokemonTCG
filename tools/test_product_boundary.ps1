@@ -18,10 +18,12 @@ foreach ($relative in $forbidden) {
     }
 }
 
-$pythonFiles = @(& rg --files $repoRoot -g '*.py' -g '!.tools/**' -g '!godot/.godot/**' `
-    -g '!godot/dist/**' -g '!dist/**' -g '!research/deep_ai/build/**')
+$pythonFiles = @(& git -C $repoRoot ls-files --cached --others --exclude-standard -- '*.py')
+if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to enumerate product Python files through Git.'
+}
 foreach ($path in $pythonFiles) {
-    $relative = [IO.Path]::GetRelativePath($repoRoot, [string]$path).Replace('\', '/')
+    $relative = ([string]$path).Replace('\', '/')
     if (-not $relative.StartsWith('research/deep_ai/', [StringComparison]::Ordinal)) {
         throw "Python business file exists outside Deep AI: $relative"
     }
