@@ -228,7 +228,7 @@ func _run() -> void:
 	_check(
 		overflow_rect.size.x > 0.0
 		and overflow_rect.is_equal_approx(
-			overflow_card._control_visual_global_rect(overflow_badge)
+			overflow_card.battle_overlay._control_visual_global_rect(overflow_badge)
 		)
 		and legacy_center.is_equal_approx(overflow_rect.get_center()),
 		"Attachment rect/legacy center did not resolve a hidden overflow energy",
@@ -240,18 +240,18 @@ func _run() -> void:
 	_check(
 		turbo_badge != null
 		and mismatched_index_rect.is_equal_approx(
-			card._control_visual_global_rect(turbo_badge)
+			card.battle_overlay._control_visual_global_rect(turbo_badge)
 		),
 		"A stale/inferred index overrode the exact energy card identity",
 	)
 
-	var tool_was_hidden := not card.tool_badge.visible
+	var tool_was_hidden := not card.battle_overlay.tool_badge.visible
 	var prospective_tool_rect := card.prospective_attachment_visual_global_rect(
 		"tool",
 		"sv1-202",
 	)
 	var tool_remained_hidden := (
-		not card.tool_badge.visible
+		not card.battle_overlay.tool_badge.visible
 		and pokemon.attached_tool_id.is_empty()
 	)
 	pokemon.attached_tool_id = "sv1-202"
@@ -269,7 +269,9 @@ func _run() -> void:
 		and prospective_tool_rect.size.y > 0.0
 		and prospective_tool_rect.is_equal_approx(rendered_tool_rect)
 		and rendered_tool_rect.is_equal_approx(
-			card._control_visual_global_rect(card.tool_badge)
+			card.battle_overlay._control_visual_global_rect(
+				card.battle_overlay.tool_badge
+			)
 		)
 		and prospective_tool_rect.get_center().distance_to(
 			card.global_center()

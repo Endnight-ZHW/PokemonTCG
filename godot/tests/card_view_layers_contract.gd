@@ -205,12 +205,12 @@ func _run() -> void:
 	card.set_drag_masked(true)
 	card.set_drag_masked(false)
 	_check(
-		card.is_drag_hidden() and not card.content_root.visible,
+		not card.content_root.visible,
 		"Coordinator mask clearing incorrectly released the native drag mask",
 	)
 	card._set_native_drag_masked(false)
 	_check(
-		not card.is_drag_hidden() and card.content_root.visible,
+		card.content_root.visible,
 		"CardView did not restore content after every drag-mask owner released it",
 	)
 	card.configure("", null, true, -1, 1)

@@ -1,11 +1,15 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://ui/dialogs/choice_panel.gd" id="1_panel"]
+[ext_resource type="Script" path="res://ui/dialogs/energy_distribution_panel.gd" id="2_energy"]
 
 [node name="ChoicePanel" type="VBoxContainer"]
 theme_override_constants/separation = 10
 editor_description = "复杂规则选择的可视化容器。卡牌选项渲染为单一卡牌网格，非卡牌选项渲染为紧凑按钮。"
 script = ExtResource("1_panel")
+
+[node name="EnergyDistributionPanel" type="Node" parent="."]
+script = ExtResource("2_energy")
 
 [node name="PromptLabel" type="Label" parent="."]
 unique_name_in_owner = true

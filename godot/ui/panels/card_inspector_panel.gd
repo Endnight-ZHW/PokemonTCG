@@ -3,7 +3,7 @@ extends VBoxContainer
 
 signal card_requested(context: Dictionary)
 
-const CARD_SCENE := preload("res://ui/card_view.tscn")
+const CARD_GRID_SECTION := preload("res://ui/panels/card_grid_section.tscn")
 
 var catalog: CardCatalog
 var _content_grid: GridContainer
@@ -162,31 +162,10 @@ func _add_card_grid_section(
 	card_ids: Array,
 	is_hidden: bool,
 ) -> void:
-	add_child(_label(title_text, 20, DesignTokens.GOLD))
-	var grid := GridContainer.new()
-	grid.columns = 6
-	grid.add_theme_constant_override("h_separation", 8)
-	grid.add_theme_constant_override("v_separation", 8)
-	add_child(grid)
-	if card_ids.is_empty():
-		grid.add_child(_label("无", 14, DesignTokens.TEXT_MUTED))
-		return
-	for value in card_ids:
-		var card_id := str(value)
-		var card_view := CARD_SCENE.instantiate() as CardView
-		card_view.custom_minimum_size = Vector2(82, 116)
-		card_view.configure(card_id, null, is_hidden, -1, -1, "", true)
-		card_view.tooltip_text = ""
-		if not is_hidden and not card_id.is_empty():
-			card_view.activated.connect(func(
-				_selected_id: String,
-				_hand_index: int,
-				_player: int,
-				_slot: String,
-			) -> void:
-				card_requested.emit({"card_id": card_id, "location": title_text})
-			)
-		grid.add_child(card_view)
+	var section := CARD_GRID_SECTION.instantiate() as CardGridSection
+	section.configure(catalog, title_text, card_ids, is_hidden)
+	section.card_requested.connect(card_requested.emit)
+	add_child(section)
 
 
 func _pokemon_evolution_cards(pokemon: PokemonState) -> Array[String]:

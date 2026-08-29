@@ -1,6 +1,7 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://ui/card_view.gd" id="1_card"]
+[ext_resource type="Script" path="res://ui/card_battle_overlay.gd" id="2_overlay"]
 
 [sub_resource type="StyleBoxFlat" id="Style_shadow"]
 bg_color = Color(0, 0, 0, 0.28)
@@ -111,6 +112,9 @@ mouse_filter = 0
 focus_mode = 0
 editor_description = "可复用卡牌组件。Frame、信息栏和只读交互高亮可以在此场景中编辑；运行时卡图、数值和合法交互状态由 CardView 注入。"
 script = ExtResource("1_card")
+
+[node name="BattleOverlay" type="Node" parent="."]
+script = ExtResource("2_overlay")
 
 [node name="InteractionRoot" type="Control" parent="."]
 unique_name_in_owner = true
