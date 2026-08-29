@@ -49,6 +49,7 @@ public:
     Dictionary apply_choice(const Dictionary &response);
     Dictionary surrender(int64_t actor);
     Dictionary view_for(int64_t viewer) const;
+    Dictionary ai_observation_for(int64_t viewer) const;
     Dictionary snapshot() const;
     bool restore(const Dictionary &snapshot, int64_t rng_state);
     Ref<NativeRulesSession> fork() const;

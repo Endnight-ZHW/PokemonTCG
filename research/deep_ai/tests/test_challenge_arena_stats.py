@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from deep_ai.challenge_arena_stats import (
+    gate_status,
     paired_bootstrap_interval,
     summarize_games,
 )
@@ -38,6 +39,12 @@ def _game(
         "baseline_decision_samples_us": [1000],
         "candidate_planner_samples_us": [900],
         "baseline_planner_samples_us": [900],
+        "candidate_action_decisions": 1,
+        "baseline_action_decisions": 1,
+        "candidate_choice_decisions": 0,
+        "baseline_choice_decisions": 0,
+        "candidate_search_decisions": 1,
+        "baseline_search_decisions": 1,
         "invalid_actions": 0,
         "illegal_choices": 0,
         "controller_failures": 0,
@@ -56,6 +63,7 @@ class ChallengeArenaStatsTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertAlmostEqual(first["score_rate"], 8 / 12)
         self.assertEqual(first["blocks"], 2)
+        self.assertIn("bootstrap_distribution", first)
 
     def test_summary_emits_strength_performance_and_promotion_gate(self) -> None:
         games = [_game(f"game-{index}", f"block-{index // 4}", 2) for index in range(40)]
@@ -97,6 +105,90 @@ class ChallengeArenaStatsTests(unittest.TestCase):
         self.assertEqual(summary["games"], 1)
         self.assertEqual(summary["strength_games"], 0)
         self.assertIsNone(summary["paired_statistics"]["score_rate"])
+
+    def test_truncated_game_is_excluded_from_strength(self) -> None:
+        game = _game("truncated", "block", 1)
+        game.update({
+            "terminal": False,
+            "truncated": True,
+            "strength_eligible": False,
+        })
+        summary = summarize_games([game], bootstrap_samples=20)
+        self.assertEqual(summary["strength_games"], 0)
+        self.assertEqual(summary["integrity"]["truncated_games"], 1)
+
+    def test_search_depth_uses_search_decision_denominator(self) -> None:
+        game = _game("metrics", "block", 1)
+        game.update({
+            "candidate_decision_samples_us": [1000, 10],
+            "candidate_action_decisions": 1,
+            "candidate_choice_decisions": 1,
+            "candidate_search_decisions": 1,
+            "candidate_completed_depth": 7,
+            "candidate_reply_depth": 3,
+            "candidate_belief_samples": 2,
+        })
+        performance = summarize_games([game], bootstrap_samples=20)["performance"]["candidate"]
+        self.assertEqual(performance["decision_count"], 2)
+        self.assertEqual(performance["search_decision_count"], 1)
+        self.assertEqual(performance["average_completed_depth"], 7.0)
+
+    def test_calibration_requires_half_inside_interval(self) -> None:
+        balanced = [
+            _game(f"game-{index}", f"block-{index}", index % 3)
+            for index in range(30)
+        ]
+        summary = summarize_games(balanced, bootstrap_samples=500)
+        self.assertEqual(gate_status(summary, preset="calibration"), "pass")
+        all_wins = summarize_games(
+            [_game(f"win-{index}", f"block-{index}", 2) for index in range(20)],
+            bootstrap_samples=100,
+        )
+        self.assertEqual(gate_status(all_wins, preset="calibration"), "fail")
+
+    def test_pr_uses_the_declared_point_four_score_threshold(self) -> None:
+        below = summarize_games(
+            [_game(f"loss-{index}", f"block-{index}", 0) for index in range(5)],
+            bootstrap_samples=100,
+        )
+        self.assertEqual(gate_status(below, preset="pr"), "fail")
+        boundary = summarize_games(
+            [
+                *[_game(f"draw-{index}", f"block-{index}", 1) for index in range(4)],
+                _game("loss", "block-loss", 0),
+            ],
+            bootstrap_samples=100,
+        )
+        self.assertAlmostEqual(boundary["paired_statistics"]["score_rate"], 0.4)
+        self.assertEqual(gate_status(boundary, preset="pr"), "pass")
+
+    def test_sequential_statuses_and_alpha_are_explicit(self) -> None:
+        wins = summarize_games(
+            [_game(f"win-{index}", f"block-{index}", 2) for index in range(20)],
+            bootstrap_samples=100,
+            confidence_alpha=0.01,
+        )
+        losses = summarize_games(
+            [_game(f"loss-{index}", f"block-{index}", 0) for index in range(20)],
+            bootstrap_samples=100,
+            confidence_alpha=0.01,
+        )
+        balanced = summarize_games(
+            [
+                _game(f"game-{index}", f"block-{index}", index % 3)
+                for index in range(30)
+            ],
+            bootstrap_samples=500,
+            confidence_alpha=0.01,
+        )
+        self.assertEqual(wins["paired_statistics"]["alpha"], 0.01)
+        self.assertEqual(gate_status(wins, preset="nightly"), "pass")
+        self.assertEqual(gate_status(losses, preset="nightly"), "fail")
+        self.assertEqual(
+            gate_status(balanced, preset="nightly", final_look=True),
+            "inconclusive",
+        )
+        self.assertEqual(gate_status(wins, preset="release"), "pass")
 
 
 if __name__ == "__main__":

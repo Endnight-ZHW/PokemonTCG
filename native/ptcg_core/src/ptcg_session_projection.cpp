@@ -72,5 +72,47 @@ Value RulesSession::view_for(std::int32_t viewer) const {
     return Value(std::move(view));
 }
 
+Value RulesSession::ai_observation_for(std::int32_t viewer) const {
+    if (!initialized_ || viewer < 0 || viewer > 1) {
+        return Value::make_object();
+    }
+    Value observation = snapshot();
+    observation["ai_runtime_projection"] = Value("ai_public_state_v1");
+    observation.erase("resolution_stack");
+    observation.erase("processed_action_ids");
+    observation.erase("choice_sequence");
+    observation.erase("setup_bonus_card_ids");
+    Value *players = observation.find("players");
+    if (players == nullptr || !players->is_array()
+        || players->as_array().size() != 2) {
+        return Value::make_object();
+    }
+    for (std::int32_t player_index = 0; player_index < 2; ++player_index) {
+        Value &owner = players->as_array()[static_cast<std::size_t>(player_index)];
+        if (!owner.is_object()) return Value::make_object();
+        const auto hidden_zone = [&owner](const char *key, const char *marker) {
+            const Value *zone = owner.find(key);
+            const std::size_t count = zone != nullptr && zone->is_array()
+                ? zone->as_array().size() : 0;
+            return Value(Array(count, Value(marker)));
+        };
+        owner["deck"] = hidden_zone("deck", "__hidden_card__");
+        owner["prizes"] = hidden_zone("prizes", "__hidden_prize__");
+        if (player_index != viewer) {
+            owner["hand"] = hidden_zone("hand", "__hidden_card__");
+        }
+    }
+    if (string_field(observation, "phase") == "SETUP"
+        && string_field(observation, "setup_stage") != "COMPLETE") {
+        Value &opponent = players->as_array()[static_cast<std::size_t>(1 - viewer)];
+        opponent["active"] = Value();
+        Value *bench = opponent.find("bench");
+        const std::size_t bench_size = bench != nullptr && bench->is_array()
+            ? bench->as_array().size() : 0;
+        opponent["bench"] = Value(Array(bench_size, Value()));
+    }
+    return observation;
+}
+
 
 } // namespace ptcg::ai

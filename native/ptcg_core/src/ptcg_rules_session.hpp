@@ -91,6 +91,10 @@ public:
     RulesSessionResult concede(std::int32_t actor);
 
     Value view_for(std::int32_t viewer) const;
+    // Canonical public AI DTO shared by the product runtime and research
+    // Arena. Hidden-zone identities and private continuation fields never
+    // cross this boundary.
+    Value ai_observation_for(std::int32_t viewer) const;
     Value snapshot() const;
     bool restore(
         const Value &snapshot,

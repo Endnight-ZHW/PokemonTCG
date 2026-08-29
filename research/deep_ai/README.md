@@ -30,15 +30,19 @@ explicit commands under `tools/`.
 ## Native Challenge Arena
 
 The research binding also contains a fully native Challenge-vs-Challenge Arena.
-Python submits a complete workload once; native workers own both controllers and
-the single authoritative `RulesSession` for each game. Run the structural smoke:
+On Windows the trusted mode runs both sides as versioned external Agent
+processes: the current working tree is compared with the frozen 0.8.0 commit
+`d4f20ee9775b7e8c80a1994e5c9aa5f1e11c9864`. Native workers own both Agent
+processes and the single authoritative `RulesSession` for each game. Run the
+cross-version structural smoke:
 
 ```powershell
 .\tools\run_challenge_arena.ps1 -Preset smoke -Workers 8
 ```
 
-The command writes per-game JSONL, failure-only traces, paired bootstrap
-statistics, performance splits, gate decisions, and a reproducibility manifest
-under `build/challenge-arena/<preset>`. See
+The command incrementally rebuilds and verifies the binding and both Agents,
+then writes checksummed resumable shards, per-game JSONL, failure-only traces,
+paired bootstrap statistics, performance splits, explicit gate status, and a
+reproducibility manifest under `build/challenge-arena/<preset>`. See
 [`docs/native_challenge_arena.md`](docs/native_challenge_arena.md) for presets,
 agent specifications, fairness constraints, and promotion criteria.

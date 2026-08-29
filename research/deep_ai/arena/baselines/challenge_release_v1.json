@@ -1,7 +1,10 @@
 {
+  "schema": "ptcg.challenge_arena.agent/2",
   "agent_id": "challenge_release_v1",
   "build_id": "product-0.8.0",
-  "strategies_path": "godot/data/ai_strategies.json",
+  "backend": "external_process",
+  "git_ref": "d4f20ee9775b7e8c80a1994e5c9aa5f1e11c9864",
+  "strategies_ref_path": "godot/data/ai_strategies.json",
   "evaluation_options": {
     "engine": "turn_beam_v2",
     "node_budget": 192,

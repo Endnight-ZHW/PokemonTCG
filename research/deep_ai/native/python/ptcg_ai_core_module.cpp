@@ -635,6 +635,26 @@ ChallengeArenaAgentSpec challenge_arena_agent_from_python(
     result.agent_id = py::cast<std::string>(source["agent_id"]);
     result.build_id = source.contains("build_id")
         ? py::cast<std::string>(source["build_id"]) : std::string{};
+    result.backend = source.contains("backend")
+        ? py::cast<std::string>(source["backend"]) : "in_process";
+    result.implementation_hash = source.contains("implementation_hash")
+        ? py::cast<std::string>(source["implementation_hash"])
+        : std::string{};
+    result.strategy_hash = source.contains("strategy_hash")
+        ? py::cast<std::string>(source["strategy_hash"])
+        : std::string{};
+    result.executable_path = source.contains("executable_path")
+        ? py::cast<std::string>(source["executable_path"]) : std::string{};
+    result.process_config_path = source.contains("process_config_path")
+        ? py::cast<std::string>(source["process_config_path"])
+        : std::string{};
+    result.process_log_directory = source.contains("process_log_directory")
+        ? py::cast<std::string>(source["process_log_directory"])
+        : std::string{};
+    result.decision_timeout_milliseconds = source.contains(
+        "decision_timeout_milliseconds")
+        ? py::cast<std::uint32_t>(source["decision_timeout_milliseconds"])
+        : 120000;
     result.strategies = value_from_python(source["strategies"]);
     result.evaluation_options = source.contains("evaluation_options")
         ? value_from_python(source["evaluation_options"])
@@ -720,6 +740,12 @@ py::dict challenge_arena_game_to_python(
         source.candidate_planner_samples_us;
     result["baseline_planner_samples_us"] =
         source.baseline_planner_samples_us;
+    result["candidate_action_decisions"] = source.candidate_action_decisions;
+    result["baseline_action_decisions"] = source.baseline_action_decisions;
+    result["candidate_choice_decisions"] = source.candidate_choice_decisions;
+    result["baseline_choice_decisions"] = source.baseline_choice_decisions;
+    result["candidate_search_decisions"] = source.candidate_search_decisions;
+    result["baseline_search_decisions"] = source.baseline_search_decisions;
     result["candidate_forced_tactics"] = source.candidate_forced_tactics;
     result["baseline_forced_tactics"] = source.baseline_forced_tactics;
     result["candidate_plan_cache_hits"] = source.candidate_plan_cache_hits;
@@ -1141,6 +1167,14 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
             py::gil_scoped_release release;
             pool.wait();
         })
+        .def(
+            "wait_for",
+            [](NativeChallengeArenaPool &pool, std::uint32_t timeout_milliseconds) {
+                py::gil_scoped_release release;
+                return pool.wait_for(timeout_milliseconds);
+            },
+            py::arg("timeout_milliseconds")
+        )
         .def("drain_games", [](NativeChallengeArenaPool &pool) {
             py::list result;
             for (const ChallengeArenaGameResult &game : pool.drain_games()) {
@@ -1711,6 +1745,13 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
             "view_for",
             [](const RulesSession &session, std::int32_t viewer) {
                 return value_to_python(session.view_for(viewer));
+            },
+            py::arg("viewer")
+        )
+        .def(
+            "ai_observation_for",
+            [](const RulesSession &session, std::int32_t viewer) {
+                return value_to_python(session.ai_observation_for(viewer));
             },
             py::arg("viewer")
         )

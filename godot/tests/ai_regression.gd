@@ -181,8 +181,13 @@ func _new_choice_policy_contract_failures(
 	# native Challenge AI and the deterministic opponent must respect the
 	# one-per-category contract instead of blindly filling max_select.
 	var arven_options: Array[Dictionary] = []
+	var arven_card_ids: Array[String] = [
+		"sv1-150",
+		"sv1-153",
+		"sv2-catch",
+	]
 	for index in range(3):
-		var card_id := ["sv1-150", "sv1-153", "sv2-catch"][index]
+		var card_id: String = arven_card_ids[index]
 		arven_options.append({
 			"option_id": "option:%d" % index,
 			"label": card_id,

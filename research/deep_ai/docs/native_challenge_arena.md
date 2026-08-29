@@ -1,134 +1,104 @@
 # Native Challenge Arena
 
-Native Challenge Arena is the research-only, callback-free match pool for
-Challenge AI evaluation. Each native worker owns one candidate
-`ChallengeController`, one baseline `ChallengeController`, and creates one
-authoritative `RulesSession` per game. Python submits the complete task list
-once, waits once, and only performs aggregation and report generation.
+Native Challenge Arena 是研究与晋升专用的全原生、无界面对局池。权威规则状态始终位于 Arena Host 的 C++ `RulesSession`；Python 只提交批次、持续排空结果并生成可恢复报告，不参与逐决策。
 
-The Arena is not linked into `challenge_core` or the game export. Its source is
-compiled only by the research pybind build under `research/deep_ai/native`.
+默认 `release-bundle` 比较是：
 
-## Safety and fairness contract
+- candidate：当前 working tree 的 C++ 实现与当前 `ai_strategies.json`；
+- baseline：提交 `d4f20ee9775b7e8c80a1994e5c9aa5f1e11c9864`（产品 0.8.0）的 C++ 实现与该提交中冻结的策略。
 
-- The formal match state exists only in the Arena host's `RulesSession`.
-- AI observations are derived exclusively from `RulesSession::view_for(actor)`.
-  The Arena converts its compact `your/opponent` shape to the existing public AI
-  DTO by restoring hidden-zone cardinalities, never hidden identities.
-- The candidate and baseline use identical fixed evaluation options and one
-  inner search worker. Parallelism is across games.
-- Turn order is forced by each task. Every ordered matchup uses all four
-  candidate-seat/first-player closures.
-- An AI Action is matched uniquely against the current authoritative candidates.
-  The Arena uses all semantic Action v4 fields (including source indices) and
-  ignores only the host-owned `action_id`. The host then supplies a new
-  `action_id` and submits the matched Action through `apply_action()`.
-- Choice responses are checked for request ID, cardinality, membership,
-  duplicates, and cancellation before `apply_choice()` validates them again.
-- Controller violations are adjudicated as a loss and fail structural gates.
-  Rules failures are excluded from strength statistics and fail the run.
-- Decision seeds depend on game seed, authoritative revision, actor, and
-  decision kind, not agent identity or worker scheduling.
+## 后端与公平性契约
 
-## Build and run
+可信 nightly/release 比较在 Windows 上同时为双方启动 `ExternalProcessAgent`。每个 Arena worker 长期持有 candidate/baseline 各一个隐藏 Win32 子进程，双方承担相同 JSONL IPC 成本。协议为 `ptcg.challenge_agent.ipc/1`，支持 handshake、reset、decide、cancel、contract 与 shutdown；stdout 仅承载协议，stderr 单独落盘。
 
-From the repository root:
+`same-binary-strategy` 保留为快速结构诊断模式，双方使用当前进程中的 `InProcessCurrentAgent`。首版非 Windows 环境只支持此诊断模式；跨版本与 promotion 会快速失败。
+
+其他固定约束：
+
+- Arena 和 Godot 正式对局都从 `RulesSession::ai_observation_for(actor)` 取得 AI observation；`view_for()` 仍是兼容的紧凑网络视图。
+- 对局内玩家名固定为 `Arena-Seat-0/1`。`agent_id`、`build_id` 只进入结果和 manifest，不参与随机种子或语义哈希。
+- 双方使用完全相同的 `fixed_contract` evaluation options，内层 search worker 固定为 1；并行只发生在对局之间。
+- 每个有序牌组对覆盖 candidate seat 与 first-player 的四种组合。无序牌组对、replicate 和 base seed 通过稳定 SHA-256 派生 pair seed；A-vs-B 与 B-vs-A 共享该 seed。
+- Action 按 Action v4 语义字段匹配，Choice 检查 request ID、数量、成员关系、重复项与取消状态。Agent 超时、退出或非法响应会标记违规方、保留 failure trace 并使结构门禁失败。
+- 双方配置同时失败属于基础设施失败；只有单方配置或运行失败才判该 Agent 负。
+- 截断局设置 `strength_eligible=false`，不进入胜率或 bootstrap，也不会被裁定为和局。
+
+## 构建与运行
+
+在仓库根目录运行：
 
 ```powershell
-.\research\deep_ai\tools\build_native_binding.ps1
-
 .\research\deep_ai\tools\run_challenge_arena.ps1 `
     -Preset smoke `
-    -Candidate challenge_next `
-    -Baseline challenge_release_v1 `
+    -Workers 4 `
+    -Output build\challenge-arena\smoke
+```
+
+PowerShell 入口每次先增量构建 pybind，然后构建/复用当前 Agent 与冻结基线 Agent。基线在 detached 临时 worktree 中完整构建，产物缓存成功后安全移除 worktree。Python 直接运行时会校验 pybind sidecar 的实际路径、SHA-256 与当前构建输入哈希，拒绝过期 `.pyd`。
+
+sidecar 与 Arena manifest v2 记录：实际二进制路径、SHA-256、UTC mtime、编译器、rules/Challenge/Agent driver/Arena 输入哈希、完整 Git commit 与 dirty 状态，以及冻结策略 SHA-256。
+
+可选比较模式：
+
+```powershell
+# 默认：当前实现/策略 vs 0.8.0 实现/策略
+-ComparisonMode release-bundle
+
+# 双方使用 candidate 策略，只隔离 C++ 实现差异
+-ComparisonMode implementation-only
+
+# 当前同二进制策略诊断；不具备跨版本晋升证据效力
+-ComparisonMode same-binary-strategy
+```
+
+实现、策略与 evaluation options 全部相同时默认报 `arena_agents_are_identical`。只有明确的校准或 CI 自博弈才应使用 `-AllowSelfPlay`：
+
+```powershell
+.\research\deep_ai\tools\run_challenge_arena.ps1 `
+    -Preset calibration `
+    -AllowSelfPlay `
     -Workers 8
 ```
 
-The longer nightly command is:
+calibration 会为双方构建相同的当前 external Agent，默认运行 20 replicates，并输出 null distribution 供阈值审计。
 
-```powershell
-.\research\deep_ai\tools\run_challenge_arena.ps1 `
-    -Preset nightly `
-    -Candidate challenge_next `
-    -Baseline challenge_release_v1 `
-    -Workers 16 `
-    -Output build\challenge-arena\nightly
-```
+## Preset 与顺序门禁
 
-`focused` accepts one or more `-CandidateDeck` and `-BaselineDeck` values.
-`-TraceAll` includes public decision DTOs and controller results for every step;
-without it, full traces are retained only for failures and truncations.
-
-## Presets
-
-| Preset | Ordered matchup workload | Default gate |
+| Preset | 工作量/预算 | 判定 |
 |---|---:|---|
-| `smoke` | 4 matchups × 4 closures = 16 games | structural |
-| `pr` | 20 matchups × 4 closures × 2 seeds = 160 games | regression |
-| `nightly` | 100 matchups × 4 closures × 2 seeds = 800 games | regression |
-| `release` | 100 matchups × 4 closures × 5 seeds = 2000 games | promotion |
-| `focused` | selected candidate decks × baseline decks × 4 closures | none |
+| `smoke` | 4 matchups × 4 closures = 16 局 | 仅结构验证（并要求无超限截断） |
+| `pr` | 20 matchups × 4 closures × 2 replicates = 160 局 | 结构/确定性/延迟；score rate < 0.40 失败 |
+| `nightly` | 完整矩阵；5–30 replicates | 顺序 regression |
+| `release` | 完整矩阵；10–50 replicates | 顺序 promotion |
+| `calibration` | 相同 external Agent；默认 20 replicates | 结构与 null distribution |
+| `focused` | 指定 candidate/baseline decks | 诊断 |
 
-For different-deck full-matrix comparisons, both deck ownership directions are
-in the same bootstrap block, producing eight games per unordered deck pair and
-seed. Mirror-deck blocks contain four games.
+nightly/release 每完成一个 replicate 做一次预声明检查。paired-block bootstrap 保留四/八局闭包，Bonferroni alpha spending 使整个顺序过程保持 family-wise 95%：
 
-## Agent specifications
+- nightly pass：CI 下界 > 0.48；fail：CI 上界 < 0.48；用尽预算仍未命中则 `inconclusive`。
+- release pass：point estimate ≥ 0.53 且 CI 下界 > 0.50；明显低于 0.50 可提前 fail；用尽预算仍未命中则 `inconclusive`。
+- release 还要求零截断、candidate 每个达到 200 局的 deck 不低于 0.45，且 candidate P95 ≤ baseline P95 × 1.15。
+- 非 release 的截断率上限为 0.1%；release 必须为零。
 
-An identifier resolves to
-`research/deep_ai/arena/baselines/<identifier>.json` when present. Otherwise it
-is treated as an agent label using the product strategy catalog. A specification
-can select another strategy catalog:
+CLI 状态与退出码为：`pass=0`、`fail=3`、`inconclusive=4`、`infrastructure_fail=5`。
 
-```json
-{
-  "agent_id": "challenge_release_v1",
-  "build_id": "product-0.8.0",
-  "strategies_path": "godot/data/ai_strategies.json",
-  "evaluation_options": {
-    "engine": "turn_beam_v2",
-    "node_budget": 192,
-    "belief_samples": 3
-  }
-}
-```
+## 持久化与恢复
 
-Candidate and baseline evaluation options must be byte-equivalent after preset
-normalization. This first version implements the product `fixed_contract` mode;
-`node_budget` controls mandatory tactics while the main beam search retains its
-product configuration. It must not be described as a strict equal-node test.
+输出目录使用独占 `.arena.lock` 与完整 run fingerprint。fingerprint 完全一致时默认自动续跑；Agent、策略、二进制、任务矩阵、worker 数、统计配置或报告阈值不同都会立即报错。已完成运行直接复用报告。
 
-## Reports and gates
+每次 drain 生成带 SHA-256 的 immutable shard。写入流程是临时文件、flush、fsync、`os.replace`；恢复时验证 shard checksum、唯一 task ID、任务矩阵与 fingerprint，跳过已完成任务。四份最终报告也原子发布：
 
-Each output directory contains:
+- `arena-games.jsonl`：按 task ID 排序的完整结果；
+- `arena-failures.jsonl`：结构/基础设施失败与截断；
+- `arena-summary.json`：胜负、paired CI、拆分指标、延迟、搜索指标和明确 gate status；
+- `arena-manifest.json`：构建、Git、内容、搜索契约、任务与结果证据。
 
-- `arena-games.jsonl`: one result per game, sorted by task ID;
-- `arena-failures.jsonl`: structural failures, infrastructure failures, and
-  truncations;
-- `arena-summary.json`: record, paired bootstrap confidence interval,
-  deck/matchup/seat/turn-order splits, latency, nodes, and gates;
-- `arena-manifest.json`: agents, builds, Git state, content hashes, fixed search
-  contract, hardware, task hash, semantic result hash, and archival full hash.
+action、choice、search、forced 与 cache decision count 分开报告；深度、reply depth 和 belief samples 只以 `search_decision_count` 为分母。
 
-Regression gate defaults:
-
-- zero invalid Actions, illegal Choices, controller failures, and rule failures;
-- truncation rate at or below 1%;
-- paired 95% score-delta lower bound above -0.02;
-- candidate decision P95 no more than 1.15 times baseline P95.
-
-Promotion additionally requires score rate at least 0.53, paired CI lower bound
-above 0.50, and no sufficiently sampled candidate deck below 0.45.
-
-## Verification
+## 验证
 
 ```powershell
-$env:PYTHONPATH = "$PWD\research\deep_ai\python"
-.\.tools\python311\python.exe -B -m unittest `
-    research.deep_ai.tests.test_challenge_arena_tasks `
-    research.deep_ai.tests.test_challenge_arena_stats `
-    research.deep_ai.tests.test_challenge_arena_determinism -v
+.\research\deep_ai\tools\test_research_smoke.ps1
 ```
 
-The determinism test runs the same native task list with one and four outer
-workers and compares the sorted semantic result hashes.
+普通 push/PR 的 Windows workflow 还会构建当前与 0.8.0 external Agent、运行全部 Arena 测试、执行 4-worker structural smoke，并上传报告。

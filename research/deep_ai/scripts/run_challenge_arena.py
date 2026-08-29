@@ -31,11 +31,19 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--preset",
-        choices=("smoke", "pr", "nightly", "release", "focused"),
+        choices=("smoke", "pr", "nightly", "release", "calibration", "focused"),
         default="smoke",
     )
     parser.add_argument("--candidate", default="challenge_next")
     parser.add_argument("--baseline", default="challenge_release_v1")
+    parser.add_argument("--candidate-build-manifest", type=Path)
+    parser.add_argument("--baseline-build-manifest", type=Path)
+    parser.add_argument(
+        "--comparison-mode",
+        choices=("release-bundle", "implementation-only", "same-binary-strategy"),
+        default="release-bundle",
+    )
+    parser.add_argument("--allow-self-play", action="store_true")
     parser.add_argument(
         "--workers",
         type=int,
@@ -48,7 +56,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--baseline-deck", action="append", default=[])
     parser.add_argument("--trace-all", action="store_true")
     parser.add_argument("--bootstrap-samples", type=int, default=2000)
-    parser.add_argument("--truncated-rate-limit", type=float, default=0.01)
+    parser.add_argument("--truncated-rate-limit", type=float, default=0.001)
     parser.add_argument("--latency-ratio-limit", type=float, default=1.15)
     parser.add_argument("--max-candidate-p95-ms", type=float)
     parser.add_argument(
@@ -94,10 +102,12 @@ def main(argv: list[str] | None = None) -> int:
     candidate = load_agent_spec(
         args.candidate,
         product_strategies=product_strategies,
+        build_manifest=args.candidate_build_manifest,
     )
     baseline = load_agent_spec(
         args.baseline,
         product_strategies=product_strategies,
+        build_manifest=args.baseline_build_manifest,
     )
     output = args.output or Path("build") / "challenge-arena" / args.preset
     if not output.is_absolute():
@@ -118,10 +128,23 @@ def main(argv: list[str] | None = None) -> int:
         truncated_rate_limit=args.truncated_rate_limit,
         latency_ratio_limit=args.latency_ratio_limit,
         max_candidate_p95_ms=args.max_candidate_p95_ms,
+        allow_self_play=args.allow_self_play,
+        comparison_mode=args.comparison_mode,
     )
     summary = result["summary"]
     gate = _selected_gate(args.preset, args.gate)
-    passed = _gate_passed(summary, gate, args.truncated_rate_limit)
+    canonical_status = str(summary["arena"]["gate_status"])
+    if args.gate == "auto":
+        status = canonical_status
+    elif canonical_status == "infrastructure_fail":
+        status = "infrastructure_fail"
+    else:
+        status = (
+            "pass"
+            if _gate_passed(summary, gate, args.truncated_rate_limit)
+            else "fail"
+        )
+    passed = status == "pass"
     payload = {
         "schema": summary["schema"],
         "preset": args.preset,
@@ -133,11 +156,17 @@ def main(argv: list[str] | None = None) -> int:
         "structural_errors": summary["integrity"]["structural_errors"],
         "truncated_rate": summary["integrity"]["truncated_rate"],
         "gate": gate,
+        "status": status,
         "passed": passed,
         "output": str(output),
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
-    return 0 if passed else 3
+    return {
+        "pass": 0,
+        "fail": 3,
+        "inconclusive": 4,
+        "infrastructure_fail": 5,
+    }.get(status, 2)
 
 
 if __name__ == "__main__":

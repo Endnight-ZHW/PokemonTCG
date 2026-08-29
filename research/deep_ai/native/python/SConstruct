@@ -34,11 +34,17 @@ core_source_root = os.path.join(repository_root, "native", "ptcg_core", "src")
 challenge_source_root = os.path.join(
     repository_root, "native", "challenge_core", "src"
 )
+common_source_root = os.path.join(repository_root, "native", "common")
+json_source_root = os.path.join(
+    repository_root, ".tools", "native", "nlohmann-json", "include"
+)
 env.Append(
     CPPPATH=[
         "../src",
         core_source_root,
         challenge_source_root,
+        common_source_root,
+        json_source_root,
         sysconfig.get_paths()["include"],
         pybind11_root,
     ],
@@ -116,6 +122,7 @@ binding_sources = [
     "../src/ptcg_ai_core.cpp",
     "../src/ptcg_actor_v3.cpp",
     "../src/ptcg_challenge_arena.cpp",
+    "../src/ptcg_challenge_arena_agent.cpp",
     "../src/ptcg_determinizer.cpp",
     "../src/ptcg_encoder_v3.cpp",
     "../src/ptcg_infoset.cpp",

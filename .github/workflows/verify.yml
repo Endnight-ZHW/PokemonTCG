@@ -12,6 +12,83 @@ on:
   workflow_dispatch:
 
 jobs:
+  challenge-arena:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.CI_PYTHON_VERSION }}
+
+      - name: Install Arena build dependencies
+        shell: pwsh
+        run: python -m pip install "pybind11==2.13.6" "scons==4.10.1"
+
+      - name: Install pinned native headers
+        shell: pwsh
+        run: .\tools\setup_relay_deps.ps1
+
+      - name: Build and run the cross-version structural smoke
+        shell: pwsh
+        run: |
+          .\research\deep_ai\tools\run_challenge_arena.ps1 `
+            -Preset smoke `
+            -Workers 4 `
+            -AllowSelfPlay `
+            -Output build\challenge-arena\ci-smoke
+
+      - name: Verify cross-version evidence
+        shell: pwsh
+        run: |
+          $manifest = Get-Content `
+            build\challenge-arena\ci-smoke\arena-manifest.json `
+            -Raw | ConvertFrom-Json
+          $summary = Get-Content `
+            build\challenge-arena\ci-smoke\arena-summary.json `
+            -Raw | ConvertFrom-Json
+          if (
+            [string]$manifest.candidate.backend -ne 'external_process' -or
+            [string]$manifest.baseline.backend -ne 'external_process' -or
+            [string]$manifest.baseline.binary.git_ref -ne 'd4f20ee9775b7e8c80a1994e5c9aa5f1e11c9864' -or
+            [int]$summary.integrity.structural_errors -ne 0 -or
+            [int]$summary.integrity.truncated_games -ne 0
+          ) {
+            throw 'Native Challenge Arena smoke evidence is invalid.'
+          }
+
+      - name: Run all Native Challenge Arena tests
+        shell: pwsh
+        run: |
+          $env:PYTHONNOUSERSITE = '1'
+          $env:PYTHONPATH = @(
+            "$PWD\research\deep_ai\build\native",
+            "$PWD\research\deep_ai\python",
+            "$PWD\research\deep_ai"
+          ) -join [IO.Path]::PathSeparator
+          Push-Location research\deep_ai
+          python -B -m unittest -q `
+            tests.test_challenge_arena_tasks `
+            tests.test_challenge_arena_stats `
+            tests.test_challenge_arena_build `
+            tests.test_challenge_arena_store `
+            tests.test_challenge_arena_determinism `
+            tests.test_challenge_agent_protocol
+          $arenaTestExitCode = $LASTEXITCODE
+          Pop-Location
+          if ($arenaTestExitCode -ne 0) {
+            throw 'Native Challenge Arena tests failed.'
+          }
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: native-challenge-arena-smoke
+          path: build/challenge-arena/ci-smoke
+
   fast:
     runs-on: windows-latest
     timeout-minutes: 35

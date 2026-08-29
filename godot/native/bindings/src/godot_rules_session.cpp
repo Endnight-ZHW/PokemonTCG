@@ -110,6 +110,10 @@ void NativeRulesSession::_bind_methods() {
         D_METHOD("view_for", "viewer"),
         &NativeRulesSession::view_for
     );
+    ClassDB::bind_method(
+        D_METHOD("ai_observation_for", "viewer"),
+        &NativeRulesSession::ai_observation_for
+    );
     ClassDB::bind_method(D_METHOD("snapshot"), &NativeRulesSession::snapshot);
     ClassDB::bind_method(
         D_METHOD("restore", "snapshot", "rng_state"),
@@ -285,6 +289,15 @@ Dictionary NativeRulesSession::surrender(int64_t actor) {
 Dictionary NativeRulesSession::view_for(int64_t viewer) const {
     try {
         return dictionary_from_value(session_->view_for(
+            static_cast<std::int32_t>(viewer)));
+    } catch (...) {
+        return Dictionary();
+    }
+}
+
+Dictionary NativeRulesSession::ai_observation_for(int64_t viewer) const {
+    try {
+        return dictionary_from_value(session_->ai_observation_for(
             static_cast<std::int32_t>(viewer)));
     } catch (...) {
         return Dictionary();

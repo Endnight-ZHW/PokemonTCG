@@ -153,6 +153,12 @@ func view_for(viewer: int) -> Dictionary:
 	return native.view_for(viewer) if is_available() else {}
 
 
+func ai_observation_for(viewer: int) -> Dictionary:
+	return native.ai_observation_for(viewer) if (
+		is_available() and native.has_method("ai_observation_for")
+	) else {}
+
+
 func snapshot() -> Dictionary:
 	return native.snapshot() if is_available() else {}
 

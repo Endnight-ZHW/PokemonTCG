@@ -92,4 +92,35 @@ inline ptcg::ai::Value to_value(const nlohmann::json &source) {
     throw std::runtime_error("unsupported_json_value");
 }
 
+inline nlohmann::json from_value(const ptcg::ai::Value &source) {
+    using Type = ptcg::ai::Value::Type;
+    switch (source.type()) {
+        case Type::null_value:
+            return nullptr;
+        case Type::boolean:
+            return source.as_bool();
+        case Type::integer:
+            return source.as_integer();
+        case Type::number:
+            return source.as_number();
+        case Type::string:
+            return source.as_string();
+        case Type::array: {
+            nlohmann::json result = nlohmann::json::array();
+            for (const ptcg::ai::Value &entry : source.as_array()) {
+                result.push_back(from_value(entry));
+            }
+            return result;
+        }
+        case Type::object: {
+            nlohmann::json result = nlohmann::json::object();
+            for (const auto &[key, entry] : source.as_object()) {
+                result[key] = from_value(entry);
+            }
+            return result;
+        }
+    }
+    throw std::runtime_error("unsupported_value_type");
+}
+
 } // namespace ptcg::json_adapter

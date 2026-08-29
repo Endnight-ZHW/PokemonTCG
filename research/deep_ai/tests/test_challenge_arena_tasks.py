@@ -7,6 +7,8 @@ from deep_ai.challenge_arena import (
     SEAT_FIRST_PLAYER_CLOSURES,
     ArenaAgentSpec,
     generate_tasks,
+    pair_game_seed,
+    validate_agent_identity,
     validate_equal_search_contract,
 )
 
@@ -15,8 +17,9 @@ class ChallengeArenaTaskTests(unittest.TestCase):
     def test_preset_task_counts(self) -> None:
         self.assertEqual(len(generate_tasks("smoke")), 16)
         self.assertEqual(len(generate_tasks("pr")), 160)
-        self.assertEqual(len(generate_tasks("nightly")), 800)
-        self.assertEqual(len(generate_tasks("release")), 2000)
+        self.assertEqual(len(generate_tasks("nightly")), 12000)
+        self.assertEqual(len(generate_tasks("release")), 20000)
+        self.assertEqual(len(generate_tasks("calibration")), 8000)
         self.assertEqual(
             len(generate_tasks(
                 "focused",
@@ -67,6 +70,20 @@ class ChallengeArenaTaskTests(unittest.TestCase):
             for closures in grouped.values()
         ))
 
+    def test_pair_seed_is_direction_symmetric_and_pair_specific(self) -> None:
+        self.assertEqual(
+            pair_game_seed(17, "fire", "water", 3),
+            pair_game_seed(17, "water", "fire", 3),
+        )
+        self.assertNotEqual(
+            pair_game_seed(17, "fire", "water", 3),
+            pair_game_seed(17, "fire", "grass", 3),
+        )
+        self.assertNotEqual(
+            pair_game_seed(17, "fire", "water", 3),
+            pair_game_seed(17, "fire", "water", 4),
+        )
+
     def test_fixed_search_contract_must_match(self) -> None:
         strategies = {"schema": "test"}
         candidate = ArenaAgentSpec(
@@ -77,6 +94,20 @@ class ChallengeArenaTaskTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "search_contract_mismatch"):
             validate_equal_search_contract(candidate, baseline)
+
+    def test_identical_agents_require_explicit_self_play(self) -> None:
+        strategies = {"schema": "test"}
+        first = ArenaAgentSpec(
+            "first", "a", strategies, {"belief_samples": 1},
+            implementation_hash="same",
+        )
+        second = ArenaAgentSpec(
+            "second", "b", strategies, {"belief_samples": 1},
+            implementation_hash="same",
+        )
+        with self.assertRaisesRegex(ValueError, "arena_agents_are_identical"):
+            validate_agent_identity(first, second, allow_self_play=False)
+        validate_agent_identity(first, second, allow_self_play=True)
 
 
 if __name__ == "__main__":

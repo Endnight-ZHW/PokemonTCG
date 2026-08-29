@@ -7,7 +7,7 @@ from collections import defaultdict
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 
-SUMMARY_SCHEMA = "ptcg.challenge_arena.summary/1"
+SUMMARY_SCHEMA = "ptcg.challenge_arena.summary/2"
 
 
 def _score(game: Mapping[str, Any]) -> float:
@@ -73,6 +73,7 @@ def paired_bootstrap_interval(
     *,
     seed: int = 20260829,
     samples: int = 2000,
+    alpha: float = 0.05,
 ) -> dict[str, Any]:
     """Bootstrap complete matchup/seed blocks, retaining 4/8-game weights."""
     rows = _strength_rows(games)
@@ -95,6 +96,7 @@ def paired_bootstrap_interval(
             "method": "paired_block_bootstrap",
             "seed": int(seed),
             "samples": int(samples),
+            "alpha": float(alpha),
             "blocks": 0,
             "score_rate": None,
             "score_delta": None,
@@ -113,17 +115,36 @@ def paired_bootstrap_interval(
             sum(total for total, _ in sampled)
             / sum(count for _, count in sampled)
         )
-    lower = _percentile(draws, 0.025)
-    upper = _percentile(draws, 0.975)
+    bounded_alpha = max(1e-6, min(0.5, float(alpha)))
+    lower = _percentile(draws, bounded_alpha / 2.0)
+    upper = _percentile(draws, 1.0 - bounded_alpha / 2.0)
+    mean = sum(draws) / len(draws)
+    variance = sum((value - mean) ** 2 for value in draws) / len(draws)
     return {
         "method": "paired_block_bootstrap",
         "seed": int(seed),
         "samples": iterations,
+        "alpha": bounded_alpha,
         "blocks": len(block_values),
         "score_rate": point,
         "score_delta": point - 0.5,
         "score_rate_ci95": [lower, upper],
         "score_delta_ci95": [lower - 0.5, upper - 0.5],
+        "bootstrap_distribution": {
+            "mean": mean,
+            "standard_deviation": math.sqrt(variance),
+            "minimum": min(draws),
+            "maximum": max(draws),
+            "quantiles": {
+                "p01": _percentile(draws, 0.01),
+                "p05": _percentile(draws, 0.05),
+                "p25": _percentile(draws, 0.25),
+                "p50": _percentile(draws, 0.50),
+                "p75": _percentile(draws, 0.75),
+                "p95": _percentile(draws, 0.95),
+                "p99": _percentile(draws, 0.99),
+            },
+        },
     }
 
 
@@ -142,6 +163,15 @@ def _agent_performance(
         for sample in row.get(f"{prefix}_planner_samples_us", [])
     ]
     decisions = len(decision_samples)
+    action_decisions = sum(
+        int(row.get(f"{prefix}_action_decisions", 0)) for row in games
+    )
+    choice_decisions = sum(
+        int(row.get(f"{prefix}_choice_decisions", 0)) for row in games
+    )
+    search_decisions = sum(
+        int(row.get(f"{prefix}_search_decisions", 0)) for row in games
+    )
     decision_us = sum(
         int(row.get(f"{prefix}_decision_us", 0)) for row in games
     )
@@ -158,6 +188,11 @@ def _agent_performance(
 
     return {
         "decision_count": decisions,
+        "action_decision_count": action_decisions,
+        "choice_decision_count": choice_decisions,
+        "search_decision_count": search_decisions,
+        "forced_decision_count": forced,
+        "cache_decision_count": cache_hits,
         "decision_us_total": decision_us,
         "decision_ms_p50": milliseconds(decision_samples, 0.50),
         "decision_ms_p95": milliseconds(decision_samples, 0.95),
@@ -170,24 +205,28 @@ def _agent_performance(
         "nodes_per_second": (
             nodes * 1_000_000.0 / decision_us if decision_us else 0.0
         ),
-        "mandatory_tactic_rate": forced / decisions if decisions else 0.0,
-        "plan_cache_hit_rate": cache_hits / decisions if decisions else 0.0,
+        "mandatory_tactic_rate": (
+            forced / action_decisions if action_decisions else 0.0
+        ),
+        "plan_cache_hit_rate": (
+            cache_hits / action_decisions if action_decisions else 0.0
+        ),
         "average_completed_depth": (
             sum(int(row.get(f"{prefix}_completed_depth", 0)) for row in games)
-            / decisions
-            if decisions
+            / search_decisions
+            if search_decisions
             else 0.0
         ),
         "average_reply_depth": (
             sum(int(row.get(f"{prefix}_reply_depth", 0)) for row in games)
-            / decisions
-            if decisions
+            / search_decisions
+            if search_decisions
             else 0.0
         ),
         "average_belief_samples": (
             sum(int(row.get(f"{prefix}_belief_samples", 0)) for row in games)
-            / decisions
-            if decisions
+            / search_decisions
+            if search_decisions
             else 0.0
         ),
     }
@@ -271,9 +310,10 @@ def summarize_games(
     *,
     bootstrap_seed: int = 20260829,
     bootstrap_samples: int = 2000,
-    truncated_rate_limit: float = 0.01,
+    confidence_alpha: float = 0.05,
+    truncated_rate_limit: float = 0.001,
     latency_ratio_limit: float = 1.15,
-    min_deck_games: int = 20,
+    min_deck_games: int = 200,
     max_candidate_p95_ms: float | None = None,
     native_metrics: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -283,6 +323,7 @@ def summarize_games(
         strength,
         seed=bootstrap_seed,
         samples=bootstrap_samples,
+        alpha=confidence_alpha,
     )
     counts = {
         "invalid_actions": sum(int(row.get("invalid_actions", 0)) for row in rows),
@@ -383,3 +424,86 @@ def summarize_games(
         "gates": gates,
         "native_metrics": dict(native_metrics or {}),
     }
+
+
+def gate_status(
+    summary: Mapping[str, Any],
+    *,
+    preset: str,
+    look: int = 1,
+    maximum_looks: int = 1,
+    final_look: bool = True,
+) -> str:
+    integrity = summary["integrity"]
+    if int(integrity.get("rule_exceptions", 0)) > 0 or int(
+        integrity.get("unclassified_failures", 0)
+    ) > 0:
+        return "infrastructure_fail"
+    if int(integrity.get("structural_errors", 0)) > 0:
+        return "fail"
+    truncated = int(integrity.get("truncated_games", 0))
+    truncated_rate = float(integrity.get("truncated_rate", 0.0))
+    truncated_rate_limit = float(
+        summary.get("gates", {}).get("configuration", {}).get(
+            "truncated_rate_limit", 0.001
+        )
+    )
+    if preset == "release" and truncated > 0:
+        return "fail"
+    if preset != "release" and truncated_rate > truncated_rate_limit:
+        return "fail"
+    if preset in {"smoke", "focused"}:
+        return "pass"
+    if preset == "calibration":
+        score_interval = summary["paired_statistics"].get(
+            "score_rate_ci95", [None, None]
+        )
+        score_lower, score_upper = score_interval
+        return (
+            "pass"
+            if score_lower is not None and score_upper is not None
+            and float(score_lower) <= 0.5 <= float(score_upper)
+            else "fail"
+        )
+    performance_ok = bool(
+        summary["gates"]["regression"]["checks"].get(
+            "candidate_p95_within_ratio", False
+        )
+    ) and bool(
+        summary["gates"]["regression"]["checks"].get(
+            "candidate_p95_within_budget", False
+        )
+    )
+    if not performance_ok:
+        return "fail"
+    if not bool(summary.get("native_metrics", {}).get("deterministic", True)):
+        return "fail"
+    score_rate = summary["paired_statistics"].get("score_rate")
+    interval = summary["paired_statistics"].get("score_rate_ci95", [None, None])
+    lower, upper = interval
+    if preset == "pr":
+        return "pass" if score_rate is not None and float(score_rate) >= 0.40 else "fail"
+    if preset == "nightly":
+        if lower is not None and float(lower) > 0.48:
+            return "pass"
+        if upper is not None and float(upper) < 0.48:
+            return "fail"
+        return "inconclusive" if final_look or look >= maximum_looks else "continue"
+    if preset == "release":
+        deck_ok = bool(
+            summary["gates"]["promotion"]["checks"].get(
+                "no_candidate_deck_severe_regression", False
+            )
+        )
+        if (
+            score_rate is not None
+            and float(score_rate) >= 0.53
+            and lower is not None
+            and float(lower) > 0.50
+            and deck_ok
+        ):
+            return "pass"
+        if upper is not None and float(upper) < 0.50:
+            return "fail"
+        return "inconclusive" if final_look or look >= maximum_looks else "continue"
+    raise ValueError(f"unknown_challenge_arena_preset:{preset}")

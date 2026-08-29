@@ -16,6 +16,13 @@ $env:PYTHONPATH = @(
     (Join-Path $researchRoot 'python'),
     $researchRoot
 ) -join [IO.Path]::PathSeparator
-& $Python -B -m unittest -q tests.test_research_smoke
+& $Python -B -m unittest -q `
+    tests.test_research_smoke `
+    tests.test_challenge_arena_tasks `
+    tests.test_challenge_arena_stats `
+    tests.test_challenge_arena_build `
+    tests.test_challenge_arena_store `
+    tests.test_challenge_arena_determinism `
+    tests.test_challenge_agent_protocol
 if ($LASTEXITCODE -ne 0) { throw 'Deep AI manual smoke workflow failed.' }
 Write-Host 'DEEP_AI_RESEARCH_SMOKE_OK'

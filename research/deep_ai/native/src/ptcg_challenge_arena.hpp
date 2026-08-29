@@ -6,6 +6,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -16,9 +17,33 @@ namespace ptcg::ai {
 struct ChallengeArenaAgentSpec {
     std::string agent_id;
     std::string build_id;
+    std::string backend = "in_process";
+    std::string implementation_hash;
+    std::string strategy_hash;
+    std::string executable_path;
+    std::string process_config_path;
+    std::string process_log_directory;
+    std::uint32_t decision_timeout_milliseconds = 120000;
     Value strategies = Value::make_object();
     Value evaluation_options = Value::make_object();
 };
+
+class ChallengeArenaAgent {
+public:
+    virtual ~ChallengeArenaAgent() = default;
+    virtual bool ready() const noexcept = 0;
+    virtual std::string configuration_error() const = 0;
+    virtual Value decide(const Value &request, std::int64_t generation) = 0;
+    virtual Value reset_match(const std::string &match_id) = 0;
+    virtual void cancel(std::int64_t generation) noexcept = 0;
+    virtual Value contract() const = 0;
+};
+
+std::unique_ptr<ChallengeArenaAgent> make_challenge_arena_agent(
+    const ChallengeArenaAgentSpec &spec,
+    const Value &catalog,
+    const Value &decks
+);
 
 struct ChallengeArenaTask {
     std::string task_id;
@@ -72,6 +97,12 @@ struct ChallengeArenaGameResult {
     std::vector<std::uint64_t> candidate_planner_samples_us;
     std::vector<std::uint64_t> baseline_planner_samples_us;
 
+    std::uint32_t candidate_action_decisions = 0;
+    std::uint32_t baseline_action_decisions = 0;
+    std::uint32_t candidate_choice_decisions = 0;
+    std::uint32_t baseline_choice_decisions = 0;
+    std::uint32_t candidate_search_decisions = 0;
+    std::uint32_t baseline_search_decisions = 0;
     std::uint32_t candidate_forced_tactics = 0;
     std::uint32_t baseline_forced_tactics = 0;
     std::uint32_t candidate_plan_cache_hits = 0;
@@ -115,6 +146,7 @@ public:
     void resume() noexcept;
     void cancel() noexcept;
     void wait();
+    bool wait_for(std::uint32_t timeout_milliseconds);
     bool running() const noexcept;
     bool finished() const noexcept;
     std::vector<ChallengeArenaGameResult> drain_games();
@@ -124,8 +156,8 @@ private:
     void worker();
     ChallengeArenaGameResult run_game(
         const ChallengeArenaTask &task,
-        ChallengeController &candidate,
-        ChallengeController &baseline
+        ChallengeArenaAgent &candidate,
+        ChallengeArenaAgent &baseline
     );
     void wait_if_paused();
 
@@ -143,10 +175,13 @@ private:
     std::atomic<bool> cancelled_{false};
     mutable std::mutex pause_mutex_;
     std::condition_variable pause_ready_;
+    mutable std::mutex completion_mutex_;
+    std::condition_variable completion_ready_;
+    std::atomic<std::size_t> active_workers_{0};
     mutable std::mutex results_mutex_;
     std::vector<ChallengeArenaGameResult> results_;
     mutable std::mutex controllers_mutex_;
-    std::vector<ChallengeController *> active_controllers_;
+    std::vector<ChallengeArenaAgent *> active_agents_;
 
     std::atomic<std::uint64_t> completed_games_{0};
     std::atomic<std::uint64_t> failed_games_{0};

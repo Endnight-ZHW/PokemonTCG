@@ -1,6 +1,5 @@
 extends Control
 
-const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
 const ChoiceSelectionModelScript = preload(
 	"res://scenes/main/choice_selection_model.gd"
 )
@@ -2680,7 +2679,7 @@ func _schedule_ai_choice(request: ChoiceView) -> void:
 	_refresh_game()
 
 func _ai_state_snapshot(player_idx: int) -> Dictionary:
-	return RuntimeStateProjection.project(state, player_idx)
+	return native_rules.ai_observation_for(player_idx) if native_rules != null else {}
 
 func _apply_ai_result(result: Dictionary) -> void:
 	ai_thinking = false

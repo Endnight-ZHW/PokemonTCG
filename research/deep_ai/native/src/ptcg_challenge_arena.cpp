@@ -133,63 +133,6 @@ Value deck_value(const std::vector<std::string> &cards) {
     return Value(std::move(result));
 }
 
-Value hidden_cards(std::int64_t count, const char *marker) {
-    const std::size_t size = static_cast<std::size_t>(std::max<std::int64_t>(
-        0, count));
-    return Value(Array(size, Value(marker)));
-}
-
-void remove_hidden_setup_identity(Value &pokemon) {
-    if (pokemon.is_object() && bool_field(pokemon, "hidden")) pokemon = Value();
-}
-
-Value runtime_player_from_view(const Value &source) {
-    if (!source.is_object()) return Value::make_object();
-    Value result = source.deep_clone();
-    const std::int64_t hand_count = integer_field(result, "hand_count", 0);
-    const std::int64_t deck_count = integer_field(result, "deck_count", 0);
-    const std::int64_t prize_count = integer_field(result, "prize_count", 0);
-    if (field(result, "hand") == nullptr) {
-        result["hand"] = hidden_cards(hand_count, "__hidden_card__");
-    }
-    result["deck"] = hidden_cards(deck_count, "__hidden_card__");
-    result["prizes"] = hidden_cards(prize_count, "__hidden_prize__");
-    result.erase("hand_count");
-    result.erase("deck_count");
-    result.erase("prize_count");
-    Value *active = result.find("active");
-    if (active != nullptr) remove_hidden_setup_identity(*active);
-    Value *bench = result.find("bench");
-    if (bench != nullptr && bench->is_array()) {
-        for (Value &pokemon : bench->as_array()) {
-            remove_hidden_setup_identity(pokemon);
-        }
-    }
-    return result;
-}
-
-// ChallengeController consumes the product AI wire shape. RulesSession's
-// public projection deliberately uses a smaller your/opponent shape, so this
-// adapter restores only array cardinalities and seat order. No authoritative
-// Snapshot field is consulted here.
-Value challenge_observation(const RulesSession &session, std::int32_t actor) {
-    Value view = session.view_for(actor);
-    const Value *your = field(view, "your");
-    const Value *opponent = field(view, "opponent");
-    if (!view.is_object() || your == nullptr || opponent == nullptr) {
-        throw std::runtime_error("challenge_arena_public_view_unavailable");
-    }
-    Array players(2);
-    players[static_cast<std::size_t>(actor)] = runtime_player_from_view(*your);
-    players[static_cast<std::size_t>(1 - actor)] =
-        runtime_player_from_view(*opponent);
-    view.erase("your");
-    view.erase("opponent");
-    view["players"] = Value(std::move(players));
-    view["ai_runtime_projection"] = Value("ai_public_state_v1");
-    return view;
-}
-
 Value forced_turn_order_response(
     const Value &pending,
     std::int32_t first_player
@@ -445,6 +388,10 @@ void add_agent_metrics(
         == "forced_tactic";
     const bool cache_hit = bool_field(decision, "turn_plan_cache_hit")
         || bool_field(decision, "native_turn_plan_cache_hit");
+    const bool action_decision = string_field(decision, "kind") == "action";
+    const bool choice_decision = string_field(decision, "kind") == "choice";
+    const bool search_decision = action_decision
+        && bool_field(decision, "search_depth_applicable");
     const std::uint64_t completed_depth = static_cast<std::uint64_t>(
         std::max<std::int64_t>(0, integer_field(decision, "completed_depth", 0)));
     const std::uint64_t reply_depth = static_cast<std::uint64_t>(
@@ -459,6 +406,9 @@ void add_agent_metrics(
         if (field(decision, "planner_ms") != nullptr) {
             summary.candidate_planner_samples_us.push_back(planner_us);
         }
+        summary.candidate_action_decisions += action_decision ? 1U : 0U;
+        summary.candidate_choice_decisions += choice_decision ? 1U : 0U;
+        summary.candidate_search_decisions += search_decision ? 1U : 0U;
         summary.candidate_forced_tactics += forced ? 1U : 0U;
         summary.candidate_plan_cache_hits += cache_hit ? 1U : 0U;
         summary.candidate_completed_depth += completed_depth;
@@ -471,6 +421,9 @@ void add_agent_metrics(
         if (field(decision, "planner_ms") != nullptr) {
             summary.baseline_planner_samples_us.push_back(planner_us);
         }
+        summary.baseline_action_decisions += action_decision ? 1U : 0U;
+        summary.baseline_choice_decisions += choice_decision ? 1U : 0U;
+        summary.baseline_search_decisions += search_decision ? 1U : 0U;
         summary.baseline_forced_tactics += forced ? 1U : 0U;
         summary.baseline_plan_cache_hits += cache_hit ? 1U : 0U;
         summary.baseline_completed_depth += completed_depth;
@@ -563,6 +516,12 @@ NativeChallengeArenaPool::NativeChallengeArenaPool(
         || candidate_.strategies.as_object().empty()
         || !baseline_.strategies.is_object()
         || baseline_.strategies.as_object().empty()
+        || (candidate_.backend != "in_process"
+            && candidate_.backend != "external_process")
+        || (baseline_.backend != "in_process"
+            && baseline_.backend != "external_process")
+        || candidate_.decision_timeout_milliseconds == 0
+        || baseline_.decision_timeout_milliseconds == 0
         || config_.concurrent_games == 0
         || config_.inner_search_workers != 1
         || !config_.deterministic) {
@@ -606,6 +565,7 @@ void NativeChallengeArenaPool::start(std::vector<ChallengeArenaTask> tasks) {
     finished_ = false;
     const std::size_t count = std::min<std::size_t>(
         config_.concurrent_games, tasks_.size());
+    active_workers_ = count;
     workers_.reserve(count);
     for (std::size_t index = 0; index < count; ++index) {
         workers_.emplace_back(&NativeChallengeArenaPool::worker, this);
@@ -626,9 +586,9 @@ void NativeChallengeArenaPool::cancel() noexcept {
     paused_ = false;
     pause_ready_.notify_all();
     std::lock_guard<std::mutex> lock(controllers_mutex_);
-    for (ChallengeController *controller : active_controllers_) {
-        if (controller != nullptr) {
-            controller->cancel(std::numeric_limits<std::int64_t>::max());
+    for (ChallengeArenaAgent *agent : active_agents_) {
+        if (agent != nullptr) {
+            agent->cancel(std::numeric_limits<std::int64_t>::max());
         }
     }
 }
@@ -640,6 +600,15 @@ void NativeChallengeArenaPool::wait() {
     workers_.clear();
     running_ = false;
     finished_ = true;
+}
+
+bool NativeChallengeArenaPool::wait_for(std::uint32_t timeout_milliseconds) {
+    if (finished_) return true;
+    std::unique_lock<std::mutex> lock(completion_mutex_);
+    return completion_ready_.wait_for(
+        lock,
+        std::chrono::milliseconds(timeout_milliseconds),
+        [this]() { return finished_.load(); });
 }
 
 bool NativeChallengeArenaPool::running() const noexcept {
@@ -691,8 +660,14 @@ Value NativeChallengeArenaPool::metrics() const {
         {"apply_us", Value(static_cast<std::int64_t>(apply_us_.load()))},
         {"candidate_agent_id", Value(candidate_.agent_id)},
         {"candidate_build_id", Value(candidate_.build_id)},
+        {"candidate_backend", Value(candidate_.backend)},
+        {"candidate_implementation_hash", Value(
+            candidate_.implementation_hash)},
         {"baseline_agent_id", Value(baseline_.agent_id)},
         {"baseline_build_id", Value(baseline_.build_id)},
+        {"baseline_backend", Value(baseline_.backend)},
+        {"baseline_implementation_hash", Value(
+            baseline_.implementation_hash)},
         {"deterministic", Value(config_.deterministic)},
         {"inner_search_workers", Value(static_cast<std::int64_t>(
             config_.inner_search_workers))},
@@ -712,44 +687,16 @@ void NativeChallengeArenaPool::wait_if_paused() {
 }
 
 void NativeChallengeArenaPool::worker() {
-    // A worker owns and reuses exactly one controller per agent. Controller
-    // match ledgers and plan caches are therefore never shared concurrently.
-    ChallengeController candidate_controller;
-    ChallengeController baseline_controller;
+    // A worker owns and reuses exactly one backend per agent. Controller match
+    // ledgers, child processes and plan caches are never shared concurrently.
+    std::unique_ptr<ChallengeArenaAgent> candidate_agent =
+        make_challenge_arena_agent(candidate_, catalog_, decks_);
+    std::unique_ptr<ChallengeArenaAgent> baseline_agent =
+        make_challenge_arena_agent(baseline_, catalog_, decks_);
     {
         std::lock_guard<std::mutex> lock(controllers_mutex_);
-        active_controllers_.push_back(&candidate_controller);
-        active_controllers_.push_back(&baseline_controller);
-    }
-    Value candidate_configured;
-    Value baseline_configured;
-    try {
-        candidate_configured = candidate_controller.configure(
-            catalog_, decks_, candidate_.strategies);
-    } catch (const std::exception &error) {
-        candidate_configured = Value(Object{
-            {"success", Value(false)},
-            {"error", Value(error.what())},
-        });
-    } catch (...) {
-        candidate_configured = Value(Object{
-            {"success", Value(false)},
-            {"error", Value("unknown_candidate_configuration_error")},
-        });
-    }
-    try {
-        baseline_configured = baseline_controller.configure(
-            catalog_, decks_, baseline_.strategies);
-    } catch (const std::exception &error) {
-        baseline_configured = Value(Object{
-            {"success", Value(false)},
-            {"error", Value(error.what())},
-        });
-    } catch (...) {
-        baseline_configured = Value(Object{
-            {"success", Value(false)},
-            {"error", Value("unknown_baseline_configuration_error")},
-        });
+        active_agents_.push_back(candidate_agent.get());
+        active_agents_.push_back(baseline_agent.get());
     }
 
     while (!cancelled_) {
@@ -759,25 +706,33 @@ void NativeChallengeArenaPool::worker() {
         if (index >= tasks_.size()) break;
         ChallengeArenaGameResult result;
         try {
-            if (!bool_field(candidate_configured, "success")) {
+            const bool candidate_ok = candidate_agent->ready();
+            const bool baseline_ok = baseline_agent->ready();
+            if (!candidate_ok && !baseline_ok) {
+                result = task_result(tasks_[index]);
+                infrastructure_failure(
+                    result,
+                    "both_agents_configuration_failed",
+                    "candidate=" + candidate_agent->configuration_error()
+                        + ";baseline=" + baseline_agent->configuration_error());
+                finalize_semantic_hash(result);
+            } else if (!candidate_ok) {
                 result = task_result(tasks_[index]);
                 ++result.controller_failures;
                 adjudicate_agent_failure(
                     result, 0, "candidate_configuration",
-                    string_field(candidate_configured, "error",
-                        "candidate_configuration_failed"));
+                    candidate_agent->configuration_error());
                 finalize_semantic_hash(result);
-            } else if (!bool_field(baseline_configured, "success")) {
+            } else if (!baseline_ok) {
                 result = task_result(tasks_[index]);
                 ++result.controller_failures;
                 adjudicate_agent_failure(
                     result, 1, "baseline_configuration",
-                    string_field(baseline_configured, "error",
-                        "baseline_configuration_failed"));
+                    baseline_agent->configuration_error());
                 finalize_semantic_hash(result);
             } else {
                 result = run_game(
-                    tasks_[index], candidate_controller, baseline_controller);
+                    tasks_[index], *candidate_agent, *baseline_agent);
             }
         } catch (const std::exception &error) {
             result = task_result(tasks_[index]);
@@ -810,19 +765,24 @@ void NativeChallengeArenaPool::worker() {
     }
     {
         std::lock_guard<std::mutex> lock(controllers_mutex_);
-        active_controllers_.erase(std::remove(
-            active_controllers_.begin(), active_controllers_.end(),
-            &candidate_controller), active_controllers_.end());
-        active_controllers_.erase(std::remove(
-            active_controllers_.begin(), active_controllers_.end(),
-            &baseline_controller), active_controllers_.end());
+        active_agents_.erase(std::remove(
+            active_agents_.begin(), active_agents_.end(),
+            candidate_agent.get()), active_agents_.end());
+        active_agents_.erase(std::remove(
+            active_agents_.begin(), active_agents_.end(),
+            baseline_agent.get()), active_agents_.end());
+    }
+    if (active_workers_.fetch_sub(1) == 1) {
+        running_ = false;
+        finished_ = true;
+        completion_ready_.notify_all();
     }
 }
 
 ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
     const ChallengeArenaTask &task,
-    ChallengeController &candidate_controller,
-    ChallengeController &baseline_controller
+    ChallengeArenaAgent &candidate_agent,
+    ChallengeArenaAgent &baseline_agent
 ) {
     ChallengeArenaGameResult summary = task_result(task);
     const std::vector<std::string> candidate_deck = expand_deck(
@@ -847,10 +807,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
         Value(Object{
             {"public_deck_keys", Value(std::move(deck_keys))},
             {"player_names", Value(Array{
-                Value(task.candidate_seat == 0 ? candidate_.agent_id
-                                               : baseline_.agent_id),
-                Value(task.candidate_seat == 1 ? candidate_.agent_id
-                                               : baseline_.agent_id),
+                Value("Arena-Seat-0"), Value("Arena-Seat-1"),
             })},
             {"rules_profile_id", Value("CN_MAINLAND_3_1_0")},
             {"rules_options", Value(Object{
@@ -871,8 +828,31 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
     }
 
     const std::string match_id = "challenge-arena:" + task.task_id;
-    candidate_controller.reset_match(match_id);
-    baseline_controller.reset_match(match_id);
+    const Value candidate_reset = candidate_agent.reset_match(match_id);
+    const Value baseline_reset = baseline_agent.reset_match(match_id);
+    const bool candidate_reset_ok = bool_field(candidate_reset, "success");
+    const bool baseline_reset_ok = bool_field(baseline_reset, "success");
+    if (!candidate_reset_ok && !baseline_reset_ok) {
+        infrastructure_failure(
+            summary,
+            "both_agents_reset_failed",
+            "candidate=" + string_field(candidate_reset, "error")
+                + ";baseline=" + string_field(baseline_reset, "error"));
+        finalize_from_session(summary, session);
+        return summary;
+    }
+    if (!candidate_reset_ok || !baseline_reset_ok) {
+        ++summary.controller_failures;
+        const std::int32_t offending = candidate_reset_ok ? 1 : 0;
+        const Value &failed = candidate_reset_ok ? baseline_reset : candidate_reset;
+        adjudicate_agent_failure(
+            summary,
+            offending,
+            "agent_reset_failed",
+            string_field(failed, "error", "agent_reset_failed"));
+        finalize_from_session(summary, session);
+        return summary;
+    }
 
     for (std::uint32_t step = 0; step < task.max_decisions; ++step) {
         if (cancelled_) {
@@ -959,13 +939,16 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
 
         const bool choice = nonempty_object(pending);
         const bool candidate_turn = actor == task.candidate_seat;
-        ChallengeController &controller = candidate_turn
-            ? candidate_controller : baseline_controller;
+        ChallengeArenaAgent &controller = candidate_turn
+            ? candidate_agent : baseline_agent;
         const ChallengeArenaAgentSpec &agent = candidate_turn
             ? candidate_ : baseline_;
 
         const auto projection_started = Clock::now();
-        Value observation = challenge_observation(session, actor);
+        Value observation = session.ai_observation_for(actor);
+        if (!observation.is_object() || observation.as_object().empty()) {
+            throw std::runtime_error("challenge_arena_public_view_unavailable");
+        }
         summary.projection_us += elapsed_us(projection_started);
         const std::uint32_t seed = decision_seed(task, session, actor, choice);
         const std::string request_id = match_id + ":"
@@ -1214,7 +1197,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
         summary.success = true;
         summary.terminal = false;
         summary.truncated = true;
-        summary.strength_eligible = true;
+        summary.strength_eligible = false;
         summary.candidate_score_x2 = 1;
         summary.failure_kind = "truncated";
         summary.error = "challenge_arena_decision_cap";

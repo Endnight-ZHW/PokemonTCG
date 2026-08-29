@@ -51,6 +51,7 @@ Value RulesSession::contract() const {
         {"card_ir_contract_fingerprint", Value(card_ir_contract_fingerprint_)},
         {"vm_descriptor_digest", Value(vm_descriptor_digest_)},
         {"state_owner", Value("ptcg_core")},
+        {"ai_observation_boundary", Value("ai_public_state_v1")},
         {"framework_dependencies", Value::make_array()},
         {"card_count", Value(static_cast<std::int64_t>(
             cards().is_object() ? cards().as_object().size() : 0))},

@@ -4,6 +4,7 @@ const CARDS_PATH := "res://data/cards.json"
 const DECKS_PATH := "res://data/decks.json"
 const CARD_IR_PATH := "res://data/card_ir_v4.json"
 const STRATEGIES_PATH := "res://data/ai_strategies.json"
+const RuntimeStateProjection = preload("res://ai/runtime_state_projection.gd")
 
 var failures: Array[String] = []
 
@@ -113,10 +114,26 @@ func _run() -> void:
 		and int(contract.get("choice_view_schema_version", 0)) == 2
 		and int(contract.get("snapshot_schema_version", 0)) == 3
 		and int(contract.get("vm_ir_version", 0)) == 3
+		and str(contract.get("ai_observation_boundary", ""))
+			== "ai_public_state_v1"
 		and int(contract.get("card_count", 0)) == cards.size()
 		and Array(contract.get("framework_dependencies", ["unexpected"])).is_empty(),
 		"native session ABI/schema contract mismatch",
 	)
+	var projected_state := GameState.from_snapshot(first.snapshot())
+	_check(projected_state != null, "native observation fixture could not hydrate")
+	if projected_state != null:
+		for viewer in [0, 1]:
+			var native_observation: Dictionary = first.ai_observation_for(viewer)
+			var reference_observation: Dictionary = RuntimeStateProjection.project(
+				projected_state, viewer)
+			_check(
+				native_observation == reference_observation,
+				"native/product AI observation diverged for viewer %d: %s" % [
+					viewer,
+					_first_difference(native_observation, reference_observation),
+				],
+			)
 	_check(
 		created.get("state") == repeated.get("state")
 		and first.rng_state() == second.rng_state()
@@ -496,6 +513,43 @@ func _read_json(path: String) -> Dictionary:
 		failures.append("invalid JSON fixture: %s" % path)
 		return {}
 	return Dictionary(parsed)
+
+
+func _first_difference(left: Variant, right: Variant, path: String = "$") -> String:
+	if left == right:
+		return ""
+	if typeof(left) != typeof(right):
+		return "%s type %s != %s" % [
+			path, type_string(typeof(left)), type_string(typeof(right)),
+		]
+	if left is Dictionary:
+		var left_dictionary: Dictionary = left
+		var right_dictionary: Dictionary = right
+		for key_value in left_dictionary:
+			var key := str(key_value)
+			if not right_dictionary.has(key_value):
+				return "%s.%s only in native" % [path, key]
+			var nested := _first_difference(
+				left_dictionary[key_value], right_dictionary[key_value],
+				"%s.%s" % [path, key])
+			if not nested.is_empty():
+				return nested
+		for key_value in right_dictionary:
+			if not left_dictionary.has(key_value):
+				return "%s.%s only in reference" % [path, str(key_value)]
+	if left is Array:
+		var left_array: Array = left
+		var right_array: Array = right
+		if left_array.size() != right_array.size():
+			return "%s size %d != %d" % [
+				path, left_array.size(), right_array.size(),
+			]
+		for index in range(left_array.size()):
+			var nested := _first_difference(
+				left_array[index], right_array[index], "%s[%d]" % [path, index])
+			if not nested.is_empty():
+				return nested
+	return "%s value %s != %s" % [path, str(left), str(right)]
 
 
 func _check(condition: bool, message: String) -> void:

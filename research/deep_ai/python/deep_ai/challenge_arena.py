@@ -10,15 +10,22 @@ import sys
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from .challenge_arena_stats import summarize_games
+from .challenge_arena_build import (
+    load_and_verify_agent,
+    load_and_verify_binding,
+    sha256_file,
+    write_json_atomic,
+)
+from .challenge_arena_stats import gate_status, summarize_games
+from .challenge_arena_store import ChallengeArenaRunStore, write_jsonl_atomic
 from .v3_contract import RELEASE_DECKS
 from engine.native_state_codec import native_catalog_payload
 
 
-ARENA_SCHEMA = "ptcg.native_challenge_arena/1"
-MANIFEST_SCHEMA = "ptcg.challenge_arena.manifest/1"
+ARENA_SCHEMA = "ptcg.native_challenge_arena/2"
+MANIFEST_SCHEMA = "ptcg.challenge_arena.manifest/2"
 RESEARCH_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PRODUCT_DECKS = REPO_ROOT / "godot" / "data" / "decks.json"
@@ -28,8 +35,9 @@ SEAT_FIRST_PLAYER_CLOSURES = ((0, 0), (1, 0), (0, 1), (1, 1))
 PRESET_REPLICATES = {
     "smoke": 1,
     "pr": 2,
-    "nightly": 2,
-    "release": 5,
+    "nightly": 30,
+    "release": 50,
+    "calibration": 20,
     "focused": 1,
 }
 
@@ -51,6 +59,29 @@ def canonical_hash(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def reporting_code_info() -> dict[str, Any]:
+    paths = (
+        Path(__file__).resolve(),
+        Path(__file__).with_name("challenge_arena_stats.py").resolve(),
+        Path(__file__).with_name("challenge_arena_store.py").resolve(),
+        Path(__file__).with_name("challenge_arena_build.py").resolve(),
+        RESEARCH_ROOT / "scripts" / "run_challenge_arena.py",
+        RESEARCH_ROOT / "tools" / "run_challenge_arena.ps1",
+    )
+    files = [
+        {
+            "path": path.relative_to(REPO_ROOT).as_posix(),
+            "sha256": sha256_file(path),
+        }
+        for path in paths
+    ]
+    return {
+        "schema": "ptcg.challenge_arena.reporting_code/1",
+        "files": files,
+        "hash": canonical_hash(files),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class ArenaAgentSpec:
     agent_id: str
@@ -58,6 +89,13 @@ class ArenaAgentSpec:
     strategies: Mapping[str, Any]
     evaluation_options: Mapping[str, Any] = field(default_factory=dict)
     source: str = ""
+    backend: str = "in_process"
+    implementation_hash: str = ""
+    executable_path: str = ""
+    process_config_path: str = ""
+    process_log_directory: str = ""
+    decision_timeout_milliseconds: int = 120000
+    build_manifest: Mapping[str, Any] = field(default_factory=dict)
 
     def validate(self) -> None:
         if not self.agent_id.strip():
@@ -66,12 +104,27 @@ class ArenaAgentSpec:
             raise ValueError(f"arena_agent_strategies_empty:{self.agent_id}")
         if not isinstance(self.evaluation_options, Mapping):
             raise ValueError(f"arena_agent_options_invalid:{self.agent_id}")
+        if self.backend not in {"in_process", "external_process"}:
+            raise ValueError(f"arena_agent_backend_invalid:{self.agent_id}")
+        if self.backend == "external_process" and (
+            not self.implementation_hash
+            or not self.executable_path
+            or not self.process_config_path
+        ):
+            raise ValueError(f"arena_external_agent_incomplete:{self.agent_id}")
 
     def native_payload(self) -> dict[str, Any]:
         self.validate()
         return {
             "agent_id": self.agent_id,
             "build_id": self.build_id,
+            "backend": self.backend,
+            "implementation_hash": self.implementation_hash,
+            "strategy_hash": canonical_hash(self.strategies),
+            "executable_path": self.executable_path,
+            "process_config_path": self.process_config_path,
+            "process_log_directory": self.process_log_directory,
+            "decision_timeout_milliseconds": self.decision_timeout_milliseconds,
             "strategies": dict(self.strategies),
             "evaluation_options": dict(self.evaluation_options),
         }
@@ -128,7 +181,7 @@ def preset_matchups(
         ]
     if preset == "pr":
         return _pr_matchups(decks)
-    if preset in {"nightly", "release"}:
+    if preset in {"nightly", "release", "calibration"}:
         return [(candidate, baseline) for candidate in decks for baseline in decks]
     if preset == "focused":
         candidates = tuple(candidate_decks) or decks
@@ -139,6 +192,25 @@ def preset_matchups(
             for baseline in baselines
         ]
     raise ValueError(f"unknown_challenge_arena_preset:{preset}")
+
+
+def pair_game_seed(
+    base_seed: int,
+    candidate_deck: str,
+    baseline_deck: str,
+    replicate: int,
+) -> int:
+    pair = tuple(sorted((str(candidate_deck), str(baseline_deck))))
+    seed_material = "\0".join((
+        "ptcg.challenge_arena.pair_seed/1",
+        str(int(base_seed) & 0xFFFFFFFF),
+        pair[0],
+        pair[1],
+        str(int(replicate)),
+    )).encode("utf-8")
+    return int.from_bytes(
+        hashlib.sha256(seed_material).digest()[:4], "big"
+    ) or 17
 
 
 def generate_tasks(
@@ -164,9 +236,12 @@ def generate_tasks(
     )
     tasks: list[ArenaTask] = []
     for replicate in range(count):
-        game_seed = (int(seed) + replicate * 104729) & 0xFFFFFFFF
         for candidate_deck, baseline_deck in matchups:
-            unordered = "__".join(sorted((candidate_deck, baseline_deck)))
+            pair = tuple(sorted((candidate_deck, baseline_deck)))
+            game_seed = pair_game_seed(
+                seed, candidate_deck, baseline_deck, replicate
+            )
+            unordered = "__".join(pair)
             block_id = f"{unordered}:seed-{game_seed}:rep-{replicate}"
             for closure, (candidate_seat, first_player) in enumerate(
                 SEAT_FIRST_PLAYER_CLOSURES
@@ -233,8 +308,13 @@ def load_agent_spec(
     *,
     product_strategies: Mapping[str, Any] | None = None,
     default_build_id: str = "working-tree",
+    build_manifest: Path | None = None,
 ) -> ArenaAgentSpec:
     strategies = dict(product_strategies or _read_json(PRODUCT_STRATEGIES))
+    built: dict[str, Any] = {}
+    if build_manifest is not None:
+        built = load_and_verify_agent(build_manifest)
+        strategies = _read_json(Path(str(built["strategies_path"])))
     path = _resolve_spec_path(identifier)
     if path is None:
         return ArenaAgentSpec(
@@ -247,8 +327,22 @@ def load_agent_spec(
                 "belief_samples": 3,
             },
             source="product-default",
+            backend="external_process" if built else "in_process",
+            implementation_hash=str(built.get("implementation_hash", "")),
+            executable_path=str(built.get("executable_path", "")),
+            build_manifest=built,
         )
     raw = _read_json(path)
+    if raw.get("schema") != "ptcg.challenge_arena.agent/2":
+        raise ValueError(f"arena_agent_spec_schema_mismatch:{path}")
+    pinned_ref = str(raw.get("git_ref", ""))
+    if pinned_ref and (
+        len(pinned_ref) != 40
+        or any(character not in "0123456789abcdefABCDEF" for character in pinned_ref)
+    ):
+        raise ValueError(f"arena_agent_git_ref_not_full_commit:{path}")
+    if built and pinned_ref and pinned_ref != str(built.get("git_ref", "")):
+        raise ValueError(f"arena_agent_build_ref_mismatch:{path}")
     strategy_path_value = str(raw.get("strategies_path", "")).strip()
     if strategy_path_value:
         strategy_path = Path(strategy_path_value)
@@ -263,6 +357,12 @@ def load_agent_spec(
         strategies=strategies,
         evaluation_options=dict(raw.get("evaluation_options", {})),
         source=str(path),
+        backend="external_process" if built else str(raw.get("backend", "in_process")),
+        implementation_hash=str(built.get(
+            "implementation_hash", raw.get("implementation_hash", ""))),
+        executable_path=str(built.get(
+            "executable_path", raw.get("executable_path", ""))),
+        build_manifest=built,
     )
 
 
@@ -293,6 +393,91 @@ def validate_equal_search_contract(
         )
 
 
+def native_binding_build_info() -> dict[str, Any]:
+    try:
+        import ptcg_ai_core
+    except ImportError as exc:
+        raise RuntimeError(
+            "Native Challenge Arena binding is not built; run "
+            "research/deep_ai/tools/build_native_binding.ps1"
+        ) from exc
+    binding = Path(str(ptcg_ai_core.__file__)).resolve()
+    return load_and_verify_binding(
+        REPO_ROOT,
+        binding,
+        binding.with_name("ptcg_ai_core.build.json"),
+    )
+
+
+def prepare_agent_runtime(
+    spec: ArenaAgentSpec,
+    *,
+    output: Path,
+    catalog: Mapping[str, Any],
+    decks: Mapping[str, Any],
+    binding_info: Mapping[str, Any],
+) -> ArenaAgentSpec:
+    if spec.backend == "in_process":
+        return replace(
+            spec,
+            implementation_hash=str(binding_info["input_hash"]),
+        )
+    if os.name != "nt":
+        raise RuntimeError("external_agent_backend_requires_windows")
+    inputs = output / ".inputs"
+    catalog_path = inputs / f"catalog-{canonical_hash(catalog)}.json"
+    decks_path = inputs / f"decks-{canonical_hash(decks)}.json"
+    strategies_path = inputs / (
+        f"strategies-{canonical_hash(spec.strategies)}.json"
+    )
+    for path, value in (
+        (catalog_path, dict(catalog)),
+        (decks_path, dict(decks)),
+        (strategies_path, dict(spec.strategies)),
+    ):
+        if path.is_file():
+            if canonical_hash(_read_json(path)) != canonical_hash(value):
+                raise RuntimeError(
+                    f"arena_runtime_input_hash_mismatch:{path.name}"
+                )
+        else:
+            write_json_atomic(path, value)
+    config = {
+        "schema": "ptcg.challenge_agent.config/1",
+        "catalog_path": str(catalog_path.resolve()),
+        "decks_path": str(decks_path.resolve()),
+        "strategies_path": str(strategies_path.resolve()),
+        "catalog_hash": canonical_hash(catalog),
+        "decks_hash": canonical_hash(decks),
+        "strategies_hash": canonical_hash(spec.strategies),
+        "catalog_file_sha256": sha256_file(catalog_path),
+        "decks_file_sha256": sha256_file(decks_path),
+        "strategies_file_sha256": sha256_file(strategies_path),
+    }
+    config_path = inputs / f"agent-{canonical_hash(config)}.json"
+    write_json_atomic(config_path, config)
+    return replace(
+        spec,
+        process_config_path=str(config_path.resolve()),
+        process_log_directory=str((output / "agent-logs").resolve()),
+    )
+
+
+def validate_agent_identity(
+    candidate: ArenaAgentSpec,
+    baseline: ArenaAgentSpec,
+    *,
+    allow_self_play: bool,
+) -> None:
+    identical = (
+        candidate.implementation_hash == baseline.implementation_hash
+        and canonical_hash(candidate.strategies) == canonical_hash(baseline.strategies)
+        and dict(candidate.evaluation_options) == dict(baseline.evaluation_options)
+    )
+    if identical and not allow_self_play:
+        raise ValueError("arena_agents_are_identical")
+
+
 class NativeChallengeArena:
     def __init__(
         self,
@@ -318,7 +503,12 @@ class NativeChallengeArena:
         self.capture_failure_trace = bool(capture_failure_trace)
         self.trace_all = bool(trace_all)
 
-    def run(self, tasks: Sequence[ArenaTask]) -> dict[str, Any]:
+    def run(
+        self,
+        tasks: Sequence[ArenaTask],
+        *,
+        on_games: Callable[[list[dict[str, Any]]], None] | None = None,
+    ) -> dict[str, Any]:
         validate_task_matrix(tasks)
         try:
             import ptcg_ai_core
@@ -342,18 +532,32 @@ class NativeChallengeArena:
         )
         started = time.perf_counter()
         pool.start([task.native_payload() for task in tasks])
-        pool.wait()
-        elapsed_seconds = time.perf_counter() - started
-        games = list(pool.drain_games())
+        games: list[dict[str, Any]] = []
         task_by_id = {task.task_id: task for task in tasks}
-        for game in games:
-            task = task_by_id.get(str(game.get("task_id", "")))
-            if task is None:
-                raise RuntimeError("challenge_arena_unknown_result_task")
-            game["block_id"] = task.block_id
-            game["replicate"] = task.replicate
-            game["closure"] = task.closure
-            game["full_result_hash"] = canonical_hash(game)
+
+        def collect() -> None:
+            drained = list(pool.drain_games())
+            for game in drained:
+                task = task_by_id.get(str(game.get("task_id", "")))
+                if task is None:
+                    raise RuntimeError("challenge_arena_unknown_result_task")
+                game["block_id"] = task.block_id
+                game["replicate"] = task.replicate
+                game["closure"] = task.closure
+                game["candidate_agent_id"] = self.candidate.agent_id
+                game["candidate_build_id"] = self.candidate.build_id
+                game["baseline_agent_id"] = self.baseline.agent_id
+                game["baseline_build_id"] = self.baseline.build_id
+                game["full_result_hash"] = canonical_hash(game)
+            if drained and on_games is not None:
+                on_games(drained)
+            games.extend(drained)
+
+        while not pool.wait_for(1000):
+            collect()
+        pool.wait()
+        collect()
+        elapsed_seconds = time.perf_counter() - started
         games.sort(key=lambda row: str(row.get("task_id", "")))
         if len(games) != len(tasks):
             raise RuntimeError(
@@ -365,6 +569,58 @@ class NativeChallengeArena:
             "elapsed_seconds": elapsed_seconds,
             "games_per_second": len(games) / max(elapsed_seconds, 1e-9),
         }
+
+
+def aggregate_native_metrics(
+    games: Sequence[Mapping[str, Any]],
+    candidate: ArenaAgentSpec,
+    baseline: ArenaAgentSpec,
+) -> dict[str, Any]:
+    """Rebuild the additive pool metrics from durable game rows.
+
+    This makes a resumed report cover pre-crash shards as well as newly run
+    batches instead of depending on ephemeral per-process counters.
+    """
+    additive_fields = (
+        "decisions",
+        "invalid_actions",
+        "illegal_choices",
+        "controller_failures",
+        "rule_exceptions",
+        "candidate_decision_us",
+        "baseline_decision_us",
+        "candidate_nodes",
+        "baseline_nodes",
+        "projection_us",
+        "legal_actions_us",
+        "apply_us",
+    )
+    result: dict[str, Any] = {
+        "schema": "ptcg.native_challenge_arena.metrics/1",
+        "tasks": len(games),
+        "completed_games": sum(bool(game.get("success", False)) for game in games),
+        "failed_games": sum(not bool(game.get("success", False)) for game in games),
+        "truncated_games": sum(bool(game.get("truncated", False)) for game in games),
+        "candidate_agent_id": candidate.agent_id,
+        "candidate_build_id": candidate.build_id,
+        "candidate_backend": candidate.backend,
+        "candidate_implementation_hash": candidate.implementation_hash,
+        "baseline_agent_id": baseline.agent_id,
+        "baseline_build_id": baseline.build_id,
+        "baseline_backend": baseline.backend,
+        "baseline_implementation_hash": baseline.implementation_hash,
+        "deterministic": True,
+        "inner_search_workers": 1,
+        "running": False,
+        "finished": True,
+        "paused": False,
+        "cancelled": False,
+    }
+    for field_name in additive_fields:
+        result[field_name] = sum(
+            int(game.get(field_name, 0)) for game in games
+        )
+    return result
 
 
 def git_metadata() -> dict[str, Any]:
@@ -399,6 +655,8 @@ def build_manifest(
     workers: int,
     elapsed_seconds: float,
     trace_all: bool,
+    comparison_mode: str,
+    binding_info: Mapping[str, Any],
 ) -> dict[str, Any]:
     semantic_hashes = sorted(
         str(row.get("semantic_result_hash", "")) for row in games
@@ -407,17 +665,24 @@ def build_manifest(
         "schema": MANIFEST_SCHEMA,
         "arena_schema": ARENA_SCHEMA,
         "preset": preset,
+        "comparison_mode": comparison_mode,
         "candidate": {
             "agent_id": candidate.agent_id,
             "build_id": candidate.build_id,
             "source": candidate.source,
             "strategy_hash": canonical_hash(candidate.strategies),
+            "backend": candidate.backend,
+            "implementation_hash": candidate.implementation_hash,
+            "binary": dict(candidate.build_manifest),
         },
         "baseline": {
             "agent_id": baseline.agent_id,
             "build_id": baseline.build_id,
             "source": baseline.source,
             "strategy_hash": canonical_hash(baseline.strategies),
+            "backend": baseline.backend,
+            "implementation_hash": baseline.implementation_hash,
+            "binary": dict(baseline.build_manifest),
         },
         "content": {
             "catalog_hash": canonical_hash(catalog),
@@ -437,6 +702,8 @@ def build_manifest(
             "python_compiler": platform.python_compiler(),
             "pid": os.getpid(),
         },
+        "native_binding": dict(binding_info),
+        "reporting_code": reporting_code_info(),
         "reporting": {
             "capture_failure_trace": True,
             "capture_all_decisions": bool(trace_all),
@@ -478,25 +745,10 @@ def write_arena_outputs(
         )
     ]
 
-    def write_json(path: Path, value: Mapping[str, Any]) -> None:
-        path.write_text(
-            json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-
-    def write_jsonl(path: Path, values: Iterable[Mapping[str, Any]]) -> None:
-        path.write_text(
-            "".join(
-                json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n"
-                for value in values
-            ),
-            encoding="utf-8",
-        )
-
-    write_jsonl(output / "arena-games.jsonl", ordered_games)
-    write_jsonl(output / "arena-failures.jsonl", failures)
-    write_json(output / "arena-summary.json", summary)
-    write_json(output / "arena-manifest.json", manifest)
+    write_jsonl_atomic(output / "arena-games.jsonl", ordered_games)
+    write_jsonl_atomic(output / "arena-failures.jsonl", failures)
+    write_json_atomic(output / "arena-summary.json", dict(summary))
+    write_json_atomic(output / "arena-manifest.json", dict(manifest))
 
 
 def run_arena(
@@ -513,14 +765,74 @@ def run_arena(
     baseline_decks: Sequence[str] = (),
     trace_all: bool = False,
     bootstrap_samples: int = 2000,
-    truncated_rate_limit: float = 0.01,
+    truncated_rate_limit: float = 0.001,
     latency_ratio_limit: float = 1.15,
     max_candidate_p95_ms: float | None = None,
+    allow_self_play: bool = False,
+    comparison_mode: str = "release-bundle",
 ) -> dict[str, Any]:
     catalog, decks, _ = load_product_payloads()
+    binding_info = native_binding_build_info()
+    if comparison_mode not in {
+        "release-bundle", "implementation-only", "same-binary-strategy",
+    }:
+        raise ValueError("challenge_arena_comparison_mode_invalid")
+    if comparison_mode == "implementation-only":
+        baseline = replace(baseline, strategies=dict(candidate.strategies))
+    if comparison_mode == "same-binary-strategy":
+        candidate = replace(
+            candidate,
+            backend="in_process",
+            executable_path="",
+            process_config_path="",
+            build_manifest={},
+        )
+        baseline = replace(
+            baseline,
+            backend="in_process",
+            executable_path="",
+            process_config_path="",
+            build_manifest={},
+        )
+    if candidate.backend != baseline.backend:
+        raise ValueError("challenge_arena_mixed_backends_not_allowed")
+    if preset in {"nightly", "release"} and (
+        candidate.backend != "external_process"
+        or baseline.backend != "external_process"
+    ):
+        raise RuntimeError("trusted_arena_preset_requires_external_agents")
     candidate = with_preset_contract(candidate, preset)
     baseline = with_preset_contract(baseline, preset)
     validate_equal_search_contract(candidate, baseline)
+    output = output.resolve()
+    candidate = prepare_agent_runtime(
+        candidate,
+        output=output,
+        catalog=catalog,
+        decks=decks,
+        binding_info=binding_info,
+    )
+    baseline = prepare_agent_runtime(
+        baseline,
+        output=output,
+        catalog=catalog,
+        decks=decks,
+        binding_info=binding_info,
+    )
+    validate_agent_identity(
+        candidate, baseline, allow_self_play=allow_self_play
+    )
+    if preset == "calibration" and not allow_self_play:
+        raise ValueError("calibration_requires_allow_self_play")
+    if preset == "calibration" and (
+        candidate.backend != "external_process"
+        or baseline.backend != "external_process"
+        or candidate.implementation_hash != baseline.implementation_hash
+        or canonical_hash(candidate.strategies) != canonical_hash(baseline.strategies)
+    ):
+        raise ValueError("calibration_requires_identical_external_agents")
+    if preset == "release" and git_metadata()["dirty"]:
+        raise ValueError("release_arena_requires_clean_worktree")
     tasks = generate_tasks(
         preset,
         seed=seed,
@@ -529,54 +841,226 @@ def run_arena(
         candidate_decks=candidate_decks,
         baseline_decks=baseline_decks,
     )
-    arena = NativeChallengeArena(
-        catalog,
-        decks,
-        candidate,
-        baseline,
-        workers=workers,
-        capture_failure_trace=True,
-        trace_all=trace_all,
-    )
-    result = arena.run(tasks)
-    summary = summarize_games(
-        result["games"],
-        bootstrap_seed=seed ^ 0x5EED5EED,
-        bootstrap_samples=bootstrap_samples,
-        truncated_rate_limit=truncated_rate_limit,
-        latency_ratio_limit=latency_ratio_limit,
-        max_candidate_p95_ms=max_candidate_p95_ms,
-        native_metrics=result["native_metrics"],
-    )
-    summary["arena"] = {
-        "schema": ARENA_SCHEMA,
+    requested_replicates = max(task.replicate for task in tasks) + 1
+    if preset == "smoke" and requested_replicates != 1:
+        raise ValueError("smoke_preset_requires_one_replicate")
+    if preset == "pr" and requested_replicates != 2:
+        raise ValueError("pr_preset_requires_two_replicates")
+    if preset == "nightly" and not 5 <= requested_replicates <= 30:
+        raise ValueError("nightly_replicates_must_be_between_5_and_30")
+    if preset == "release" and not 10 <= requested_replicates <= 50:
+        raise ValueError("release_replicates_must_be_between_10_and_50")
+    reporting_info = reporting_code_info()
+    run_fingerprint = canonical_hash({
+        "schema": "ptcg.challenge_arena.run_fingerprint/1",
         "preset": preset,
-        "candidate": candidate.agent_id,
-        "baseline": baseline.agent_id,
+        "comparison_mode": comparison_mode,
+        "base_seed": int(seed),
+        "catalog_hash": canonical_hash(catalog),
+        "decks_hash": canonical_hash(decks),
+        "tasks": [task.native_payload() for task in tasks],
+        "candidate": {
+            "agent_id": candidate.agent_id,
+            "build_id": candidate.build_id,
+            "backend": candidate.backend,
+            "implementation_hash": candidate.implementation_hash,
+            "strategy_hash": canonical_hash(candidate.strategies),
+            "evaluation_options": dict(candidate.evaluation_options),
+            "decision_timeout_milliseconds": (
+                candidate.decision_timeout_milliseconds
+            ),
+            "binary_sha256": candidate.build_manifest.get("executable_sha256", ""),
+        },
+        "baseline": {
+            "agent_id": baseline.agent_id,
+            "build_id": baseline.build_id,
+            "backend": baseline.backend,
+            "implementation_hash": baseline.implementation_hash,
+            "strategy_hash": canonical_hash(baseline.strategies),
+            "evaluation_options": dict(baseline.evaluation_options),
+            "decision_timeout_milliseconds": (
+                baseline.decision_timeout_milliseconds
+            ),
+            "binary_sha256": baseline.build_manifest.get("executable_sha256", ""),
+        },
+        "binding_sha256": binding_info["binding_sha256"],
+        "reporting_code_hash": reporting_info["hash"],
         "workers": int(workers),
-        "elapsed_seconds": result["elapsed_seconds"],
-        "games_per_second": result["games_per_second"],
-    }
-    manifest = build_manifest(
-        preset=preset,
-        tasks=tasks,
-        games=result["games"],
-        catalog=catalog,
-        decks=decks,
-        candidate=candidate,
-        baseline=baseline,
-        workers=workers,
-        elapsed_seconds=result["elapsed_seconds"],
-        trace_all=trace_all,
+        "trace_all": bool(trace_all),
+        "bootstrap_samples": int(bootstrap_samples),
+        "truncated_rate_limit": float(truncated_rate_limit),
+        "latency_ratio_limit": float(latency_ratio_limit),
+        "max_candidate_p95_ms": max_candidate_p95_ms,
+        "allow_self_play": bool(allow_self_play),
+    })
+    sequential = preset in {"nightly", "release"}
+    maximum_replicates = max(task.replicate for task in tasks) + 1
+    minimum_replicates = (
+        min(5 if preset == "nightly" else 10, maximum_replicates)
+        if sequential
+        else maximum_replicates
     )
-    write_arena_outputs(
+    maximum_looks = (
+        maximum_replicates - minimum_replicates + 1 if sequential else 1
+    )
+    simultaneous_alpha = 0.05 / maximum_looks
+    native_metrics: dict[str, Any] = {}
+    elapsed_seconds = 0.0
+    status = "continue"
+
+    def make_summary(games: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        metrics = aggregate_native_metrics(games, candidate, baseline)
+        result = summarize_games(
+            games,
+            bootstrap_seed=seed ^ 0x5EED5EED,
+            bootstrap_samples=bootstrap_samples,
+            confidence_alpha=simultaneous_alpha if sequential else 0.05,
+            truncated_rate_limit=truncated_rate_limit,
+            latency_ratio_limit=latency_ratio_limit,
+            max_candidate_p95_ms=max_candidate_p95_ms,
+            native_metrics=metrics,
+        )
+        if preset == "calibration":
+            interval = result["paired_statistics"]["score_rate_ci95"]
+            result["calibration"] = {
+                "identical_external_agent": True,
+                "half_within_interval": (
+                    interval[0] is not None and interval[1] is not None
+                    and float(interval[0]) <= 0.5 <= float(interval[1])
+                ),
+                "null_distribution": result["paired_statistics"].get(
+                    "bootstrap_distribution", {}
+                ),
+            }
+        return result
+
+    with ChallengeArenaRunStore(
         output,
-        games=result["games"],
-        summary=summary,
-        manifest=manifest,
-    )
+        fingerprint=run_fingerprint,
+        task_ids=[task.task_id for task in tasks],
+    ) as store:
+        elapsed_seconds = store.elapsed_seconds
+        if store.complete and (output / "arena-summary.json").is_file() \
+                and (output / "arena-manifest.json").is_file():
+            summary = _read_json(output / "arena-summary.json")
+            manifest = _read_json(output / "arena-manifest.json")
+            games = store.games
+            return {
+                "games": games,
+                "native_metrics": dict(summary.get("native_metrics", {})),
+                "elapsed_seconds": 0.0,
+                "games_per_second": 0.0,
+                "tasks": tasks,
+                "summary": summary,
+                "manifest": manifest,
+                "output": output,
+            }
+
+        arena = NativeChallengeArena(
+            catalog,
+            decks,
+            candidate,
+            baseline,
+            workers=workers,
+            capture_failure_trace=True,
+            trace_all=trace_all,
+        )
+        replicate_values = (
+            range(maximum_replicates) if sequential else range(1)
+        )
+        summary: dict[str, Any] | None = None
+        for replicate_index in replicate_values:
+            batch = [
+                task
+                for task in tasks
+                if (
+                    (task.replicate == replicate_index if sequential else True)
+                    and task.task_id not in store.completed_task_ids
+                )
+            ]
+            if batch:
+                batch_result = arena.run(batch, on_games=store.append)
+                batch_elapsed = float(batch_result["elapsed_seconds"])
+                elapsed_seconds += batch_elapsed
+                store.add_elapsed_seconds(batch_elapsed)
+            games = store.games
+            summary = make_summary(games)
+            integrity = summary["integrity"]
+            if int(integrity.get("rule_exceptions", 0)) > 0 or int(
+                integrity.get("unclassified_failures", 0)
+            ) > 0:
+                status = "infrastructure_fail"
+                break
+            if int(integrity.get("structural_errors", 0)) > 0:
+                status = "fail"
+                break
+            completed_replicates = replicate_index + 1 if sequential else maximum_replicates
+            if sequential and completed_replicates < minimum_replicates:
+                continue
+            look = completed_replicates - minimum_replicates + 1 if sequential else 1
+            status = gate_status(
+                summary,
+                preset=preset,
+                look=look,
+                maximum_looks=maximum_looks,
+                final_look=(
+                    completed_replicates >= maximum_replicates
+                    if sequential else True
+                ),
+            )
+            if status != "continue":
+                break
+        games = store.games
+        native_metrics = aggregate_native_metrics(games, candidate, baseline)
+        if summary is None:
+            summary = make_summary(games)
+        if status == "continue":
+            status = "inconclusive"
+        summary["arena"] = {
+            "schema": ARENA_SCHEMA,
+            "preset": preset,
+            "candidate": candidate.agent_id,
+            "baseline": baseline.agent_id,
+            "workers": int(workers),
+            "elapsed_seconds": elapsed_seconds,
+            "games_per_second": len(games) / max(elapsed_seconds, 1e-9),
+            "gate_status": status,
+            "run_fingerprint": run_fingerprint,
+            "minimum_replicates": minimum_replicates,
+            "maximum_replicates": maximum_replicates,
+            "completed_replicates": (
+                max((int(game.get("replicate", 0)) for game in games), default=-1) + 1
+            ),
+            "sequential_alpha": simultaneous_alpha,
+        }
+        manifest = build_manifest(
+            preset=preset,
+            tasks=tasks,
+            games=games,
+            catalog=catalog,
+            decks=decks,
+            candidate=candidate,
+            baseline=baseline,
+            workers=workers,
+            elapsed_seconds=elapsed_seconds,
+            trace_all=trace_all,
+            comparison_mode=comparison_mode,
+            binding_info=binding_info,
+        )
+        manifest["run_fingerprint"] = run_fingerprint
+        manifest["gate_status"] = status
+        write_arena_outputs(
+            output,
+            games=games,
+            summary=summary,
+            manifest=manifest,
+        )
+        store.mark_complete(status)
     return {
-        **result,
+        "games": games,
+        "native_metrics": native_metrics,
+        "elapsed_seconds": elapsed_seconds,
+        "games_per_second": len(games) / max(elapsed_seconds, 1e-9),
         "tasks": tasks,
         "summary": summary,
         "manifest": manifest,
