@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=26 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_table.gd" id="1_battle"]
 [ext_resource type="PackedScene" path="res://ui/card_view.tscn" id="2_card"]
@@ -14,6 +14,13 @@
 [ext_resource type="PackedScene" path="res://scenes/battle/components/card_action_popover.tscn" id="13_popover"]
 [ext_resource type="Script" path="res://scenes/battle/components/battle_camera_rig.gd" id="14_camera_rig"]
 [ext_resource type="PackedScene" path="res://scenes/battle/components/battle_announcement_layer.tscn" id="15_announcement"]
+[ext_resource type="Script" path="res://scenes/battle/components/battle_presentation_runtime.gd" id="16_runtime"]
+[ext_resource type="Script" path="res://scenes/battle/components/battle_card_motion_layer.gd" id="17_motion"]
+[ext_resource type="Script" path="res://scenes/battle/components/battle_hand_view.gd" id="18_hand"]
+[ext_resource type="Script" path="res://scenes/battle/components/battle_board_view.gd" id="19_board"]
+[ext_resource type="Script" path="res://scenes/battle/components/battle_hand_presentation.gd" id="20_hand_presentation"]
+[ext_resource type="Script" path="res://scenes/battle/components/battle_motion_geometry.gd" id="21_geometry"]
+[ext_resource type="Script" path="res://scenes/battle/components/battle_motion_entities.gd" id="22_entities"]
 
 [sub_resource type="StyleBoxFlat" id="Style_board"]
 bg_color = Color(0.012, 0.023, 0.043, 1)
@@ -60,6 +67,27 @@ script = ExtResource("1_battle")
 unique_name_in_owner = true
 editor_description = "同步驱动牌桌、卡牌运动层与世界反馈层，保证飞牌和命中特效处于同一视觉坐标变换。"
 script = ExtResource("14_camera_rig")
+
+[node name="BattlePresentationRuntime" type="Node" parent="."]
+script = ExtResource("16_runtime")
+
+[node name="BattleCardMotionLayer" type="Node" parent="."]
+script = ExtResource("17_motion")
+
+[node name="BattleHandView" type="Node" parent="."]
+script = ExtResource("18_hand")
+
+[node name="BattleBoardView" type="Node" parent="."]
+script = ExtResource("19_board")
+
+[node name="BattleHandPresentation" type="Node" parent="."]
+script = ExtResource("20_hand_presentation")
+
+[node name="BattleMotionGeometry" type="Node" parent="."]
+script = ExtResource("21_geometry")
+
+[node name="BattleMotionEntities" type="Node" parent="."]
+script = ExtResource("22_entities")
 
 [node name="BattleRoot" type="Control" parent="."]
 mouse_filter = 2

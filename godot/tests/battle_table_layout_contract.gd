@@ -178,18 +178,21 @@ static func _check_mulligan_bonus_placement_controls(
 	hud.free()
 
 	var table := BattleTable.new()
+	table.board_view = BattleBoardView.new()
+	table.add_child(table.board_view)
+	table.board_view.configure(table)
 	table.state_ref = state
 	table.view_player = 1
 	_expect(
 		failures,
-		table._disabled_reason_for_source("hand:0") == "等待对手完成准备",
+		table.board_view._disabled_reason_for_source("hand:0") == "等待对手完成准备",
 		"setup non-actor receives a misleading card disabled reason",
 	)
 	state.players[0].hand.assign(["sv1-ener-1"])
 	table.view_player = 0
 	_expect(
 		failures,
-		table._disabled_reason_for_source("hand:0")
+		table.board_view._disabled_reason_for_source("hand:0")
 		== "准备阶段只能放置基础宝可梦",
 		"setup actor receives a main-phase disabled reason for a non-Pokemon card",
 	)
@@ -221,18 +224,21 @@ static func _check_pending_promotion_hints(failures: Array[String]) -> void:
 	header.free()
 
 	var table := BattleTable.new()
+	table.board_view = BattleBoardView.new()
+	table.add_child(table.board_view)
+	table.board_view.configure(table)
 	table.state_ref = state
 	table.view_player = 0
 	_expect(
 		failures,
-		table._disabled_reason_for_source("hand:0")
+		table.board_view._disabled_reason_for_source("hand:0")
 		== "等待对手选择新的战斗宝可梦",
 		"turn owner receives a misleading card reason during opponent promotion",
 	)
 	table.view_player = 1
 	_expect(
 		failures,
-		table._disabled_reason_for_source("hand:0")
+		table.board_view._disabled_reason_for_source("hand:0")
 		== "请先选择新的战斗宝可梦",
 		"promotion actor receives a misleading card reason",
 	)

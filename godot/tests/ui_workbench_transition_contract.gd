@@ -167,10 +167,9 @@ func _run() -> void:
 		int(cross_owner_event.get("actor", -1)) == 1
 		and int(Dictionary(cross_owner_event.get("target", {})).get(
 			"player", -1)) == 0
-		and Array(workbench.current_battle._presentation_event_hand_targets.get(
+		and Array(workbench.current_battle.presentation_runtime.event_hand_targets.get(
 			cross_owner_event_id, [])).size() == 1
-		and workbench.current_battle._hand_transition_sequences.has(
-			cross_owner_event_id),
+		and workbench.current_battle.hand_presentation.pending_hand_transition_count() > 0,
 		"Cross-player effect skipped the physical owner's hand landing/reflow choreography",
 	)
 
@@ -180,7 +179,7 @@ func _run() -> void:
 	before_view = checkpoint.get("before_view")
 	before_state = before_view.call("state_for_render")
 	var cover_states: Dictionary = (
-		workbench.current_battle._presentation_slot_cover_states
+		workbench.current_battle.presentation_runtime.slot_cover_states
 	)
 	var source_cover := cover_states.get("0:active") as PokemonState
 	var target_cover := cover_states.get("1:active") as PokemonState
@@ -193,7 +192,7 @@ func _run() -> void:
 			== before_state.players[1].active.damage_counters + 9,
 		"Damage feedback mutated the attacker before the defender",
 	)
-	var target_cover_view := workbench.current_battle._presentation_slot_covers.get(
+	var target_cover_view := workbench.current_battle.presentation_runtime.slot_covers.get(
 		"1:active"
 	) as CardView
 	_check_presentation_inspection_hit(
@@ -214,7 +213,7 @@ func _run() -> void:
 		"identical retreat checkpoint",
 	)
 	var retreat_mover: CardView
-	for value in workbench.current_battle._active_flyers:
+	for value in workbench.current_battle.card_motion_layer.entities:
 		var candidate := value as CardView
 		if candidate != null and bool(candidate.get_meta("slot_composite_motion", false)):
 			retreat_mover = candidate
@@ -244,7 +243,7 @@ func _run() -> void:
 	var live_target: CardView
 	for _attempt in range(24):
 		await create_timer(0.01, true, false, true).timeout
-		live_target = live_battle._presentation_slot_covers.get("1:active") as CardView
+		live_target = live_battle.presentation_runtime.slot_covers.get("1:active") as CardView
 		if (
 			live_target != null
 			and live_battle.input_blocker != null
@@ -309,36 +308,36 @@ func _run() -> void:
 		)
 	_stage = "shuffle_proxy_count"
 	var battle: BattleTable = workbench.current_battle
-	var deck_zone := battle.call("_zone_view_for_endpoint", {
+	var deck_zone := battle.motion_geometry.call("_zone_view_for_endpoint", {
 		"player": battle.view_player,
 		"zone": "deck",
 	}) as ZoneView
 	_check(deck_zone != null, "Shuffle proxy contract could not resolve the deck zone")
 	if deck_zone != null:
-		battle.call("_clear_active_flyers")
+		battle.motion_entities.call("_clear_active_flyers")
 		deck_zone.configure("牌库", "", 0, true)
-		var empty_spawned := bool(battle.call(
+		var empty_spawned := bool(battle.card_motion_layer.call(
 			"_spawn_shuffle_motion",
 			{"player": battle.view_player, "zone": "deck"},
 			1.2,
 			"",
 		))
 		_check(
-			not empty_spawned and battle._active_flyers.is_empty(),
+			not empty_spawned and battle.card_motion_layer.active_motion_count() == 0,
 			"Empty deck shuffle created a phantom packet of cards",
 		)
 		deck_zone.configure("牌库", "", 1, true)
-		var single_spawned := bool(battle.call(
+		var single_spawned := bool(battle.card_motion_layer.call(
 			"_spawn_shuffle_motion",
 			{"player": battle.view_player, "zone": "deck"},
 			1.2,
 			"",
 		))
 		_check(
-			single_spawned and battle._active_flyers.size() == 1,
+			single_spawned and battle.card_motion_layer.active_motion_count() == 1,
 			"One-card deck shuffle did not cap its proxy count to one",
 		)
-		battle.call("_clear_active_flyers")
+		battle.motion_entities.call("_clear_active_flyers")
 	workbench.queue_free()
 	await process_frame
 	_finish()
@@ -360,7 +359,7 @@ func _check_motion_card_faces(
 	if battle == null:
 		return
 	var paper_flyers := 0
-	for value in battle._active_flyers:
+	for value in battle.card_motion_layer.entities:
 		var flyer := value as Control
 		if flyer == null or not bool(flyer.get_meta("paper_card_token", false)):
 			continue
@@ -375,11 +374,11 @@ func _check_motion_card_faces(
 				str(flyer.get_meta("motion_card_id", "")) == expected_card_id,
 				"%s flyer lost its card identity" % context,
 			)
-			var expected_texture: Texture2D = battle.call(
+			var expected_texture: Texture2D = battle.card_motion_layer.call(
 				"_public_motion_texture_for_card_id",
 				expected_card_id,
 			)
-			var back_texture: Texture2D = battle.call(
+			var back_texture: Texture2D = battle.card_motion_layer.call(
 				"_texture_for_card_id",
 				"",
 			)
@@ -408,7 +407,7 @@ func _check_identical_slot_swap_motion(
 	var routes: Dictionary = {}
 	var mover_count := 0
 	var progressed_count := 0
-	for value in battle._active_flyers:
+	for value in battle.card_motion_layer.entities:
 		var mover := value as CardView
 		if (
 			mover == null
