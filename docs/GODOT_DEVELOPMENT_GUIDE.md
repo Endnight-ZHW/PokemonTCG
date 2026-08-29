@@ -83,7 +83,9 @@ flowchart TD
     Main --> Victory[victory_screen.tscn]
     Main --> Dialogs[dialogs 弹窗内容]
     Main --> Panels[ui/panels 查看面板]
-    Main --> Controllers[Controllers 控制器节点]
+    Main --> Shell[MainShellView 页面与安全区]
+    Main --> Modal[ModalHost 弹窗生命周期]
+    Main --> ChoiceModel[ChoiceSelectionModel 选择状态]
     Battle --> Header[battle_header.tscn]
     Battle --> HUD[battle_phase_hud.tscn 132px 悬浮命令轨]
     HUD --> Log[battle_log_panel.tscn 默认收起日志抽屉]
@@ -130,9 +132,10 @@ flowchart TD
 新 UI 组件应接受 catalog 注入，默认回退到 `CardCatalog.shared()`；只有需要写入合成卡牌的
 测试夹具才使用可变的 `CardCatalog.new(true)`，不要修改运行时仓库。
 
-`main.tscn` 根节点下还有 `Controllers`，里面放着 `ScreenRouter`、`MatchSession`、
-`AIMatchDriver`、`NetworkSessionDriver` 和 `ModalHost`。它们是主流程职责的可见入口；
-当前仍由 `Main` 保留兼容门面，后续扩展时优先把对应职责放到这些控制器。
+`main.tscn` 直接挂载 `MainShellView` 与 `ModalHost`。前者拥有页面挂载、响应式画布、安全区、
+Toast 和 Loading；后者拥有弹窗开关、动画、尺寸、返回键和内容清理。选择项、分类限制、
+撤退支付与能量分配合法性统一由 `ChoiceSelectionModel` 保存。`Main` 保留网络与 AI 编排，
+不要再为单纯转发属性或方法增加控制器节点。
 
 ### 前台视觉框架与兼容边界
 
@@ -275,7 +278,7 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 5. 改完按 `F6` 看当前场景；如果是主流程跳转，再按 `F5` 看完整游戏。
 
 牌桌中的固定牌位位于 `components/battle_table.tscn` 的 `BoardCanvas` 下，运行时由
-`BattleTable._layout_board()` 根据窗口尺寸定位。场景中的坐标用于编辑器预览，真正运行时
+`BattleBoardView._layout_board()` 根据窗口尺寸定位。场景中的坐标用于编辑器预览，真正运行时
 尺寸由 `BattleTable` 根节点 Inspector 中的 `Table Layout` 参数控制。竞技场底板始终铺满
 战斗视口；顶部信息和右侧 132px 命令轨作为悬浮层叠加，布局规划器只为交互内容预留安全边界，
 不会再用 `HBoxContainer` 从牌桌宽度中切出常驻侧栏。想改战斗宝可梦、备战宝可梦和手牌的
@@ -340,7 +343,7 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 
 - `Shadow`：卡牌阴影。
 - `Frame/Image`：边框与卡图。
-- 运行时覆盖层：`HPPill`、`DamageBadge`、`EnergyRow` 和 `ToolBadge` 显示场上 HP、伤害、能量和道具。
+- `BattleOverlay`：由 `CardBattleOverlay` 管理 HP、伤害、状态、能量、道具、附件落点与无障碍摘要。
 - `StatusRow`：运行时生成中毒、灼伤等状态徽章。
 - `TargetGlow`：合法目标高亮。
 - `SelectionRing`：选中状态。
@@ -379,7 +382,7 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 |---|---|---|
 | 卡牌阴影 | `Shadow` | 改 StyleBox、透明度和偏移，不影响规则 |
 | 卡图区域 | `Frame/Image` | 运行时会注入真实 Texture，场景中只调拉伸方式和边距 |
-| 场上 HP、伤害、能量、道具 | `CardView.gd` 的 `_ensure_overlay_nodes()`、`_layout_battle_overlay()` | 这些徽章运行时创建；样式和位置在脚本中统一调整 |
+| 场上 HP、伤害、能量、道具 | `card_battle_overlay.gd` | 覆盖层和附件落点由该组件统一管理；`CardView` 只协调卡面与输入 |
 | 选中边框 | `SelectionRing` | 和 `selected_pulse` 动画一起看 |
 | 合法目标高亮 | `TargetGlow` | 和 `target_pulse` 动画一起看 |
 | 可操作标记和原因提示 | `ActionableMarker`、`InteractionHint` | 内容由 `set_interaction_state(...)` 注入，不在这里推导规则 |
@@ -398,7 +401,9 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 - `BattleViewModel` 是当前玩家可见的不可变目标视图，不反向修改 `GameState`。
 - `BattlePresentationCoordinator` 为每批请求保存独立的 from/target 快照并返回 `PresentationHandle`。
 - `PresentationDirector` 逐事件调度；空间运动由 `MotionHandle` / `MotionGroup` 的真实 Tween 完成信号收尾。
-- `HandMotionController`、`CardMotionLayer`、`CardMotionEntity` 和 `BoardAnchorResolver` 分别拥有手牌布局、运动代理和动态落点。
+- `BattleHandView` / `BattleHandPresentation` 管理手牌布局、隐私、拖放与 staged 过渡。
+- `BattleCardMotionLayer`、`BattleMotionEntities` 与 `BattleMotionGeometry` 管理飞牌实体、批次、端点和轨迹。
+- `BattlePresentationRuntime` 管理快照 staging、遮罩、cover、反馈与 resync 清理；根脚本只协调组件。
 - `MotionPolicy` 统一 cinematic / standard / fast / reduced 节奏；reduced 仍在本帧末按同一事件顺序完成。
 
 不要在规则提交后先调用 `update_view()` 刷出最终手牌，再补调 `play_presentation()`；这会重新制造
@@ -641,9 +646,9 @@ page.select_deck(1, "water")
 | 弹窗打开和关闭 | `main.tscn` 的 ModalLayer 与 `ModalHost` | 前台/战斗规格共享外壳但隔离 Theme |
 | 卡牌选中呼吸 | `card_view.tscn` 的 `selected_pulse` | 复用组件固定状态 |
 | 合法目标闪烁 | `card_view.tscn` 的 `target_pulse` | 复用组件固定状态 |
-| 抽牌飞向手牌 | `BattlePresentationCoordinator` + `HandMotionController` | 旧手牌保持原位，到 55% 接触点才逐张插入 anchor |
-| 出牌、击倒、奖赏飞牌 | `PresentationDirector` + `CardMotionLayer` | 同一个 `CardMotionEntity` 从真实源姿态连续移动 |
-| 镜头与动态落点 | `BattleCameraRig` + `BoardAnchorResolver` | 牌桌和 Effects 同步位移，resize 时重新解析目标 |
+| 抽牌飞向手牌 | `BattlePresentationCoordinator` + `BattleHandPresentation` | 旧手牌保持原位，到 55% 接触点才逐张插入 anchor |
+| 出牌、击倒、奖赏飞牌 | `PresentationDirector` + `BattleCardMotionLayer` | 同一个运动实体从真实源姿态连续移动 |
+| 镜头与动态落点 | `BattleCameraRig` + `BattleMotionGeometry` | 牌桌和 Effects 同步位移，resize 时重新解析目标 |
 
 减少动画模式下不要强制播放时间轴。前台优先使用共享策略：
 
@@ -1287,7 +1292,7 @@ Godot UI 修改先判断节点属于哪一种布局：
 | 场景 | 主要修改方式 | 注意事项 |
 |---|---|---|
 | 标题、选牌、网络、设置 | Container 自动排布 | 改 `custom_minimum_size`、`separation`、margin，不要硬拖坐标 |
-| 战斗牌桌固定卡位 | `BattleTable._layout_board()` | 场景坐标只供预览；运行时由脚本按窗口重排 |
+| 战斗牌桌固定卡位 | `BattleBoardView._layout_board()` | 场景坐标只供预览；运行时由脚本按窗口重排 |
 | 手牌 | `BattleTable` 的 Hand 导出参数 | 改 `hand_card_size`、`hand_minimum_spacing`、`hand_rotation_degrees` |
 | 卡牌组件 | `card_view.tscn` + `CardView` 导出参数 | 改复用组件会影响手牌、场上和选择面板 |
 | 弹窗内容 | `ModalLayer` + 动态节点 | 改外壳在 `main.tscn`，改内容在 `main.gd` 或对应 panel 脚本 |
@@ -1400,7 +1405,7 @@ Godot UI 修改先判断节点属于哪一种布局：
 5. 按 `F6` 运行战斗场景或打开 Workbench 的“战斗场景”预览。
 
 如果想改牌库、弃牌、奖赏的位置，不要只拖场景节点；应修改
-`BattleTable._layout_board()` 中对应的牌区定位。修改后检查 16:9 和 20:9 截图，并以
+`BattleBoardView._layout_board()` 中对应的牌区定位。修改后检查 16:9 和 20:9 截图，并以
 `ZoneView.get_stack_visual_max_rect()` 的完整可视边界判断遮挡；根节点矩形不包含向左、向下伸出的
 全部纸边，也不能代表六张奖赏卡的最大横向占位。
 
@@ -1416,7 +1421,7 @@ Godot UI 修改先判断节点属于哪一种布局：
 2. 选择根节点 `CardView`，在 Inspector 调整 `selected_lift`、`hover_lift`、`selected_scale` 和 `hover_scale`。
 3. 选择 `Shadow`，修改阴影 StyleBox 或颜色透明度。
 4. 选择 `Frame`，修改卡牌边框、圆角或背景。
-5. 如需调整场上 HP、伤害、能量或道具徽章，编辑 `CardView.gd` 的 `_ensure_overlay_nodes()` 和 `_layout_battle_overlay()`。
+5. 如需调整场上 HP、伤害、能量、道具或附件落点，编辑 `card_battle_overlay.gd`。
 6. 选择 `TargetGlow`、`SelectionRing` 和 `ActionableMarker`，调整合法目标、选中和可操作效果的静态样式。
 7. 选择 `InteractionHint` 调整目标标签与禁用原因；动作按钮应在独立的 `card_action_popover.tscn` 中修改。
 8. 按 `F6` 看组件占位内容；再打开 Workbench 的战斗页，确认轻点不会改变卡牌尺寸，长按 350ms 打开检查器，拖放只接受合法目标。
