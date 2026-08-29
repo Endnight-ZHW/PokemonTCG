@@ -2,54 +2,30 @@
 
 namespace ptcg::ai::traditional_trusted_detail {
 
-const std::map<std::string, DeckProfile> &profiles(){
-    static const std::map<std::string, DeckProfile> value{
-        {"fire", {{"svi-infr"}, {"svi-chim","svi-monf","svi-chiy","svi-erec","sv3-134"},
-            {"svi-chim","svi-ente","svi-hrot","svi-chiy"}, {"svi-chim","svi-sqwk","svi-chiy"},
-            {"svi-monf","svi-infr"}, {"sv1-152","sv1-153","svi-erec","svi-mela"}, {"Fire"}, 110}},
-        {"water", {{"sv2-grex"}, {"sv2-38","sv2-39","sv2-staryu","sv2-starm","sv2-cand"},
-            {"sv2-38","sv2-staryu","sv2-tatsu","sv2-keldeo","sv1-49"}, {"sv2-38","sv2-staryu","sv2-tatsu","sv2-delib"},
-            {"sv2-39","sv2-grex","sv2-starm"}, {"sv2-cand","sv1-152","sv1-153","sv2-catch"}, {"Water"}, 110}},
-        {"psychic", {{"sv1-106","sv1-111","sv1-112","sv1-113"},
-            {"sv1-107","sv1-108","sv1-109","sv1-110","sv1-114","sv1-171"},
-            {"sv1-109","sv1-110","sv1-113","sv1-114","sv1-104"},
-            {"sv1-107","sv1-110","sv1-111","sv1-112","sv1-113","sv1-114"},
-            {"sv1-108","sv1-106"}, {"sv1-171","sv1-204","sv1-153"}, {"Psychic"}, 110}},
-        {"lightning", {{"svl-pikaex"}, {"svl-mare2","svl-flaa2","svl-thun","svl-chat","svl-ensw","sv1-170","svl-trks"},
-            {"svl-thun","svl-emol","svl-chat","svl-zera","svl-mare2","svl-chin"},
-            {"svl-pikaex","svl-mare2","svl-chin"}, {"svl-flaa2","svl-lant"},
-            {"sv1-170","svl-ensw","svl-vitb","svl-zinn"}, {"Lightning"}, 110}},
-        {"fighting", {{"svf-luca","svf-klea"}, {"svf-rio","svf-pass","svf-farf","svf-hawl","svf-ensw2"},
-            {"svf-farf","svf-hawl","svf-pass","svf-terr","svf-scyt"}, {"svf-rio","svf-scyt","svf-farf"},
-            {"svf-luca","svf-klea"}, {"svf-ensw2","svf-potion","svi-erec","svf-houb"}, {"Fighting"}, 110}},
-        {"colorless", {{"svi-tand","svi-maus","svi-ambi","svi-gree"}, {"svi-aipo","svi-skwv","svi-inde","svi-cait"},
-            {"svi-tand","svi-aipo","svi-skwv","svi-inde"}, {"svi-tand","svi-aipo","svi-skwv","svi-inde"},
-            {"svi-maus","svi-ambi","svi-gree"}, {"svi-enst","svi-nemb","svi-cait","svi-popp"}, {"Colorless"}, 110}},
-        {"dragon", {{"svg-alt","svg-ceti"}, {"svg-swa","svg-dram","svg-milt","svg-beri","svg-chef"},
-            {"svg-swa","svg-dram","svg-milt","svg-ceto"}, {"svg-swa","svg-ceto","svg-milt","svg-tatsu"},
-            {"svg-alt","svg-ceti"}, {"svg-chef","svg-beri","svf-potion","svl-ensw"}, {"Water","Metal"}, 110}},
-        {"grass", {{"svg2-tort","svg2-brel","svg2-empo"}, {"svg2-turt","svg2-grot","svg2-shro","svg2-zaru","svg2-gard"},
-            {"svg2-turt","svg2-shro","svg2-zaru"}, {"svg2-turt","svg2-shro","svg2-zaru"},
-            {"svg2-grot","svg2-tort","svg2-brel","svg2-empo"}, {"sv1-152","svg2-gard","svg2-exps","sv1-153"},
-            {"Grass","Rainbow"}, 110}},
-        {"steel", {{"svm-zacian","svm-zamazenta","svm-orthworm"},
-            {"svm-bronzor","svm-bronzong","svm-smeargle","svm-cobalion","svm-dialga"},
-            {"svm-smeargle","svm-zamazenta","svm-zacian","svm-cobalion"},
-            {"svm-bronzor","svm-smeargle","svm-cobalion","svm-orthworm"}, {"svm-bronzong"},
-            {"sv1-151","sv1-153","svm-marnie-pride","svg2-exps","svl-vitb"}, {"Metal"}, 100}},
-        {"darkness", {{"svd-mabosstiff-ex","svd-dodrio"},
-            {"svd-maschiff","svd-doduo","svd-dark-patch","svl-chat"},
-            {"svd-maschiff","svd-doduo","svd-absol","svd-morpeko","svl-chat"},
-            {"svd-maschiff","svd-doduo","svd-mabosstiff-ex"}, {"svd-mabosstiff-ex","svd-dodrio"},
-            {"sv1-151","sv1-153","svd-dark-patch","svd-hard-belt","sv1-204"}, {"Darkness"}, 110}},
-    };
-    return value;
+const Value::Array &DeckProfile::cards(const char *role) const {
+    static const Value::Array empty;
+    if (value == nullptr || !value->is_object()) return empty;
+    return array_field(*value, role);
 }
 
-const DeckProfile &profile(const std::string &deck_key){
-    static const DeckProfile empty;
-    const auto found = profiles().find(deck_key);
-    return found == profiles().end() ? empty : found->second;
+bool DeckProfile::contains(
+    const char *role,
+    const std::string &card_id
+) const {
+    return !card_id.empty() && array_contains(cards(role), card_id);
+}
+
+std::int64_t DeckProfile::high_impact_damage_floor() const {
+    return value == nullptr ? 110
+        : integer_field(*value, "high_impact_damage_floor", 110);
+}
+
+DeckProfile profile(const Value &catalog, const std::string &deck_key) {
+    const Value *plans = field(catalog, "deck_plans");
+    if (plans == nullptr || !plans->is_object()) return {};
+    const Value *value = plans->find(deck_key);
+    if (value == nullptr || !value->is_object()) value = plans->find("fallback");
+    return {value != nullptr && value->is_object() ? value : nullptr};
 }
 
 bool contains(const std::vector<std::string> &values, const std::string &needle){
@@ -798,7 +774,8 @@ bool energy_matches_profile(
     const Value *definition = card(cards, card_id);
     if (definition == nullptr) return false;
     const auto &provided = array_field(*definition, "provides_energy");
-    for (const std::string &type : profile(key).energy) {
+    for (const Value &type_value : profile(cards, key).cards("energy")) {
+        const std::string type = type_value.string_or();
         if (array_contains(provided, type) || array_contains(provided, "Rainbow")) return true;
     }
     return false;
@@ -816,7 +793,8 @@ std::int64_t energy_profile_match_count(
     // Preserve the frozen GDScript loop exactly: Rainbow satisfies every
     // profile entry and therefore receives one +50 priority increment per
     // listed type (not merely one increment in total).
-    for (const std::string &type : profile(key).energy) {
+    for (const Value &type_value : profile(cards, key).cards("energy")) {
+        const std::string type = type_value.string_or();
         if (array_contains(provided, type) || array_contains(provided, "Rainbow")) {
             ++count;
         }
@@ -826,12 +804,12 @@ std::int64_t energy_profile_match_count(
 
 double card_priority(const Value &cards, const std::string &card_id, const std::string &key){
     if (card_id.empty()) return 0.0;
-    const DeckProfile &p = profile(key);
+    const DeckProfile p = profile(cards, key);
     double score = 0.0;
-    if (contains(p.core, card_id)) score += 180.0;
-    if (contains(p.engine, card_id)) score += 100.0;
-    if (contains(p.evolution, card_id)) score += 120.0;
-    if (contains(p.trainer, card_id)) score += 60.0;
+    if (p.contains("core", card_id)) score += 180.0;
+    if (p.contains("engine", card_id)) score += 100.0;
+    if (p.contains("evolution", card_id)) score += 120.0;
+    if (p.contains("trainer", card_id)) score += 60.0;
     score += static_cast<double>(
         energy_profile_match_count(cards, card_id, key)) * 50.0;
     return score;
@@ -1092,25 +1070,25 @@ double energy_plan_target_bonus(
     const Value *definition = card(cards, string_field(pokemon, "card_id"));
     if (definition == nullptr) return -std::numeric_limits<double>::infinity();
     const std::string pokemon_id = string_field(pokemon, "card_id");
-    const DeckProfile &deck = profile(key);
+    const DeckProfile deck = profile(cards, key);
     double bonus = 0.0;
-    if (contains(deck.core, pokemon_id)) bonus += 95.0;
+    if (deck.contains("core", pokemon_id)) bonus += 95.0;
     if (
-        contains(deck.evolution, pokemon_id)
+        deck.contains("evolution", pokemon_id)
         || !array_field(pokemon, "evolution_stack_ids").empty()
     ) bonus += 45.0;
 
     const std::int64_t damage_ceiling = best_pokemon_damage_for_state(
         position, state, actor, pokemon, slot, cards);
-    if (contains(deck.engine, pokemon_id) && !contains(deck.core, pokemon_id)) {
+    if (deck.contains("engine", pokemon_id) && !deck.contains("core", pokemon_id)) {
         bonus += 22.0;
         const auto attached_cards = array_field(pokemon, "energy_card_ids").size();
         if (attached_cards > 0) {
             bonus -= 55.0 * static_cast<double>(attached_cards);
         }
-        if (damage_ceiling < deck.high_impact_damage_floor) bonus -= 25.0;
+        if (damage_ceiling < deck.high_impact_damage_floor()) bonus -= 25.0;
     }
-    if (slot != "active" && contains(deck.bench, pokemon_id)) bonus += 34.0;
+    if (slot != "active" && deck.contains("bench", pokemon_id)) bonus += 34.0;
     if (has_subtype(*definition, "ex")) bonus += 45.0;
     bonus += std::min(120.0, static_cast<double>(damage_ceiling) * 0.35);
 
@@ -1124,18 +1102,18 @@ double energy_plan_target_bonus(
         : high_before;
     const std::int64_t high_progress = std::max<std::int64_t>(
         0, high_before - high_after);
-    if (damage_ceiling >= deck.high_impact_damage_floor && high_progress > 0) {
+    if (damage_ceiling >= deck.high_impact_damage_floor() && high_progress > 0) {
         bonus += static_cast<double>(high_progress) * 110.0;
         if (high_after == 0) {
             bonus += 170.0 + static_cast<double>(damage_ceiling) * 0.25;
         } else if (high_after == 1) {
             bonus += 125.0;
         }
-        if (slot != "active" && contains(deck.core, pokemon_id)) bonus += 75.0;
+        if (slot != "active" && deck.contains("core", pokemon_id)) bonus += 75.0;
     }
     if (missing == 0) bonus += 35.0;
     else if (missing == 1) bonus += 25.0;
-    else if (missing <= 3 && damage_ceiling >= deck.high_impact_damage_floor) {
+    else if (missing <= 3 && damage_ceiling >= deck.high_impact_damage_floor()) {
         bonus += 30.0;
     }
     const std::int64_t max_hp = integer_field(*definition, "hp");
@@ -1198,7 +1176,7 @@ bool has_better_bench_energy_plan(
     const Value &owner = player(state, actor);
     const Value *active_pokemon = active(state, actor);
     if (active_pokemon == nullptr) return false;
-    const DeckProfile &deck = profile(key);
+    const DeckProfile deck = profile(cards, key);
     const Value *active_definition = card(
         cards, string_field(*active_pokemon, "card_id"));
     const std::int64_t active_max_hp = active_definition == nullptr
@@ -1206,10 +1184,10 @@ bool has_better_bench_energy_plan(
     const std::int64_t active_damage = best_pokemon_damage_for_state(
         position, state, actor, *active_pokemon, "active", cards);
     if (
-        contains(deck.core, string_field(*active_pokemon, "card_id"))
+        deck.contains("core", string_field(*active_pokemon, "card_id"))
         && static_cast<double>(position.pokemon_current_hp(*active_pokemon))
             > std::max(50.0, static_cast<double>(active_max_hp) * 0.35)
-        && active_damage >= deck.high_impact_damage_floor
+        && active_damage >= deck.high_impact_damage_floor()
     ) return false;
 
     const std::int64_t active_before = best_missing(cards, active_pokemon);
@@ -1222,7 +1200,7 @@ bool has_better_bench_energy_plan(
         "active", energy_card_id, cards);
     const bool active_progresses = active_after < active_before
         || (
-            active_damage >= deck.high_impact_damage_floor
+            active_damage >= deck.high_impact_damage_floor()
             && active_power_after < active_power_before
         );
 
@@ -1242,17 +1220,17 @@ bool has_better_bench_energy_plan(
             position, state, actor, pokemon, slot, energy_card_id, cards);
         const bool progresses = after < before
             || (
-                damage >= deck.high_impact_damage_floor
+                damage >= deck.high_impact_damage_floor()
                 && power_after < power_before
             );
         if (
-            progresses && contains(deck.core, string_field(pokemon, "card_id"))
+            progresses && deck.contains("core", string_field(pokemon, "card_id"))
             && (!active_progresses || active_damage < damage)
         ) return true;
         if (
             progresses && before > 0 && after == 0
             && damage >= std::max<std::int64_t>(
-                deck.high_impact_damage_floor, active_damage + 40)
+                deck.high_impact_damage_floor(), active_damage + 40)
         ) return true;
     }
     return false;

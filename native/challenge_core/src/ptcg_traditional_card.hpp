@@ -16,7 +16,8 @@ inline const Value &catalog_cards(const Value &catalog) {
 }
 
 inline const Value *card(const Value &cards, const std::string &card_id) {
-    const Value *definition = traditional_value::field(cards, card_id);
+    const Value &rows = catalog_cards(cards);
+    const Value *definition = traditional_value::field(rows, card_id);
     return definition != nullptr && definition->is_object()
         ? definition : nullptr;
 }

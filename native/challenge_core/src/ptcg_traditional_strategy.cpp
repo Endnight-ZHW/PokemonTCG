@@ -1,9 +1,12 @@
 #include "ptcg_traditional_strategy.hpp"
+#include "ptcg_traditional_card.hpp"
 #include "ptcg_traditional_value.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <initializer_list>
+#include <set>
 #include <string_view>
 #include <vector>
 
@@ -12,12 +15,16 @@ namespace ptcg::ai {
 namespace {
 
 using traditional_value::array_contains;
+using traditional_value::array_field;
 using traditional_value::bool_field;
 using traditional_value::field;
 using traditional_value::integer_field;
 using traditional_value::lower_ascii;
 using traditional_value::number_field;
 using traditional_value::string_field;
+using traditional_card::card;
+using traditional_card::is_pokemon;
+using traditional_card::is_trainer;
 
 std::string action_card_id(const Value &action);
 std::string action_target_card_id(const Value &action);
@@ -374,6 +381,123 @@ std::int64_t attack_index(const Value &action) {
 const Value *strategy_profile(const Value &strategies, const std::string &deck_key) {
     const Value *profile = strategies.find(deck_key);
     return profile != nullptr && profile->is_object() ? profile : nullptr;
+}
+
+enum class PlanCardKind { Any, Pokemon, Trainer };
+
+bool plan_card_matches(
+    const Value &cards,
+    const std::string &card_id,
+    PlanCardKind kind
+) {
+    if (kind == PlanCardKind::Pokemon) return is_pokemon(cards, card_id);
+    if (kind == PlanCardKind::Trainer) return is_trainer(cards, card_id);
+    return card(cards, card_id) != nullptr;
+}
+
+void append_role_cards(
+    const Value &profile,
+    const Value &cards,
+    const std::vector<std::string> &role_names,
+    PlanCardKind kind,
+    std::set<std::string> &result
+) {
+    const Value *roles = field(profile, "card_roles");
+    if (roles == nullptr || !roles->is_object()) return;
+    for (const std::string &role_name : role_names) {
+        const Value *values = field(*roles, role_name);
+        if (values == nullptr || !values->is_array()) continue;
+        for (const Value &value : values->as_array()) {
+            const std::string card_id = value.string_or();
+            if (!card_id.empty() && plan_card_matches(cards, card_id, kind)) {
+                result.insert(card_id);
+            }
+        }
+    }
+}
+
+Value string_set_value(const std::set<std::string> &values) {
+    Value::Array result;
+    result.reserve(values.size());
+    for (const std::string &value : values) result.emplace_back(value);
+    return Value(std::move(result));
+}
+
+Value normalized_deck_plan(const Value &profile, const Value &cards) {
+    const auto role_set = [&](
+        std::initializer_list<const char *> role_names,
+        PlanCardKind kind
+    ) {
+        std::vector<std::string> names;
+        names.reserve(role_names.size());
+        for (const char *name : role_names) names.emplace_back(name);
+        std::set<std::string> values;
+        append_role_cards(profile, cards, names, kind, values);
+        return values;
+    };
+    std::set<std::string> trainer_cards;
+    const Value *roles = field(profile, "card_roles");
+    if (roles != nullptr && roles->is_object()) {
+        std::vector<std::string> all_roles;
+        all_roles.reserve(roles->as_object().size());
+        for (const auto &[role_name, ignored] : roles->as_object()) {
+            (void)ignored;
+            all_roles.push_back(role_name);
+        }
+        append_role_cards(
+            profile, cards, all_roles, PlanCardKind::Trainer, trainer_cards);
+    }
+    std::set<std::string> energy_types;
+    for (const std::string &energy_id : role_set(
+        {"energy"}, PlanCardKind::Any
+    )) {
+        const Value *definition = card(cards, energy_id);
+        if (definition == nullptr) continue;
+        for (const Value &provided : array_field(*definition, "provides_energy")) {
+            const std::string energy_type = provided.string_or();
+            if (!energy_type.empty()) energy_types.insert(energy_type);
+        }
+    }
+    const Value *card_roles = field(profile, "card_roles");
+    return Value(Value::Object{
+        {"core", string_set_value(role_set(
+            {"primary_attacker"}, PlanCardKind::Pokemon))},
+        {"engine", string_set_value(role_set(
+            {"bench_engine", "energy_acceleration"}, PlanCardKind::Pokemon))},
+        {"setup", string_set_value(role_set(
+            {"setup_basic"}, PlanCardKind::Pokemon))},
+        {"bench", string_set_value(role_set(
+            {"bench_engine", "secondary_attacker", "setup_basic"},
+            PlanCardKind::Pokemon))},
+        {"evolution", string_set_value(role_set(
+            {"evolution"}, PlanCardKind::Pokemon))},
+        {"trainer", string_set_value(trainer_cards)},
+        {"energy", string_set_value(energy_types)},
+        {"card_roles", card_roles != nullptr && card_roles->is_object()
+            ? card_roles->deep_clone() : Value::make_object()},
+        // This is a global tactical heuristic, not deck knowledge. Individual
+        // deck card IDs and energy types are entirely data-derived above.
+        {"high_impact_damage_floor", Value(std::int64_t{110})},
+    });
+}
+
+Value normalized_deck_plans(
+    const Value &source,
+    const Value &strategies,
+    const Value &cards
+) {
+    Value::Object result;
+    const Value *fallback = field(source, "fallback");
+    result["fallback"] = normalized_deck_plan(
+        fallback != nullptr && fallback->is_object()
+            ? *fallback : Value::make_object(),
+        cards);
+    for (const auto &[deck_key, profile] : strategies.as_object()) {
+        if (profile.is_object()) {
+            result[deck_key] = normalized_deck_plan(profile, cards);
+        }
+    }
+    return Value(std::move(result));
 }
 
 std::string generic_plan_stage(const StrategyView &view) {
@@ -1229,10 +1353,16 @@ TraditionalStrategyCatalog::TraditionalStrategyCatalog(Value strategies, Value c
         ? *archetypes : Value::make_object();
     const Value *cards = catalog.find("cards");
     cards_ = cards != nullptr && cards->is_object() ? *cards : std::move(catalog);
+    deck_plan_profiles_ = normalized_deck_plans(
+        strategies, strategies_, cards_);
     valid_ = strategies_.is_object() && !strategies_.as_object().empty();
 }
 
 bool TraditionalStrategyCatalog::valid() const noexcept { return valid_; }
+
+const Value &TraditionalStrategyCatalog::deck_plan_profiles() const noexcept {
+    return deck_plan_profiles_;
+}
 
 std::string TraditionalStrategyCatalog::strategy_id(const std::string &deck_key) const {
     const Value *profile = strategy_profile(strategies_, deck_key);

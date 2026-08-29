@@ -120,16 +120,16 @@ using namespace challenge;
             if (pending.is_null() || typed_pending == nullptr
                 || typed_pending->player != actor) return false;
             ptcg::ai::Value response;
-            if (!(forced_choice_response(
-                    simulation->search_state(), pending, *typed_pending, response)
-                || confirm_choice_response(
+            if (!(arven_choice_response(
                     *simulation, pending, *typed_pending, response)
-                || arven_choice_response(
+                || confirm_choice_response(
                     *simulation, pending, *typed_pending, response)
                 || duplicate_energy_choice_response(
                     *simulation, pending, *typed_pending, response)
                 || single_choice_response(
-                    *simulation, pending, *typed_pending, response))) {
+                    *simulation, pending, *typed_pending, response)
+                || forced_choice_response(
+                    simulation->search_state(), pending, *typed_pending, response))) {
                 return false;
             }
             return bool_field(response, "cancelled");

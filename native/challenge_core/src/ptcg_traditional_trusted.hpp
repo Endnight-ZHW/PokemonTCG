@@ -9,11 +9,17 @@
 
 namespace ptcg::ai {
 
+class TraditionalStrategyCatalog;
+
 // Native equivalent of NativeChallengeAI._traditional_leaf_score and its
 // deterministic strategic-evaluation dependency graph.
 class TraditionalTrustedEvaluator {
 public:
-    TraditionalTrustedEvaluator(Value catalog, Value decks);
+    TraditionalTrustedEvaluator(
+        Value catalog,
+        Value decks,
+        const TraditionalStrategyCatalog &strategies
+    );
 
     double leaf_score(
         const RulesSession &position,

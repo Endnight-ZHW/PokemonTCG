@@ -1695,6 +1695,12 @@ Godot 的 `data/*.json` 是生成物。新手最容易犯的错是直接改 `god
 4. 更新 `godot/data/release_manifest.json` 的发布牌组列表。
 5. 运行 `tools/content.ps1 test`、`export` 和 `check`。
 
+`ai_strategies.json` 是牌组角色的唯一来源。原生 `TraditionalStrategyCatalog` 会从
+`primary_attacker`、`bench_engine`、`setup_basic`、`energy_acceleration`、`evolution`
+等角色生成只读 `DeckPlanProfile`，并从 Energy 卡的 `provides_energy` 推导能量类型；
+不要再在 C++ 中增加按 deck key 维护的卡牌 ID 表。新增完整策略后，
+`TraditionalTrustedEvaluator` 会自动使用同一份规范化 profile。
+
 最小示例结构：
 
 ```json

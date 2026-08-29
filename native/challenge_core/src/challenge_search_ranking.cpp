@@ -153,13 +153,10 @@ using namespace challenge;
             trace.had_choice = true;
             ++choice_resolutions_;
             ptcg::ai::Value response;
-            if (forced_choice_response(
-                position.search_state(), *pending, *typed_pending, response)) {
-                ++native_forced_choice_resolutions_;
-            } else if (confirm_choice_response(
+            if (arven_choice_response(
                 position, *pending, *typed_pending, response)) {
                 ++native_choice_resolutions_;
-            } else if (arven_choice_response(
+            } else if (confirm_choice_response(
                 position, *pending, *typed_pending, response)) {
                 ++native_choice_resolutions_;
             } else if (duplicate_energy_choice_response(
@@ -168,6 +165,9 @@ using namespace challenge;
             } else if (single_choice_response(
                 position, *pending, *typed_pending, response)) {
                 ++native_choice_resolutions_;
+            } else if (forced_choice_response(
+                position.search_state(), *pending, *typed_pending, response)) {
+                ++native_forced_choice_resolutions_;
             } else {
                 return false;
             }

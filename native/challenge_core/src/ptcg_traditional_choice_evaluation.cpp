@@ -241,18 +241,18 @@ double energy_choice_target_value(
         position, state, actor, *pokemon, slot, cards);
     const std::int64_t ready_after = best_ready_damage_for_pokemon(
         position, state, actor, probe, slot, cards);
-    const DeckProfile &deck = profile(key);
+    const DeckProfile deck = profile(cards, key);
     double value = static_cast<double>(progress) * 85.0;
     if (before > 0 && after == 0) {
         value += ready_after <= 0 && power_after > 0
             ? 55.0 : 155.0 + static_cast<double>(damage) * 0.25;
     } else if (before > 1 && after == 1) value += 65.0;
-    if (damage >= deck.high_impact_damage_floor && power_progress > 0) {
+    if (damage >= deck.high_impact_damage_floor() && power_progress > 0) {
         value += static_cast<double>(power_progress) * 105.0;
         if (power_after == 0) value += 165.0 + static_cast<double>(damage) * 0.25;
         else if (power_after == 1) value += 115.0;
     }
-    if (contains(deck.core, string_field(*pokemon, "card_id"))) value += 65.0;
+    if (deck.contains("core", string_field(*pokemon, "card_id"))) value += 65.0;
     value += energy_plan_target_bonus(
         position, state, actor, *pokemon, slot,
         energy_card_id, key, cards);
@@ -306,8 +306,8 @@ double energy_source_choice_value(
     } else if (after_missing > before_missing) {
         cost += static_cast<double>(after_missing - before_missing) * 95.0;
     }
-    const DeckProfile &deck = profile(key);
-    if (damage >= deck.high_impact_damage_floor
+    const DeckProfile deck = profile(cards, key);
+    if (damage >= deck.high_impact_damage_floor()
         && before_high == 0 && after_high > 0) {
         cost += 190.0 + static_cast<double>(damage) * 0.35;
     } else if (after_high > before_high) {
@@ -327,8 +327,8 @@ double energy_source_choice_value(
             <= std::max(40.0, static_cast<double>(max_hp) * 0.35)) cost -= 60.0;
     }
     const std::string pokemon_id = string_field(*pokemon, "card_id");
-    if (contains(deck.core, pokemon_id)) cost += 65.0;
-    if (contains(deck.engine, pokemon_id) && !contains(deck.core, pokemon_id)) {
+    if (deck.contains("core", pokemon_id)) cost += 65.0;
+    if (deck.contains("engine", pokemon_id) && !deck.contains("core", pokemon_id)) {
         cost -= 35.0;
     }
     if (energy_unit_count(cards, pokemon) >= 3
@@ -615,13 +615,13 @@ double public_energy_distribution_board_utility(
                 - static_cast<double>(missing) * 55.0;
             if (missing == 0 && damage > 0) {
                 value += 80.0;
-                if (damage >= profile(key).high_impact_damage_floor) value += 70.0;
+                if (damage >= profile(cards, key).high_impact_damage_floor()) value += 70.0;
                 if (opponent_hp > 0 && damage >= opponent_hp) {
                     value += 200.0
                         + static_cast<double>(opponent_prizes) * 100.0;
                 }
             } else if (missing == 1
-                && damage >= profile(key).high_impact_damage_floor) value += 25.0;
+                && damage >= profile(cards, key).high_impact_damage_floor()) value += 25.0;
             best = std::max(best, value);
         }
         if (std::isfinite(best)) {

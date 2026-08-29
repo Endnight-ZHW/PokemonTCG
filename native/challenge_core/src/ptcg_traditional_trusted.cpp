@@ -1,6 +1,7 @@
 #include "ptcg_traditional_trusted.hpp"
 
 #include "ptcg_traditional_evaluation_detail.hpp"
+#include "ptcg_traditional_strategy.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -14,10 +15,19 @@ namespace ptcg::ai {
 
 using namespace traditional_trusted_detail;
 
-TraditionalTrustedEvaluator::TraditionalTrustedEvaluator(Value catalog, Value decks)
+TraditionalTrustedEvaluator::TraditionalTrustedEvaluator(
+    Value catalog,
+    Value decks,
+    const TraditionalStrategyCatalog &strategies
+)
     : decks_(std::move(decks)) {
     const Value *cards = catalog.find("cards");
-    cards_ = cards != nullptr && cards->is_object() ? *cards : std::move(catalog);
+    Value card_rows = cards != nullptr && cards->is_object()
+        ? *cards : std::move(catalog);
+    cards_ = Value(Value::Object{
+        {"cards", std::move(card_rows)},
+        {"deck_plans", strategies.deck_plan_profiles().deep_clone()},
+    });
 }
 
 double TraditionalTrustedEvaluator::leaf_score(
@@ -59,7 +69,7 @@ std::optional<double> TraditionalTrustedEvaluator::action_score(
     const std::string target_slot = target != nullptr
         ? string_field(*target, "slot") : std::string{};
     const std::string key = deck_key(state, actor);
-    const DeckProfile &deck = profile(key);
+    const DeckProfile deck = profile(cards_, key);
     if (kind == "PLAY_TRAINER") {
         const Value *definition = card(cards_, card_id);
         if (definition == nullptr) return std::nullopt;
@@ -68,7 +78,7 @@ std::optional<double> TraditionalTrustedEvaluator::action_score(
             "active", key, cards_, decks_);
         if (!tactical.has_value()) return std::nullopt;
         double development = *tactical;
-        if (contains(deck.trainer, card_id)) development += 45.0;
+        if (deck.contains("trainer", card_id)) development += 45.0;
         double score = card_priority(cards_, card_id, key) + 160.0;
         if (development > 0.0) {
             score += development * 0.75;
@@ -195,7 +205,7 @@ std::optional<double> TraditionalTrustedEvaluator::action_score(
             development += 70.0;
         }
         if (
-            damage_ceiling >= deck.high_impact_damage_floor
+            damage_ceiling >= deck.high_impact_damage_floor()
             && power_progress > 0
         ) {
             development += static_cast<double>(power_progress) * 120.0;
@@ -206,7 +216,7 @@ std::optional<double> TraditionalTrustedEvaluator::action_score(
                 development += 135.0;
             }
         }
-        if (contains(deck.core, string_field(*target_pokemon, "card_id"))) {
+        if (deck.contains("core", string_field(*target_pokemon, "card_id"))) {
             development += 85.0;
         }
         development += energy_plan_target_bonus(
@@ -225,7 +235,7 @@ std::optional<double> TraditionalTrustedEvaluator::action_score(
         if (energy_matches_profile(cards_, card_id, key)) development += 45.0;
         if (before == 0 && progress == 0 && power_progress == 0) {
             development -= 85.0;
-            if (!contains(deck.core, string_field(*target_pokemon, "card_id"))) {
+            if (!deck.contains("core", string_field(*target_pokemon, "card_id"))) {
                 development -= 45.0;
             }
         }
@@ -352,8 +362,8 @@ std::optional<double> TraditionalTrustedEvaluator::action_score(
             + static_cast<double>(energy_count) * 35.0;
         double development = 145.0
             + std::max(0.0, evolved_strength - current_strength) * 0.75;
-        if (contains(deck.core, card_id)) development += 95.0;
-        if (contains(deck.evolution, card_id)) development += 70.0;
+        if (deck.contains("core", card_id)) development += 95.0;
+        if (deck.contains("evolution", card_id)) development += 70.0;
         if (evolve_slot == "active") {
             development -= active_evolve_blocking_penalty(
                 position, state, actor, *evolve_target,
@@ -377,7 +387,7 @@ std::optional<double> TraditionalTrustedEvaluator::action_score(
                 score -= 180.0;
             }
         }
-        if (contains(deck.bench, card_id) && !contains(deck.setup, card_id)) {
+        if (deck.contains("bench", card_id) && !deck.contains("setup", card_id)) {
             const bool has_alternative = std::any_of(
                 array_field(owner, "hand").begin(),
                 array_field(owner, "hand").end(),
@@ -385,14 +395,14 @@ std::optional<double> TraditionalTrustedEvaluator::action_score(
                     const std::string candidate = entry.string_or();
                     return candidate != card_id
                         && is_basic_pokemon(cards_, candidate)
-                        && contains(deck.setup, candidate);
+                        && deck.contains("setup", candidate);
                 });
             if (has_alternative) score -= 260.0;
         }
     }
-    if (contains(deck.setup, card_id)) {
+    if (deck.contains("setup", card_id)) {
         score += 160.0;
-    } else if (target_slot != "active" && contains(deck.bench, card_id)) {
+    } else if (target_slot != "active" && deck.contains("bench", card_id)) {
         score += 70.0;
     }
 
@@ -400,8 +410,8 @@ std::optional<double> TraditionalTrustedEvaluator::action_score(
     if (bench_count(owner) < 5) {
         development = 90.0 + card_priority(cards_, card_id, key) * 0.7;
         if (bench_count(owner) < 2) development += 70.0;
-        if (contains(deck.setup, card_id)) development += 80.0;
-        if (target_slot != "active" && contains(deck.bench, card_id)) {
+        if (deck.contains("setup", card_id)) development += 80.0;
+        if (target_slot != "active" && deck.contains("bench", card_id)) {
             development += 70.0;
         }
     }
@@ -462,7 +472,7 @@ std::optional<double> TraditionalTrustedEvaluator::development_action_value(
     const std::string target_slot = target != nullptr && target->is_object()
         ? string_field(*target, "slot") : std::string{};
     const std::string key = deck_key(state, actor);
-    const DeckProfile &deck = profile(key);
+    const DeckProfile deck = profile(cards_, key);
     const std::optional<double> full_score = action_score(position, actor, action);
     if (!full_score.has_value()) return std::nullopt;
     const double priority = card_priority(cards_, card_id, key);
@@ -478,8 +488,8 @@ std::optional<double> TraditionalTrustedEvaluator::development_action_value(
         if (card_id.empty() || bench_count(owner) >= 5) return 0.0;
         double value = 90.0 + priority * 0.7;
         if (bench_count(owner) < 2) value += 70.0;
-        if (contains(deck.setup, card_id)) value += 80.0;
-        if (target_slot != "active" && contains(deck.bench, card_id)) value += 70.0;
+        if (deck.contains("setup", card_id)) value += 80.0;
+        if (target_slot != "active" && deck.contains("bench", card_id)) value += 70.0;
         return value;
     }
     if (kind == "PLAY_TRAINER") {
@@ -489,7 +499,7 @@ std::optional<double> TraditionalTrustedEvaluator::development_action_value(
             position, state, actor, array_field(*definition, "trainer_effects"),
             "active", key, cards_, decks_);
         if (!tactical.has_value()) return std::nullopt;
-        return *tactical + (contains(deck.trainer, card_id) ? 45.0 : 0.0);
+        return *tactical + (deck.contains("trainer", card_id) ? 45.0 : 0.0);
     }
     if (kind == "USE_ABILITY") {
         const Value *payload = field(action, "payload");
@@ -564,13 +574,14 @@ bool TraditionalTrustedEvaluator::deck_profile_contains(
     const std::string &card_id
 ) const {
     if ((actor != 0 && actor != 1) || card_id.empty()) return false;
-    const DeckProfile &deck = profile(deck_key(position.search_state(), actor));
-    if (role == "core") return contains(deck.core, card_id);
-    if (role == "engine") return contains(deck.engine, card_id);
-    if (role == "setup") return contains(deck.setup, card_id);
-    if (role == "bench") return contains(deck.bench, card_id);
-    if (role == "evolution") return contains(deck.evolution, card_id);
-    if (role == "trainer") return contains(deck.trainer, card_id);
+    const DeckProfile deck = profile(
+        cards_, deck_key(position.search_state(), actor));
+    if (role == "core") return deck.contains("core", card_id);
+    if (role == "engine") return deck.contains("engine", card_id);
+    if (role == "setup") return deck.contains("setup", card_id);
+    if (role == "bench") return deck.contains("bench", card_id);
+    if (role == "evolution") return deck.contains("evolution", card_id);
+    if (role == "trainer") return deck.contains("trainer", card_id);
     return false;
 }
 
@@ -712,9 +723,9 @@ std::optional<bool> TraditionalTrustedEvaluator::confirm_choice(
             if (!deck.empty()) card_id = deck.back().string_or();
         }
         if (card_id.empty()) return false;
-        const DeckProfile &deck = profile(key);
-        if (contains(deck.core, card_id) || contains(deck.evolution, card_id)
-            || contains(deck.engine, card_id)) return true;
+        const DeckProfile deck = profile(cards_, key);
+        if (deck.contains("core", card_id) || deck.contains("evolution", card_id)
+            || deck.contains("engine", card_id)) return true;
         if (is_energy(cards_, card_id) && has_energy_target(state, actor, cards_)) {
             return true;
         }

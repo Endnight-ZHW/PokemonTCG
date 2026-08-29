@@ -88,7 +88,7 @@ Value ChallengeController::configure(
     strategy_catalog_ = std::make_unique<TraditionalStrategyCatalog>(
         strategies_, catalog_);
     trusted_evaluator_ = std::make_unique<TraditionalTrustedEvaluator>(
-        catalog_, decks_);
+        catalog_, decks_, *strategy_catalog_);
     configured_ = strategy_catalog_->valid();
     result["success"] = Value(configured_);
     result["error"] = Value(configured_ ? "" : "invalid_strategy_catalog");

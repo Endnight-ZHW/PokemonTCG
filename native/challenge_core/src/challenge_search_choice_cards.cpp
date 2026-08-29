@@ -92,16 +92,20 @@ using namespace challenge;
         double best_item_score = -std::numeric_limits<double>::infinity();
         double best_tool_score = -std::numeric_limits<double>::infinity();
         for (std::size_t index = 0; index < options.size(); ++index) {
-            const std::optional<double> score = trusted_evaluator_.choice_option_score(
-                position, choice.player, pending, options[index]);
-            if (!score.has_value()) return false;
+            // Arven has category limits that the generic fallback cannot infer.
+            // Keep this specialized path authoritative even when the trusted
+            // evaluator has no opinion about an otherwise legal card.
+            const double score = trusted_evaluator_.choice_option_score(
+                position, choice.player, pending, options[index]).value_or(0.0)
+                + strategy_catalog_.choice_score(
+                    position.search_state(), choice.player, pending, options[index]);
             const std::string card_id = resolved_option_card_id(options[index]);
-            if (has_subtype(card_id, "Item") && *score > best_item_score) {
+            if (has_subtype(card_id, "Item") && score > best_item_score) {
                 best_item = static_cast<std::int64_t>(index);
-                best_item_score = *score;
-            } else if (has_subtype(card_id, "Tool") && *score > best_tool_score) {
+                best_item_score = score;
+            } else if (has_subtype(card_id, "Tool") && score > best_tool_score) {
                 best_tool = static_cast<std::int64_t>(index);
-                best_tool_score = *score;
+                best_tool_score = score;
             }
         }
 

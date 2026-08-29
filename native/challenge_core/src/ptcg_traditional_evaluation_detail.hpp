@@ -8,7 +8,6 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
-#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -44,19 +43,14 @@ using traditional_card::missing_energy;
 using traditional_card::player;
 
 struct DeckProfile {
-    std::vector<std::string> core;
-    std::vector<std::string> engine;
-    std::vector<std::string> setup;
-    std::vector<std::string> bench;
-    std::vector<std::string> evolution;
-    std::vector<std::string> trainer;
-    std::vector<std::string> energy;
-    std::int64_t high_impact_damage_floor = 110;
+    const Value *value = nullptr;
+
+    const Value::Array &cards(const char *role) const;
+    bool contains(const char *role, const std::string &card_id) const;
+    std::int64_t high_impact_damage_floor() const;
 };
 
-const std::map<std::string, DeckProfile> &profiles();
-
-const DeckProfile &profile(const std::string &deck_key);
+DeckProfile profile(const Value &catalog, const std::string &deck_key);
 
 bool contains(const std::vector<std::string> &values, const std::string &needle);
 

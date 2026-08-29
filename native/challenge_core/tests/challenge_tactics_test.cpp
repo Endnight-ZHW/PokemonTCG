@@ -11,6 +11,61 @@ using ptcg::ai::Value;
 
 namespace {
 
+bool value_array_contains(
+    const Value *object,
+    const char *field,
+    const std::string &expected
+) {
+    const Value *values = object != nullptr ? object->find(field) : nullptr;
+    if (values == nullptr || !values->is_array()) return false;
+    for (const Value &value : values->as_array()) {
+        if (value.string_or() == expected) return true;
+    }
+    return false;
+}
+
+void check_normalized_deck_plans(
+    const json &strategies_json,
+    const json &cards_json,
+    const TraditionalStrategyCatalog &catalog
+) {
+    const Value &plans = catalog.deck_plan_profiles();
+    const Value *fire = plans.find("fire");
+    if (
+        fire == nullptr
+        || !value_array_contains(fire, "core", "svi-infr")
+        || !value_array_contains(fire, "setup", "svi-sqwk")
+        || !value_array_contains(fire, "trainer", "sv1-152")
+        || !value_array_contains(fire, "energy", "Fire")
+    ) {
+        throw std::runtime_error("normalized_fire_deck_plan_invalid");
+    }
+    json synthetic = strategies_json;
+    synthetic["strategies"]["novel"] = {
+        {"card_roles", {
+            {"primary_attacker", json::array({"svi-infr"})},
+            {"setup_basic", json::array({"svi-chim"})},
+            {"bench_engine", json::array({"svi-chiy"})},
+            {"secondary_attacker", json::array({"svi-ente"})},
+            {"evolution", json::array({"svi-monf", "svi-infr"})},
+            {"search", json::array({"sv1-152"})},
+            {"energy", json::array({"sv1-ener-2"})},
+        }},
+    };
+    TraditionalStrategyCatalog synthetic_catalog(
+        ptcg::json_adapter::to_value(synthetic),
+        ptcg::json_adapter::to_value(cards_json));
+    const Value *novel = synthetic_catalog.deck_plan_profiles().find("novel");
+    if (
+        novel == nullptr
+        || !value_array_contains(novel, "core", "svi-infr")
+        || !value_array_contains(novel, "engine", "svi-chiy")
+        || !value_array_contains(novel, "energy", "Fire")
+    ) {
+        throw std::runtime_error("data_only_deck_plan_generation_failed");
+    }
+}
+
 std::string slot_for_card(const json &state, const std::string &card_id) {
     const auto &own = state.at("players").at(0);
     if (own.value("active", json::object()).value("card_id", "") == card_id) {
@@ -99,6 +154,7 @@ int main(int argc, char **argv) {
             ptcg::json_adapter::to_value(cards_json)
         );
         if (!catalog.valid()) throw std::runtime_error("strategy_catalog_invalid");
+        check_normalized_deck_plans(strategies_json, cards_json, catalog);
 
         std::size_t count = 0;
         const auto &decks = fixture.at("decks");

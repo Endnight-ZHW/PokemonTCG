@@ -45,8 +45,8 @@ double card_keep_value(
         0, duplicate_count - (removing_one ? 1 : 0));
     if (
         remaining >= 1 && is_pokemon(cards, card_id)
-        && (contains(profile(key).core, card_id)
-            || contains(profile(key).evolution, card_id))
+        && (profile(cards, key).contains("core", card_id)
+            || profile(cards, key).contains("evolution", card_id))
     ) {
         value -= std::min(120.0, static_cast<double>(remaining) * 45.0);
     } else if (removing_one && remaining >= 1) {
@@ -227,7 +227,7 @@ double semantic_search_value(
         [&cards, &key](const Value &entry) {
             const std::string id = entry.string_or();
             return is_pokemon(cards, id)
-                && contains(profile(key).evolution, id);
+                && profile(cards, key).contains("evolution", id);
         })) value += 48.0;
     return value;
 }
@@ -412,7 +412,7 @@ double semantic_energy_accel_value(
             candidate += std::min(95.0, static_cast<double>(damage) * 0.16);
         }
         if (index == 0 && active(state, actor) == pokemon) candidate += 32.0;
-        if (contains(profile(key).core, string_field(*pokemon, "card_id"))) {
+        if (profile(cards, key).contains("core", string_field(*pokemon, "card_id"))) {
             candidate += 70.0;
         }
         best = std::max(best, candidate);
@@ -972,7 +972,7 @@ std::optional<double> simple_effects_tactical_value(
                 position, state, actor, cards, key) * 0.35;
             const Value *source = pokemon_at(player(state, actor), source_slot);
             if (source != nullptr
-                && contains(profile(key).core, string_field(*source, "card_id"))) {
+                && profile(cards, key).contains("core", string_field(*source, "card_id"))) {
                 return_value += 35.0;
             }
             value += return_value;

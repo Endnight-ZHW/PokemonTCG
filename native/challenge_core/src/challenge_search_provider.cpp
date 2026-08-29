@@ -28,7 +28,7 @@ using namespace challenge;
     ) : catalog_(std::move(catalog)),
         decks_(std::move(decks)), evaluator_(catalog_),
         strategy_catalog_(std::move(strategies), catalog_),
-        trusted_evaluator_(catalog_, decks_),
+        trusted_evaluator_(catalog_, decks_, strategy_catalog_),
         information_set_(information_set), root_actor_(root_actor) {
         const ptcg::ai::Value *cards = catalog_.find("cards");
         cards_ = cards != nullptr && cards->is_object() ? *cards : catalog_;
@@ -69,17 +69,17 @@ using namespace challenge;
         std::string error;
         if (!codec.decode_choice_view(pending, typed_pending, &error)) return false;
         ++choice_resolutions_;
-        if (forced_choice_response(
-            position.search_state(), pending, typed_pending, response)) {
-            ++native_forced_choice_resolutions_;
-            return true;
-        }
-        if (confirm_choice_response(position, pending, typed_pending, response)
-            || arven_choice_response(position, pending, typed_pending, response)
+        if (arven_choice_response(position, pending, typed_pending, response)
+            || confirm_choice_response(position, pending, typed_pending, response)
             || duplicate_energy_choice_response(
                 position, pending, typed_pending, response)
             || single_choice_response(position, pending, typed_pending, response)) {
             ++native_choice_resolutions_;
+            return true;
+        }
+        if (forced_choice_response(
+            position.search_state(), pending, typed_pending, response)) {
+            ++native_forced_choice_resolutions_;
             return true;
         }
         return false;

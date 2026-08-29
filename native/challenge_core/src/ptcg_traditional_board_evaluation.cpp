@@ -74,7 +74,8 @@ std::string primary_core(
     const Value &decks,
     const std::string &key
 ){
-    for (const std::string &core : profile(key).core) {
+    for (const Value &core_value : profile(cards, key).cards("core")) {
+        const std::string core = core_value.string_or();
         if (!is_pokemon(cards, core)) continue;
         const LineParts parts = line_parts(cards, decks, core, key);
         if (!parts.stage1.empty() || !parts.basic.empty()) return core;
@@ -95,7 +96,7 @@ double active_evolve_blocking_penalty(
     const std::string primary = primary_core(cards, decks, key);
     if (
         primary.empty() || evolved_card_id == primary
-        || !contains(profile(key).core, evolved_card_id)
+        || !profile(cards, key).contains("core", evolved_card_id)
     ) return 0.0;
 
     Value evolved = evolve_target;
@@ -108,7 +109,7 @@ double active_evolve_blocking_penalty(
     evolved["card_id"] = Value(evolved_card_id);
     const std::int64_t evolved_ready = best_ready_damage_for_pokemon(
         position, state, actor, evolved, "active", cards);
-    if (evolved_ready >= profile(key).high_impact_damage_floor) return 0.0;
+    if (evolved_ready >= profile(cards, key).high_impact_damage_floor()) return 0.0;
 
     const Value *before_definition = card(
         cards, string_field(evolve_target, "card_id"));
@@ -253,14 +254,14 @@ double promotion_value(
         if (!can_take_prize) {
             value -= 90.0;
             const std::string card_id = string_field(pokemon, "card_id");
-            if (contains(profile(key).core, card_id)) value -= 85.0;
-            if (contains(profile(key).engine, card_id)) value -= 45.0;
+            if (profile(cards, key).contains("core", card_id)) value -= 85.0;
+            if (profile(cards, key).contains("engine", card_id)) value -= 45.0;
         }
     }
     if (
         missing > 0
-        && contains(profile(key).bench, string_field(pokemon, "card_id"))
-        && !contains(profile(key).setup, string_field(pokemon, "card_id"))
+        && profile(cards, key).contains("bench", string_field(pokemon, "card_id"))
+        && !profile(cards, key).contains("setup", string_field(pokemon, "card_id"))
     ) {
         value -= 70.0 + std::min(
             80.0, static_cast<double>(missing) * 24.0);
@@ -334,9 +335,9 @@ bool retreat_has_good_target(
     const bool target_falls = opponent_damage >= position.pokemon_current_hp(target);
     if (active_survives && target_falls) return false;
     const std::string target_id = string_field(target, "card_id");
-    const bool target_is_core = contains(profile(key).core, target_id);
-    const bool target_is_engine = contains(profile(key).engine, target_id)
-        || contains(profile(key).bench, target_id);
+    const bool target_is_core = profile(cards, key).contains("core", target_id);
+    const bool target_is_engine = profile(cards, key).contains("engine", target_id)
+        || profile(cards, key).contains("bench", target_id);
     const Value *active_definition = card(
         cards, string_field(active_pokemon, "card_id"));
     const std::int64_t max_hp = active_definition == nullptr
@@ -391,7 +392,8 @@ double core_line_value(
     if (key.empty()) return 0.0;
     const Value &owner = player(state, actor);
     double total = 0.0;
-    for (const std::string &core : profile(key).core) {
+    for (const Value &core_value : profile(cards, key).cards("core")) {
+        const std::string core = core_value.string_or();
         if (!is_pokemon(cards, core)) continue;
         const LineParts parts = line_parts(cards, decks, core, key);
         if (parts.stage1.empty() && parts.basic.empty()) continue;
@@ -458,7 +460,7 @@ double ready_attackers(
         const auto damage = printed_best_damage(cards, pokemon);
         if (missing == 0 && damage > 0) {
             value += (58.0 + std::min(70.0, static_cast<double>(damage) * 0.22)) * multiplier;
-        } else if (missing == 1 && damage >= profile(key).high_impact_damage_floor) {
+        } else if (missing == 1 && damage >= profile(cards, key).high_impact_damage_floor()) {
             value += (34.0 + std::min(45.0, static_cast<double>(damage) * 0.12)) * multiplier;
         }
     }
@@ -483,7 +485,7 @@ double active_ko_risk(
     double risk = 170.0 + static_cast<double>(definition == nullptr
         ? 1 : integer_field(*definition, "prize_value", 1)) * 105.0;
     risk += static_cast<double>(energy_unit_count(cards, own_active)) * 30.0;
-    if (contains(profile(key).core, string_field(*own_active, "card_id"))) risk += 70.0;
+    if (profile(cards, key).contains("core", string_field(*own_active, "card_id"))) risk += 70.0;
     return risk;
 }
 
@@ -527,7 +529,7 @@ double resource_outs(
         for (const char *zone : {"hand", "deck"}) {
             for (const Value &entry : array_field(owner, zone)) {
                 const std::string id = entry.string_or();
-                if (is_pokemon(cards, id) && contains(profile(key).evolution, id)
+                if (is_pokemon(cards, id) && profile(cards, key).contains("evolution", id)
                     && card_priority(cards, id, key) > 0.0) { found = true; break; }
             }
             if (found) break;
@@ -573,7 +575,8 @@ double core_evolution_line_card_bonus(
     if (key.empty() || !is_pokemon(cards, card_id)) return 0.0;
     const Value &owner = player(state, actor);
     double best = 0.0;
-    for (const std::string &core : profile(key).core) {
+    for (const Value &core_value : profile(cards, key).cards("core")) {
+        const std::string core = core_value.string_or();
         if (core.empty() || !is_pokemon(cards, core)) continue;
         const LineParts parts = line_parts(cards, decks, core, key);
         if (parts.stage1.empty() && parts.basic.empty()) continue;
@@ -696,12 +699,12 @@ bool has_core_basic_out_in_deck(
     const Value &cards
 ){
     if (key.empty()) return false;
-    const DeckProfile &deck = profile(key);
+    const DeckProfile deck = profile(cards, key);
     for (const Value &entry : array_field(player(state, actor), "deck")) {
         const std::string id = entry.string_or();
         if (is_basic_pokemon(cards, id)
-            && (contains(deck.setup, id) || contains(deck.bench, id)
-                || contains(deck.core, id))) return true;
+            && (deck.contains("setup", id) || deck.contains("bench", id)
+                || deck.contains("core", id))) return true;
     }
     return false;
 }

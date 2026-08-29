@@ -177,6 +177,59 @@ func _new_choice_policy_contract_failures(
 				case["type"], response.option_ids[0], expected,
 			])
 
+	# Arven may expose only Item cards when no Tool remains in the deck. Both
+	# native Challenge AI and the deterministic opponent must respect the
+	# one-per-category contract instead of blindly filling max_select.
+	var arven_options: Array[Dictionary] = []
+	for index in range(3):
+		var card_id := ["sv1-150", "sv1-153", "sv2-catch"][index]
+		arven_options.append({
+			"option_id": "option:%d" % index,
+			"label": card_id,
+			"ref": EntityRef.new(
+				"card", 0, "deck", "", index, "", card_id,
+			).to_dict(),
+		})
+	var arven_request := ChoiceView.new(
+		"new-choice:arven-category",
+		state.revision,
+		"arven",
+		0,
+		"选择物品与宝可梦道具",
+		arven_options,
+		0,
+		2,
+		false,
+		false,
+		{"domain": "search", "purpose": "arven", "category_limits": {
+			"item": 1, "tool": 1,
+		}},
+	)
+	var arven_payload := {
+		"kind": "choice",
+		"state": RuntimeStateProjection.project(state, 0),
+		"choice": arven_request.to_dict(),
+		"actor": 0,
+		"revision": state.revision,
+		"request_id": arven_request.request_id,
+		"mode": "challenge",
+		"deck_key": "fire",
+		"seed": 20260716,
+		"deterministic": true,
+	}
+	var arven_result := worker.decide(
+		arven_payload, func() -> bool: return false)
+	var arven_response := ChoiceResponse.from_dict(
+		arven_result.get("choice_response", {}))
+	var automatic_arven := _automatic_choice(
+		arven_request, state, CardCatalog.shared())
+	if (
+		not bool(arven_result.get("success", false))
+		or arven_response.option_ids.size() != 1
+		or automatic_arven.option_ids.size() != 1
+	):
+		errors.append("Arven category limits were not preserved by both AI policies")
+
 	# Multi-energy effects such as Hawlucha's Display of Power require every
 	# selected Energy to use one target. Both Challenge AI and the deterministic
 	# opponent policy must repeat a single target option instead of spreading.
@@ -538,10 +591,46 @@ func _automatic_choice(
 	if not request.allow_duplicates:
 		count = mini(request.options.size(), count)
 	var selected: Array[String] = []
+	var category_limits: Dictionary = request.presentation.get("category_limits", {})
+	var category_counts: Dictionary = {}
 	for index in range(count):
-		var option_index := index % request.options.size()
-		selected.append(str(request.options[option_index].get("option_id", "")))
+		var chosen_id := ""
+		for offset in range(request.options.size()):
+			var option_index := (index + offset) % request.options.size()
+			var option: Dictionary = request.options[option_index]
+			var option_id := str(option.get("option_id", ""))
+			if option_id.is_empty() or (not request.allow_duplicates and option_id in selected):
+				continue
+			var category := _automatic_choice_category(option, catalog)
+			var limit := int(category_limits.get(category, 2147483647))
+			if not category.is_empty() and int(category_counts.get(category, 0)) >= limit:
+				continue
+			chosen_id = option_id
+			if not category.is_empty():
+				category_counts[category] = int(category_counts.get(category, 0)) + 1
+			break
+		if chosen_id.is_empty():
+			break
+		selected.append(chosen_id)
 	return ChoiceResponse.new(request.request_id, selected)
+
+
+func _automatic_choice_category(option: Dictionary, catalog: CardCatalog) -> String:
+	if catalog == null:
+		return ""
+	var ref: Dictionary = option.get("ref", {})
+	var card: Dictionary = catalog.get_card(str(ref.get("card_id", "")))
+	var supertype := str(card.get("supertype", ""))
+	var subtypes: Array = card.get("subtypes", [])
+	if supertype == "Pokémon":
+		return "pokemon"
+	if supertype == "Energy":
+		return "energy"
+	if supertype == "Trainer" and "Item" in subtypes:
+		return "item"
+	if supertype == "Trainer" and "Tool" in subtypes:
+		return "tool"
+	return "trainer" if supertype == "Trainer" else ""
 
 
 func _retreat_payment_response(
