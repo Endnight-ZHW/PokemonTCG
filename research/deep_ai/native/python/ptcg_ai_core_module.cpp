@@ -1,6 +1,7 @@
 #include "../src/ptcg_ai_core.hpp"
 #include "challenge_controller.hpp"
 #include "../src/ptcg_actor_v3.hpp"
+#include "../src/ptcg_challenge_arena.hpp"
 #include "../src/ptcg_determinizer.hpp"
 #include "../src/ptcg_encoder_v3.hpp"
 #include "ptcg_game.hpp"
@@ -24,6 +25,10 @@ namespace py = pybind11;
 using namespace pybind11::literals;
 using ptcg::ai::CompactState;
 using ptcg::ai::ChallengeController;
+using ptcg::ai::ChallengeArenaAgentSpec;
+using ptcg::ai::ChallengeArenaGameResult;
+using ptcg::ai::ChallengeArenaPoolConfig;
+using ptcg::ai::ChallengeArenaTask;
 using ptcg::ai::ActorGameResultV3;
 using ptcg::ai::ActorPoolConfigV3;
 using ptcg::ai::GameTaskV3;
@@ -32,6 +37,7 @@ using ptcg::ai::InferenceResponse;
 using ptcg::ai::InferenceTensorSpec;
 using ptcg::ai::NativeSelfPlayBatch;
 using ptcg::ai::NativeActorPoolV3;
+using ptcg::ai::NativeChallengeArenaPool;
 using ptcg::ai::NativeGameKernel;
 using ptcg::ai::NativeDeterminizer;
 using ptcg::ai::NativeInformationSetEncoderV3;
@@ -622,6 +628,121 @@ py::dict actor_game_v3_to_python(const ActorGameResultV3 &source) {
     );
 }
 
+ChallengeArenaAgentSpec challenge_arena_agent_from_python(
+    const py::dict &source
+) {
+    ChallengeArenaAgentSpec result;
+    result.agent_id = py::cast<std::string>(source["agent_id"]);
+    result.build_id = source.contains("build_id")
+        ? py::cast<std::string>(source["build_id"]) : std::string{};
+    result.strategies = value_from_python(source["strategies"]);
+    result.evaluation_options = source.contains("evaluation_options")
+        ? value_from_python(source["evaluation_options"])
+        : Value::make_object();
+    return result;
+}
+
+ChallengeArenaPoolConfig challenge_arena_config_from_python(
+    const py::dict &source
+) {
+    ChallengeArenaPoolConfig result;
+    if (source.contains("concurrent_games")) {
+        result.concurrent_games = py::cast<std::uint32_t>(
+            source["concurrent_games"]);
+    }
+    if (source.contains("deterministic")) {
+        result.deterministic = py::cast<bool>(source["deterministic"]);
+    }
+    if (source.contains("capture_failure_trace")) {
+        result.capture_failure_trace = py::cast<bool>(
+            source["capture_failure_trace"]);
+    }
+    if (source.contains("capture_all_decisions")) {
+        result.capture_all_decisions = py::cast<bool>(
+            source["capture_all_decisions"]);
+    }
+    if (source.contains("inner_search_workers")) {
+        result.inner_search_workers = py::cast<std::uint32_t>(
+            source["inner_search_workers"]);
+    }
+    return result;
+}
+
+ChallengeArenaTask challenge_arena_task_from_python(const py::dict &source) {
+    ChallengeArenaTask result;
+    result.task_id = py::cast<std::string>(source["task_id"]);
+    result.candidate_deck = py::cast<std::string>(source["candidate_deck"]);
+    result.baseline_deck = py::cast<std::string>(source["baseline_deck"]);
+    result.game_seed = source.contains("game_seed")
+        ? py::cast<std::uint32_t>(source["game_seed"])
+        : py::cast<std::uint32_t>(source["seed"]);
+    result.candidate_seat = py::cast<std::int32_t>(
+        source["candidate_seat"]);
+    result.first_player = py::cast<std::int32_t>(source["first_player"]);
+    result.max_decisions = source.contains("max_decisions")
+        ? py::cast<std::uint32_t>(source["max_decisions"]) : 512;
+    return result;
+}
+
+py::dict challenge_arena_game_to_python(
+    const ChallengeArenaGameResult &source
+) {
+    py::dict result;
+    result["task_id"] = source.task_id;
+    result["candidate_deck"] = source.candidate_deck;
+    result["baseline_deck"] = source.baseline_deck;
+    result["game_seed"] = source.game_seed;
+    result["candidate_seat"] = source.candidate_seat;
+    result["first_player"] = source.first_player;
+    result["max_decisions"] = source.max_decisions;
+    result["success"] = source.success;
+    result["terminal"] = source.terminal;
+    result["truncated"] = source.truncated;
+    result["strength_eligible"] = source.strength_eligible;
+    result["winner_seat"] = source.winner_seat;
+    result["winner_agent"] = source.winner_agent;
+    result["candidate_score_x2"] = source.candidate_score_x2;
+    result["offending_agent"] = source.offending_agent;
+    result["decisions"] = source.decisions;
+    result["turns"] = source.turns;
+    result["candidate_decision_us"] = source.candidate_decision_us;
+    result["baseline_decision_us"] = source.baseline_decision_us;
+    result["candidate_nodes"] = source.candidate_nodes;
+    result["baseline_nodes"] = source.baseline_nodes;
+    result["projection_us"] = source.projection_us;
+    result["legal_actions_us"] = source.legal_actions_us;
+    result["apply_us"] = source.apply_us;
+    result["candidate_decision_samples_us"] =
+        source.candidate_decision_samples_us;
+    result["baseline_decision_samples_us"] =
+        source.baseline_decision_samples_us;
+    result["candidate_planner_samples_us"] =
+        source.candidate_planner_samples_us;
+    result["baseline_planner_samples_us"] =
+        source.baseline_planner_samples_us;
+    result["candidate_forced_tactics"] = source.candidate_forced_tactics;
+    result["baseline_forced_tactics"] = source.baseline_forced_tactics;
+    result["candidate_plan_cache_hits"] = source.candidate_plan_cache_hits;
+    result["baseline_plan_cache_hits"] = source.baseline_plan_cache_hits;
+    result["candidate_completed_depth"] = source.candidate_completed_depth;
+    result["baseline_completed_depth"] = source.baseline_completed_depth;
+    result["candidate_reply_depth"] = source.candidate_reply_depth;
+    result["baseline_reply_depth"] = source.baseline_reply_depth;
+    result["candidate_belief_samples"] = source.candidate_belief_samples;
+    result["baseline_belief_samples"] = source.baseline_belief_samples;
+    result["invalid_actions"] = source.invalid_actions;
+    result["illegal_choices"] = source.illegal_choices;
+    result["controller_failures"] = source.controller_failures;
+    result["rule_exceptions"] = source.rule_exceptions;
+    result["failure_kind"] = source.failure_kind;
+    result["error"] = source.error;
+    result["final_state_hash"] = source.final_state_hash;
+    result["semantic_result_hash"] = source.semantic_result_hash;
+    result["decision_trace"] = value_to_python(source.decision_trace);
+    result["failure_trace"] = value_to_python(source.failure_trace);
+    return result;
+}
+
 } // namespace
 
 PYBIND11_MODULE(ptcg_ai_core, module) {
@@ -973,6 +1094,67 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
         })
         .def_property_readonly("running", &NativeActorPoolV3::running)
         .def_property_readonly("finished", &NativeActorPoolV3::finished);
+
+    py::class_<NativeChallengeArenaPool>(
+        module,
+        "NativeChallengeArenaPool"
+    )
+        .def(
+            py::init([](
+                const py::dict &catalog,
+                const py::dict &decks,
+                const py::dict &candidate,
+                const py::dict &baseline,
+                const py::dict &config
+            ) {
+                return std::make_unique<NativeChallengeArenaPool>(
+                    value_from_python(catalog),
+                    value_from_python(decks),
+                    challenge_arena_agent_from_python(candidate),
+                    challenge_arena_agent_from_python(baseline),
+                    challenge_arena_config_from_python(config));
+            }),
+            py::arg("catalog"),
+            py::arg("decks"),
+            py::arg("candidate"),
+            py::arg("baseline"),
+            py::arg("config") = py::dict()
+        )
+        .def(
+            "start",
+            [](NativeChallengeArenaPool &pool, const py::list &tasks) {
+                std::vector<ChallengeArenaTask> native_tasks;
+                native_tasks.reserve(tasks.size());
+                for (const py::handle &task : tasks) {
+                    native_tasks.push_back(challenge_arena_task_from_python(
+                        py::cast<py::dict>(task)));
+                }
+                py::gil_scoped_release release;
+                pool.start(std::move(native_tasks));
+            },
+            py::arg("tasks")
+        )
+        .def("pause", &NativeChallengeArenaPool::pause)
+        .def("resume", &NativeChallengeArenaPool::resume)
+        .def("cancel", &NativeChallengeArenaPool::cancel)
+        .def("wait", [](NativeChallengeArenaPool &pool) {
+            py::gil_scoped_release release;
+            pool.wait();
+        })
+        .def("drain_games", [](NativeChallengeArenaPool &pool) {
+            py::list result;
+            for (const ChallengeArenaGameResult &game : pool.drain_games()) {
+                result.append(challenge_arena_game_to_python(game));
+            }
+            return result;
+        })
+        .def("metrics", [](const NativeChallengeArenaPool &pool) {
+            return value_to_python(pool.metrics());
+        })
+        .def_property_readonly(
+            "running", &NativeChallengeArenaPool::running)
+        .def_property_readonly(
+            "finished", &NativeChallengeArenaPool::finished);
 
     py::class_<
         NativeSearchLimiter,

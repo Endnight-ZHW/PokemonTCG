@@ -26,3 +26,19 @@ That workflow builds the pybind research binding, samples the shared Challenge
 teacher, round-trips replay, performs one CPU learner step, and checks Torch to
 ONNX numerical parity. Longer actor, learner and dashboard workflows remain
 explicit commands under `tools/`.
+
+## Native Challenge Arena
+
+The research binding also contains a fully native Challenge-vs-Challenge Arena.
+Python submits a complete workload once; native workers own both controllers and
+the single authoritative `RulesSession` for each game. Run the structural smoke:
+
+```powershell
+.\tools\run_challenge_arena.ps1 -Preset smoke -Workers 8
+```
+
+The command writes per-game JSONL, failure-only traces, paired bootstrap
+statistics, performance splits, gate decisions, and a reproducibility manifest
+under `build/challenge-arena/<preset>`. See
+[`docs/native_challenge_arena.md`](docs/native_challenge_arena.md) for presets,
+agent specifications, fairness constraints, and promotion criteria.

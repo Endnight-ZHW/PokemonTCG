@@ -1,0 +1,10 @@
+{
+  "agent_id": "challenge_release_v1",
+  "build_id": "product-0.8.0",
+  "strategies_path": "godot/data/ai_strategies.json",
+  "evaluation_options": {
+    "engine": "turn_beam_v2",
+    "node_budget": 192,
+    "belief_samples": 3
+  }
+}

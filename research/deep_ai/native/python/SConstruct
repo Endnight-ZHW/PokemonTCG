@@ -115,6 +115,7 @@ binding_sources = [
     "ptcg_ai_core_module.cpp",
     "../src/ptcg_ai_core.cpp",
     "../src/ptcg_actor_v3.cpp",
+    "../src/ptcg_challenge_arena.cpp",
     "../src/ptcg_determinizer.cpp",
     "../src/ptcg_encoder_v3.cpp",
     "../src/ptcg_infoset.cpp",
