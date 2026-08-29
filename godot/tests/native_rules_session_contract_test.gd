@@ -390,11 +390,11 @@ func _check_main_native_route() -> void:
 		true,
 		{"same_target": true, "max_per_target": 2},
 	)
-	var distribution_card_id := str(main.call(
+	var distribution_card_id := str(main.get("choice_model").call(
 		"_choice_option_card_id",
 		distribution_options[0],
 	))
-	var distribution_caption := str(main.call(
+	var distribution_caption := str(main.get("choice_model").call(
 		"_choice_option_caption",
 		distribution_options[0],
 	))
@@ -411,7 +411,7 @@ func _check_main_native_route() -> void:
 		distribution_options[0]["option_id"])]
 	main.set("selected_choice_ids", selected_energy)
 	_check(
-		str(main.call(
+		str(main.get("choice_model").call(
 			"_choice_addition_blocked_reason",
 			same_target_choice,
 			distribution_options[1]["option_id"],
@@ -419,7 +419,7 @@ func _check_main_native_route() -> void:
 		"energy UI blocked a second physical Energy for the same target",
 	)
 	_check(
-		not str(main.call(
+		not str(main.get("choice_model").call(
 			"_choice_addition_blocked_reason",
 			same_target_choice,
 			distribution_options[2]["option_id"],
@@ -440,7 +440,7 @@ func _check_main_native_route() -> void:
 		{"same_target": false, "max_per_target": 1},
 	)
 	_check(
-		not str(main.call(
+		not str(main.get("choice_model").call(
 			"_choice_addition_blocked_reason",
 			per_target_choice,
 			distribution_options[1]["option_id"],
@@ -450,7 +450,7 @@ func _check_main_native_route() -> void:
 	var no_selected_energy: Array[String] = []
 	main.set("selected_choice_ids", no_selected_energy)
 	var started := bool(main.call(
-		"start_local_match_for_test", "fire", "water", 556677, 0, false, false))
+		"_start_local_match", "fire", "water", 556677, 0, false, false))
 	_check(
 		started
 		and main.get("state") != null

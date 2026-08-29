@@ -3,8 +3,8 @@
 [ext_resource type="Script" uid="uid://dqedifiv8eyso" path="res://scenes/main/main.gd" id="1_main"]
 [ext_resource type="Theme" uid="uid://dukxt6xci8qas" path="res://ui/game_theme.tres" id="2_theme"]
 [ext_resource type="Script" uid="uid://cscu1kyecnig5" path="res://ui/audio_director.gd" id="3_audio"]
-[ext_resource type="Script" uid="uid://b0jydjvp4f3oc" path="res://scenes/main/screen_router.gd" id="4_router"]
 [ext_resource type="Script" uid="uid://brdau26vlkdm3" path="res://scenes/main/modal_host.gd" id="8_modal_host"]
+[ext_resource type="Script" path="res://scenes/main/main_shell_view.gd" id="12_shell_view"]
 [ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="9_front_theme"]
 [ext_resource type="Texture2D" path="res://assets/app_icon.svg" id="10_app_mark"]
 [ext_resource type="PackedScene" path="res://ui/frontend/title_backdrop.tscn" id="11_title_backdrop"]
@@ -189,19 +189,8 @@ unique_name_in_owner = true
 unique_name_in_owner = true
 script = ExtResource("3_audio")
 
-[node name="Controllers" type="Node" parent="." unique_id=1894997001]
-unique_name_in_owner = true
-editor_description = "非可视控制器集合。逐步承接页面路由、对局会话、AI 驱动和网络会话，帮助新手在场景树中看清主流程职责。"
-
-[node name="ScreenRouter" type="Node" parent="Controllers" unique_id=1894997002]
-unique_name_in_owner = true
-editor_description = "页面挂载控制器。负责清空 ScreenHost 并实例化标题、选牌、网络、战斗和胜利页面。"
-script = ExtResource("4_router")
-
-[node name="ModalHost" type="Node" parent="Controllers" unique_id=1894997006]
-unique_name_in_owner = true
-editor_description = "通用弹窗控制器。ModalLayer 仍是可视结构，此节点提供清空内容和后续封装入口。"
-script = ExtResource("8_modal_host")
+[node name="ShellView" type="Node" parent="."]
+script = ExtResource("12_shell_view")
 
 [node name="ModalLayer" type="Control" parent="." unique_id=1934504853]
 unique_name_in_owner = true
@@ -214,6 +203,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("8_modal_host")
 
 [node name="ModalShade" type="ColorRect" parent="ModalLayer" unique_id=538977692]
 unique_name_in_owner = true
