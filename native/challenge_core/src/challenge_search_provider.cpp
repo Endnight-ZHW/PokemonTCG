@@ -51,6 +51,8 @@ using namespace challenge;
             native_choice_resolutions_.load(std::memory_order_relaxed));
         counters["native_trusted_action_scores"] = static_cast<int64_t>(
             native_trusted_action_scores_.load(std::memory_order_relaxed));
+        counters["known_reply_actions_promoted"] = static_cast<int64_t>(
+            known_reply_actions_promoted_.load(std::memory_order_relaxed));
         counters["simulated_action_score_calls"] = static_cast<int64_t>(
             simulated_action_score_calls_.load(std::memory_order_relaxed));
         return counters;

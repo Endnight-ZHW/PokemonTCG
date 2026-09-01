@@ -54,6 +54,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-decisions", type=int, default=512)
     parser.add_argument("--candidate-deck", action="append", default=[])
     parser.add_argument("--baseline-deck", action="append", default=[])
+    parser.add_argument(
+        "--mirror-only",
+        action="store_true",
+        help="Run only same-deck matchups; requires the focused preset.",
+    )
     parser.add_argument("--trace-all", action="store_true")
     parser.add_argument("--bootstrap-samples", type=int, default=2000)
     parser.add_argument("--truncated-rate-limit", type=float, default=0.001)
@@ -123,6 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         max_decisions=args.max_decisions,
         candidate_decks=args.candidate_deck,
         baseline_decks=args.baseline_deck,
+        mirror_only=args.mirror_only,
         trace_all=args.trace_all,
         bootstrap_samples=args.bootstrap_samples,
         truncated_rate_limit=args.truncated_rate_limit,

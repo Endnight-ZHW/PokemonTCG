@@ -369,9 +369,48 @@ std::string public_card_name(
     if (card_id.empty()) {
         return "卡牌";
     }
-    const Value *definition = cards.find(card_id);
-    return definition != nullptr && definition->is_object()
-        ? string_field(*definition, "name", card_id) : card_id;
+    if (!cards.is_object()) return card_id;
+    struct PublicNameCache {
+        const Value::Object *identity = nullptr;
+        std::size_t size = 0;
+        std::string first_id;
+        std::string last_id;
+        std::unordered_map<std::string, std::string> labels;
+    };
+    thread_local PublicNameCache cache;
+    const Value::Object &definitions = cards.as_object();
+    const std::string first_id = definitions.empty()
+        ? std::string{} : definitions.begin()->first;
+    const std::string last_id = definitions.empty()
+        ? std::string{} : definitions.rbegin()->first;
+    if (
+        cache.identity != &definitions || cache.size != definitions.size()
+        || cache.first_id != first_id || cache.last_id != last_id
+    ) {
+        cache = PublicNameCache{};
+        cache.identity = &definitions;
+        cache.size = definitions.size();
+        cache.first_id = first_id;
+        cache.last_id = last_id;
+        std::unordered_map<std::string, std::size_t> name_counts;
+        for (const auto &[candidate_id, candidate] : definitions) {
+            const std::string name = candidate.is_object()
+                ? string_field(candidate, "name", candidate_id) : candidate_id;
+            ++name_counts[name];
+        }
+        cache.labels.reserve(definitions.size());
+        for (const auto &[candidate_id, candidate] : definitions) {
+            const std::string name = candidate.is_object()
+                ? string_field(candidate, "name", candidate_id) : candidate_id;
+            cache.labels.emplace(
+                candidate_id,
+                name_counts[name] > 1
+                    ? name + "（" + candidate_id + "）" : name
+            );
+        }
+    }
+    const auto found = cache.labels.find(card_id);
+    return found == cache.labels.end() ? card_id : found->second;
 }
 
 std::string public_player_name(
@@ -563,11 +602,123 @@ void append_submitted_action_log(
     append_action_log_line(state, std::move(line));
 }
 
+namespace {
+
+std::string public_disambiguated_card_name(
+    const Value &cards,
+    const std::string &card_id
+) {
+    return public_card_name(cards, card_id);
+}
+
+std::vector<std::string> public_event_card_ids(
+    const Value &event_value,
+    const Value &data
+) {
+    const Value *values = data.find("card_ids");
+    if (values == nullptr || !values->is_array()) {
+        values = data.find("cards");
+    }
+    if (values == nullptr || !values->is_array()) {
+        values = data.find("selected_card_ids");
+    }
+    std::vector<std::string> result;
+    if (values != nullptr && values->is_array()) {
+        result.reserve(values->as_array().size());
+        for (const Value &entry : values->as_array()) {
+            const std::string card_id = entry.is_object()
+                ? string_field(entry, "card_id") : entry.string_or();
+            if (!card_id.empty()) {
+                result.push_back(card_id);
+            }
+        }
+    }
+    if (result.empty()) {
+        const std::string card_id = string_field(
+            event_value, "card_id", string_field(data, "card_id"));
+        if (!card_id.empty()) {
+            result.push_back(card_id);
+        }
+    }
+    return result;
+}
+
+std::string public_card_list(
+    const Value &cards,
+    const std::vector<std::string> &card_ids
+) {
+    std::vector<std::pair<std::string, std::int64_t>> counts;
+    for (const std::string &card_id : card_ids) {
+        const std::string label = public_disambiguated_card_name(
+            cards, card_id);
+        const auto found = std::find_if(
+            counts.begin(),
+            counts.end(),
+            [&label](const auto &entry) { return entry.first == label; }
+        );
+        if (found == counts.end()) {
+            counts.emplace_back(label, 1);
+        } else {
+            ++found->second;
+        }
+    }
+    std::string result;
+    for (const auto &[label, count] : counts) {
+        if (!result.empty()) {
+            result += "、";
+        }
+        result += label;
+        if (count > 1) {
+            result += "×" + std::to_string(count);
+        }
+    }
+    return result;
+}
+
+bool has_selection_result_event(const std::vector<Value> &events) {
+    return std::any_of(
+        events.begin(),
+        events.end(),
+        [](const Value &event_value) {
+            if (!event_value.is_object()) {
+                return false;
+            }
+            const std::string event_type = string_field(
+                event_value, "event_type");
+            if (event_type == "cards_selected") {
+                return true;
+            }
+            const Value *data = event_value.find("data");
+            if (data == nullptr || !data->is_object()) {
+                return false;
+            }
+            const bool public_identity = string_field(
+                    event_value,
+                    "visibility",
+                    string_field(*data, "visibility", "public")
+                ) == "public"
+                && !public_event_card_ids(event_value, *data).empty();
+            return public_identity && (
+                event_type == "cards_discarded"
+                || event_type == "energy_attached"
+                || event_type == "tool_attached"
+                || (event_type == "card_moved" && (
+                    string_field(*data, "source_zone") == "discard"
+                    || string_field(*data, "target_zone") == "bench"
+                ))
+            );
+        }
+    );
+}
+
+} // namespace
+
 void append_choice_action_log(
     Value &state,
     const Value &before_state,
     const Value &pending,
-    const Value &response
+    const Value &response,
+    const std::vector<Value> &events
 ) {
     if (!pending.is_object() || pending.as_object().empty()) {
         return;
@@ -589,6 +740,12 @@ void append_choice_action_log(
         ? string_field(*presentation, "purpose", request_type)
         : request_type;
     if (request_type == "coin_flip") {
+        return;
+    }
+    // cards_selected carries the authoritative visibility and, when public,
+    // the exact identities.  Let the event logger produce the one canonical
+    // line instead of retaining the old generic "completed selection" entry.
+    if (has_selection_result_event(events)) {
         return;
     }
     std::string line;
@@ -652,9 +809,13 @@ void append_choice_action_log(
         || purpose == "relocate_energy_target"
     ) {
         line = player_name + " 选择了能量转附目标。";
+    } else if (request_type.find("search") != std::string::npos) {
+        // Search results are logged only when their final visibility is known.
+        // A deck-to-Bench search can suspend again for a slot before that
+        // public movement occurs, so never commit a premature generic line.
+        return;
     } else if (
-        request_type.find("search") != std::string::npos
-        || request_type.find("select") != std::string::npos
+        request_type.find("select") != std::string::npos
         || request_type.find("choose") != std::string::npos
     ) {
         line = player_name + " 完成了卡牌选择。";
@@ -692,13 +853,56 @@ void append_public_event_logs(
             "amount",
             integer_field(data, "amount", integer_field(data, "count", 0))
         );
+        const std::string visibility = string_field(
+            event_value,
+            "visibility",
+            string_field(data, "visibility", "public")
+        );
+        std::optional<std::string> cached_card_list;
+        const auto event_card_list = [&]() -> const std::string & {
+            if (!cached_card_list.has_value()) {
+                cached_card_list = visibility == "public"
+                    ? public_card_list(
+                        cards, public_event_card_ids(event_value, data))
+                    : std::string{};
+            }
+            return *cached_card_list;
+        };
         std::string line;
         if (event_type == "cards_drawn" && amount > 0) {
             line = public_player_name(state, target_player) + " 抽取了 "
                 + std::to_string(amount) + " 张卡牌。";
         } else if (event_type == "cards_discarded" && amount > 0) {
+            const std::string &card_list = event_card_list();
             line = public_player_name(state, target_player) + " 弃置了 "
-                + std::to_string(amount) + " 张卡牌。";
+                + (card_list.empty()
+                    ? std::to_string(amount) + " 张卡牌" : card_list)
+                + "。";
+        } else if (event_type == "cards_selected" && amount > 0) {
+            const std::string &card_list = event_card_list();
+            if (card_list.empty()) {
+                line = public_player_name(state, target_player) + " 选择了 "
+                    + std::to_string(amount) + " 张卡牌（身份未公开）。";
+            } else {
+                const std::string source_zone = string_field(
+                    data, "source_zone");
+                const std::string target_zone = string_field(
+                    data, "target_zone");
+                line = public_player_name(state, target_player)
+                    + (source_zone == "deck" ? " 展示了 " : " 公开选择了 ")
+                    + card_list;
+                if (target_zone == "hand") {
+                    line += "，并加入手牌";
+                }
+                line += "。";
+            }
+        } else if (
+            event_type == "cards_revealed"
+            && visibility == "public"
+            && !event_card_list().empty()
+        ) {
+            line = public_player_name(state, target_player) + " 公开了 "
+                + event_card_list() + "。";
         } else if (event_type == "energy_attached" && amount > 0) {
             const std::string energy_id = string_field(
                 event_value,
@@ -716,14 +920,55 @@ void append_public_event_logs(
                     target_player,
                     target_slot
                 ) + "。";
+        } else if (event_type == "tool_attached" && amount > 0) {
+            const std::string tool_id = string_field(
+                event_value,
+                "card_id",
+                string_field(data, "card_id")
+            );
+            line = public_player_name(state, target_player) + " 将 "
+                + (tool_id.empty()
+                    ? std::to_string(amount) + " 张宝可梦道具"
+                    : public_card_name(cards, tool_id))
+                + " 附着到了 " + public_pokemon_name(
+                    cards,
+                    before_state,
+                    state,
+                    target_player,
+                    target_slot
+                ) + "。";
         } else if (
             event_type == "card_moved"
             && amount > 0
             && string_field(data, "source_zone") == "hand"
             && string_field(data, "target_zone") == "deck"
         ) {
+            const std::string &card_list = event_card_list();
             line = public_player_name(state, target_player) + " 将 "
-                + std::to_string(amount) + " 张手牌放回了牌库。";
+                + (card_list.empty()
+                    ? std::to_string(amount) + " 张手牌" : card_list)
+                + " 放回了牌库。";
+        } else if (
+            event_type == "card_moved"
+            && amount > 0
+            && string_field(data, "source_zone") == "discard"
+            && string_field(data, "target_zone") == "deck"
+        ) {
+            const std::string &card_list = event_card_list();
+            line = public_player_name(state, target_player) + " 将 "
+                + (card_list.empty()
+                    ? std::to_string(amount) + " 张卡牌" : card_list)
+                + " 从弃牌区放回了牌库。";
+        } else if (
+            event_type == "card_moved"
+            && amount > 0
+            && string_field(data, "target_zone") == "bench"
+        ) {
+            const std::string &card_list = event_card_list();
+            line = public_player_name(state, target_player) + " 将 "
+                + (card_list.empty()
+                    ? std::to_string(amount) + " 张宝可梦" : card_list)
+                + " 放到了备战区。";
         } else if (event_type == "deck_shuffled") {
             line = public_player_name(state, target_player) + " 重洗了牌库。";
         } else if (

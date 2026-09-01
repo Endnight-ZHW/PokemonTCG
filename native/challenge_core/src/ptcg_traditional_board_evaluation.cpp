@@ -513,30 +513,70 @@ double resource_outs(
     const Value &owner = player(state, actor);
     double value = 0.0;
     if (has_energy_target(state, actor, cards)) {
-        std::int64_t outs = 0;
-        for (const char *zone : {"hand", "deck"}) {
-            for (const Value &entry : array_field(owner, zone)) {
-                const std::string id = entry.string_or();
-                if (is_energy(cards, id) && (key.empty() || energy_matches_profile(cards, id, key))) ++outs;
+        std::int64_t hand_energy = 0;
+        std::int64_t deck_energy = 0;
+        for (const Value &entry : array_field(owner, "hand")) {
+            const std::string id = entry.string_or();
+            if (is_energy(cards, id)
+                && (key.empty() || energy_matches_profile(cards, id, key))) {
+                ++hand_energy;
             }
         }
-        value += std::min(110.0, static_cast<double>(outs) * 32.0);
+        for (const Value &entry : array_field(owner, "deck")) {
+            const std::string id = entry.string_or();
+            if (is_energy(cards, id)
+                && (key.empty() || energy_matches_profile(cards, id, key))) {
+                ++deck_energy;
+            }
+        }
+        // Energy already in hand is immediately actionable.  Deck energy is
+        // still an out, but must not saturate the score before a revealed hand
+        // identity can make a difference.
+        value += std::min(
+            110.0,
+            static_cast<double>(hand_energy) * 42.0
+                + std::min(54.0, static_cast<double>(deck_energy) * 9.0)
+        );
     }
-    std::int64_t evolution_outs = 0;
+    double evolution_value = 0.0;
     for (const Value *pokemon : board(state, actor)) {
         if (!bool_field(*pokemon, "can_evolve_this_turn", true)) continue;
-        bool found = false;
-        for (const char *zone : {"hand", "deck"}) {
-            for (const Value &entry : array_field(owner, zone)) {
-                const std::string id = entry.string_or();
-                if (is_pokemon(cards, id) && profile(cards, key).contains("evolution", id)
-                    && card_priority(cards, id, key) > 0.0) { found = true; break; }
-            }
-            if (found) break;
+        const auto matches_evolution = [&](const Value &entry) {
+            const std::string id = entry.string_or();
+            return is_pokemon(cards, id)
+                && profile(cards, key).contains("evolution", id)
+                && card_priority(cards, id, key) > 0.0;
+        };
+        const bool in_hand = std::any_of(
+            array_field(owner, "hand").begin(),
+            array_field(owner, "hand").end(),
+            matches_evolution);
+        const bool in_deck = !in_hand && std::any_of(
+            array_field(owner, "deck").begin(),
+            array_field(owner, "deck").end(),
+            matches_evolution);
+        if (in_hand) {
+            evolution_value += 44.0;
+        } else if (in_deck) {
+            evolution_value += 22.0;
         }
-        if (found) ++evolution_outs;
     }
-    value += std::min(90.0, static_cast<double>(evolution_outs) * 34.0);
+    value += std::min(110.0, evolution_value);
+
+    double immediate_hand_value = 0.0;
+    const bool bench_space = bench_count(owner) < 5;
+    for (const Value &entry : array_field(owner, "hand")) {
+        const std::string id = entry.string_or();
+        const double priority = card_priority(cards, id, key);
+        if (is_trainer(cards, id) && priority > 0.0) {
+            immediate_hand_value += std::min(18.0, 5.0 + priority * 0.12);
+        } else if (
+            bench_space && is_basic_pokemon(cards, id) && priority > 0.0
+        ) {
+            immediate_hand_value += std::min(28.0, 6.0 + priority * 0.08);
+        }
+    }
+    value += std::min(80.0, immediate_hand_value);
     value += core_line_value(state, actor, cards, decks, key);
     return value;
 }

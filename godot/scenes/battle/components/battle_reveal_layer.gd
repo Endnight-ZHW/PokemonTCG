@@ -185,7 +185,7 @@ func _build_showcase(
 	var title := Label.new()
 	title.name = "RevealTitle"
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title.text = "公开翻牌"
+	title.text = str(summary.get("title", "公开翻牌"))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.position = Vector2(panel_rect.position.x + 12.0, panel_rect.position.y + 8.0)
 	title.size = Vector2(panel_rect.size.x - 24.0, 28.0)
@@ -226,6 +226,7 @@ func _build_showcase(
 			face_texture,
 			card_size,
 			bool(rows[index].get("matched", false)),
+			str(rows[index].get("outcome_label", "")),
 		)
 		card.name = "RevealCard%d" % index
 		card.z_index = index
@@ -240,6 +241,7 @@ func _create_card(
 	face_texture: Texture2D,
 	size_value: Vector2,
 	matched: bool,
+	outcome_label: String = "",
 ) -> Control:
 	var card := Control.new()
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -290,7 +292,11 @@ func _create_card(
 	var badge := Label.new()
 	badge.name = "OutcomeBadge"
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	badge.text = "能量" if matched else "洗回牌库"
+	badge.text = (
+		outcome_label
+		if not outcome_label.is_empty()
+		else ("能量" if matched else "洗回牌库")
+	)
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	badge.position = Vector2(6.0, size_value.y - 27.0)
@@ -478,6 +484,8 @@ func _update_card_flip(
 
 func _summary_text(card_count: int, summary: Dictionary) -> String:
 	var matched_count := int(summary.get("matched_count", 0))
+	if str(summary.get("kind", "")) == "public_selection":
+		return "公开了 %d 张所选卡牌" % card_count
 	if str(summary.get("kind", "")) == "energy_damage":
 		if matched_count <= 0:
 			return "未翻到能量"

@@ -47,6 +47,204 @@ bool is_hidden_id(std::string_view card_id) noexcept {
         || card_id == "__hidden_prize__";
 }
 
+constexpr std::size_t max_public_history = 4096;
+
+Array history_card_ids(const Value &event, const Value &data) {
+    const Value *entries = field(data, "card_ids");
+    if (entries == nullptr || !entries->is_array()) {
+        entries = field(data, "cards");
+    }
+    if (entries == nullptr || !entries->is_array()) {
+        entries = field(data, "selected_card_ids");
+    }
+    Array result;
+    if (entries != nullptr && entries->is_array()) {
+        result.reserve(entries->as_array().size());
+        for (const Value &entry : entries->as_array()) {
+            const std::string card_id = entry.is_object()
+                ? string_field(entry, "card_id") : entry.string_or();
+            if (!card_id.empty() && !is_hidden_id(card_id)) {
+                result.emplace_back(card_id);
+            }
+        }
+    }
+    if (result.empty()) {
+        const std::string card_id = string_field(
+            event, "card_id", string_field(data, "card_id"));
+        if (!card_id.empty() && !is_hidden_id(card_id)) {
+            result.emplace_back(card_id);
+        }
+    }
+    return result;
+}
+
+const Value &history_data(const Value &event) {
+    static const Value empty = Value::make_object();
+    const Value *data = field(event, "data");
+    return data != nullptr && data->is_object() ? *data : empty;
+}
+
+std::int32_t history_endpoint_player(
+    const Value &event,
+    const Value &data,
+    const char *endpoint_key
+) {
+    const Value *endpoint = field(event, endpoint_key);
+    if (endpoint != nullptr && endpoint->is_object()) {
+        const std::int64_t player = integer_field(*endpoint, "player", -1);
+        if (player == 0 || player == 1) {
+            return static_cast<std::int32_t>(player);
+        }
+    }
+    return static_cast<std::int32_t>(integer_field(
+        data, "player", integer_field(event, "actor", -1)));
+}
+
+std::string history_endpoint_zone(
+    const Value &event,
+    const Value &data,
+    const char *endpoint_key,
+    const char *data_key
+) {
+    const Value *endpoint = field(event, endpoint_key);
+    if (endpoint != nullptr && endpoint->is_object()) {
+        const std::string zone = string_field(*endpoint, "zone");
+        if (!zone.empty()) {
+            return zone;
+        }
+    }
+    return string_field(data, data_key);
+}
+
+bool is_hand_movement_event(const std::string &event_type) {
+    return event_type == "card_moved"
+        || event_type == "cards_discarded"
+        || event_type == "cards_selected"
+        || event_type == "energy_attached"
+        || event_type == "pokemon_evolved"
+        || event_type == "pokemon_played"
+        || event_type == "stadium_changed"
+        || event_type == "tool_attached"
+        || event_type == "trainer_played";
+}
+
+void remove_known_cards(Array &known, const Array &departed) {
+    for (const Value &card : departed) {
+        const std::string card_id = card.string_or();
+        const auto found = std::find_if(
+            known.begin(),
+            known.end(),
+            [&card_id](const Value &entry) {
+                return entry.string_or() == card_id;
+            }
+        );
+        if (found != known.end()) {
+            known.erase(found);
+        }
+    }
+}
+
+bool replay_known_opponent_hand(
+    const Value &public_history,
+    std::int32_t perspective,
+    Array &known,
+    std::string *error
+) {
+    known.clear();
+    if (
+        !public_history.is_array()
+        || public_history.as_array().size() > max_public_history
+    ) {
+        if (error != nullptr) *error = "invalid_public_history";
+        return false;
+    }
+    const std::int32_t opponent = 1 - perspective;
+    for (const Value &event : public_history.as_array()) {
+        if (!event.is_object()) {
+            if (error != nullptr) *error = "invalid_public_history";
+            return false;
+        }
+        const Value *data_value = field(event, "data");
+        const Value *source_value = field(event, "source");
+        const Value *target_value = field(event, "target");
+        if (
+            data_value == nullptr || !data_value->is_object()
+            || source_value == nullptr || !source_value->is_object()
+            || target_value == nullptr || !target_value->is_object()
+        ) {
+            if (error != nullptr) *error = "invalid_public_history";
+            return false;
+        }
+        const std::string event_type = string_field(event, "event_type");
+        const std::string visibility = string_field(
+            event, "visibility", "public");
+        if (
+            event_type.empty()
+            || (visibility != "public"
+                && visibility != "owner"
+                && visibility != "private")
+        ) {
+            if (error != nullptr) *error = "invalid_public_history";
+            return false;
+        }
+        const Value &data = history_data(event);
+        const std::int32_t visibility_owner = static_cast<std::int32_t>(
+            integer_field(
+                data,
+                "visibility_owner",
+                integer_field(data, "player", integer_field(event, "actor", -1))
+            ));
+        const Array card_ids = history_card_ids(event, data);
+        if (
+            (visibility != "public"
+                && visibility_owner != 0
+                && visibility_owner != 1)
+        ) {
+            if (error != nullptr) *error = "invalid_public_history";
+            return false;
+        }
+        if (
+            (visibility == "private" && visibility_owner != perspective)
+            || (visibility != "public"
+                && visibility_owner != perspective
+                && !card_ids.empty())
+        ) {
+            if (error != nullptr) *error = "private_public_history";
+            return false;
+        }
+        const std::int32_t source_player = history_endpoint_player(
+            event, data, "source");
+        const std::int32_t target_player = history_endpoint_player(
+            event, data, "target");
+        const std::string source_zone = history_endpoint_zone(
+            event, data, "source", "source_zone");
+        const std::string target_zone = history_endpoint_zone(
+            event, data, "target", "target_zone");
+
+        if (
+            source_player == opponent
+            && source_zone == "hand"
+            && is_hand_movement_event(event_type)
+        ) {
+            if (visibility == "public" && !card_ids.empty()) {
+                remove_known_cards(known, card_ids);
+            } else {
+                // An identity-hidden or otherwise ambiguous hand departure can
+                // include any previously revealed copy.  Forget conservatively.
+                known.clear();
+            }
+        }
+        if (
+            target_player == opponent
+            && target_zone == "hand"
+            && visibility == "public"
+        ) {
+            known.insert(known.end(), card_ids.begin(), card_ids.end());
+        }
+    }
+    return true;
+}
+
 Value hidden_cards(std::size_t count, const char *marker) {
     return Value(Array(count, Value(marker)));
 }
@@ -142,7 +340,6 @@ Value normalize_public_snapshot(
     const Value &source,
     std::int32_t perspective,
     const Value &legal_actions,
-    const Value &public_history,
     std::int64_t match_seed
 ) {
     const Value *source_players = field(source, "players");
@@ -219,8 +416,6 @@ Value normalize_public_snapshot(
         {"match_seed", Value(match_seed)},
         {"legal_actions", legal_actions.is_array()
             ? legal_actions : Value::make_array()},
-        {"public_history", public_history.is_array()
-            ? public_history : Value::make_array()},
     });
 
     Array &rows = result["players"].as_array();
@@ -362,6 +557,7 @@ bool TraditionalInformationSet::capture(
 ) {
     valid_ = false;
     remaining_pools_ = {};
+    known_hands_ = {};
     published_deck_valid_ = {};
     if (perspective != 0 && perspective != 1) {
         if (error != nullptr) *error = "invalid_perspective";
@@ -371,9 +567,17 @@ bool TraditionalInformationSet::capture(
         if (error != nullptr) *error = "invalid_public_state";
         return false;
     }
+    if (!replay_known_opponent_hand(
+        public_history,
+        perspective,
+        known_hands_[static_cast<std::size_t>(1 - perspective)],
+        error
+    )) {
+        return false;
+    }
     try {
         public_snapshot_ = normalize_public_snapshot(
-            public_state, perspective, legal_actions, public_history, match_seed);
+            public_state, perspective, legal_actions, match_seed);
         perspective_ = perspective;
         match_seed_ = match_seed;
         const Value &cards = catalog_cards(catalog);
@@ -405,8 +609,36 @@ bool TraditionalInformationSet::capture(
                     remove_visible(pool, Array{Value(stadium)});
                 }
             }
+            const std::size_t hand_count = player == perspective
+                ? 0U : row.find("hand")->as_array().size();
+            Array &known_hand = known_hands_[static_cast<std::size_t>(player)];
+            if (known_hand.size() > hand_count) {
+                if (error != nullptr) *error = "invalid_known_hand";
+                return false;
+            }
+            if (!known_hand.empty()) {
+                if (!published_deck_valid_[static_cast<std::size_t>(player)]) {
+                    if (error != nullptr) *error = "invalid_known_hand";
+                    return false;
+                }
+                for (const Value &known_card : known_hand) {
+                    const std::string card_id = known_card.string_or();
+                    const auto found = std::find_if(
+                        pool.begin(),
+                        pool.end(),
+                        [&card_id](const Value &entry) {
+                            return entry.string_or() == card_id;
+                        }
+                    );
+                    if (found == pool.end()) {
+                        if (error != nullptr) *error = "invalid_known_hand";
+                        return false;
+                    }
+                    pool.erase(found);
+                }
+            }
             const std::size_t hidden_count =
-                (player == perspective ? 0U : row.find("hand")->as_array().size())
+                hand_count - known_hand.size()
                 + row.find("deck")->as_array().size()
                 + row.find("prizes")->as_array().size();
             if (pool.empty() && hidden_count > 0) {
@@ -433,6 +665,64 @@ const Value::Array &TraditionalInformationSet::remaining_pool(std::int32_t playe
     return remaining_pools_[static_cast<std::size_t>(player)];
 }
 
+const Value::Array &TraditionalInformationSet::known_hand(
+    std::int32_t player
+) const {
+    if (player != 0 && player != 1) throw std::out_of_range("invalid_player");
+    return known_hands_[static_cast<std::size_t>(player)];
+}
+
+std::size_t TraditionalInformationSet::hand_count(std::int32_t player) const {
+    if (player != 0 && player != 1) throw std::out_of_range("invalid_player");
+    const Value *players = public_snapshot_.find("players");
+    if (
+        players == nullptr || !players->is_array()
+        || static_cast<std::size_t>(player) >= players->as_array().size()
+    ) {
+        return 0;
+    }
+    const Value *hand = players->as_array()[static_cast<std::size_t>(player)]
+        .find("hand");
+    return hand != nullptr && hand->is_array() ? hand->as_array().size() : 0;
+}
+
+std::size_t TraditionalInformationSet::unknown_hand_count(
+    std::int32_t player
+) const {
+    const std::size_t total = hand_count(player);
+    const std::size_t known = known_hand(player).size();
+    return total > known ? total - known : 0;
+}
+
+std::size_t TraditionalInformationSet::recommended_belief_samples(
+    std::int32_t player,
+    std::size_t requested
+) const {
+    if (requested <= 1) return requested;
+    const std::size_t known = known_hand(player).size();
+    if (known == 0) return requested;
+    const std::size_t unknown = unknown_hand_count(player);
+    const Value *players = public_snapshot_.find("players");
+    std::size_t deck_count = 0;
+    if (
+        players != nullptr && players->is_array()
+        && static_cast<std::size_t>(player) < players->as_array().size()
+    ) {
+        const Value *deck = players->as_array()[static_cast<std::size_t>(player)]
+            .find("deck");
+        if (deck != nullptr && deck->is_array()) {
+            deck_count = deck->as_array().size();
+        }
+    }
+    // A fully known hand with no possible next draw has only one reply belief.
+    // Otherwise retain two samples for the hidden remainder and next draw.
+    // Once at least one identity is exact, the third sample mostly repeats the
+    // same known-card reply branch; spend that budget only on fully hidden
+    // hands, where all three opponent-hand realizations remain distinct.
+    if (unknown == 0 && deck_count == 0) return 1;
+    return std::min<std::size_t>(requested, 2);
+}
+
 bool TraditionalInformationSet::has_published_deck(
     std::int32_t player
 ) const noexcept {
@@ -448,8 +738,10 @@ Value TraditionalInformationSet::sample_state(std::uint32_t seed) const {
     for (std::int32_t player = 0; player < 2; ++player) {
         Value &row = players[static_cast<std::size_t>(player)];
         Array pool = remaining_pools_[static_cast<std::size_t>(player)];
-        const std::size_t hand_count = player == perspective_
+        const std::size_t total_hand_count = player == perspective_
             ? 0U : row["hand"].as_array().size();
+        const Array &known_hand = known_hands_[static_cast<std::size_t>(player)];
+        const std::size_t hand_count = total_hand_count - known_hand.size();
         const std::size_t deck_count = row["deck"].as_array().size();
         const std::size_t prize_count = row["prizes"].as_array().size();
         const std::size_t needed = hand_count + deck_count + prize_count;
@@ -458,7 +750,15 @@ Value TraditionalInformationSet::sample_state(std::uint32_t seed) const {
         if (pool.size() > needed) pool.resize(needed);
         std::size_t cursor = 0;
         if (player != perspective_) {
-            row["hand"] = Value(slice(pool, cursor, cursor + hand_count));
+            Array sampled_hand = known_hand;
+            const Array unknown_hand = slice(
+                pool, cursor, cursor + hand_count);
+            sampled_hand.insert(
+                sampled_hand.end(), unknown_hand.begin(), unknown_hand.end());
+            if (!known_hand.empty()) {
+                shuffle(sampled_hand, rng);
+            }
+            row["hand"] = Value(std::move(sampled_hand));
             cursor += hand_count;
         }
         row["deck"] = Value(slice(pool, cursor, cursor + deck_count));

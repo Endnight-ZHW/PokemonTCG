@@ -18,6 +18,7 @@ param(
     [string]$ComparisonMode = 'release-bundle',
     [string[]]$CandidateDeck = @(),
     [string[]]$BaselineDeck = @(),
+    [switch]$MirrorOnly,
     [switch]$AllowSelfPlay,
     [switch]$TraceAll
 )
@@ -106,6 +107,9 @@ foreach ($deck in $CandidateDeck) {
 }
 foreach ($deck in $BaselineDeck) {
     $arguments += @('--baseline-deck', $deck)
+}
+if ($MirrorOnly) {
+    $arguments += '--mirror-only'
 }
 if ($TraceAll) {
     $arguments += '--trace-all'

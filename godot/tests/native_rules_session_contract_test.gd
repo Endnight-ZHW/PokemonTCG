@@ -491,6 +491,55 @@ func _check_main_native_route() -> void:
 					"entries", [])).size() == 2,
 				"Main did not commit a local Action v4 through RulesSession",
 			)
+	main.set("game_mode", "challenge")
+	main.set("ai_public_history", [])
+	main.call("_record_ai_public_history", [
+		{
+			"event_type": "cards_selected",
+			"actor": 0,
+			"visibility": "public",
+			"data": {
+				"player": 0,
+				"card_ids": ["sv1-151"],
+				"count": 1,
+				"source_zone": "deck",
+				"target_zone": "hand",
+			},
+		},
+		{
+			"event_type": "cards_selected",
+			"actor": 0,
+			"visibility": "owner",
+			"data": {
+				"player": 0,
+				"card_ids": ["svg-tatsu"],
+				"count": 1,
+				"source_zone": "deck",
+				"target_zone": "hand",
+			},
+		},
+		{
+			"event_type": "cards_selected",
+			"actor": 0,
+			"visibility": "private",
+			"data": {
+				"player": 0,
+				"card_ids": ["sv1-153"],
+				"count": 1,
+				"source_zone": "deck",
+				"target_zone": "hand",
+			},
+		},
+	], 2, 0)
+	var challenge_history: Array = main.get("ai_public_history")
+	_check(
+		challenge_history.size() == 2
+		and Array(Dictionary(challenge_history[0].get("data", {})).get(
+			"card_ids", [])).size() == 1
+		and Array(Dictionary(challenge_history[1].get("data", {})).get(
+			"card_ids", [])).is_empty(),
+		"Main Challenge history did not apply the AI presentation viewpoint",
+	)
 	main.free()
 
 

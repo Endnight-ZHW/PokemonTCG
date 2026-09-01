@@ -1,5 +1,5 @@
 {
-  "descriptor_digest": "d990e5514e1dcd1278b03a8bc5a3d8b74503d707a92801904ba494d579b299b2",
+  "descriptor_digest": "3aacb1f8b04f9f4a80680dfc44adfe0025558e2f90c3d0bc3e37ace583615ea4",
   "descriptor_schema_version": 1,
   "descriptors": {
     "apply_attack_lock_basic": {
@@ -1885,6 +1885,9 @@
           "rest_bottom": {
             "type": "boolean"
           },
+          "reveal": {
+            "type": "boolean"
+          },
           "shuffle_rest": {
             "type": "boolean"
           },
@@ -1896,7 +1899,9 @@
             "type": "string"
           }
         },
-        "required": [],
+        "required": [
+          "reveal"
+        ],
         "type": "object"
       },
       "attack_timing": "none",
@@ -2577,7 +2582,9 @@
             "type": "boolean"
           }
         },
-        "required": [],
+        "required": [
+          "reveal"
+        ],
         "type": "object"
       },
       "attack_timing": "none",

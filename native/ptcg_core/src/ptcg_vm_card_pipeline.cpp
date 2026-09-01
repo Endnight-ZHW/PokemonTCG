@@ -404,13 +404,20 @@ bool execute_vm_card_pipeline(
                     )].string_or()
                 );
             }
+            // Freeze the selection contract before moving `options` into the
+            // request. Function argument evaluation order must not allow the
+            // moved-from array to collapse a non-empty choice to max_select=0.
+            const bool has_options = !options.empty();
+            const std::int64_t request_minimum = has_options ? minimum : 0;
+            const std::int64_t request_maximum = has_options ? take : 0;
+            const bool request_can_cancel = has_options && minimum <= 0;
             Value request = pending_request(
                 attach ? "look_top_attach_energy" : "look_top",
                 actor,
-                options.empty() ? 0 : minimum,
-                options.empty() ? 0 : take,
+                request_minimum,
+                request_maximum,
                 false,
-                !options.empty() && minimum <= 0,
+                request_can_cancel,
                 std::move(options),
                 attach ? "look_top_attach_energy" : "look_top"
             );

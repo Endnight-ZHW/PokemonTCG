@@ -76,8 +76,9 @@ std::atomic<std::uint64_t> state_score_queries_{0};
 std::atomic<std::uint64_t> choice_resolutions_{0};
 std::atomic<std::uint64_t> native_forced_choice_resolutions_{0};
 std::atomic<std::uint64_t> native_choice_resolutions_{0};
-std::atomic<std::uint64_t> native_trusted_action_scores_{0};
-std::atomic<std::uint64_t> simulated_action_score_calls_{0};
+    std::atomic<std::uint64_t> native_trusted_action_scores_{0};
+    std::atomic<std::uint64_t> known_reply_actions_promoted_{0};
+    std::atomic<std::uint64_t> simulated_action_score_calls_{0};
 };
 
 } // namespace ptcg::ai::challenge_detail

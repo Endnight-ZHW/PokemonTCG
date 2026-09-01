@@ -221,6 +221,7 @@ Value ChallengeController::take_cached_turn_action(
             == value_string_field(precondition, key);
     };
     if (!same("expected_public_fingerprint")
+        || !same("expected_known_hand_fingerprint")
         || value_integer_field(next.precondition, "expected_actor", -1)
             != value_integer_field(precondition, "expected_actor", -1)
         || !same("expected_phase")
@@ -329,7 +330,7 @@ Value ChallengeController::decide_action(
         catalog_,
         decks_,
         filtered_actions,
-        public_history.is_array() ? public_history : Value::make_array(),
+        public_history,
         integer_or(request, "match_seed", integer_or(request, "seed", 0)),
         &information_error
     )) {
@@ -341,6 +342,13 @@ Value ChallengeController::decide_action(
     auto provider_owner = make_challenge_search_provider(
         catalog_, decks_, strategies_, actor, &information_set);
     ChallengeSearchProvider &provider = *provider_owner;
+    const std::int32_t opponent = 1 - actor;
+    const std::size_t requested_belief_samples = static_cast<std::size_t>(
+        std::max<std::int64_t>(1, std::min<std::int64_t>(
+            3, integer_or(request, "belief_samples", 3))));
+    const std::size_t adaptive_belief_samples =
+        information_set.recommended_belief_samples(
+            opponent, requested_belief_samples);
 #if defined(__ANDROID__)
     constexpr std::size_t platform_search_workers = 2;
 #elif defined(_WIN32)
@@ -362,6 +370,14 @@ Value ChallengeController::decide_action(
             actions.as_array().size() - filtered_actions.as_array().size()));
         counters["search_worker_count"] = Value(static_cast<std::int64_t>(
             search_worker_count));
+        counters["known_opponent_hand_count"] = Value(
+            static_cast<std::int64_t>(information_set.known_hand(opponent).size()));
+        counters["unknown_opponent_hand_count"] = Value(
+            static_cast<std::int64_t>(information_set.unknown_hand_count(opponent)));
+        counters["belief_samples_requested"] = Value(
+            static_cast<std::int64_t>(requested_belief_samples));
+        counters["belief_samples_effective"] = Value(
+            static_cast<std::int64_t>(adaptive_belief_samples));
         return counters;
     };
 
@@ -526,8 +542,7 @@ Value ChallengeController::decide_action(
 
     TraditionalSearchConfig config;
     config.worker_count = search_worker_count;
-    config.belief_samples = static_cast<std::size_t>(std::max<std::int64_t>(
-        1, std::min<std::int64_t>(3, integer_or(request, "belief_samples", 3))));
+    config.belief_samples = adaptive_belief_samples;
     if (bool_or(request, "internal_evaluation_smoke")) {
         config.root_actions = 2;
         config.per_root_width = 1;
@@ -687,13 +702,15 @@ Value ChallengeController::decide_choice(
     cancel_requested_.store(false, std::memory_order_release);
     TraditionalInformationSet information_set;
     std::string error;
+    const Value public_history = value_or(
+        request, "public_history", Value::make_array());
     if (!information_set.capture(
         state,
         actor,
         catalog_,
         decks_,
         Value::make_array(),
-        Value::make_array(),
+        public_history,
         integer_or(request, "match_seed", integer_or(request, "seed", 0)),
         &error
     )) {
@@ -923,6 +940,7 @@ Value ChallengeController::get_contract() const {
         {"snapshot_schema_version", Value(3)},
         {"max_depth", Value(8)},
         {"belief_samples", Value(3)},
+        {"adaptive_belief_samples", Value(true)},
         {"reply_depth", Value(3)},
         {"atomic_generation_cancellation", Value(true)},
         {"callback_free", Value(true)},

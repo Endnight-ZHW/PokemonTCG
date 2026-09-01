@@ -68,6 +68,33 @@ using namespace challenge;
             score += std::max<std::int64_t>(-250000, std::min<std::int64_t>(
                 250000,
                 ptcg::ai::TraditionalPositionEvaluator::quantize(native_strategy)));
+            if (
+                actor != root_actor_ && information_set_ != nullptr
+                && information_set_->valid()
+            ) {
+                const ptcg::ai::Value *source = actions[index].find("source");
+                const std::string source_zone = source != nullptr
+                    && source->is_object()
+                    ? string_field(*source, "zone") : std::string{};
+                const std::string source_card_id = source != nullptr
+                    && source->is_object()
+                    ? string_field(*source, "card_id") : std::string{};
+                const auto &known = information_set_->known_hand(actor);
+                const bool exact_hand_action = source_zone == "hand"
+                    && !source_card_id.empty()
+                    && std::any_of(
+                        known.begin(), known.end(),
+                        [&source_card_id](const ptcg::ai::Value &entry) {
+                            return entry.string_or() == source_card_id;
+                        });
+                if (exact_hand_action) {
+                    // Ranking only: make certain opponent replies survive the
+                    // bounded top-four reply frontier. Leaf evaluation remains
+                    // unchanged, so certainty does not inflate position value.
+                    score += 40000;
+                    ++known_reply_actions_promoted_;
+                }
+            }
             output.push_back(ptcg::ai::TraditionalRankedAction{
                 actions[index],
                 score,
@@ -330,11 +357,29 @@ using namespace challenge;
         }) payload.erase(key);
         const std::string fingerprint = sha256_text(
             information_value_signature(payload));
+        std::string known_hand_wire;
+        if (information_set_ != nullptr && information_set_->valid()
+            && (actor == 0 || actor == 1)) {
+            std::vector<std::string> known_ids;
+            for (const ptcg::ai::Value &entry :
+                information_set_->known_hand(1 - actor)) {
+                known_ids.push_back(entry.string_or());
+            }
+            std::sort(known_ids.begin(), known_ids.end());
+            for (const std::string &card_id : known_ids) {
+                known_hand_wire += std::to_string(card_id.size())
+                    + ":" + card_id + "|";
+            }
+        }
+        const std::string known_hand_fingerprint = sha256_text(
+            "known-opponent-hand:v1|" + known_hand_wire);
         const ptcg::ai::Value *observed_actor = information.public_snapshot().find("actor");
         const ptcg::ai::Value *phase = information.public_snapshot().find("phase");
         return ptcg::ai::Value(ptcg::ai::Value::Object{
             {"expected_public_fingerprint", ptcg::ai::Value(
                 "public:" + fingerprint)},
+            {"expected_known_hand_fingerprint", ptcg::ai::Value(
+                "known:" + known_hand_fingerprint)},
             {"expected_actor", observed_actor == nullptr
                 ? ptcg::ai::Value(-1) : *observed_actor},
             {"expected_phase", phase == nullptr

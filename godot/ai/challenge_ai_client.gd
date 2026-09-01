@@ -6,6 +6,7 @@ extends RefCounted
 
 const TRADITIONAL_ENGINE_ID := "turn_beam_v2"
 const STRATEGY_DATA_PATH := "res://data/ai_strategies.json"
+const MAX_PUBLIC_HISTORY := 4096
 const CHOICE_VIEW_FIELDS := [
 	"schema_version",
 	"request_id",
@@ -90,6 +91,12 @@ static func _request_error(request: Dictionary) -> String:
 		return "invalid_request_revision"
 	if request.get("state") is not Dictionary:
 		return "invalid_runtime_state"
+	var history_error := _public_history_error(
+		request.get("public_history", []),
+		int(request.get("actor", -1)),
+	)
+	if not history_error.is_empty():
+		return history_error
 	if kind == "action" and request.get("actions") is not Array:
 		return "invalid_authoritative_legal_actions"
 	if kind == "choice":
@@ -97,6 +104,64 @@ static func _request_error(request: Dictionary) -> String:
 		if not choice_error.is_empty():
 			return choice_error
 	return ""
+
+
+static func _public_history_error(value: Variant, perspective: int) -> String:
+	if value is not Array or Array(value).size() > MAX_PUBLIC_HISTORY:
+		return "invalid_public_history"
+	for event_value in Array(value):
+		if event_value is not Dictionary:
+			return "invalid_public_history"
+		var event: Dictionary = event_value
+		var visibility := str(event.get("visibility", PresentationEvent.PUBLIC))
+		if (
+			str(event.get("event_type", "")).is_empty()
+			or visibility not in [
+				PresentationEvent.PUBLIC,
+				PresentationEvent.OWNER,
+				PresentationEvent.PRIVATE,
+			]
+			or event.get("data", {}) is not Dictionary
+			or event.get("source", {}) is not Dictionary
+			or event.get("target", {}) is not Dictionary
+		):
+			return "invalid_public_history"
+		var data: Dictionary = event.get("data", {})
+		var owner := int(data.get(
+			"visibility_owner",
+			data.get(
+				"player",
+				Dictionary(event.get("target", {})).get(
+					"player",
+					Dictionary(event.get("source", {})).get("player", -1),
+				),
+			),
+		))
+		if visibility != PresentationEvent.PUBLIC and owner not in [0, 1]:
+			return "invalid_public_history"
+		if visibility == PresentationEvent.PRIVATE and owner != perspective:
+			return "private_public_history"
+		if (
+			visibility != PresentationEvent.PUBLIC
+			and owner != perspective
+			and _history_has_card_identity(event)
+		):
+			return "private_public_history"
+	return ""
+
+
+static func _history_has_card_identity(event: Dictionary) -> bool:
+	if not str(event.get("card_id", "")).is_empty():
+		return true
+	var data: Dictionary = event.get("data", {})
+	for field in PresentationEvent.CARD_ID_FIELDS:
+		if not str(data.get(field, "")).is_empty():
+			return true
+	for field in PresentationEvent.CARD_LIST_FIELDS:
+		var value: Variant = data.get(field, [])
+		if value is Array and not Array(value).is_empty():
+			return true
+	return false
 
 
 static func _choice_view_error(value: Variant) -> String:

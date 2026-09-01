@@ -490,11 +490,20 @@ bool resume_vm_choices(
                         }
                     }
                 } else {
+                    Array selected_ids = card_id_values(selected_card_ids);
                     Array &hand = required(self, "hand").as_array();
                     for (Value &entry : chosen_cards) {
                         hand.push_back(std::move(entry));
                     }
-                    result.event_types.emplace_back("cards_selected");
+                    append_card_zone_event(
+                        result,
+                        "cards_selected",
+                        actor,
+                        std::move(selected_ids),
+                        "deck",
+                        "hand",
+                        bool_arg(args, "reveal") ? "public" : "owner"
+                    );
                 }
                 for (Value &entry : remaining_top) {
                     if (bool_arg(args, "shuffle_rest")) {

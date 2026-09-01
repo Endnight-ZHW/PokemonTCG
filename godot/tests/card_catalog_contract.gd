@@ -53,6 +53,21 @@ func _run_contract() -> void:
 	_check(cached_deck.is_read_only(), "cached expanded decks must be read-only")
 	_check(cached_subtypes.is_read_only(), "cached subtype arrays must be read-only")
 	_check(cached_energy.is_read_only(), "cached energy arrays must be read-only")
+	for visibility_case in [
+		{"card_id": "sv1-170", "reveal": false},
+		{"card_id": "sv2-cand", "reveal": true},
+		{"card_id": "svi-enst", "reveal": true},
+	]:
+		var visibility_card := repository.get_card(str(visibility_case["card_id"]))
+		var commands: Array = visibility_card.get("compiled_trainer_effects", [])
+		var command: Dictionary = commands[0] if not commands.is_empty() else {}
+		var args: Dictionary = command.get("args", {})
+		_check(
+			str(command.get("op", "")) == "look_top_deck"
+			and args.get("reveal") is bool
+			and bool(args.get("reveal")) == bool(visibility_case["reveal"]),
+			"%s has the wrong look-top reveal contract" % visibility_case["card_id"],
+		)
 	var cache_sizes_before := _cache_sizes(repository)
 	var first_expansion := repository.expand_deck(first_deck_key)
 	first_expansion.append("__local_copy_only")

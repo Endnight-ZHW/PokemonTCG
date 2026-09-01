@@ -38408,6 +38408,7 @@
           "count": 7,
           "filter": "water_pokemon_and_energy",
           "min_select": 0,
+          "reveal": true,
           "shuffle_rest": true,
           "take": 99
         },
@@ -38439,6 +38440,9 @@
               "minimum": 0,
               "type": "integer"
             },
+            "reveal": {
+              "type": "boolean"
+            },
             "rest_bottom": {
               "type": "boolean"
             },
@@ -38453,7 +38457,9 @@
               "type": "string"
             }
           },
-          "required": [],
+          "required": [
+            "reveal"
+          ],
           "type": "object"
         },
         "attack_timing": "none",
@@ -53057,7 +53063,9 @@
               "type": "boolean"
             }
           },
-          "required": [],
+          "required": [
+            "reveal"
+          ],
           "type": "object"
         },
         "attack_timing": "none",

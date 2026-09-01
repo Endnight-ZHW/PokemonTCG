@@ -170,8 +170,21 @@ def preset_matchups(
     *,
     candidate_decks: Sequence[str] = (),
     baseline_decks: Sequence[str] = (),
+    mirror_only: bool = False,
 ) -> list[tuple[str, str]]:
     decks = tuple(str(value) for value in RELEASE_DECKS)
+    if mirror_only:
+        if preset != "focused":
+            raise ValueError("challenge_arena_mirror_only_requires_focused")
+        candidates = tuple(str(value) for value in candidate_decks) or decks
+        baselines = tuple(str(value) for value in baseline_decks) or decks
+        if (
+            len(set(candidates)) != len(candidates)
+            or len(set(baselines)) != len(baselines)
+            or set(candidates) != set(baselines)
+        ):
+            raise ValueError("challenge_arena_mirror_decks_must_match")
+        return [(deck, deck) for deck in candidates]
     if preset == "smoke":
         return [
             ("fire", "water"),
@@ -221,6 +234,7 @@ def generate_tasks(
     max_decisions: int = 512,
     candidate_decks: Sequence[str] = (),
     baseline_decks: Sequence[str] = (),
+    mirror_only: bool = False,
 ) -> list[ArenaTask]:
     if max_decisions <= 0:
         raise ValueError("arena_max_decisions_must_be_positive")
@@ -233,6 +247,7 @@ def generate_tasks(
         preset,
         candidate_decks=candidate_decks,
         baseline_decks=baseline_decks,
+        mirror_only=mirror_only,
     )
     tasks: list[ArenaTask] = []
     for replicate in range(count):
@@ -763,6 +778,7 @@ def run_arena(
     max_decisions: int = 512,
     candidate_decks: Sequence[str] = (),
     baseline_decks: Sequence[str] = (),
+    mirror_only: bool = False,
     trace_all: bool = False,
     bootstrap_samples: int = 2000,
     truncated_rate_limit: float = 0.001,
@@ -840,6 +856,7 @@ def run_arena(
         max_decisions=max_decisions,
         candidate_decks=candidate_decks,
         baseline_decks=baseline_decks,
+        mirror_only=mirror_only,
     )
     requested_replicates = max(task.replicate for task in tasks) + 1
     if preset == "smoke" and requested_replicates != 1:
@@ -855,6 +872,7 @@ def run_arena(
         "schema": "ptcg.challenge_arena.run_fingerprint/1",
         "preset": preset,
         "comparison_mode": comparison_mode,
+        "mirror_only": bool(mirror_only),
         "base_seed": int(seed),
         "catalog_hash": canonical_hash(catalog),
         "decks_hash": canonical_hash(decks),

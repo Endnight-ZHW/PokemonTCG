@@ -499,6 +499,65 @@ func _run_protocol_boundaries() -> void:
 			"card_ids", [])).is_empty(),
 		"hidden cross-player movement privacy followed causal actor instead of physical owner",
 	)
+	var public_search := PresentationEvent.normalize({
+		"event_type": "cards_selected",
+		"actor": 0,
+		"visibility": "public",
+		"data": {
+			"player": 0,
+			"card_ids": ["sv1-151"],
+			"count": 1,
+			"source_zone": "deck",
+			"target_zone": "hand",
+		},
+	}, int(view["state"]["revision"]))
+	var owner_search := PresentationEvent.normalize({
+		"event_type": "cards_selected",
+		"actor": 0,
+		"data": {
+			"player": 0,
+			"card_ids": ["svg-tatsu"],
+			"count": 1,
+			"source_zone": "deck",
+			"target_zone": "hand",
+		},
+	}, int(view["state"]["revision"]))
+	var private_search := PresentationEvent.normalize({
+		"event_type": "cards_selected",
+		"actor": 0,
+		"visibility": "private",
+		"data": {
+			"player": 0,
+			"card_ids": ["svg-tatsu"],
+			"count": 1,
+			"source_zone": "deck",
+			"target_zone": "hand",
+		},
+	}, int(view["state"]["revision"]))
+	var hidden_prize := PresentationEvent.normalize({
+		"event_type": "prize_taken",
+		"actor": 0,
+		"data": {
+			"player": 0,
+			"card_ids": ["sv1-ener-2"],
+			"count": 1,
+		},
+	}, int(view["state"]["revision"]))
+	_expect(
+		Array(Dictionary(PresentationEvent.for_player(
+			public_search, 1,
+		).get("data", {})).get("card_ids", [])).size() == 1
+		and str(owner_search.get("visibility", "")) == PresentationEvent.OWNER
+		and Array(Dictionary(PresentationEvent.for_player(
+			owner_search, 1,
+		).get("data", {})).get("card_ids", [])).is_empty()
+		and PresentationEvent.for_player(private_search, 1).is_empty()
+		and str(hidden_prize.get("visibility", "")) == PresentationEvent.OWNER
+		and Array(Dictionary(PresentationEvent.for_player(
+			hidden_prize, 1,
+		).get("data", {})).get("card_ids", [])).is_empty(),
+		"selection/prize projection ignored its explicit visibility",
+	)
 	var presentation_view: Dictionary = view.duplicate(true)
 	presentation_view["presentation_events"] = [presentation_event, cross_owner_move]
 	_expect(

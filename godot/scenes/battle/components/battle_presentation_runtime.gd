@@ -1532,7 +1532,17 @@ func _on_presentation_event_finished(event: Dictionary) -> void:
 	_finish_slot_visual_event(event)
 	table.hand_presentation._finish_opponent_hand_event(event)
 	_finish_presentation_covers(event_id)
-	if event_type == "cards_revealed" and table.reveal_layer != null:
+	if (
+		table.reveal_layer != null
+		and (
+			event_type == "cards_revealed"
+			or (
+				event_type == "cards_selected"
+				and str(event.get("visibility", PresentationEvent.PUBLIC))
+					== PresentationEvent.PUBLIC
+			)
+		)
+	):
 		table.reveal_layer.clear()
 	if event_type == "coin_flip" and table.coin_showcase != null:
 		table.coin_showcase.clear()

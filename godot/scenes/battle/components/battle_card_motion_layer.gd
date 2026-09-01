@@ -255,7 +255,10 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		_spawn_coin_motion(event, motion_event_id, actor)
 		_finish_event_motion_dispatch(motion_event_id)
 		return
-	var card_ids: Array = data.get("card_ids", data.get("cards", []))
+	var card_ids: Array = data.get(
+		"card_ids",
+		data.get("cards", data.get("selected_card_ids", [])),
+	)
 	var event_card_id := str(event.get("card_id", data.get("card_id", "")))
 	if card_ids.is_empty() and not event_card_id.is_empty():
 		card_ids = [event_card_id]
@@ -273,6 +276,15 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 	):
 		# Zero-result searches/shuffles are semantic events, not physical cards.
 		# Creating the old forced single proxy here produced a blank phantom flyer.
+		_finish_event_motion_dispatch(motion_event_id)
+		return
+	if (
+		event_type == "cards_selected"
+		and str(event.get("visibility", PresentationEvent.PUBLIC))
+			== PresentationEvent.PUBLIC
+		and not card_ids.is_empty()
+	):
+		_spawn_reveal_motion(event, duration, motion_event_id)
 		_finish_event_motion_dispatch(motion_event_id)
 		return
 	var amount := maxi(1, int(event.get(
@@ -1480,6 +1492,16 @@ func _spawn_reveal_motion(
 		if summary_value is Dictionary
 		else {}
 	)
+	if PresentationEvent.canonical_event_type(
+		str(event.get("event_type", "")),
+	) == "cards_selected":
+		summary["kind"] = "public_selection"
+		summary["matched_count"] = rows.size()
+		summary["title"] = (
+			"公开检索结果"
+			if str(source_endpoint.get("zone", "")) == "deck"
+			else "公开选择结果"
+		)
 	var handle := table.reveal_layer.present(
 		rows,
 		card_back,

@@ -612,16 +612,28 @@ func _duration_for(event: Dictionary) -> float:
 	)
 	if event_type == "cards_selected" and int(event.get("amount", 0)) <= 0:
 		return 0.0
+	var readable_reveal := (
+		event_type == "cards_revealed"
+		or (
+			event_type == "cards_selected"
+			and str(event.get("visibility", PresentationEvent.PUBLIC))
+				== PresentationEvent.PUBLIC
+		)
+	)
 	# Public card identities remain readable even when spatial motion is disabled.
 	# This is a semantic result hold, not an animation delay.
-	if event_type == "cards_revealed" and _speed_mode == "reduced":
+	if readable_reveal and _speed_mode == "reduced":
 		return 1.15
 	if event_type in ANNOUNCEMENT_EVENT_TYPES:
 		return float(ANNOUNCEMENT_DURATIONS.get(_speed_mode, 0.46))
-	var base := float(EVENT_DURATIONS.get(event_type, 0.0))
+	var base := (
+		float(EVENT_DURATIONS.get("cards_revealed", 2.50))
+		if readable_reveal
+		else float(EVENT_DURATIONS.get(event_type, 0.0))
+	)
 	if base <= 0.0 or _speed_scale <= 0.0:
 		return 0.0
-	if _queue.size() > 8 and event_type not in [
+	if _queue.size() > 8 and not readable_reveal and event_type not in [
 		"cards_revealed",
 		"pokemon_evolved",
 		"attack_declared",
@@ -629,7 +641,7 @@ func _duration_for(event: Dictionary) -> float:
 	]:
 		base *= 0.55
 	var duration := maxf(0.02, base * _speed_scale)
-	if event_type == "cards_revealed":
+	if readable_reveal:
 		# Preserve the result-reading window in fast mode; only the travel and
 		# stagger are compressed below this floor.
 		return maxf(1.85, duration)

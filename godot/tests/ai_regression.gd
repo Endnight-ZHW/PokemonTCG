@@ -98,6 +98,41 @@ func _new_choice_policy_contract_failures(
 	worker: ChallengeAIClient,
 ) -> Array[String]:
 	var errors: Array[String] = []
+	var history_request := {
+		"kind": "action",
+		"state": {},
+		"actor": 1,
+		"revision": 0,
+		"actions": [],
+		"public_history": [{
+			"event_type": "cards_selected",
+			"visibility": "public",
+			"source": {"player": 0, "zone": "deck"},
+			"target": {"player": 0, "zone": "hand"},
+			"data": {"player": 0, "card_ids": ["sv1-151"]},
+		}],
+	}
+	if not ChallengeAIClient._request_error(history_request).is_empty():
+		errors.append("valid sanitized Challenge public history was rejected")
+	var leaked_history_request: Dictionary = history_request.duplicate(true)
+	leaked_history_request["public_history"][0]["visibility"] = "owner"
+	leaked_history_request["public_history"][0]["data"]["visibility_owner"] = 0
+	if ChallengeAIClient._request_error(leaked_history_request) \
+			!= "private_public_history":
+		errors.append("Challenge request accepted an opponent-private card identity")
+	var oversized_history_request: Dictionary = history_request.duplicate(true)
+	oversized_history_request["public_history"] = []
+	for index in range(ChallengeAIClient.MAX_PUBLIC_HISTORY + 1):
+		oversized_history_request["public_history"].append({
+			"event_type": "turn_start",
+			"visibility": "public",
+			"source": {},
+			"target": {},
+			"data": {},
+		})
+	if ChallengeAIClient._request_error(oversized_history_request) \
+			!= "invalid_public_history":
+		errors.append("Challenge request accepted oversized public history")
 	var state := GameState.new()
 	state.public_deck_keys = ["fire", "water"]
 	var cases: Array[Dictionary] = [
@@ -155,6 +190,7 @@ func _new_choice_policy_contract_failures(
 			"deck_key": "fire",
 			"seed": 20260716,
 			"deterministic": true,
+			"public_history": history_request["public_history"].duplicate(true),
 		}
 		var first := worker.decide(payload, func() -> bool: return false)
 		var second := worker.decide(payload, func() -> bool: return false)

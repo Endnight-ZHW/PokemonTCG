@@ -4,6 +4,7 @@
 #include "ptcg_rules_session.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -58,6 +59,156 @@ bool bool_field(const Value &value, const char *key, bool fallback = false) {
 
 bool nonempty_object(const Value &value) {
     return value.is_object() && !value.as_object().empty();
+}
+
+std::int32_t history_visibility_owner(const Value &event) {
+    const std::int32_t explicit_owner = static_cast<std::int32_t>(
+        integer_field(event, "visibility_owner", -1));
+    if (explicit_owner == 0 || explicit_owner == 1) return explicit_owner;
+    const Value *data = field(event, "data");
+    if (data != nullptr && data->is_object()) {
+        for (const char *key : {"visibility_owner", "owner", "player"}) {
+            const std::int32_t owner = static_cast<std::int32_t>(
+                integer_field(*data, key, -1));
+            if (owner == 0 || owner == 1) return owner;
+        }
+    }
+    for (const char *key : {"source", "target"}) {
+        const Value *endpoint = field(event, key);
+        if (endpoint != nullptr && endpoint->is_object()) {
+            const std::int32_t owner = static_cast<std::int32_t>(
+                integer_field(*endpoint, "player", -1));
+            if (owner == 0 || owner == 1) return owner;
+        }
+    }
+    return static_cast<std::int32_t>(integer_field(event, "actor", -1));
+}
+
+Value normalized_history_endpoint(
+    const Value &event,
+    const Value &data,
+    const char *key,
+    std::int32_t actor
+) {
+    const bool source = std::string(key) == "source";
+    const Value *explicit_endpoint = field(event, key);
+    Value endpoint = explicit_endpoint != nullptr
+        && explicit_endpoint->is_object()
+        ? explicit_endpoint->deep_clone()
+        : Value::make_object();
+    const char *player_key = source ? "source_player" : "target_player";
+    const char *zone_key = source ? "source_zone" : "target_zone";
+    const char *slot_key = source ? "source_slot" : "target_slot";
+    const char *index_key = source ? "source_index" : "target_index";
+    if (integer_field(endpoint, "player", -1) < 0) {
+        endpoint["player"] = Value(integer_field(
+            data, player_key, integer_field(data, "player", actor)));
+    }
+    if (field(endpoint, "zone") == nullptr) {
+        endpoint["zone"] = Value(string_field(data, zone_key));
+    }
+    if (field(endpoint, "slot") == nullptr) {
+        endpoint["slot"] = Value(string_field(
+            data, slot_key, source ? std::string{} : string_field(data, "slot")));
+    }
+    if (field(endpoint, "index") == nullptr) {
+        endpoint["index"] = Value(integer_field(data, index_key, -1));
+    }
+    return endpoint;
+}
+
+Value normalized_history_event(const Value &raw_event) {
+    Value event = raw_event.deep_clone();
+    const Value *raw_data = field(event, "data");
+    Value data = raw_data != nullptr && raw_data->is_object()
+        ? raw_data->deep_clone() : Value::make_object();
+    const std::int32_t actor = static_cast<std::int32_t>(integer_field(
+        event, "actor", integer_field(data, "player", -1)));
+    event["actor"] = Value(actor);
+    event["data"] = data;
+    event["source"] = normalized_history_endpoint(
+        event, data, "source", actor);
+    event["target"] = normalized_history_endpoint(
+        event, data, "target", actor);
+    if (field(event, "card_id") == nullptr) {
+        event["card_id"] = Value(string_field(data, "card_id"));
+    }
+    if (field(event, "visibility") == nullptr) {
+        const std::string event_type = string_field(event, "event_type");
+        const std::string fallback = event_type == "cards_drawn"
+                || event_type == "cards_selected"
+                || event_type == "prize_taken"
+            ? "owner" : "public";
+        event["visibility"] = Value(string_field(
+            data, "visibility", fallback));
+    }
+    const std::string visibility = string_field(event, "visibility", "public");
+    if (visibility != "public"
+        && field(data, "visibility_owner") == nullptr) {
+        const std::int32_t owner = history_visibility_owner(event);
+        if (owner == 0 || owner == 1) {
+            data["visibility_owner"] = Value(owner);
+            event["data"] = data;
+        }
+    }
+    return event;
+}
+
+void strip_history_card_identity(Value &event) {
+    event["card_id"] = Value("");
+    Value *data = event.find("data");
+    if (data != nullptr && data->is_object()) {
+        for (const char *key : {
+            "card_id", "source_card_id", "target_card_id",
+        }) {
+            if (data->find(key) != nullptr) (*data)[key] = Value("");
+        }
+        for (const char *key : {
+            "card_ids", "cards", "selected_card_ids",
+        }) {
+            if (data->find(key) != nullptr) {
+                (*data)[key] = Value::make_array();
+            }
+        }
+        for (const char *key : {"source_index", "target_index"}) {
+            if (data->find(key) != nullptr) (*data)[key] = Value(-1);
+        }
+        for (const char *key : {"source_indices", "target_indices"}) {
+            if (data->find(key) != nullptr) {
+                (*data)[key] = Value::make_array();
+            }
+        }
+    }
+    for (const char *key : {"source", "target"}) {
+        Value *endpoint = event.find(key);
+        if (endpoint != nullptr && endpoint->is_object()) {
+            (*endpoint)["index"] = Value(-1);
+        }
+    }
+}
+
+void append_public_history(
+    std::array<Array, 2> &histories,
+    const std::vector<Value> &events
+) {
+    constexpr std::size_t maximum_history = 4096;
+    for (const Value &raw_event : events) {
+        if (!raw_event.is_object()) continue;
+        const Value event = normalized_history_event(raw_event);
+        const std::string visibility = string_field(
+            event, "visibility", "public");
+        const std::int32_t owner = history_visibility_owner(event);
+        for (std::int32_t viewer = 0; viewer < 2; ++viewer) {
+            if (visibility == "private" && owner != viewer) continue;
+            Value projected = event.deep_clone();
+            if (visibility == "owner" && owner != viewer) {
+                strip_history_card_identity(projected);
+            }
+            Array &history = histories[static_cast<std::size_t>(viewer)];
+            history.push_back(std::move(projected));
+            if (history.size() > maximum_history) history.erase(history.begin());
+        }
+    }
 }
 
 std::uint64_t elapsed_us(const Clock::time_point &started) {
@@ -801,6 +952,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
         Value(task.baseline_deck);
 
     RulesSession session;
+    std::array<Array, 2> public_histories{};
     const RulesSessionResult created = session.create(
         catalog_,
         Value(std::move(seat_decks)),
@@ -826,6 +978,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
         finalize_from_session(summary, session);
         return summary;
     }
+    append_public_history(public_histories, created.events);
 
     const std::string match_id = "challenge-arena:" + task.task_id;
     const Value candidate_reset = candidate_agent.reset_match(match_id);
@@ -917,6 +1070,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
                 finalize_from_session(summary, session);
                 return summary;
             }
+            append_public_history(public_histories, applied.events);
             const Value turn_order_state = session.snapshot();
             if (integer_field(turn_order_state, "first_player_idx", -1)
                 != task.first_player) {
@@ -960,8 +1114,8 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
             {"request_id", Value(request_id)},
             {"state", observation},
             {"public_snapshot", observation},
-            {"public_history", field(observation, "action_log") != nullptr
-                ? *field(observation, "action_log") : Value::make_array()},
+            {"public_history", Value(public_histories[
+                static_cast<std::size_t>(actor)])},
             {"deck_key", Value(candidate_turn
                 ? task.candidate_deck : task.baseline_deck)},
             {"match_seed", Value(static_cast<std::int64_t>(task.game_seed))},
@@ -1182,6 +1336,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
                 return summary;
             }
         }
+        append_public_history(public_histories, applied.events);
         if (config_.capture_all_decisions) {
             summary.decision_trace.as_array().push_back(std::move(trace_row));
         }

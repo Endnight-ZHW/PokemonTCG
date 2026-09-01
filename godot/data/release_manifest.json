@@ -11,8 +11,8 @@
   },
   "native_rules": {
     "action_schema_version": 4,
-    "card_ir_content_fingerprint": "dced96a63af424b84ef445344e7092915f35b51827346e2ae1233f12adffdfe8",
-    "card_ir_contract_fingerprint": "062eab8242ce56295e33799b74e72aa43999c7a1856b45c8b502d414f6084cd3",
+    "card_ir_content_fingerprint": "f49ee62425b37e4c0a23c08f888499d3741a8db41753be64746382023355cf9a",
+    "card_ir_contract_fingerprint": "14fa624a9053bd579265dd3adf86355b7032e745f4807a01d46dfc623f12379d",
     "card_ir_source_fingerprint": "61ff38e9ea7bb7d454c72b2e09c061efd405dcaaf65b977de369b03190836d01",
     "card_ir_version": 4,
     "choice_view_schema_version": 2,
@@ -22,7 +22,7 @@
     "native_abi_version": 2,
     "protocol_version": 6,
     "snapshot_schema_version": 3,
-    "vm_descriptor_digest": "d990e5514e1dcd1278b03a8bc5a3d8b74503d707a92801904ba494d579b299b2",
+    "vm_descriptor_digest": "3aacb1f8b04f9f4a80680dfc44adfe0025558e2f90c3d0bc3e37ace583615ea4",
     "vm_ir_version": 3
   },
   "product_name": "PokemonTCG",

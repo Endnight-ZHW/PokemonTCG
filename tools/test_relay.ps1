@@ -63,10 +63,18 @@ try {
     }
     if ($isWindowsHost) { $testStart.WindowStyle = 'Hidden' }
     $integration = Start-Process @testStart
+    # Windows PowerShell must materialize the native process handle before the
+    # timed wait; otherwise ExitCode can remain null after redirected output.
+    $null = $integration.Handle
     if (-not $integration.WaitForExit(60000)) {
         Stop-Process -Id $integration.Id -Force
         throw 'Relay integration tests timed out.'
     }
+    # On Windows, the timed overload can observe process termination before
+    # redirected stream handles and ExitCode have been refreshed.  Complete
+    # the handle wait before evaluating the result to avoid `$null -ne 0`.
+    $integration.WaitForExit()
+    $integration.Refresh()
     Get-Content -LiteralPath $testOut | ForEach-Object { Write-Host $_ }
     if ($integration.ExitCode -ne 0) {
         throw "Relay integration tests failed.`n$(Get-Content -Raw $testErr)"
@@ -100,12 +108,19 @@ if ($isWindowsHost) { $ipv6Start.WindowStyle = 'Hidden' }
 $ipv6Relay = Start-Process @ipv6Start
 try {
     $ipv6Ready = $false
+    $ipv6HealthRequest = @{
+        Uri = "http://[::1]:$ipv6Port/healthz"
+        TimeoutSec = 1
+    }
+    if ((Get-Command Invoke-RestMethod).Parameters.ContainsKey('NoProxy')) {
+        $ipv6HealthRequest.NoProxy = $true
+    }
     for ($attempt = 0; $attempt -lt 50; $attempt++) {
         if ($ipv6Relay.HasExited) {
             throw "IPv6 Relay exited before its smoke test.`n$(Get-Content -Raw $ipv6Err)"
         }
         try {
-            $health = Invoke-RestMethod -Uri "http://[::1]:$ipv6Port/healthz" -TimeoutSec 1 -NoProxy
+            $health = Invoke-RestMethod @ipv6HealthRequest
             if (
                 $health.status -eq 'ok' -and $health.version -eq $expectedVersion -and
                 [int]$health.protocol -eq 6

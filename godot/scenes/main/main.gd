@@ -39,6 +39,7 @@ const DESIGN_CANVAS_SIZE := Vector2i(1600, 900)
 const MIN_RESPONSIVE_LANDSCAPE_SIZE := Vector2i(900, 540)
 const MIN_RESPONSIVE_PORTRAIT_SIZE := Vector2i(640, 960)
 const SYNTHETIC_WINDOW_FLOOR := Vector2i(320, 240)
+const MAX_AI_PUBLIC_HISTORY := 4096
 
 var catalog: CardCatalog = CardDatabase.catalog
 var native_rules := NativeRulesSessionAdapter.new(catalog)
@@ -65,6 +66,7 @@ var ai_request_sequence := 0
 var active_ai_request_id := ""
 var ai_match_generation := 0
 var ai_match_instance_id := ""
+var ai_public_history: Array[Dictionary] = []
 var ai_coordinator := AICoordinator.new()
 var network_controller := NetworkMatchController.new(catalog)
 var network_legal_actions: Array[GameAction] = []
@@ -708,6 +710,7 @@ func _start_match(
 	ai_match_generation += 1
 	ai_match_instance_id = "runtime:%d:%d" % [ai_match_generation, actual_seed]
 	ai_request_sequence = 0
+	ai_public_history.clear()
 	native_rules = NativeRulesSessionAdapter.new(catalog)
 	if not native_rules.is_available():
 		shell_view.show_toast("原生规则会话不可用。", true)
@@ -730,6 +733,7 @@ func _start_match(
 	if not result.success:
 		shell_view.show_toast(result.message, true)
 		return false
+	_record_ai_public_history(result.events, state.revision, -1)
 	current_view_player = 0
 	selected_entity_key = ""
 	selected_entity_identity = ""
@@ -1107,18 +1111,50 @@ func _rules_pending_choice(viewer: int) -> ChoiceView:
 	return native_rules.pending_choice(viewer)
 
 func _rules_apply_action(action: GameAction) -> StepResult:
+	var fallback_actor := action.actor
 	var result := native_rules.apply_action(action.to_dict())
 	state = native_rules.state
 	if state != null:
 		rng.set_state(native_rules.rng_state)
+	if result.success and state != null:
+		_record_ai_public_history(
+			result.events,
+			state.revision,
+			fallback_actor,
+		)
 	return result
 
 func _rules_apply_choice(response: ChoiceResponse) -> StepResult:
+	var fallback_actor := _current_actor()
 	var result := native_rules.apply_choice(response.to_dict())
 	state = native_rules.state
 	if state != null:
 		rng.set_state(native_rules.rng_state)
+	if result.success and state != null:
+		_record_ai_public_history(
+			result.events,
+			state.revision,
+			fallback_actor,
+		)
 	return result
+
+func _record_ai_public_history(
+	raw_events: Array,
+	revision: int,
+	fallback_actor: int,
+) -> void:
+	if game_mode != MODE_CHALLENGE:
+		return
+	for event in PresentationEvent.normalize_all(
+		raw_events,
+		revision,
+		fallback_actor,
+	):
+		var visible_event := PresentationEvent.for_player(event, 1)
+		if not visible_event.is_empty():
+			ai_public_history.append(visible_event)
+	while ai_public_history.size() > MAX_AI_PUBLIC_HISTORY:
+		ai_public_history.pop_front()
 
 func _current_action_rows() -> Array[Dictionary]:
 	var rows: Array[Dictionary] = []
@@ -2632,6 +2668,7 @@ func _schedule_ai_action() -> void:
 			active_ai_request_id,
 		),
 		"actions": rows,
+		"public_history": ai_public_history.duplicate(true),
 	}
 	ai_thinking = ai_coordinator.start_request(request)
 	_refresh_process_state()
@@ -2668,6 +2705,7 @@ func _schedule_ai_choice(request: ChoiceView) -> void:
 			request.request_type,
 			active_ai_request_id,
 		),
+		"public_history": ai_public_history.duplicate(true),
 	}
 	ai_thinking = ai_coordinator.start_request(payload)
 	_refresh_process_state()

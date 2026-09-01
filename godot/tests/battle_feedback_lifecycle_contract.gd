@@ -13,6 +13,7 @@ func _run() -> void:
 	var previous_reduced := bool(settings.get("reduced_motion"))
 	await _run_announcement_modes(settings)
 	_run_reduced_slots(settings)
+	_run_public_selection_readability()
 	await _run_fast_feedback_barrier(settings)
 	settings.set("animation_mode", previous_mode)
 	settings.set("reduced_motion", previous_reduced)
@@ -126,6 +127,43 @@ func _run_reduced_slots(settings: Node) -> void:
 		"same-frame reduced feedback did not receive distinct target slots",
 	)
 	layer.queue_free()
+
+
+func _run_public_selection_readability() -> void:
+	var director := PresentationDirector.new()
+	var geometry := BattleMotionGeometry.new()
+	var event := PresentationEvent.normalize({
+		"event_type": "cards_selected",
+		"actor": 0,
+		"amount": 1,
+		"visibility": "public",
+		"data": {
+			"player": 0,
+			"card_ids": ["sv1-151"],
+			"count": 1,
+			"source_zone": "deck",
+			"target_zone": "hand",
+		},
+	}, 550, 0)
+	director.set_speed_mode("fast")
+	var fast_duration := director._duration_for(event)
+	director.set_speed_mode("reduced")
+	var reduced_duration := director._duration_for(event)
+	var rows := geometry._reveal_rows(event)
+	var empty_event := event.duplicate(true)
+	empty_event["amount"] = 0
+	empty_event["data"]["card_ids"] = []
+	_expect(
+		fast_duration >= 1.85
+		and reduced_duration >= BattleRevealLayer.MIN_READ_HOLD
+		and rows.size() == 1
+		and str(rows[0].get("card_id", "")) == "sv1-151"
+		and str(rows[0].get("outcome_label", "")) == "加入手牌"
+		and director._duration_for(empty_event) == 0.0,
+		"public search result did not preserve its readable reveal contract",
+	)
+	director.free()
+	geometry.free()
 
 
 func _run_fast_feedback_barrier(settings: Node) -> void:

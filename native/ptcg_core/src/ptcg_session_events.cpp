@@ -993,7 +993,14 @@ private:
         if (event_value.find("actor") == nullptr && actor >= 0) {
             event_value["actor"] = Value(actor);
         }
-        if (
+        const std::string declared_visibility = string_field(
+            data, "visibility");
+        if (!declared_visibility.empty()) {
+            // VM effects own the reveal contract. Promote that declaration to
+            // the canonical top-level field before applying zone defaults.
+            set_if_empty(
+                event_value, "visibility", Value(declared_visibility));
+        } else if (
             event_type == "cards_drawn"
             || event_type == "prize_taken"
             || event_type == "cards_selected"

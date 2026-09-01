@@ -122,6 +122,16 @@ Value catalog() {
             {"abilities", Value::make_array()},
             {"prize_value", Value(1)},
         })},
+        {"test-tatsugiri-alt", Value(Object{
+            {"name", Value("Test Tatsugiri")},
+            {"supertype", Value("Pok\xC3\xA9mon")},
+            {"subtypes", Value(Array{Value("Basic")})},
+            {"energy_types", Value(Array{Value("Dragon")})},
+            {"hp", Value(70)},
+            {"attacks", Value::make_array()},
+            {"abilities", Value::make_array()},
+            {"prize_value", Value(1)},
+        })},
     });
 }
 
@@ -217,6 +227,21 @@ Value choose(const Value &pending, const std::string &option_id) {
         {"option_ids", Value(Array{Value(option_id)})},
         {"cancelled", Value(false)},
     });
+}
+
+const Value *event_named(
+    const std::vector<Value> &events,
+    const std::string &event_type
+) {
+    const auto found = std::find_if(
+        events.begin(),
+        events.end(),
+        [&event_type](const Value &event) {
+            const Value *type = event.find("event_type");
+            return type != nullptr && type->string_or() == event_type;
+        }
+    );
+    return found == events.end() ? nullptr : &*found;
 }
 
 const Value &active_of(const Value &state, std::size_t owner) {
@@ -340,6 +365,7 @@ void verify_look_top_reveal_choice_contract(const Value &cards) {
             {"take", Value(1)},
             {"filter", Value("energy")},
             {"destination", Value("hand")},
+            {"reveal", Value(false)},
             {"shuffle_rest", Value(true)},
         })},
         {"branches", Value::make_object()},
@@ -403,6 +429,373 @@ void verify_look_top_reveal_choice_contract(const Value &cards) {
             && no_match_revealed->as_array().size() == 2,
         "No-match look-top ChoiceView hid the inspected cards"
     );
+}
+
+void verify_information_visibility_contract(const Value &cards) {
+    using ptcg::ai::NativeRulesKernel;
+    using namespace ptcg::ai::session_detail;
+
+    auto search_result = [&cards](bool reveal, bool choose_card) {
+        Value state(Object{
+            {"players", Value(Array{
+                empty_player("Player 1", Array{
+                    Value("test-basic"),
+                    Value("test-water-energy"),
+                    Value("test-weak"),
+                }),
+                empty_player("Player 2", Array{Value("test-basic")}),
+            })},
+            {"choice_sequence", Value(0)},
+        });
+        const Value command(Object{
+            {"op", Value("search_cards")},
+            {"args", Value(Object{
+                {"count", Value(1)},
+                {"min_select", Value(0)},
+                {"destination", Value("hand")},
+                {"filter", Value("any")},
+                {"from_zone", Value("deck")},
+                {"reveal", Value(reveal)},
+            })},
+            {"branches", Value::make_object()},
+        });
+        NativeRulesKernel kernel(cards.deep_clone());
+        const auto started = kernel.execute(
+            state, command, 0, "", 0x53454152U, "trainer");
+        require(started.success && started.pending.is_object(),
+            "search visibility fixture did not suspend");
+        Array selected;
+        if (choose_card) {
+            selected.push_back(
+                started.pending.find("options")->as_array().front());
+        }
+        return kernel.resume(
+            started.state.deep_clone(),
+            started.context.deep_clone(),
+            started.continuation,
+            Value(std::move(selected)),
+            false,
+            started.rng_state
+        );
+    };
+
+    const auto public_search = search_result(true, true);
+    const Value *public_event = event_named(
+        public_search.events, "cards_selected");
+    require(
+        public_search.success
+            && public_event != nullptr
+            && public_event->find("data")->find("visibility")->string_or()
+                == "public"
+            && public_event->find("data")->find("card_ids")
+                ->as_array().size() == 1,
+        "explicitly revealed search did not publish only its final choice"
+    );
+
+    const auto private_search = search_result(false, true);
+    const Value *private_event = event_named(
+        private_search.events, "cards_selected");
+    require(
+        private_search.success
+            && private_event != nullptr
+            && private_event->find("data")->find("visibility")->string_or()
+                == "owner"
+            && private_event->find("data")->find("card_ids")
+                ->as_array().size() == 1,
+        "private search did not retain its owner-only identity event"
+    );
+
+    Value tatsugiri_owner = empty_player(
+        "Player 1",
+        Array{Value("test-basic"), Value("test-water-energy")}
+    );
+    tatsugiri_owner["active"] = test_pokemon("test-tatsugiri");
+    tatsugiri_owner.find("bench")->as_array()[0] = test_pokemon(
+        "test-basic");
+    Value tatsugiri_state(Object{
+        {"players", Value(Array{
+            std::move(tatsugiri_owner),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+    });
+    const Value tatsugiri_command(Object{
+        {"op", Value("search_any_and_switch")},
+        {"args", Value(Object{
+            {"count", Value(2)},
+            {"min_select", Value(0)},
+            {"source_slot", Value("active")},
+            {"switch_optional", Value(true)},
+        })},
+        {"branches", Value::make_object()},
+    });
+    NativeRulesKernel tatsugiri_kernel(cards.deep_clone());
+    const auto tatsugiri_started = tatsugiri_kernel.execute(
+        tatsugiri_state,
+        tatsugiri_command,
+        0,
+        "active",
+        0x54415453U,
+        "attack"
+    );
+    require(tatsugiri_started.success
+            && !tatsugiri_started.pending.find("options")->as_array().empty(),
+        "Tatsugiri private arbitrary search did not suspend");
+    const auto tatsugiri_selected = tatsugiri_kernel.resume(
+        tatsugiri_started.state.deep_clone(),
+        tatsugiri_started.context.deep_clone(),
+        tatsugiri_started.continuation,
+        Value(Array{
+            tatsugiri_started.pending.find("options")->as_array().front(),
+        }),
+        false,
+        tatsugiri_started.rng_state
+    );
+    const Value *tatsugiri_selection = event_named(
+        tatsugiri_selected.events, "cards_selected");
+    require(
+        tatsugiri_selected.success
+            && tatsugiri_selection != nullptr
+            && tatsugiri_selection->find("data")->find("visibility")
+                ->string_or() == "owner",
+        "Tatsugiri arbitrary search exposed its selected identity"
+    );
+
+    Value clara_owner = empty_player(
+        "Player 1", Array{Value("test-basic")});
+    clara_owner["discard"] = Value(Array{
+        Value("test-basic"), Value("test-water-energy"),
+    });
+    Value clara_state(Object{
+        {"players", Value(Array{
+            std::move(clara_owner),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+    });
+    const Value clara_command(Object{
+        {"op", Value("recover_clara")},
+        {"args", Value(Object{
+            {"energy_count", Value(2)},
+            {"pokemon_count", Value(2)},
+        })},
+        {"branches", Value::make_object()},
+    });
+    NativeRulesKernel clara_kernel(cards.deep_clone());
+    const auto clara_started = clara_kernel.execute(
+        clara_state, clara_command, 0, "", 0x434C4152U, "trainer");
+    require(clara_started.success
+            && clara_started.pending.find("options")->as_array().size() == 2,
+        "Clara public recovery did not suspend");
+    const auto clara_recovered = clara_kernel.resume(
+        clara_started.state.deep_clone(),
+        clara_started.context.deep_clone(),
+        clara_started.continuation,
+        Value(clara_started.pending.find("options")->as_array()),
+        false,
+        clara_started.rng_state
+    );
+    const Value *clara_selection = event_named(
+        clara_recovered.events, "cards_selected");
+    require(
+        clara_recovered.success
+            && clara_selection != nullptr
+            && clara_selection->find("data")->find("visibility")
+                ->string_or() == "public"
+            && clara_selection->find("data")->find("card_ids")
+                ->as_array().size() == 2,
+        "Clara recovery did not publish the recovered card identities"
+    );
+
+    const auto empty_search = search_result(true, false);
+    require(
+        empty_search.success
+            && event_named(empty_search.events, "cards_selected") == nullptr,
+        "zero-card search emitted a phantom selected card"
+    );
+
+    auto look_top_result = [&cards](bool reveal) {
+        Value state(Object{
+            {"players", Value(Array{
+                empty_player("Player 1", Array{
+                    Value("test-basic"),
+                    Value("test-water-energy"),
+                    Value("test-weak"),
+                }),
+                empty_player("Player 2", Array{Value("test-basic")}),
+            })},
+            {"choice_sequence", Value(0)},
+        });
+        const Value command(Object{
+            {"op", Value("look_top_deck")},
+            {"args", Value(Object{
+                {"count", Value(3)},
+                {"take", Value(1)},
+                {"filter", Value("energy")},
+                {"destination", Value("hand")},
+                {"reveal", Value(reveal)},
+                {"shuffle_rest", Value(true)},
+            })},
+            {"branches", Value::make_object()},
+        });
+        NativeRulesKernel kernel(cards.deep_clone());
+        const auto started = kernel.execute(
+            state, command, 0, "", 0x4C4F4F4BU, "trainer");
+        require(started.success
+                && started.pending.find("options")->as_array().size() == 1
+                && started.pending.find("min_select")->as_integer(-1) == 1
+                && started.pending.find("max_select")->as_integer(-1) == 1,
+            "look-top visibility fixture did not expose its owner choice");
+        return kernel.resume(
+            started.state.deep_clone(),
+            started.context.deep_clone(),
+            started.continuation,
+            Value(Array{started.pending.find("options")->as_array().front()}),
+            false,
+            started.rng_state
+        );
+    };
+
+    for (const bool reveal : {false, true}) {
+        const auto resolved = look_top_result(reveal);
+        const Value *selected = event_named(
+            resolved.events, "cards_selected");
+        require(
+            resolved.success
+                && selected != nullptr
+                && selected->find("data")->find("visibility")->string_or()
+                    == (reveal ? "public" : "owner")
+                && selected->find("data")->find("card_ids")
+                    ->as_array().size() == 1
+                && selected->find("data")->find("card_ids")
+                    ->as_array().front().string_or()
+                    == "test-water-energy",
+            "look-top result visibility leaked inspected but unselected cards"
+        );
+    }
+
+    ptcg::ai::GameExecutionResult public_selection;
+    public_selection.success = true;
+    public_selection.event_types.emplace_back("cards_selected");
+    public_selection.events.push_back(event(
+        "cards_selected",
+        0,
+        Value(Object{
+            {"player", Value(0)},
+            {"card_ids", Value(Array{Value("test-water-energy")})},
+            {"count", Value(1)},
+            {"source_zone", Value("deck")},
+            {"target_zone", Value("hand")},
+            {"visibility", Value("public")},
+        })
+    ));
+    Value before_selection(Object{
+        {"players", Value(Array{
+            empty_player("Player 1", Array{Value("test-water-energy")}),
+            empty_player("Player 2", Array{}),
+        })},
+    });
+    Value after_selection = before_selection.deep_clone();
+    required(player(after_selection, 0), "deck").as_array().clear();
+    required(player(after_selection, 0), "hand").as_array().push_back(
+        Value("test-water-energy"));
+    const Value selected_input(Object{
+        {"option_ids", Value(Array{Value("option:0")})},
+        {"cancelled", Value(false)},
+    });
+    const std::vector<Value> canonical_selection = canonical_events(
+        public_selection,
+        &before_selection,
+        &after_selection,
+        &selected_input,
+        0
+    );
+    require(
+        canonical_selection.size() == 1
+            && canonical_selection.front().find("visibility") != nullptr
+            && canonical_selection.front().find("visibility")->string_or()
+                == "public",
+        "canonical cards_selected event replaced declared public visibility"
+    );
+
+    Value log_state(Object{
+        {"players", Value(Array{
+            empty_player("Player 1", Array{}),
+            empty_player("Player 2", Array{}),
+        })},
+        {"action_log", Value::make_array()},
+    });
+    const Value before_state = log_state.deep_clone();
+    append_public_event_logs(
+        log_state,
+        cards,
+        before_state,
+        {Value(Object{
+            {"event_type", Value("cards_selected")},
+            {"actor", Value(0)},
+            {"amount", Value(2)},
+            {"visibility", Value("public")},
+            {"data", Value(Object{
+                {"player", Value(0)},
+                {"card_ids", Value(Array{
+                    Value("test-tatsugiri"),
+                    Value("test-tatsugiri-alt"),
+                })},
+                {"source_zone", Value("deck")},
+                {"target_zone", Value("hand")},
+            })},
+        })}
+    );
+    require(
+        log_contains(log_state, "Test Tatsugiri（test-tatsugiri）")
+            && log_contains(log_state, "test-tatsugiri-alt"),
+        "public duplicate-name selection log omitted disambiguating card IDs"
+    );
+    log_state["action_log"] = Value::make_array();
+    append_public_event_logs(
+        log_state,
+        cards,
+        before_state,
+        {Value(Object{
+            {"event_type", Value("cards_selected")},
+            {"actor", Value(0)},
+            {"amount", Value(1)},
+            {"visibility", Value("owner")},
+            {"data", Value(Object{
+                {"player", Value(0)},
+                {"card_ids", Value(Array{Value("test-weak")})},
+                {"source_zone", Value("deck")},
+                {"target_zone", Value("hand")},
+            })},
+        })}
+    );
+    require(
+        log_contains(log_state, "1 张卡牌（身份未公开）")
+            && !log_contains(log_state, "Test Weak"),
+        "private selection log exposed a card identity"
+    );
+    log_state["action_log"] = Value::make_array();
+    append_public_event_logs(
+        log_state,
+        cards,
+        before_state,
+        {Value(Object{
+            {"event_type", Value("card_moved")},
+            {"actor", Value(0)},
+            {"amount", Value(1)},
+            {"visibility", Value("public")},
+            {"data", Value(Object{
+                {"player", Value(0)},
+                {"card_ids", Value(Array{Value("test-weak")})},
+                {"source_zone", Value("deck")},
+                {"target_zone", Value("bench")},
+                {"target_slot", Value("bench_0")},
+            })},
+        })}
+    );
+    require(log_contains(log_state, "Test Weak")
+            && log_contains(log_state, "备战区"),
+        "public Bench search result was absent from the action log");
 }
 
 void verify_trekking_shoes_choice_contract(const Value &cards) {
@@ -475,11 +868,15 @@ void verify_trekking_shoes_choice_contract(const Value &cards) {
         started.rng_state
     );
     const Value &kept_owner = kept.state.find("players")->as_array()[0];
+    const Value *kept_move = event_named(kept.events, "card_moved");
     require(
         kept.success
             && kept_owner.find("deck")->as_array().size() == 1
             && kept_owner.find("hand")->as_array().back().string_or()
-                == "test-basic",
+                == "test-basic"
+            && kept_move != nullptr
+            && kept_move->find("data")->find("visibility")->string_or()
+                == "owner",
         "Trekking Shoes keep option did not move the revealed card to hand"
     );
 
@@ -493,13 +890,18 @@ void verify_trekking_shoes_choice_contract(const Value &cards) {
     );
     const Value &discarded_owner =
         discarded.state.find("players")->as_array()[0];
+    const Value *discarded_event = event_named(
+        discarded.events, "cards_discarded");
     require(
         discarded.success
             && discarded_owner.find("deck")->as_array().empty()
             && discarded_owner.find("discard")->as_array().back().string_or()
                 == "test-basic"
             && discarded_owner.find("hand")->as_array().back().string_or()
-                == "test-weak",
+                == "test-weak"
+            && discarded_event != nullptr
+            && discarded_event->find("data")->find("visibility")->string_or()
+                == "public",
         "Trekking Shoes discard option did not discard then draw the next card"
     );
 }
@@ -768,6 +1170,7 @@ int main() {
         verify_trekking_shoes_choice_contract(cards);
         verify_tatsugiri_action_and_retreat_contract(cards);
         verify_look_top_reveal_choice_contract(cards);
+        verify_information_visibility_contract(cards);
         verify_choice_projection_localization();
         verify_optional_switch_choice_contract(cards);
         verify_search_bench_slot_choice_contract(cards);

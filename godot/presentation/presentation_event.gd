@@ -129,7 +129,15 @@ static func normalize(
 			"visibility",
 			data.get(
 				"visibility",
-				OWNER if event_type == "cards_drawn" else PUBLIC,
+				(
+					OWNER
+					if event_type in [
+						"cards_drawn",
+						"cards_selected",
+						"prize_taken",
+					]
+					else PUBLIC
+				),
 			),
 		)),
 		"data": data,
@@ -233,15 +241,6 @@ static func for_player(event: Dictionary, player_idx: int) -> Dictionary:
 	if visibility == PRIVATE and owner != player_idx:
 		return {}
 	if visibility == OWNER and owner != player_idx:
-		_strip_hidden_card_identity(result)
-
-	var event_type := str(result.get("event_type", ""))
-	if owner != player_idx and event_type in [
-		"cards_drawn",
-		"prize_taken",
-		"cards_selected",
-		"hand_revealed",
-	]:
 		_strip_hidden_card_identity(result)
 	return result
 

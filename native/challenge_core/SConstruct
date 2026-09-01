@@ -24,6 +24,14 @@ test_objects = [
         os.path.join("build", "ptcg_traditional_strategy"),
         "src/ptcg_traditional_strategy.cpp",
     )[0],
+    env.Object(
+        os.path.join("build", "ptcg_traditional_infoset"),
+        "src/ptcg_traditional_infoset.cpp",
+    )[0],
+    env.Object(
+        os.path.join("build", "ptcg_random"),
+        os.path.join(rules_source_root, "ptcg_random.cpp"),
+    )[0],
 ]
 program = env.Program(
     os.path.join("bin", "challenge_core_tests"),

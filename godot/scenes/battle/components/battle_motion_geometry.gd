@@ -41,7 +41,17 @@ func _is_transient_opening_draw(event: Dictionary) -> bool:
 
 func _reveal_rows(event: Dictionary) -> Array[Dictionary]:
 	var data: Dictionary = event.get("data", {})
-	var raw_value: Variant = data.get("cards", [])
+	var event_type := PresentationEvent.canonical_event_type(
+		str(event.get("event_type", "")),
+	)
+	var raw_value: Variant = data.get(
+		"cards",
+		(
+			data.get("card_ids", data.get("selected_card_ids", []))
+			if event_type == "cards_selected"
+			else []
+		),
+	)
 	var result: Array[Dictionary] = []
 	if not raw_value is Array:
 		return result
@@ -53,8 +63,30 @@ func _reveal_rows(event: Dictionary) -> Array[Dictionary]:
 		)
 		if str(row.get("card_id", "")).is_empty():
 			continue
+		if event_type == "cards_selected":
+			var destination: Dictionary = Dictionary(
+				event.get("target", {}),
+			).duplicate(true)
+			row["matched"] = true
+			row["destination"] = destination
+			row["outcome_label"] = _public_selection_outcome_label(destination)
 		result.append(row)
 	return result
+
+
+func _public_selection_outcome_label(destination: Dictionary) -> String:
+	if not str(destination.get("slot", "")).is_empty():
+		return "放到场上"
+	match str(destination.get("zone", "")):
+		"hand":
+			return "加入手牌"
+		"bench":
+			return "放入备战区"
+		"discard":
+			return "放入弃牌区"
+		"deck":
+			return "放回牌库"
+	return "公开选择"
 
 func _reveal_destination(row: Dictionary, fallback_player: int) -> Dictionary:
 	var destination_value: Variant = row.get("destination", {})

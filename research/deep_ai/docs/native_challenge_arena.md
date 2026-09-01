@@ -16,6 +16,9 @@ Native Challenge Arena 是研究与晋升专用的全原生、无界面对局池
 其他固定约束：
 
 - Arena 和 Godot 正式对局都从 `RulesSession::ai_observation_for(actor)` 取得 AI observation；`view_for()` 仍是兼容的紧凑网络视图。
+- Arena 为两个座位分别维护最多 4096 条结构化 `public_history`，并按 `public/owner/private` 在每个 Agent 请求边界过滤；它与 Godot Challenge 的已知手牌确定化使用同一事件合同。
+- 正式 Challenge 搜索会按已知手牌自适应信念预算：完全隐藏时最多 3 个样本；至少 1 张身份确定时使用 2 个条件化样本；手牌全知且牌库为空时使用 1 个。`native_performance_counters` 同时报告请求/实际样本及已知/未知手牌数。
+- 已知手牌摘要进入回合计划缓存前置条件；知识因公开离手、整手变化等发生改变时，旧计划不能跨该变化命中。
 - 对局内玩家名固定为 `Arena-Seat-0/1`。`agent_id`、`build_id` 只进入结果和 manifest，不参与随机种子或语义哈希。
 - 双方使用完全相同的 `fixed_contract` evaluation options，内层 search worker 固定为 1；并行只发生在对局之间。
 - 每个有序牌组对覆盖 candidate seat 与 first-player 的四种组合。无序牌组对、replicate 和 base seed 通过稳定 SHA-256 派生 pair seed；A-vs-B 与 B-vs-A 共享该 seed。
@@ -72,6 +75,18 @@ calibration 会为双方构建相同的当前 external Agent，默认运行 20 r
 | `release` | 完整矩阵；10–50 replicates | 顺序 promotion |
 | `calibration` | 相同 external Agent；默认 20 replicates | 结构与 null distribution |
 | `focused` | 指定 candidate/baseline decks | 诊断 |
+
+`focused -MirrorOnly` 只生成同套牌对局。candidate 与 baseline 的套牌集合必须相同；每个套牌、replicate 仍覆盖四种座位/先后手闭包。该模式用于在单局层面消除套牌类别强度差异：
+
+```powershell
+.\research\deep_ai\tools\run_challenge_arena.ps1 `
+    -Preset focused `
+    -MirrorOnly `
+    -CandidateDeck fire,water,psychic,lightning,fighting,colorless,dragon,grass,steel,darkness `
+    -BaselineDeck fire,water,psychic,lightning,fighting,colorless,dragon,grass,steel,darkness `
+    -Replicates 10 `
+    -ComparisonMode implementation-only
+```
 
 nightly/release 每完成一个 replicate 做一次预声明检查。paired-block bootstrap 保留四/八局闭包，Bonferroni alpha spending 使整个顺序过程保持 family-wise 95%：
 

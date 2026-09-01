@@ -399,7 +399,7 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
         continuation_ = Value();
         clear_resolution_stack();
         append_choice_action_log(
-            state_, previous_state, previous_pending, response);
+            state_, previous_state, previous_pending, response, events);
         append_public_event_logs(
             state_, cards(), previous_state, events);
         std::string typed_error;
@@ -490,7 +490,7 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
         continuation_ = Value();
         clear_resolution_stack();
         append_choice_action_log(
-            state_, previous_state, previous_pending, response);
+            state_, previous_state, previous_pending, response, events);
         append_public_event_logs(
             state_, cards(), previous_state, events);
         std::string typed_error;
@@ -742,7 +742,7 @@ RulesSessionResult RulesSession::commit_game_result(
                 state_, cards(), previous_state, input);
         } else if (entry_kind == "choice") {
             append_choice_action_log(
-                state_, previous_state, previous_pending, input);
+                state_, previous_state, previous_pending, input, events);
         }
         append_public_event_logs(
             state_, cards(), previous_state, events);

@@ -48,7 +48,7 @@ void append_action_log_line(Value &state, std::string line);
 std::string attack_name_for_action( const Value &cards, const Value &action );
 std::string ability_name_for_action( const Value &cards, const Value &action );
 void append_submitted_action_log( Value &state, const Value &cards, const Value &before_state, const Value &action );
-void append_choice_action_log( Value &state, const Value &before_state, const Value &pending, const Value &response );
+void append_choice_action_log( Value &state, const Value &before_state, const Value &pending, const Value &response, const std::vector<Value> &events );
 void append_public_event_logs( Value &state, const Value &cards, const Value &before_state, const std::vector<Value> &events );
 void append_canonical_json(std::string &output, const Value &value);
 std::string fnv1a64_hex(const std::string &input);

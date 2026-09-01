@@ -260,6 +260,7 @@
             "destination": "bench_energy",
             "filter": "lightning_energy",
             "min_select": 0,
+            "reveal": false,
             "shuffle_rest": true,
             "take": 2,
             "target_pokemon_type": "Lightning"
@@ -742,6 +743,7 @@
             "count": 7,
             "filter": "water_pokemon_and_energy",
             "min_select": 0,
+            "reveal": true,
             "shuffle_rest": true,
             "take": 99
           },
@@ -1429,6 +1431,7 @@
             "count": 7,
             "destination": "hand",
             "filter": "energy",
+            "reveal": true,
             "shuffle_rest": true,
             "take": 1
           },

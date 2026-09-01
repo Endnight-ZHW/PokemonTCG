@@ -754,11 +754,16 @@ func play_presentation(
 ) -> void:
 	if director == null:
 		return
-	var normalized := PresentationEvent.normalize_all(
+	var normalized_all := PresentationEvent.normalize_all(
 		raw_events,
 		revision,
 		fallback_actor,
 	)
+	var normalized: Array[Dictionary] = []
+	for event in normalized_all:
+		var visible_event := PresentationEvent.for_player(event, view_player)
+		if not visible_event.is_empty():
+			normalized.append(visible_event)
 	if normalized.is_empty():
 		return
 	presentation_runtime._stage_presentation_targets(normalized, previous_snapshot)

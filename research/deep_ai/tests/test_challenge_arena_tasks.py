@@ -70,6 +70,34 @@ class ChallengeArenaTaskTests(unittest.TestCase):
             for closures in grouped.values()
         ))
 
+    def test_mirror_only_balances_every_deck_without_cross_category_games(self) -> None:
+        decks = (
+            "fire", "water", "psychic", "lightning", "fighting",
+            "colorless", "dragon", "grass", "steel", "darkness",
+        )
+        tasks = generate_tasks(
+            "focused",
+            candidate_decks=decks,
+            baseline_decks=decks,
+            replicates=10,
+            mirror_only=True,
+        )
+        self.assertEqual(len(tasks), 400)
+        self.assertTrue(all(
+            task.candidate_deck == task.baseline_deck for task in tasks
+        ))
+        counts = Counter(task.candidate_deck for task in tasks)
+        self.assertEqual(counts, Counter({deck: 40 for deck in decks}))
+
+    def test_mirror_only_rejects_mismatched_deck_sets(self) -> None:
+        with self.assertRaisesRegex(ValueError, "mirror_decks_must_match"):
+            generate_tasks(
+                "focused",
+                candidate_decks=("fire", "water"),
+                baseline_decks=("fire",),
+                mirror_only=True,
+            )
+
     def test_pair_seed_is_direction_symmetric_and_pair_specific(self) -> None:
         self.assertEqual(
             pair_game_seed(17, "fire", "water", 3),
