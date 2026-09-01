@@ -13,6 +13,8 @@ param(
     [int]$ConcurrentGames = 0,
     [int]$ActorThreads = 0,
     [int]$BatchSize = 0,
+    [ValidateRange(1, 3)]
+    [int]$ArenaMaxLooks = 0,
     [switch]$GenerateBootstrap,
     [int]$BootstrapTaskLimit = 0,
     [ValidateRange(1, 64)]
@@ -62,7 +64,8 @@ foreach ($row in @(
     @($Simulations, '--simulations'),
     @($ConcurrentGames, '--concurrent-games'),
     @($ActorThreads, '--actor-threads'),
-    @($BatchSize, '--batch-size')
+    @($BatchSize, '--batch-size'),
+    @($ArenaMaxLooks, '--arena-max-looks')
 )) {
     if ([int]$row[0] -gt 0) {
         $arguments += @([string]$row[1], [string]$row[0])

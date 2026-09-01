@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from .challenge_arena_build import write_json_atomic
+from .evaluation_fairness import canonical_hash
 
 
-RUN_STATE_SCHEMA = "ptcg.challenge_arena.run_state/1"
+RUN_STATE_SCHEMA = "ptcg.challenge_arena.run_state/2"
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -86,6 +87,7 @@ class ChallengeArenaRunStore:
         self._locked = False
         self._state: dict[str, Any] = {}
         self._games: dict[str, dict[str, Any]] = {}
+        self._attempts: list[dict[str, Any]] = []
         self._acquire_lock()
         try:
             self._open_or_create()
@@ -132,7 +134,12 @@ class ChallengeArenaRunStore:
         if self.state_path.is_file():
             state = json.loads(self.state_path.read_text(encoding="utf-8"))
             if state.get("schema") != RUN_STATE_SCHEMA:
-                raise RuntimeError("arena_resume_state_schema_mismatch")
+                raise RuntimeError(
+                    "arena_resume_state_schema_mismatch:"
+                    f"expected={RUN_STATE_SCHEMA}:"
+                    f"actual={state.get('schema', 'missing')}:"
+                    "use_a_new_output_directory"
+                )
             if state.get("fingerprint") != self.fingerprint:
                 raise RuntimeError("arena_resume_fingerprint_mismatch")
             if state.get("task_ids") != expected_ids:
@@ -146,7 +153,9 @@ class ChallengeArenaRunStore:
             "task_ids": expected_ids,
             "status": "running",
             "shards": [],
+            "attempt_shards": [],
             "completed_task_ids": [],
+            "pending_retry_task_ids": [],
             "elapsed_seconds": 0.0,
         }
         write_json_atomic(self.state_path, self._state)
@@ -178,6 +187,57 @@ class ChallengeArenaRunStore:
                 self._games[task_id] = game
         if sorted(self._games) != sorted(self._state.get("completed_task_ids", [])):
             raise RuntimeError("arena_resume_completed_index_mismatch")
+        attempt_keys: set[tuple[str, int]] = set()
+        for row in self._state.get("attempt_shards", []):
+            relative = Path(str(row["path"]))
+            if (
+                relative.is_absolute()
+                or ".." in relative.parts
+                or not relative.parts
+                or relative.parts[0] != "attempts"
+            ):
+                raise RuntimeError("arena_attempt_shard_path_invalid")
+            path = self.root / relative
+            payload = path.read_bytes()
+            if _sha256_bytes(payload) != str(row["sha256"]):
+                raise RuntimeError(f"arena_attempt_shard_sha256_mismatch:{path.name}")
+            lines = payload.decode("utf-8").splitlines()
+            if int(row.get("attempts", -1)) != len(lines):
+                raise RuntimeError("arena_attempt_shard_count_mismatch")
+            for line in lines:
+                attempt = json.loads(line)
+                task_id = str(attempt.get("task_id", ""))
+                attempt_number = int(attempt.get("attempt_number", 0))
+                if task_id not in self.task_ids:
+                    raise RuntimeError("arena_attempt_shard_unknown_task_id")
+                if attempt_number not in (1, 2):
+                    raise RuntimeError("arena_attempt_number_invalid")
+                key = (task_id, attempt_number)
+                if key in attempt_keys:
+                    raise RuntimeError("arena_attempt_duplicate")
+                attempt_keys.add(key)
+                claimed_hash = str(attempt.get("attempt_hash", ""))
+                unhashed = dict(attempt)
+                unhashed.pop("attempt_hash", None)
+                if claimed_hash != canonical_hash(unhashed):
+                    raise RuntimeError("arena_attempt_hash_mismatch")
+                self._attempts.append(attempt)
+        pending = {
+            str(value) for value in self._state.get("pending_retry_task_ids", [])
+        }
+        if pending - set(self.task_ids) or pending & set(self._games):
+            raise RuntimeError("arena_resume_pending_retry_index_mismatch")
+        attempted_tasks = {task_id for task_id, _ in attempt_keys}
+        if (
+            pending - attempted_tasks
+            or attempted_tasks - (pending | set(self._games))
+            or any(
+                (task_id, 2) in attempt_keys
+                and (task_id, 1) not in attempt_keys
+                for task_id in attempted_tasks
+            )
+        ):
+            raise RuntimeError("arena_resume_attempt_sequence_mismatch")
 
     @property
     def complete(self) -> bool:
@@ -190,6 +250,16 @@ class ChallengeArenaRunStore:
     @property
     def completed_task_ids(self) -> set[str]:
         return set(self._games)
+
+    @property
+    def attempts(self) -> list[dict[str, Any]]:
+        return list(self._attempts)
+
+    @property
+    def pending_retry_task_ids(self) -> set[str]:
+        return {
+            str(value) for value in self._state.get("pending_retry_task_ids", [])
+        }
 
     @property
     def elapsed_seconds(self) -> float:
@@ -224,6 +294,71 @@ class ChallengeArenaRunStore:
             "games": len(rows),
         })
         self._state["completed_task_ids"] = sorted(self._games)
+        self._state["pending_retry_task_ids"] = sorted(
+            self.pending_retry_task_ids - batch_ids
+        )
+        write_json_atomic(self.state_path, self._state)
+
+    def append_attempts(self, attempts: Sequence[Mapping[str, Any]]) -> None:
+        if not attempts:
+            return
+        normalized: list[dict[str, Any]] = []
+        for value in attempts:
+            row = dict(value)
+            claimed_hash = str(row.pop("attempt_hash", ""))
+            computed_hash = canonical_hash(row)
+            if claimed_hash and claimed_hash != computed_hash:
+                raise RuntimeError("arena_attempt_hash_mismatch")
+            row["attempt_hash"] = computed_hash
+            normalized.append(row)
+        rows = sorted(
+            normalized,
+            key=lambda row: (
+                str(row.get("task_id", "")),
+                int(row.get("attempt_number", 0)),
+            ),
+        )
+        pending = self.pending_retry_task_ids
+        existing_keys = {
+            (
+                str(attempt.get("task_id", "")),
+                int(attempt.get("attempt_number", 0)),
+            )
+            for attempt in self._attempts
+        }
+        batch_keys: set[tuple[str, int]] = set()
+        for attempt in rows:
+            task_id = str(attempt.get("task_id", ""))
+            attempt_number = int(attempt.get("attempt_number", 0))
+            if task_id not in self.task_ids:
+                raise RuntimeError("arena_attempt_shard_unknown_task_id")
+            if task_id in self._games:
+                raise RuntimeError("arena_attempt_for_completed_task")
+            if attempt_number not in (1, 2):
+                raise RuntimeError("arena_attempt_number_invalid")
+            key = (task_id, attempt_number)
+            if key in existing_keys or key in batch_keys:
+                raise RuntimeError("arena_attempt_duplicate")
+            if attempt_number == 2 and (task_id, 1) not in existing_keys:
+                raise RuntimeError("arena_retry_primary_attempt_missing")
+            batch_keys.add(key)
+            pending.add(task_id)
+        existing_indices = [
+            int(path.stem.split("-")[-1])
+            for path in (self.root / "attempts").glob("attempt-*.jsonl")
+            if path.stem.split("-")[-1].isdigit()
+        ]
+        index = max(existing_indices, default=0) + 1
+        relative = Path("attempts") / f"attempt-{index:06d}.jsonl"
+        payload = _jsonl_bytes(rows)
+        write_bytes_atomic(self.root / relative, payload)
+        self._attempts.extend(rows)
+        self._state["attempt_shards"].append({
+            "path": relative.as_posix(),
+            "sha256": _sha256_bytes(payload),
+            "attempts": len(rows),
+        })
+        self._state["pending_retry_task_ids"] = sorted(pending)
         write_json_atomic(self.state_path, self._state)
 
     def add_elapsed_seconds(self, value: float) -> None:
@@ -233,6 +368,8 @@ class ChallengeArenaRunStore:
         write_json_atomic(self.state_path, self._state)
 
     def mark_complete(self, gate_status: str) -> None:
+        if self.pending_retry_task_ids:
+            raise RuntimeError("arena_complete_with_pending_retries")
         self._state["status"] = "complete"
         self._state["gate_status"] = str(gate_status)
         self._state["remaining_task_ids"] = sorted(

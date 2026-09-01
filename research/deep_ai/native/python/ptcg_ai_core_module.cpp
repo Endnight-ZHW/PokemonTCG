@@ -740,6 +740,22 @@ py::dict challenge_arena_game_to_python(
         source.candidate_planner_samples_us;
     result["baseline_planner_samples_us"] =
         source.baseline_planner_samples_us;
+    result["candidate_search_decision_samples_us"] =
+        source.candidate_search_decision_samples_us;
+    result["baseline_search_decision_samples_us"] =
+        source.baseline_search_decision_samples_us;
+    result["candidate_forced_decision_samples_us"] =
+        source.candidate_forced_decision_samples_us;
+    result["baseline_forced_decision_samples_us"] =
+        source.baseline_forced_decision_samples_us;
+    result["candidate_cache_decision_samples_us"] =
+        source.candidate_cache_decision_samples_us;
+    result["baseline_cache_decision_samples_us"] =
+        source.baseline_cache_decision_samples_us;
+    result["candidate_choice_decision_samples_us"] =
+        source.candidate_choice_decision_samples_us;
+    result["baseline_choice_decision_samples_us"] =
+        source.baseline_choice_decision_samples_us;
     result["candidate_action_decisions"] = source.candidate_action_decisions;
     result["baseline_action_decisions"] = source.baseline_action_decisions;
     result["candidate_choice_decisions"] = source.candidate_choice_decisions;

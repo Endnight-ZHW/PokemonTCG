@@ -1,16 +1,16 @@
 """Native, callback-free Challenge-vs-Challenge evaluation orchestration."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import platform
 import subprocess
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from .challenge_arena_build import (
     load_and_verify_agent,
@@ -20,18 +20,24 @@ from .challenge_arena_build import (
 )
 from .challenge_arena_stats import gate_status, summarize_games
 from .challenge_arena_store import ChallengeArenaRunStore, write_jsonl_atomic
+from .challenge_arena_retry import TimeoutRetryJournal
+from .evaluation_fairness import (
+    SEAT_FIRST_PLAYER_CLOSURES,
+    block_kind,
+    canonical_hash,
+    paired_seed,
+)
 from .v3_contract import RELEASE_DECKS
 from engine.native_state_codec import native_catalog_payload
 
 
-ARENA_SCHEMA = "ptcg.native_challenge_arena/2"
-MANIFEST_SCHEMA = "ptcg.challenge_arena.manifest/2"
+ARENA_SCHEMA = "ptcg.native_challenge_arena/3"
+MANIFEST_SCHEMA = "ptcg.challenge_arena.manifest/3"
 RESEARCH_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PRODUCT_DECKS = REPO_ROOT / "godot" / "data" / "decks.json"
 PRODUCT_STRATEGIES = REPO_ROOT / "godot" / "data" / "ai_strategies.json"
 BASELINES_ROOT = RESEARCH_ROOT / "arena" / "baselines"
-SEAT_FIRST_PLAYER_CLOSURES = ((0, 0), (1, 0), (0, 1), (1, 1))
 PRESET_REPLICATES = {
     "smoke": 1,
     "pr": 2,
@@ -49,20 +55,12 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def canonical_hash(value: Any) -> str:
-    encoded = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def reporting_code_info() -> dict[str, Any]:
     paths = (
         Path(__file__).resolve(),
         Path(__file__).with_name("challenge_arena_stats.py").resolve(),
+        Path(__file__).with_name("challenge_arena_retry.py").resolve(),
+        Path(__file__).with_name("evaluation_fairness.py").resolve(),
         Path(__file__).with_name("challenge_arena_store.py").resolve(),
         Path(__file__).with_name("challenge_arena_build.py").resolve(),
         RESEARCH_ROOT / "scripts" / "run_challenge_arena.py",
@@ -106,6 +104,8 @@ class ArenaAgentSpec:
             raise ValueError(f"arena_agent_options_invalid:{self.agent_id}")
         if self.backend not in {"in_process", "external_process"}:
             raise ValueError(f"arena_agent_backend_invalid:{self.agent_id}")
+        if int(self.decision_timeout_milliseconds) <= 0:
+            raise ValueError(f"arena_agent_watchdog_invalid:{self.agent_id}")
         if self.backend == "external_process" and (
             not self.implementation_hash
             or not self.executable_path
@@ -140,6 +140,8 @@ class ArenaTask:
     first_player: int
     max_decisions: int = 512
     block_id: str = ""
+    block_size: int = 0
+    block_kind: str = ""
     replicate: int = 0
     closure: int = 0
 
@@ -213,17 +215,13 @@ def pair_game_seed(
     baseline_deck: str,
     replicate: int,
 ) -> int:
-    pair = tuple(sorted((str(candidate_deck), str(baseline_deck))))
-    seed_material = "\0".join((
-        "ptcg.challenge_arena.pair_seed/1",
-        str(int(base_seed) & 0xFFFFFFFF),
-        pair[0],
-        pair[1],
-        str(int(replicate)),
-    )).encode("utf-8")
-    return int.from_bytes(
-        hashlib.sha256(seed_material).digest()[:4], "big"
-    ) or 17
+    return paired_seed(
+        base_seed,
+        candidate_deck,
+        baseline_deck,
+        replicate,
+        namespace="ptcg.challenge_arena.pair_seed/2",
+    )
 
 
 def generate_tasks(
@@ -274,9 +272,15 @@ def generate_tasks(
                     first_player=first_player,
                     max_decisions=int(max_decisions),
                     block_id=block_id,
+                    block_kind=block_kind(candidate_deck, baseline_deck),
                     replicate=replicate,
                     closure=closure,
                 ))
+    block_sizes = Counter(task.block_id for task in tasks)
+    tasks = [
+        replace(task, block_size=int(block_sizes[task.block_id]))
+        for task in tasks
+    ]
     validate_task_matrix(tasks)
     return tasks
 
@@ -302,6 +306,18 @@ def validate_task_matrix(tasks: Sequence[ArenaTask]) -> None:
     incomplete = [key for key, values in closures.items() if values != expected]
     if incomplete:
         raise ValueError(f"incomplete_challenge_arena_closure:{incomplete[0]}")
+    observed_block_sizes = Counter(task.block_id for task in tasks)
+    invalid_blocks = [
+        task.block_id
+        for task in tasks
+        if (
+            not task.block_id
+            or task.block_size != observed_block_sizes[task.block_id]
+            or task.block_kind not in {"mirror", "cross_deck"}
+        )
+    ]
+    if invalid_blocks:
+        raise ValueError(f"invalid_challenge_arena_block:{invalid_blocks[0]}")
 
 
 def load_product_payloads() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -377,6 +393,9 @@ def load_agent_spec(
             "implementation_hash", raw.get("implementation_hash", ""))),
         executable_path=str(built.get(
             "executable_path", raw.get("executable_path", ""))),
+        decision_timeout_milliseconds=int(raw.get(
+            "decision_timeout_milliseconds", 120000
+        )),
         build_manifest=built,
     )
 
@@ -405,6 +424,14 @@ def validate_equal_search_contract(
         raise ValueError(
             "challenge_arena_search_contract_mismatch: candidate and baseline "
             "must use identical fixed evaluation options"
+        )
+    if (
+        candidate.decision_timeout_milliseconds
+        != baseline.decision_timeout_milliseconds
+    ):
+        raise ValueError(
+            "challenge_arena_watchdog_mismatch: candidate and baseline "
+            "must use the same non-strength watchdog"
         )
 
 
@@ -523,8 +550,22 @@ class NativeChallengeArena:
         tasks: Sequence[ArenaTask],
         *,
         on_games: Callable[[list[dict[str, Any]]], None] | None = None,
+        require_complete_matrix: bool = True,
     ) -> dict[str, Any]:
-        validate_task_matrix(tasks)
+        if require_complete_matrix:
+            validate_task_matrix(tasks)
+        else:
+            if not tasks:
+                raise ValueError("challenge_arena_retry_tasks_empty")
+            identifiers = [task.task_id for task in tasks]
+            if len(identifiers) != len(set(identifiers)) or any(
+                task.candidate_seat not in (0, 1)
+                or task.first_player not in (0, 1)
+                or not task.block_id
+                or task.block_size <= 0
+                for task in tasks
+            ):
+                raise ValueError("invalid_challenge_arena_retry_tasks")
         try:
             import ptcg_ai_core
         except ImportError as exc:
@@ -557,6 +598,8 @@ class NativeChallengeArena:
                 if task is None:
                     raise RuntimeError("challenge_arena_unknown_result_task")
                 game["block_id"] = task.block_id
+                game["block_size"] = task.block_size
+                game["block_kind"] = task.block_kind
                 game["replicate"] = task.replicate
                 game["closure"] = task.closure
                 game["candidate_agent_id"] = self.candidate.agent_id
@@ -726,7 +769,17 @@ def build_manifest(
         "git": git_metadata(),
         "tasks": {
             "count": len(tasks),
-            "hash": canonical_hash([task.native_payload() for task in tasks]),
+            "hash": canonical_hash([
+                {
+                    **task.native_payload(),
+                    "block_id": task.block_id,
+                    "block_size": task.block_size,
+                    "block_kind": task.block_kind,
+                    "replicate": task.replicate,
+                    "closure": task.closure,
+                }
+                for task in tasks
+            ]),
         },
         "results": {
             "count": len(games),
@@ -740,6 +793,7 @@ def write_arena_outputs(
     output: Path,
     *,
     games: Sequence[Mapping[str, Any]],
+    attempts: Sequence[Mapping[str, Any]],
     summary: Mapping[str, Any],
     manifest: Mapping[str, Any],
 ) -> None:
@@ -761,6 +815,16 @@ def write_arena_outputs(
     ]
 
     write_jsonl_atomic(output / "arena-games.jsonl", ordered_games)
+    write_jsonl_atomic(
+        output / "arena-attempts.jsonl",
+        sorted(
+            attempts,
+            key=lambda row: (
+                str(row.get("task_id", "")),
+                int(row.get("attempt_number", 0)),
+            ),
+        ),
+    )
     write_jsonl_atomic(output / "arena-failures.jsonl", failures)
     write_json_atomic(output / "arena-summary.json", dict(summary))
     write_json_atomic(output / "arena-manifest.json", dict(manifest))
@@ -869,14 +933,24 @@ def run_arena(
         raise ValueError("release_replicates_must_be_between_10_and_50")
     reporting_info = reporting_code_info()
     run_fingerprint = canonical_hash({
-        "schema": "ptcg.challenge_arena.run_fingerprint/1",
+        "schema": "ptcg.challenge_arena.run_fingerprint/2",
         "preset": preset,
         "comparison_mode": comparison_mode,
         "mirror_only": bool(mirror_only),
         "base_seed": int(seed),
         "catalog_hash": canonical_hash(catalog),
         "decks_hash": canonical_hash(decks),
-        "tasks": [task.native_payload() for task in tasks],
+        "tasks": [
+            {
+                **task.native_payload(),
+                "block_id": task.block_id,
+                "block_size": task.block_size,
+                "block_kind": task.block_kind,
+                "replicate": task.replicate,
+                "closure": task.closure,
+            }
+            for task in tasks
+        ],
         "candidate": {
             "agent_id": candidate.agent_id,
             "build_id": candidate.build_id,
@@ -910,6 +984,11 @@ def run_arena(
         "latency_ratio_limit": float(latency_ratio_limit),
         "max_candidate_p95_ms": max_candidate_p95_ms,
         "allow_self_play": bool(allow_self_play),
+        "retry_policy": {
+            "timeout_retries": 1,
+            "retry_workers": 1,
+            "watchdog_is_strength_neutral": True,
+        },
     })
     sequential = preset in {"nightly", "release"}
     maximum_replicates = max(task.replicate for task in tasks) + 1
@@ -939,7 +1018,7 @@ def run_arena(
             native_metrics=metrics,
         )
         if preset == "calibration":
-            interval = result["paired_statistics"]["score_rate_ci95"]
+            interval = result["paired_statistics"]["score_rate_ci"]
             result["calibration"] = {
                 "identical_external_agent": True,
                 "half_within_interval": (
@@ -969,6 +1048,7 @@ def run_arena(
                 "elapsed_seconds": 0.0,
                 "games_per_second": 0.0,
                 "tasks": tasks,
+                "attempts": store.attempts,
                 "summary": summary,
                 "manifest": manifest,
                 "output": output,
@@ -983,6 +1063,35 @@ def run_arena(
             capture_failure_trace=True,
             trace_all=trace_all,
         )
+        task_by_id = {task.task_id: task for task in tasks}
+        retry_journal = TimeoutRetryJournal(store, task_by_id)
+
+        def run_pending_retries() -> float:
+            retry_journal.finalize_recorded_retries()
+            pending = retry_journal.pending_tasks()
+            if not pending:
+                return 0.0
+            retry_arena = NativeChallengeArena(
+                catalog,
+                decks,
+                candidate,
+                baseline,
+                workers=1,
+                capture_failure_trace=True,
+                trace_all=trace_all,
+            )
+
+            result = retry_arena.run(
+                pending,
+                on_games=retry_journal.persist_retry,
+                require_complete_matrix=False,
+            )
+            return float(result["elapsed_seconds"])
+
+        resumed_retry_elapsed = run_pending_retries()
+        if resumed_retry_elapsed > 0.0:
+            elapsed_seconds += resumed_retry_elapsed
+            store.add_elapsed_seconds(resumed_retry_elapsed)
         replicate_values = (
             range(maximum_replicates) if sequential else range(1)
         )
@@ -997,10 +1106,16 @@ def run_arena(
                 )
             ]
             if batch:
-                batch_result = arena.run(batch, on_games=store.append)
+                batch_result = arena.run(
+                    batch, on_games=retry_journal.persist_primary
+                )
                 batch_elapsed = float(batch_result["elapsed_seconds"])
                 elapsed_seconds += batch_elapsed
                 store.add_elapsed_seconds(batch_elapsed)
+                retry_elapsed = run_pending_retries()
+                if retry_elapsed > 0.0:
+                    elapsed_seconds += retry_elapsed
+                    store.add_elapsed_seconds(retry_elapsed)
             games = store.games
             summary = make_summary(games)
             integrity = summary["integrity"]
@@ -1010,6 +1125,9 @@ def run_arena(
                 status = "infrastructure_fail"
                 break
             if int(integrity.get("structural_errors", 0)) > 0:
+                status = "fail"
+                break
+            if not bool(summary.get("reliability", {}).get("passed", True)):
                 status = "fail"
                 break
             completed_replicates = replicate_index + 1 if sequential else maximum_replicates
@@ -1067,9 +1185,27 @@ def run_arena(
         )
         manifest["run_fingerprint"] = run_fingerprint
         manifest["gate_status"] = status
+        manifest["retry_policy"] = {
+            "timeout_retries": 1,
+            "retry_workers": 1,
+            "watchdog_milliseconds": candidate.decision_timeout_milliseconds,
+            "watchdog_is_strength_neutral": True,
+        }
+        ordered_attempts = sorted(
+            store.attempts,
+            key=lambda row: (
+                str(row.get("task_id", "")),
+                int(row.get("attempt_number", 0)),
+            ),
+        )
+        manifest["attempts"] = {
+            "count": len(ordered_attempts),
+            "hash": canonical_hash(ordered_attempts),
+        }
         write_arena_outputs(
             output,
             games=games,
+            attempts=store.attempts,
             summary=summary,
             manifest=manifest,
         )
@@ -1080,6 +1216,7 @@ def run_arena(
         "elapsed_seconds": elapsed_seconds,
         "games_per_second": len(games) / max(elapsed_seconds, 1e-9),
         "tasks": tasks,
+        "attempts": store.attempts,
         "summary": summary,
         "manifest": manifest,
         "output": output,

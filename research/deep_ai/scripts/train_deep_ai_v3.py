@@ -58,6 +58,7 @@ def _parser() -> argparse.ArgumentParser:
     train.add_argument("--concurrent-games", type=int)
     train.add_argument("--actor-threads", type=int)
     train.add_argument("--batch-size", type=int)
+    train.add_argument("--arena-max-looks", type=int)
     return parser
 
 
@@ -84,7 +85,7 @@ def _config(args: argparse.Namespace) -> AlphaZeroV3Config:
     overrides = {"seed": args.seed}
     for name in (
         "device", "cycles", "cycle_samples", "simulations",
-        "concurrent_games", "actor_threads", "batch_size",
+        "concurrent_games", "actor_threads", "batch_size", "arena_max_looks",
     ):
         value = getattr(args, name)
         if value is not None:

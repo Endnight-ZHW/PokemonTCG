@@ -12,6 +12,8 @@ param(
     [int]$Replicates = 0,
     [ValidateRange(1, 4096)]
     [int]$MaxDecisions = 512,
+    [ValidateRange(1, 600000)]
+    [int]$DecisionTimeoutMilliseconds = 120000,
     [ValidateSet('auto', 'none', 'structural', 'regression', 'promotion')]
     [string]$Gate = 'auto',
     [ValidateSet('release-bundle', 'implementation-only', 'same-binary-strategy')]
@@ -89,6 +91,7 @@ $arguments = @(
     '--workers', [string]$Workers,
     '--seed', [string]$Seed,
     '--max-decisions', [string]$MaxDecisions,
+    '--decision-timeout-milliseconds', [string]$DecisionTimeoutMilliseconds,
     '--comparison-mode', $ComparisonMode,
     '--gate', $Gate,
     '--output', $Output

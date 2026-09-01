@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -52,6 +53,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--replicates", type=int)
     parser.add_argument("--max-decisions", type=int, default=512)
+    parser.add_argument(
+        "--decision-timeout-milliseconds",
+        type=int,
+        default=120000,
+        help="Equal watchdog for both agents; timeout is retried and never scored.",
+    )
     parser.add_argument("--candidate-deck", action="append", default=[])
     parser.add_argument("--baseline-deck", action="append", default=[])
     parser.add_argument(
@@ -62,8 +69,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--trace-all", action="store_true")
     parser.add_argument("--bootstrap-samples", type=int, default=2000)
     parser.add_argument("--truncated-rate-limit", type=float, default=0.001)
-    parser.add_argument("--latency-ratio-limit", type=float, default=1.15)
-    parser.add_argument("--max-candidate-p95-ms", type=float)
+    parser.add_argument(
+        "--latency-ratio-limit",
+        type=float,
+        default=1.15,
+        help="Diagnostic-only search P95 ratio warning threshold.",
+    )
+    parser.add_argument(
+        "--max-candidate-p95-ms",
+        type=float,
+        help="Diagnostic-only absolute search P95 warning threshold.",
+    )
     parser.add_argument(
         "--gate",
         choices=("auto", "none", "structural", "regression", "promotion"),
@@ -114,6 +130,16 @@ def main(argv: list[str] | None = None) -> int:
         product_strategies=product_strategies,
         build_manifest=args.baseline_build_manifest,
     )
+    if args.decision_timeout_milliseconds <= 0:
+        raise ValueError("decision_timeout_milliseconds_must_be_positive")
+    candidate = replace(
+        candidate,
+        decision_timeout_milliseconds=args.decision_timeout_milliseconds,
+    )
+    baseline = replace(
+        baseline,
+        decision_timeout_milliseconds=args.decision_timeout_milliseconds,
+    )
     output = args.output or Path("build") / "challenge-arena" / args.preset
     if not output.is_absolute():
         output = (REPO_ROOT / output).resolve()
@@ -158,9 +184,14 @@ def main(argv: list[str] | None = None) -> int:
         "baseline": baseline.agent_id,
         "games": summary["games"],
         "score_rate": summary["paired_statistics"]["score_rate"],
-        "score_rate_ci95": summary["paired_statistics"]["score_rate_ci95"],
+        "score_rate_ci": summary["paired_statistics"]["score_rate_ci"],
+        "confidence_level": summary["paired_statistics"]["confidence_level"],
         "structural_errors": summary["integrity"]["structural_errors"],
         "truncated_rate": summary["integrity"]["truncated_rate"],
+        "persistent_timeouts": summary["reliability"][
+            "persistent_timeout_games"
+        ],
+        "performance_advisory": summary["performance_advisory"]["status"],
         "gate": gate,
         "status": status,
         "passed": passed,

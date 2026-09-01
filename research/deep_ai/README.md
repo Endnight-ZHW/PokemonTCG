@@ -42,7 +42,8 @@ cross-version structural smoke:
 
 The command incrementally rebuilds and verifies the binding and both Agents,
 then writes checksummed resumable shards, per-game JSONL, failure-only traces,
-paired bootstrap statistics, performance splits, explicit gate status, and a
-reproducibility manifest under `build/challenge-arena/<preset>`. See
+complete-block bootstrap statistics, strength-neutral timeout attempts,
+diagnostic-only performance splits, explicit reliability/strength gate status,
+and a reproducibility manifest under `build/challenge-arena/<preset>`. See
 [`docs/native_challenge_arena.md`](docs/native_challenge_arena.md) for presets,
 agent specifications, fairness constraints, and promotion criteria.

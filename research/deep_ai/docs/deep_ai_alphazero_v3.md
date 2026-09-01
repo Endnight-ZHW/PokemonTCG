@@ -55,8 +55,23 @@ warmup anchor 与新 learner 之间做确定性的 trust-region 投影，选择�
 最大新 learner 比例。该步骤保留 AdamW、GradScaler、scheduler、RNG 与 global
 step，不以 champion 回滚，也不会把 validation 样本送入 SGD。
 
-pilot 的 arena 仍覆盖全部 55 个牌组配对和座位闭包，但将单局限制为 64 个决策，
-用于验证 actor/搜索/continuation 结构完整性；release 才使用配置的正式长局上限。
+pilot/release 的每个 arena look 使用完整公平矩阵：55 个无序牌组对展开为
+100 个有序方向，每个方向覆盖 candidate seat 与 first-player 的四种闭包，
+共 400 局。十套牌作为 learner 牌组时各有 40 局；A-vs-B、B-vs-A 与
+四种闭包共享由牌组对和 replicate 稳定派生的 seed。pilot 仍将单局限制为
+64 个决策，用于验证 actor/搜索/continuation 结构完整性；release 才使用配置的
+正式长局上限。
+
+arena 只统计完整四/八局配对块；失败或截断不会再作为和局进入 score rate。
+每轮晋升要求点估计至少 0.55 且 paired-block bootstrap 区间下界高于 0.50。
+边界结果最多追加两个 400 局 look，三次查看使用 Bonferroni `alpha=0.05/3`；
+最终仍无结论则保留 champion。GPU/CPU 吞吐和推理耗时只写入
+`performance_advisory`，不参与晋升。逐局和每次查看证据写入
+`arena-v3/cycle-XXXX/`。
+
+已有 v3 checkpoint 仍可续跑；历史 cycle 中没有新 arena schema 的记录明确标为
+`legacy`，沿用当时已经落盘的晋升结论，不做追溯重判。续跑后产生的新 cycle 使用
+`ptcg.deep_ai.arena_evaluation/1`。
 
 ## 命令
 

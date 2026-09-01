@@ -51,11 +51,16 @@ jobs:
             build\challenge-arena\ci-smoke\arena-summary.json `
             -Raw | ConvertFrom-Json
           if (
+            [string]$summary.schema -ne 'ptcg.challenge_arena.summary/3' -or
+            [string]$manifest.schema -ne 'ptcg.challenge_arena.manifest/3' -or
             [string]$manifest.candidate.backend -ne 'external_process' -or
             [string]$manifest.baseline.backend -ne 'external_process' -or
             [string]$manifest.baseline.binary.git_ref -ne 'd4f20ee9775b7e8c80a1994e5c9aa5f1e11c9864' -or
             [int]$summary.integrity.structural_errors -ne 0 -or
-            [int]$summary.integrity.truncated_games -ne 0
+            [int]$summary.integrity.truncated_games -ne 0 -or
+            [int]$summary.integrity.strength_blocks.excluded_blocks -ne 0 -or
+            -not [bool]$summary.reliability.passed -or
+            [bool]$summary.performance_advisory.gating
           ) {
             throw 'Native Challenge Arena smoke evidence is invalid.'
           }

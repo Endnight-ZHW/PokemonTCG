@@ -14,6 +14,19 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from .actor_v3 import ActorConfigV3, GameTaskV3, NativeActorServiceV3
+from .deep_arena import (
+    DeepArenaTaskSpec,
+    arena_promotion_passed,
+    deep_arena_rows,
+    deep_arena_schedule_payload,
+    deep_arena_task_specs,
+    summarize_deep_arena,
+)
+from .evaluation_fairness import (
+    canonical_hash,
+    ordered_matchups,
+    unordered_matchups,
+)
 from .learner_v3 import DeepLearnerV3, LearnerConfigV3
 from .model_v3 import create_model
 from .replay_v3 import ReplayStoreV3, SOURCE_SELF_PLAY, SOURCE_TEACHER
@@ -46,6 +59,27 @@ def _atomic_json(path: Path, payload: Any) -> None:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
+
+
+def _atomic_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(
+        prefix=path.name + ".",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            for row in rows:
+                handle.write(json.dumps(
+                    row, ensure_ascii=False, sort_keys=True
+                ) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
@@ -87,6 +121,7 @@ class AlphaZeroV3Config:
     arena_games_per_matchup: int = 4
     arena_matchup_limit: int = 55
     arena_max_decisions: int = 512
+    arena_max_looks: int = 3
     promotion_score_rate: float = 0.55
     strict_actor_errors: bool = True
     minimum_teacher_improvement: float = 0.20
@@ -113,6 +148,7 @@ class AlphaZeroV3Config:
             "arena_games_per_matchup": 1,
             "arena_matchup_limit": 1,
             "arena_max_decisions": 64,
+            "arena_max_looks": 1,
             "strict_actor_errors": True,
             "schedule_total_steps": 100,
             "optimizer_warmup_steps": 1,
@@ -130,6 +166,7 @@ class AlphaZeroV3Config:
             "optimizer_warmup_steps": 20,
             "arena_games_per_matchup": 4,
             "arena_matchup_limit": 55,
+            "arena_max_looks": 3,
         }
         values.update(overrides)
         return cls(output_dir, **values)
@@ -145,8 +182,20 @@ class AlphaZeroV3Config:
             raise ValueError("v3_inflight_exceeds_simulations")
         if self.concurrent_games <= 0 or self.actor_threads <= 0:
             raise ValueError("invalid_v3_actor_concurrency")
-        if self.arena_games_per_matchup <= 0 or self.arena_max_decisions <= 0:
+        if (
+            self.arena_games_per_matchup <= 0
+            or self.arena_max_decisions <= 0
+            or self.arena_max_looks <= 0
+        ):
             raise ValueError("invalid_v3_arena_games")
+        if not 1 <= self.arena_matchup_limit <= len(_matchups()):
+            raise ValueError("invalid_v3_arena_matchup_limit")
+        if self.preset in {"pilot", "release"} and (
+            self.arena_matchup_limit != len(_matchups())
+            or self.arena_games_per_matchup % 4 != 0
+            or self.arena_max_looks > 3
+        ):
+            raise ValueError("v3_promotion_arena_requires_complete_closures")
         if not 0.0 <= self.minimum_teacher_improvement < 1.0:
             raise ValueError("invalid_v3_teacher_improvement_gate")
         if self.maximum_teacher_regression < 0.0:
@@ -162,11 +211,7 @@ class AlphaZeroV3Config:
 
 
 def _matchups() -> list[tuple[str, str]]:
-    return [
-        (left, right)
-        for left_index, left in enumerate(RELEASE_DECKS)
-        for right in RELEASE_DECKS[left_index:]
-    ]
+    return unordered_matchups(RELEASE_DECKS)
 
 
 def cycle_tasks_v3(
@@ -768,9 +813,10 @@ class AlphaZeroV3Trainer:
         learning_gate = self._learning_gate(training, teacher_validation)
         arena = dict(previous.get("arena", {}))
         accepted = bool(
-            int(arena.get("failed_games", 1)) == 0
-            and float(arena.get("score_rate", 0.0))
-                >= self.config.promotion_score_rate
+            arena_promotion_passed(
+                arena,
+                legacy_threshold=self.config.promotion_score_rate,
+            )
             and learning_gate["passed"]
         )
         cycle_record = {
@@ -832,8 +878,10 @@ class AlphaZeroV3Trainer:
                 teacher_validation,
             )
             accepted = (
-                arena["failed_games"] == 0
-                and arena["score_rate"] >= self.config.promotion_score_rate
+                arena_promotion_passed(
+                    arena,
+                    legacy_threshold=self.config.promotion_score_rate,
+                )
                 and bool(learning_gate["passed"])
             )
             cycle_record = {
@@ -893,6 +941,12 @@ class AlphaZeroV3Trainer:
                 {
                     "cycle": row.get("cycle"),
                     "learning_gate": row.get("learning_gate"),
+                    "arena_schema": row.get("arena", {}).get(
+                        "schema", "legacy"
+                    ),
+                    "arena_gate_status": row.get("arena", {}).get(
+                        "gate_status", "legacy"
+                    ),
                     "arena_structural_errors": row.get("arena", {}).get(
                         "structural_errors"
                     ),
@@ -998,6 +1052,25 @@ class AlphaZeroV3Trainer:
         self._event("self_play_complete", cycle=cycle, **result)
         return result
 
+    def _arena_specs(
+        self,
+        *,
+        cycle: int,
+        look_index: int,
+        max_decisions: int,
+    ) -> list[DeepArenaTaskSpec]:
+        return deep_arena_task_specs(
+            unordered_pairs=_matchups()[: self.config.arena_matchup_limit],
+            games_per_direction=self.config.arena_games_per_matchup,
+            base_seed=(
+                int(self.config.seed) + 500_000_000 + int(cycle) * 100_000
+            ),
+            cycle=cycle,
+            champion_version=self.champion_version,
+            look_index=look_index,
+            max_decisions=max_decisions,
+        )
+
     def _arena(self, cycle: int) -> dict[str, Any]:
         assert self.champion is not None
         decision_cap = (
@@ -1005,71 +1078,125 @@ class AlphaZeroV3Trainer:
             if self.config.preset == "pilot"
             else self.config.arena_max_decisions
         )
-        tasks = []
-        matchups = _matchups()[: self.config.arena_matchup_limit]
-        for matchup_index, (deck_a, deck_b) in enumerate(matchups):
-            for game_index in range(self.config.arena_games_per_matchup):
-                closure = game_index % 4
-                seat_a = closure & 1
-                slots = [1, 1]
-                slots[seat_a] = 0
-                tasks.append(
-                    GameTaskV3(
-                        f"arena-{cycle:04d}-{matchup_index:02d}-{game_index:03d}",
-                        cycle,
-                        deck_a,
-                        deck_b,
-                        self.config.seed + 500_000_000 + cycle * 100_000
-                        + matchup_index * 1_000 + game_index,
-                        seat_a,
-                        (closure >> 1) & 1,
-                        tuple(slots),
-                        (cycle, self.champion_version),
-                        decision_cap,
-                    )
-                )
         arena_config = replace(
             self._actor_config(training=False),
             strict=False,
         )
-        with NativeActorServiceV3(
-            {0: self.learner.model, 1: self.champion},
-            device=self.config.device,
-            config=arena_config,
-            control=self.control,
-        ) as actors:
-            result = actors.run(tasks)
-        wins = 0
-        draws = 0
-        task_by_id = {task.game_id: task for task in tasks}
-        for game in result["games"]:
-            task = task_by_id[str(game["game_id"])]
-            winner = int(game["winner"])
-            if winner < 0:
-                draws += 1
-            elif winner == task.seat_a:
-                wins += 1
-        structural_errors = sum(
-            1
-            for game in result["games"]
-            if str(game.get("error", ""))
-                not in {"", "v3_actor_decision_cap"}
+        maximum_looks = (
+            1 if self.config.preset == "smoke" else self.config.arena_max_looks
         )
-        truncated_games = sum(
-            1
-            for game in result["games"]
-            if str(game.get("error", "")) == "v3_actor_decision_cap"
-        )
-        games = len(tasks)
-        return {
-            "games": games,
+        simultaneous_alpha = 0.05 / max(1, int(maximum_looks))
+        all_rows: list[dict[str, Any]] = []
+        all_specs: list[DeepArenaTaskSpec] = []
+        looks: list[dict[str, Any]] = []
+        summary: dict[str, Any] | None = None
+        for look_index in range(maximum_looks):
+            specs = self._arena_specs(
+                cycle=cycle,
+                look_index=look_index,
+                max_decisions=decision_cap,
+            )
+            tasks = [spec.task for spec in specs]
+            with NativeActorServiceV3(
+                {0: self.learner.model, 1: self.champion},
+                device=self.config.device,
+                config=arena_config,
+                control=self.control,
+            ) as actors:
+                result = actors.run(tasks)
+            look_rows = deep_arena_rows(result["games"], specs)
+            all_specs.extend(specs)
+            all_rows.extend(look_rows)
+            final_look = look_index + 1 >= maximum_looks
+            summary = summarize_deep_arena(
+                all_rows,
+                bootstrap_seed=(
+                    int(self.config.seed)
+                    ^ 0xD33FA17
+                    ^ (int(cycle) * 104729)
+                ),
+                bootstrap_samples=2000,
+                confidence_alpha=simultaneous_alpha,
+                promotion_score_rate=self.config.promotion_score_rate,
+                final_look=final_look,
+            )
+            looks.append({
+                "look": look_index + 1,
+                "new_games": len(look_rows),
+                "cumulative_games": len(all_rows),
+                "gate_status": summary["gate_status"],
+                "paired_statistics": summary["paired_statistics"],
+                "integrity": summary["integrity"],
+                "native": result["native"],
+                "inference": {
+                    **dict(result["inference"]),
+                    "gating": False,
+                    "device": self.config.device,
+                },
+            })
+            if summary["gate_status"] != "continue":
+                break
+
+        if summary is None:
+            raise RuntimeError("v3_arena_produced_no_evidence")
+        final_record = summary["record"]
+        arena = {
+            **summary,
+            "candidate_model_version": int(cycle),
+            "champion_model_version": int(self.champion_version),
             "decision_cap": decision_cap,
-            "wins": wins,
-            "draws": draws,
-            "score_rate": (wins + 0.5 * draws) / max(1, games),
-            "failed_games": int(result["failed_games"]),
-            "structural_errors": structural_errors,
-            "truncated_games": truncated_games,
-            "native": result["native"],
-            "inference": result["inference"],
+            "wins": int(final_record["wins"]),
+            "draws": int(final_record["draws"]),
+            "losses": int(final_record["losses"]),
+            "score_rate": final_record["score_rate"],
+            "failed_games": int(summary["integrity"]["failed_games"]),
+            "structural_errors": int(summary["integrity"]["structural_errors"]),
+            "truncated_games": int(summary["integrity"]["truncated_games"]),
+            "minimum_looks": 1,
+            "maximum_looks": int(maximum_looks),
+            "completed_looks": len(looks),
+            "sequential_alpha": simultaneous_alpha,
+            "games_per_complete_look": len(all_specs) // len(looks),
+            "looks": looks,
+            "native": {
+                "looks": [row["native"] for row in looks],
+            },
+            "inference": {
+                "looks": [row["inference"] for row in looks],
+                "gating": False,
+            },
+            "performance_advisory": {
+                "gating": False,
+                "device": self.config.device,
+                "looks": [row["inference"] for row in looks],
+                "caveat": (
+                    "Throughput and inference wall time are hardware dependent "
+                    "and never affect champion promotion."
+                ),
+            },
         }
+        schedule_payload = deep_arena_schedule_payload(all_specs)
+        arena["schedule"] = {
+            "ordered_matchups_per_look": len(ordered_matchups(
+                _matchups()[: self.config.arena_matchup_limit]
+            )),
+            "release_decks": list(RELEASE_DECKS),
+            "task_count": len(schedule_payload),
+            "sha256": canonical_hash(schedule_payload),
+        }
+        evidence_root = self.output_dir / "arena-v3" / f"cycle-{cycle:04d}"
+        games_path = evidence_root / "arena-games.jsonl"
+        summary_path = evidence_root / "arena-summary.json"
+        _atomic_jsonl(games_path, all_rows)
+        evidence_bytes = "".join(
+            json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+            for row in all_rows
+        ).encode("utf-8")
+        arena["evidence"] = {
+            "games_path": str(games_path),
+            "games_sha256": hashlib.sha256(evidence_bytes).hexdigest(),
+            "summary_path": str(summary_path),
+            "task_count": len(all_specs),
+        }
+        _atomic_json(summary_path, arena)
+        return arena

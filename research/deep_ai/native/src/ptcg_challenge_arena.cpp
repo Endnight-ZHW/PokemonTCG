@@ -376,6 +376,27 @@ void adjudicate_agent_failure(
     set_winner(result, 1 - seat_for_agent(result, offending_agent));
 }
 
+bool external_timeout_error(const std::string &error) {
+    return error == "external_agent_timeout"
+        || error.find("external_agent_timeout") != std::string::npos;
+}
+
+void retryable_timeout_failure(
+    ChallengeArenaGameResult &result,
+    std::int32_t offending_agent,
+    std::string error
+) {
+    result.success = false;
+    result.terminal = false;
+    result.strength_eligible = false;
+    result.offending_agent = offending_agent;
+    result.failure_kind = "decision_timeout";
+    result.error = std::move(error);
+    result.winner_seat = -1;
+    result.winner_agent = -1;
+    result.candidate_score_x2 = 1;
+}
+
 void infrastructure_failure(
     ChallengeArenaGameResult &result,
     std::string kind,
@@ -557,6 +578,19 @@ void add_agent_metrics(
         if (field(decision, "planner_ms") != nullptr) {
             summary.candidate_planner_samples_us.push_back(planner_us);
         }
+        if (choice_decision) {
+            summary.candidate_choice_decision_samples_us.push_back(
+                decision_microseconds);
+        } else if (cache_hit) {
+            summary.candidate_cache_decision_samples_us.push_back(
+                decision_microseconds);
+        } else if (forced) {
+            summary.candidate_forced_decision_samples_us.push_back(
+                decision_microseconds);
+        } else {
+            summary.candidate_search_decision_samples_us.push_back(
+                decision_microseconds);
+        }
         summary.candidate_action_decisions += action_decision ? 1U : 0U;
         summary.candidate_choice_decisions += choice_decision ? 1U : 0U;
         summary.candidate_search_decisions += search_decision ? 1U : 0U;
@@ -571,6 +605,19 @@ void add_agent_metrics(
         summary.baseline_decision_samples_us.push_back(decision_microseconds);
         if (field(decision, "planner_ms") != nullptr) {
             summary.baseline_planner_samples_us.push_back(planner_us);
+        }
+        if (choice_decision) {
+            summary.baseline_choice_decision_samples_us.push_back(
+                decision_microseconds);
+        } else if (cache_hit) {
+            summary.baseline_cache_decision_samples_us.push_back(
+                decision_microseconds);
+        } else if (forced) {
+            summary.baseline_forced_decision_samples_us.push_back(
+                decision_microseconds);
+        } else {
+            summary.baseline_search_decision_samples_us.push_back(
+                decision_microseconds);
         }
         summary.baseline_action_decisions += action_decision ? 1U : 0U;
         summary.baseline_choice_decisions += choice_decision ? 1U : 0U;
@@ -849,6 +896,37 @@ void NativeChallengeArenaPool::worker() {
         active_agents_.push_back(candidate_agent.get());
         active_agents_.push_back(baseline_agent.get());
     }
+    const auto rebuild_agents = [&]() {
+        if (cancelled_) return;
+        std::unique_ptr<ChallengeArenaAgent> replacement_candidate =
+            make_challenge_arena_agent(candidate_, catalog_, decks_);
+        std::unique_ptr<ChallengeArenaAgent> replacement_baseline =
+            make_challenge_arena_agent(baseline_, catalog_, decks_);
+        bool installed = false;
+        {
+            std::lock_guard<std::mutex> lock(controllers_mutex_);
+            if (!cancelled_) {
+                active_agents_.erase(std::remove(
+                    active_agents_.begin(), active_agents_.end(),
+                    candidate_agent.get()), active_agents_.end());
+                active_agents_.erase(std::remove(
+                    active_agents_.begin(), active_agents_.end(),
+                    baseline_agent.get()), active_agents_.end());
+                active_agents_.push_back(replacement_candidate.get());
+                active_agents_.push_back(replacement_baseline.get());
+                installed = true;
+            }
+        }
+        if (!installed) {
+            replacement_candidate->cancel(
+                std::numeric_limits<std::int64_t>::max());
+            replacement_baseline->cancel(
+                std::numeric_limits<std::int64_t>::max());
+            return;
+        }
+        candidate_agent = std::move(replacement_candidate);
+        baseline_agent = std::move(replacement_baseline);
+    };
 
     while (!cancelled_) {
         wait_if_paused();
@@ -870,16 +948,24 @@ void NativeChallengeArenaPool::worker() {
             } else if (!candidate_ok) {
                 result = task_result(tasks_[index]);
                 ++result.controller_failures;
-                adjudicate_agent_failure(
-                    result, 0, "candidate_configuration",
-                    candidate_agent->configuration_error());
+                const std::string error = candidate_agent->configuration_error();
+                if (external_timeout_error(error)) {
+                    retryable_timeout_failure(result, 0, error);
+                } else {
+                    adjudicate_agent_failure(
+                        result, 0, "candidate_configuration", error);
+                }
                 finalize_semantic_hash(result);
             } else if (!baseline_ok) {
                 result = task_result(tasks_[index]);
                 ++result.controller_failures;
-                adjudicate_agent_failure(
-                    result, 1, "baseline_configuration",
-                    baseline_agent->configuration_error());
+                const std::string error = baseline_agent->configuration_error();
+                if (external_timeout_error(error)) {
+                    retryable_timeout_failure(result, 1, error);
+                } else {
+                    adjudicate_agent_failure(
+                        result, 1, "baseline_configuration", error);
+                }
                 finalize_semantic_hash(result);
             } else {
                 result = run_game(
@@ -911,8 +997,21 @@ void NativeChallengeArenaPool::worker() {
         projection_us_ += result.projection_us;
         legal_actions_us_ += result.legal_actions_us;
         apply_us_ += result.apply_us;
-        std::lock_guard<std::mutex> lock(results_mutex_);
-        results_.push_back(std::move(result));
+        const bool rebuild_external_agents = !cancelled_
+            && candidate_.backend == "external_process"
+            && (
+                result.failure_kind == "decision_timeout"
+                || result.error.find("external_agent_") != std::string::npos
+            );
+        {
+            std::lock_guard<std::mutex> lock(results_mutex_);
+            results_.push_back(std::move(result));
+        }
+        if (rebuild_external_agents) {
+            // Recreate both sides symmetrically so one dead process cannot
+            // poison later tasks owned by this worker.
+            rebuild_agents();
+        }
     }
     {
         std::lock_guard<std::mutex> lock(controllers_mutex_);
@@ -998,11 +1097,17 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
         ++summary.controller_failures;
         const std::int32_t offending = candidate_reset_ok ? 1 : 0;
         const Value &failed = candidate_reset_ok ? baseline_reset : candidate_reset;
-        adjudicate_agent_failure(
-            summary,
-            offending,
-            "agent_reset_failed",
-            string_field(failed, "error", "agent_reset_failed"));
+        const std::string reset_error = string_field(
+            failed, "error", "agent_reset_failed");
+        if (external_timeout_error(reset_error)) {
+            retryable_timeout_failure(summary, offending, reset_error);
+        } else {
+            adjudicate_agent_failure(
+                summary,
+                offending,
+                "agent_reset_failed",
+                reset_error);
+        }
         finalize_from_session(summary, session);
         return summary;
     }
@@ -1175,9 +1280,16 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
             }
             ++summary.controller_failures;
             const std::int32_t offending = candidate_turn ? 0 : 1;
-            adjudicate_agent_failure(
-                summary, offending, "controller_failure",
-                string_field(decision, "error", "challenge_controller_failed"));
+            const std::string controller_error = string_field(
+                decision, "error", "challenge_controller_failed");
+            if (external_timeout_error(controller_error)) {
+                retryable_timeout_failure(
+                    summary, offending, controller_error);
+            } else {
+                adjudicate_agent_failure(
+                    summary, offending, "controller_failure",
+                    controller_error);
+            }
             summary.failure_trace = failure_trace(
                 session,
                 Value(Object{

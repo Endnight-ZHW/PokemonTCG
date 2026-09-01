@@ -23,6 +23,7 @@ $env:PYTHONPATH = @(
     tests.test_challenge_arena_build `
     tests.test_challenge_arena_store `
     tests.test_challenge_arena_determinism `
-    tests.test_challenge_agent_protocol
+    tests.test_challenge_agent_protocol `
+    tests.test_deep_arena_fairness
 if ($LASTEXITCODE -ne 0) { throw 'Deep AI manual smoke workflow failed.' }
 Write-Host 'DEEP_AI_RESEARCH_SMOKE_OK'

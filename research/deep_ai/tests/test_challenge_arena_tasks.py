@@ -11,6 +11,7 @@ from deep_ai.challenge_arena import (
     validate_agent_identity,
     validate_equal_search_contract,
 )
+from deep_ai.challenge_arena_retry import final_retry_result
 
 
 class ChallengeArenaTaskTests(unittest.TestCase):
@@ -55,6 +56,15 @@ class ChallengeArenaTaskTests(unittest.TestCase):
         )
         self.assertEqual(block_sizes[fire_water], 8)
         self.assertEqual(block_sizes[fire_mirror], 4)
+        self.assertTrue(all(
+            task.block_size == block_sizes[task.block_id]
+            and task.block_kind == (
+                "mirror"
+                if task.candidate_deck == task.baseline_deck
+                else "cross_deck"
+            )
+            for task in tasks
+        ))
 
     def test_every_ordered_matchup_has_all_four_closures(self) -> None:
         tasks = generate_tasks("smoke")
@@ -123,6 +133,19 @@ class ChallengeArenaTaskTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "search_contract_mismatch"):
             validate_equal_search_contract(candidate, baseline)
 
+    def test_watchdog_must_be_equal_but_is_not_a_search_budget(self) -> None:
+        strategies = {"schema": "test"}
+        candidate = ArenaAgentSpec(
+            "candidate", "a", strategies, {},
+            decision_timeout_milliseconds=1000,
+        )
+        baseline = ArenaAgentSpec(
+            "baseline", "b", strategies, {},
+            decision_timeout_milliseconds=2000,
+        )
+        with self.assertRaisesRegex(ValueError, "watchdog_mismatch"):
+            validate_equal_search_contract(candidate, baseline)
+
     def test_identical_agents_require_explicit_self_play(self) -> None:
         strategies = {"schema": "test"}
         first = ArenaAgentSpec(
@@ -136,6 +159,27 @@ class ChallengeArenaTaskTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "arena_agents_are_identical"):
             validate_agent_identity(first, second, allow_self_play=False)
         validate_agent_identity(first, second, allow_self_play=True)
+
+    def test_timeout_retry_is_strength_neutral_or_recovered(self) -> None:
+        primary = {
+            "task_id": "timeout",
+            "failure_kind": "decision_timeout",
+            "error": "external_agent_timeout",
+        }
+        persistent = final_retry_result(primary, primary_attempt=primary)
+        self.assertTrue(persistent["persistent_timeout"])
+        self.assertFalse(persistent["strength_eligible"])
+        self.assertEqual(persistent["candidate_score_x2"], 1)
+        recovered = final_retry_result({
+            "task_id": "timeout",
+            "success": True,
+            "terminal": True,
+            "strength_eligible": True,
+            "candidate_score_x2": 2,
+        }, primary_attempt=primary)
+        self.assertTrue(recovered["recovered_timeout"])
+        self.assertFalse(recovered["persistent_timeout"])
+        self.assertEqual(recovered["candidate_score_x2"], 2)
 
 
 if __name__ == "__main__":

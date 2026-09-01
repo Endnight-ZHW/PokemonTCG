@@ -16,10 +16,13 @@ def _game(
     *,
     candidate_deck: str = "fire",
     baseline_deck: str = "water",
+    block_size: int = 1,
 ) -> dict:
     return {
         "task_id": task_id,
         "block_id": block_id,
+        "block_size": block_size,
+        "block_kind": "mirror" if candidate_deck == baseline_deck else "cross_deck",
         "candidate_deck": candidate_deck,
         "baseline_deck": baseline_deck,
         "game_seed": 17,
@@ -39,6 +42,8 @@ def _game(
         "baseline_decision_samples_us": [1000],
         "candidate_planner_samples_us": [900],
         "baseline_planner_samples_us": [900],
+        "candidate_search_decision_samples_us": [1000],
+        "baseline_search_decision_samples_us": [1000],
         "candidate_action_decisions": 1,
         "baseline_action_decisions": 1,
         "candidate_choice_decisions": 0,
@@ -55,18 +60,24 @@ def _game(
 class ChallengeArenaStatsTests(unittest.TestCase):
     def test_paired_bootstrap_is_deterministic_and_block_weighted(self) -> None:
         games = [
-            *[_game(f"win-{index}", "large", 2) for index in range(8)],
-            *[_game(f"loss-{index}", "small", 0) for index in range(4)],
+            *[_game(f"win-{index}", "large", 2, block_size=8) for index in range(8)],
+            *[_game(f"loss-{index}", "small", 0, block_size=4) for index in range(4)],
         ]
         first = paired_bootstrap_interval(games, seed=41, samples=500)
         second = paired_bootstrap_interval(games, seed=41, samples=500)
         self.assertEqual(first, second)
         self.assertAlmostEqual(first["score_rate"], 8 / 12)
         self.assertEqual(first["blocks"], 2)
+        self.assertEqual(first["method"], "stratified_paired_block_bootstrap")
         self.assertIn("bootstrap_distribution", first)
 
     def test_summary_emits_strength_performance_and_promotion_gate(self) -> None:
-        games = [_game(f"game-{index}", f"block-{index // 4}", 2) for index in range(40)]
+        games = [
+            _game(
+                f"game-{index}", f"block-{index // 4}", 2, block_size=4
+            )
+            for index in range(40)
+        ]
         summary = summarize_games(
             games,
             bootstrap_samples=200,
@@ -116,6 +127,44 @@ class ChallengeArenaStatsTests(unittest.TestCase):
         summary = summarize_games([game], bootstrap_samples=20)
         self.assertEqual(summary["strength_games"], 0)
         self.assertEqual(summary["integrity"]["truncated_games"], 1)
+
+    def test_ineligible_game_excludes_the_complete_block(self) -> None:
+        games = [
+            _game(f"game-{index}", "paired", 2, block_size=4)
+            for index in range(4)
+        ]
+        games[0]["strength_eligible"] = False
+        summary = summarize_games(games, bootstrap_samples=20)
+        self.assertEqual(summary["strength_games"], 0)
+        selection = summary["integrity"]["strength_blocks"]
+        self.assertEqual(selection["excluded_blocks"], 1)
+        self.assertIn("ineligible_game", selection["excluded"][0]["reasons"])
+
+    def test_latency_is_advisory_and_never_changes_gate_status(self) -> None:
+        games = [_game(f"game-{index}", f"block-{index}", 2) for index in range(20)]
+        for game in games:
+            game["candidate_search_decision_samples_us"] = [10_000_000]
+            game["baseline_search_decision_samples_us"] = [1_000]
+        summary = summarize_games(games, bootstrap_samples=100)
+        self.assertEqual(summary["performance_advisory"]["status"], "warn")
+        self.assertFalse(summary["performance_advisory"]["gating"])
+        self.assertEqual(gate_status(summary, preset="release"), "pass")
+
+    def test_persistent_timeout_is_reliability_not_strength_loss(self) -> None:
+        game = _game("timeout", "timeout-block", 1)
+        game.update({
+            "success": False,
+            "terminal": False,
+            "strength_eligible": False,
+            "persistent_timeout": True,
+            "failure_kind": "persistent_timeout",
+            "controller_failures": 1,
+        })
+        summary = summarize_games([game], bootstrap_samples=20)
+        self.assertEqual(summary["strength_games"], 0)
+        self.assertEqual(summary["integrity"]["structural_errors"], 0)
+        self.assertFalse(summary["reliability"]["passed"])
+        self.assertEqual(gate_status(summary, preset="release"), "fail")
 
     def test_search_depth_uses_search_decision_denominator(self) -> None:
         game = _game("metrics", "block", 1)

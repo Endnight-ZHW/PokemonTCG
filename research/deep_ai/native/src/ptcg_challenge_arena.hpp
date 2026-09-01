@@ -96,6 +96,14 @@ struct ChallengeArenaGameResult {
     std::vector<std::uint64_t> baseline_decision_samples_us;
     std::vector<std::uint64_t> candidate_planner_samples_us;
     std::vector<std::uint64_t> baseline_planner_samples_us;
+    std::vector<std::uint64_t> candidate_search_decision_samples_us;
+    std::vector<std::uint64_t> baseline_search_decision_samples_us;
+    std::vector<std::uint64_t> candidate_forced_decision_samples_us;
+    std::vector<std::uint64_t> baseline_forced_decision_samples_us;
+    std::vector<std::uint64_t> candidate_cache_decision_samples_us;
+    std::vector<std::uint64_t> baseline_cache_decision_samples_us;
+    std::vector<std::uint64_t> candidate_choice_decision_samples_us;
+    std::vector<std::uint64_t> baseline_choice_decision_samples_us;
 
     std::uint32_t candidate_action_decisions = 0;
     std::uint32_t baseline_action_decisions = 0;
