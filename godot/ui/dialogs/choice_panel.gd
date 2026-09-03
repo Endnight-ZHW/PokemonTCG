@@ -30,6 +30,10 @@ const NARROW_PREVIEW_MAX_WIDTH := 176.0
 @onready var energy_actions: HBoxContainer = %EnergyActions
 @onready var undo_button: Button = %UndoButton
 @onready var clear_button: Button = %ClearButton
+@onready var browse_mode_row: HBoxContainer = %BrowseModeRow
+@onready var browse_mode_label: Label = $ContentRow/ChoiceColumn/BrowseModeRow/BrowseModeLabel
+@onready var browse_valid_button: Button = %BrowseValidButton
+@onready var browse_all_button: Button = %BrowseAllButton
 @onready var preview_toggle_button: Button = %PreviewToggleButton
 @onready var card_grid: HFlowContainer = %CardGrid
 @onready var option_list: VBoxContainer = %OptionList
@@ -49,7 +53,10 @@ var _option_card_ids: Dictionary = {}
 var _option_labels: Dictionary = {}
 var _selection_counts: Dictionary = {}
 var _option_disabled_reasons: Dictionary = {}
+var _read_only_option_keys: Dictionary = {}
 var _last_selected_ids: Array[String] = []
+var _deck_browse_rows: Array[Dictionary] = []
+var _deck_browse_show_all := false
 var _compact_preview_expanded := false
 var _compact_choice_layout := false
 var _previewed_card_id := ""
@@ -98,6 +105,7 @@ func configure(
 	card_grid.visible = false
 	option_list.visible = false
 	energy_preview.visible = false
+	browse_mode_row.visible = false
 	energy_distribution._update_energy_action_buttons(0)
 	_compact_preview_expanded = false
 	_hide_preview()
@@ -118,7 +126,10 @@ func clear_options() -> void:
 	_option_labels.clear()
 	_selection_counts.clear()
 	_option_disabled_reasons.clear()
+	_read_only_option_keys.clear()
 	_last_selected_ids.clear()
+	_deck_browse_rows.clear()
+	_deck_browse_show_all = false
 	energy_distribution._energy_preview_cards.clear()
 	energy_distribution._energy_assignment_labels.clear()
 	energy_distribution._energy_distribution_mode = false
@@ -136,6 +147,8 @@ func clear_options() -> void:
 	card_grid.visible = false
 	option_list.visible = false
 	energy_preview.visible = false
+	if browse_mode_row:
+		browse_mode_row.visible = false
 	energy_distribution._update_energy_action_buttons(0)
 	_clear_blocked_reason()
 	_hide_preview()
@@ -146,8 +159,13 @@ func add_card_option(
 	card_id: String,
 	caption_text: String,
 	player: int,
+	read_only: bool = false,
+	tile_key: String = "",
 ) -> CardView:
 	_resolve_nodes()
+	var option_key := option_id if not option_id.is_empty() else tile_key
+	if option_key.is_empty():
+		return null
 	content_row.visible = true
 	card_grid.visible = true
 	empty_label.visible = false
@@ -156,9 +174,9 @@ func add_card_option(
 	tile.custom_minimum_size = CARD_TILE_SIZE
 	tile.mouse_filter = Control.MOUSE_FILTER_STOP
 	_apply_card_tile_style(tile, false, false, false)
-	tile.gui_input.connect(_on_tile_gui_input.bind(option_id, tile))
-	tile.mouse_entered.connect(_on_card_tile_hover_changed.bind(option_id, true))
-	tile.mouse_exited.connect(_on_card_tile_hover_changed.bind(option_id, false))
+	tile.gui_input.connect(_on_tile_gui_input.bind(option_key, tile))
+	tile.mouse_entered.connect(_on_card_tile_hover_changed.bind(option_key, true))
+	tile.mouse_exited.connect(_on_card_tile_hover_changed.bind(option_key, false))
 
 	var content := VBoxContainer.new()
 	content.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -182,6 +200,8 @@ func add_card_option(
 	card_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card_view.set_catalog(catalog)
 	card_view.configure(card_id, null, false, -1, player, "", true)
+	if read_only:
+		card_view.modulate = Color(0.66, 0.70, 0.76, 0.72)
 	card_view.tooltip_text = ""
 	card_view.detail_requested.connect(func(_card_id: String) -> void:
 		_preview_card(card_id)
@@ -192,13 +212,13 @@ func add_card_option(
 		_owner: int,
 		_slot: String,
 	) -> void:
-		_request_card_option(option_id, card_id)
+		_request_card_option(option_key, card_id)
 	)
 	card_view.mouse_entered.connect(
-		_on_card_tile_hover_changed.bind(option_id, true)
+		_on_card_tile_hover_changed.bind(option_key, true)
 	)
 	card_view.mouse_exited.connect(
-		_on_card_tile_hover_changed.bind(option_id, false)
+		_on_card_tile_hover_changed.bind(option_key, false)
 	)
 	card_area.add_child(card_view)
 	_apply_choice_selection_ring(card_view)
@@ -234,6 +254,32 @@ func add_card_option(
 	badge.offset_right = 2
 	badge.offset_bottom = -1
 	card_area.add_child(badge)
+	if read_only:
+		var read_only_badge := Label.new()
+		read_only_badge.name = "ReadOnlyBadge"
+		read_only_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		read_only_badge.text = "仅查看"
+		read_only_badge.accessibility_name = "仅可查看"
+		read_only_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		read_only_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		read_only_badge.add_theme_font_size_override("font_size", 10)
+		read_only_badge.add_theme_color_override("font_color", DesignTokens.TEXT)
+		read_only_badge.add_theme_stylebox_override(
+			"normal",
+			DesignTokens.panel_style(
+				Color(0.055, 0.085, 0.13, 0.96),
+				8,
+				Color(DesignTokens.TEXT_MUTED, 0.62),
+				1,
+				3,
+			),
+		)
+		read_only_badge.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		read_only_badge.offset_left = -2
+		read_only_badge.offset_top = -23
+		read_only_badge.offset_right = 52
+		read_only_badge.offset_bottom = -1
+		card_area.add_child(read_only_badge)
 
 	var caption := Label.new()
 	# The tile panel contributes 6 px on each side. Keep the combined minimum
@@ -252,17 +298,105 @@ func add_card_option(
 	content.add_child(caption)
 
 	card_grid.add_child(tile)
-	_option_cards[option_id] = card_view
-	_option_badges[option_id] = badge
-	_option_tiles[option_id] = tile
-	_option_captions[option_id] = caption
-	_option_card_ids[option_id] = card_id
-	_option_labels[option_id] = caption_text if not caption_text.is_empty() else _card_name(card_id)
-	_selection_counts[option_id] = 0
+	_option_cards[option_key] = card_view
+	_option_badges[option_key] = badge
+	_option_tiles[option_key] = tile
+	_option_captions[option_key] = caption
+	_option_card_ids[option_key] = card_id
+	_option_labels[option_key] = caption_text if not caption_text.is_empty() else _card_name(card_id)
+	_selection_counts[option_key] = 0
+	if read_only:
+		_read_only_option_keys[option_key] = true
+	_refresh_card_tile_visual(option_key)
 	if _previewed_card_id.is_empty():
 		_preview_card(card_id)
 	_queue_responsive_layout()
 	return card_view
+
+
+func configure_deck_browser(
+	rows: Array[Dictionary],
+	p_catalog: CardCatalog,
+) -> void:
+	_resolve_nodes()
+	catalog = p_catalog
+	_deck_browse_rows.clear()
+	for row in rows:
+		_deck_browse_rows.append(row.duplicate(true))
+	var valid_count := 0
+	for row in _deck_browse_rows:
+		if bool(row.get("selectable", false)):
+			valid_count += 1
+	_deck_browse_show_all = valid_count == 0
+	browse_mode_row.visible = (
+		not _deck_browse_rows.is_empty()
+		and valid_count != _deck_browse_rows.size()
+	)
+	browse_valid_button.text = "可选（%d）" % valid_count
+	browse_all_button.text = "全部（%d）" % _deck_browse_rows.size()
+	browse_valid_button.disabled = valid_count == 0
+	browse_all_button.disabled = false
+	browse_valid_button.accessibility_name = "仅显示可选卡牌，共%d张" % valid_count
+	browse_all_button.accessibility_name = "显示全部剩余牌库，共%d张" % _deck_browse_rows.size()
+	_render_deck_browser()
+
+
+func _clear_card_grid_options() -> void:
+	_clear_children_immediate(card_grid)
+	_option_cards.clear()
+	_option_badges.clear()
+	_option_tiles.clear()
+	_option_captions.clear()
+	_option_card_ids.clear()
+	_option_labels.clear()
+	_selection_counts.clear()
+	_read_only_option_keys.clear()
+
+
+func _render_deck_browser() -> void:
+	if _deck_browse_rows.is_empty():
+		return
+	var selected_snapshot: Array[String] = []
+	selected_snapshot.assign(_last_selected_ids)
+	var disabled_snapshot := _option_disabled_reasons.duplicate(true)
+	_clear_card_grid_options()
+	var first_visible_card_id := ""
+	for row in _deck_browse_rows:
+		var selectable := bool(row.get("selectable", false))
+		if not _deck_browse_show_all and not selectable:
+			continue
+		if first_visible_card_id.is_empty():
+			first_visible_card_id = str(row.get("card_id", ""))
+		add_card_option(
+			str(row.get("option_id", "")),
+			str(row.get("card_id", "")),
+			str(row.get("caption", "")),
+			int(row.get("player", -1)),
+			not selectable,
+			str(row.get("row_id", "")),
+		)
+	if (
+		not first_visible_card_id.is_empty()
+		and _previewed_card_id not in _option_card_ids.values()
+	):
+		_preview_card(first_visible_card_id)
+	browse_valid_button.button_pressed = not _deck_browse_show_all
+	browse_all_button.button_pressed = _deck_browse_show_all
+	refresh_selection(selected_snapshot, _selection_max, _allow_duplicates)
+	set_option_disabled_reasons(disabled_snapshot)
+	_queue_responsive_layout()
+
+
+func _set_deck_browse_mode(show_all: bool) -> void:
+	if _deck_browse_rows.is_empty():
+		return
+	if _deck_browse_show_all == show_all:
+		browse_valid_button.button_pressed = not _deck_browse_show_all
+		browse_all_button.button_pressed = _deck_browse_show_all
+		return
+	_deck_browse_show_all = show_all
+	_clear_blocked_reason()
+	_render_deck_browser()
 
 
 func add_text_option(option_id: String, label_text: String) -> Button:
@@ -568,6 +702,18 @@ func _resolve_nodes() -> void:
 	clear_button = get_node(
 		"ContentRow/ChoiceColumn/EnergyPreview/EnergyActions/ClearButton"
 	) as Button
+	browse_mode_row = get_node(
+		"ContentRow/ChoiceColumn/BrowseModeRow"
+	) as HBoxContainer
+	browse_mode_label = get_node(
+		"ContentRow/ChoiceColumn/BrowseModeRow/BrowseModeLabel"
+	) as Label
+	browse_valid_button = get_node(
+		"ContentRow/ChoiceColumn/BrowseModeRow/BrowseValidButton"
+	) as Button
+	browse_all_button = get_node(
+		"ContentRow/ChoiceColumn/BrowseModeRow/BrowseAllButton"
+	) as Button
 	preview_toggle_button = get_node(
 		"ContentRow/ChoiceColumn/PreviewToggleButton"
 	) as Button
@@ -596,6 +742,10 @@ func _resolve_nodes() -> void:
 	):
 		preview_toggle_button.set_meta("choice_panel_connected", true)
 		preview_toggle_button.pressed.connect(_toggle_compact_preview)
+	if browse_mode_row and not browse_mode_row.has_meta("choice_panel_connected"):
+		browse_mode_row.set_meta("choice_panel_connected", true)
+		browse_valid_button.pressed.connect(_set_deck_browse_mode.bind(false))
+		browse_all_button.pressed.connect(_set_deck_browse_mode.bind(true))
 
 
 func _toggle_compact_preview() -> void:
@@ -728,6 +878,9 @@ func _on_tile_gui_input(event: InputEvent, option_id: String, tile: Control) -> 
 func _request_card_option(option_id: String, card_id: String) -> void:
 	# Preview is always available, including for a currently blocked choice.
 	_preview_card(card_id)
+	if _read_only_option_keys.has(option_id):
+		_clear_blocked_reason()
+		return
 	var blocked_reason := _blocked_reason_for_unselected(option_id)
 	if not blocked_reason.is_empty():
 		show_blocked_reason(blocked_reason)
@@ -749,6 +902,8 @@ func _blocked_reason_for_unselected(option_id: String) -> String:
 	# A selected ordinary option must remain interactive so it can be cancelled.
 	# In duplicate distribution mode another tap means "add one more", so target
 	# capacity still applies; assigned energy is removed with rewind/undo instead.
+	if _read_only_option_keys.has(option_id):
+		return ""
 	if int(_selection_counts.get(option_id, 0)) > 0 and not _allow_duplicates:
 		return ""
 	return str(_option_disabled_reasons.get(option_id, ""))
@@ -776,16 +931,27 @@ func _refresh_card_tile_visual(option_id: String) -> void:
 		return
 	var selected := int(_selection_counts.get(option_id, 0)) > 0
 	var hovered := bool(tile.get_meta("choice_hovered", false))
+	var read_only := _read_only_option_keys.has(option_id)
 	var blocked_reason := _blocked_reason_for_unselected(option_id)
 	var blocked := not blocked_reason.is_empty()
 	tile.set_meta("choice_blocked", blocked)
 	tile.set_meta("choice_disabled_reason", blocked_reason)
 	tile.tooltip_text = ""
-	tile.accessibility_description = blocked_reason if blocked else ""
-	tile.mouse_default_cursor_shape = (
-		Control.CURSOR_FORBIDDEN if blocked else Control.CURSOR_POINTING_HAND
+	tile.accessibility_description = (
+		blocked_reason
+		if blocked
+		else "不符合当前检索条件，仅可查看"
+		if read_only
+		else ""
 	)
-	_apply_card_tile_style(tile, selected, hovered, blocked)
+	tile.mouse_default_cursor_shape = (
+		Control.CURSOR_FORBIDDEN
+		if blocked
+		else Control.CURSOR_HELP
+		if read_only
+		else Control.CURSOR_POINTING_HAND
+	)
+	_apply_card_tile_style(tile, selected, hovered, blocked, read_only)
 	var card_view := _option_cards.get(option_id) as CardView
 	if card_view:
 		# CardView renders disabled reasons as an in-card interaction overlay. Choice
@@ -800,12 +966,21 @@ func _refresh_card_tile_visual(option_id: String) -> void:
 			else DesignTokens.RED
 			if blocked
 			else DesignTokens.TEXT
+			if read_only and hovered
+			else DesignTokens.TEXT_MUTED
+			if read_only
+			else DesignTokens.TEXT
 			if hovered
 			else DesignTokens.TEXT_MUTED,
 		)
 		caption.tooltip_text = ""
 		caption.accessibility_description = (
-			blocked_reason if blocked else str(_option_labels.get(option_id, ""))
+			blocked_reason
+			if blocked
+			else "%s，仅可查看，不符合当前检索条件" % str(
+				_option_labels.get(option_id, ""))
+			if read_only
+			else str(_option_labels.get(option_id, ""))
 		)
 
 
@@ -814,6 +989,7 @@ func _apply_card_tile_style(
 	selected: bool,
 	hovered: bool,
 	blocked: bool,
+	read_only: bool = false,
 ) -> void:
 	var background := Color(0.06, 0.11, 0.18, 0.88)
 	var border := DesignTokens.BORDER_SOFT
@@ -825,6 +1001,10 @@ func _apply_card_tile_style(
 	elif blocked:
 		background = Color(0.06, 0.10, 0.16, 0.92)
 		border = Color(DesignTokens.RED, 0.58 if hovered else 0.34)
+		border_width = 2 if hovered else 1
+	elif read_only:
+		background = Color(0.045, 0.07, 0.105, 0.90)
+		border = Color(DesignTokens.TEXT_MUTED, 0.46 if hovered else 0.22)
 		border_width = 2 if hovered else 1
 	elif hovered:
 		background = Color(0.075, 0.14, 0.215, 0.94)
@@ -1035,6 +1215,14 @@ func _apply_responsive_layout() -> void:
 	var has_preview := not _previewed_card_id.is_empty()
 	var compact_preview := available_width < 820.0
 	_compact_choice_layout = compact_preview
+	if browse_mode_label:
+		browse_mode_label.visible = available_width >= 480.0
+	if browse_valid_button and browse_all_button:
+		var browse_button_width := 0.0 if available_width < 480.0 else 118.0
+		browse_valid_button.custom_minimum_size = Vector2(
+			browse_button_width, 48.0)
+		browse_all_button.custom_minimum_size = Vector2(
+			browse_button_width, 48.0)
 	if prompt_label:
 		prompt_label.visible = (
 			not prompt_label.text.is_empty()

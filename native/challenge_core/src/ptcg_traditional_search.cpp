@@ -155,6 +155,7 @@ struct ReplyResult {
     std::size_t completed_depth = 0;
     std::string completion_reason = "frontier_exhausted";
     std::string opponent_strategy_id;
+    std::shared_ptr<RulesSession> resulting_position;
 };
 
 ReplyResult score_opponent_response(
@@ -168,9 +169,11 @@ ReplyResult score_opponent_response(
 ) {
     ReplyResult output;
     output.score_milli = provider.state_score_milli(*root_node.state, actor);
+    output.resulting_position = root_node.state;
     if (provider.terminal(*root_node.state)) return output;
     auto projected_reply = root_node.state->fork_for_reply_search();
     std::shared_ptr<RulesSession> reply_root(projected_reply.release());
+    output.resulting_position = reply_root;
 
     if (provider.decision_actor(*reply_root) == actor) {
         const auto legal = provider.ranked_actions(
@@ -200,6 +203,7 @@ ReplyResult score_opponent_response(
             return output;
         }
         reply_root = std::move(yielded.state);
+        output.resulting_position = reply_root;
         trace.append(
             "reply_yield|state=" + provider.state_fingerprint(*reply_root));
         output.score_milli = provider.state_score_milli(*reply_root, actor);
@@ -344,14 +348,17 @@ ReplyResult score_opponent_response(
     }
     if (have_complete) {
         output.score_milli = worst_complete.score_milli;
+        output.resulting_position = worst_complete.state;
     } else if (!frontier.empty()) {
-        output.score_milli = std::min_element(
+        const auto worst = std::min_element(
             frontier.begin(), frontier.end(),
             [](const ReplyNode &left, const ReplyNode &right) {
                 return left.score_milli != right.score_milli
                     ? left.score_milli < right.score_milli
                     : left.sequence_signature < right.sequence_signature;
-            })->score_milli;
+            });
+        output.score_milli = worst->score_milli;
+        output.resulting_position = worst->state;
     }
     return output;
 }
@@ -706,6 +713,37 @@ TraditionalTurnBeamSearch::TraditionalTurnBeamSearch(
     TraditionalSearchConfig config
 ) : provider_(provider), config_(config) {
     config_.validate();
+}
+
+TraditionalReplyEvaluation TraditionalTurnBeamSearch::evaluate_reply(
+    const RulesSession &post_turn_position,
+    std::int32_t actor,
+    std::uint32_t seed,
+    const std::atomic<bool> *cancel_requested
+) {
+    TraditionalReplyEvaluation output;
+    if (actor < 0 || actor > 1) {
+        output.completion_reason = "invalid_actor";
+        return output;
+    }
+    auto fork = post_turn_position.fork_for_search(seed);
+    if (!fork) {
+        output.completion_reason = "rules_fork_failed";
+        return output;
+    }
+    Node root;
+    root.state = std::shared_ptr<RulesSession>(fork.release());
+    Trace trace{provider_, provider_.trace_seed(), 0};
+    const ReplyResult result = score_opponent_response(
+        provider_, config_, root, actor, seed, trace, cancel_requested);
+    output.score_milli = result.score_milli;
+    output.nodes_expanded = result.nodes_expanded;
+    output.cancelled = result.cancelled;
+    output.applicable = result.applicable;
+    output.completed_depth = result.completed_depth;
+    output.completion_reason = result.completion_reason;
+    output.resulting_position = result.resulting_position;
+    return output;
 }
 
 TraditionalSearchResult TraditionalTurnBeamSearch::search(

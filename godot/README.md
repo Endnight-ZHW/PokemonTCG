@@ -133,7 +133,8 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 `choice-energy-compact.png` 的逐张能量分配基线，用于人工检查全屏背景、视觉层级、目标状态、
 溢出和长文案。`choice-switch-confirm.png`、`choice-treasure-energy.png`、
 `choice-treasure-energy-compact.png` 与 `choice-exp-share-confirm.png` 额外覆盖换位、宝藏能量和
-学习装置的真实语义选择。它不代替 Windows/Android
+学习装置的真实语义选择；`choice-deck-search-valid.png`、`choice-deck-search-all.png` 与
+`choice-deck-search-compact.png` 覆盖牌库检索的可选/全部切换、只读卡牌和紧凑滚动。它不代替 Windows/Android
 调试导出与真机烟雾测试。
 
 发布包构建：

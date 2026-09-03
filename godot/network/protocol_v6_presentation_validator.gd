@@ -58,14 +58,16 @@ static func _validate_choice_view(value: Variant) -> Dictionary:
 		return _invalid("invalid_payload", "ChoiceView 字段无效。")
 	if int(request["min_select"]) > int(request["max_select"]):
 		return _invalid("invalid_payload", "选择数量范围无效。")
-	if not _validate_choice_presentation(request["presentation"]):
+	if not _validate_choice_presentation(
+		request["presentation"], int(request["player"]), str(request["request_type"])
+	):
 		return _invalid("invalid_payload", "ChoiceView presentation 字段无效。")
 	var is_hidden_prize_choice := str(request["request_type"]) == "select_prize"
 	if is_hidden_prize_choice:
 		var prize_presentation: Dictionary = request["presentation"]
 		for identity_field in [
 			"card_ids", "revealed_card_ids", "top_card_id", "attachment_refs",
-			"source_card_id", "card_id", "labels",
+			"browse_card_refs", "source_card_id", "card_id", "labels",
 		]:
 			if prize_presentation.has(identity_field):
 				return _invalid(
@@ -102,7 +104,11 @@ static func _validate_choice_view(value: Variant) -> Dictionary:
 	return {"ok": true}
 
 
-static func _validate_choice_presentation(presentation: Dictionary) -> bool:
+static func _validate_choice_presentation(
+	presentation: Dictionary,
+	request_player: int,
+	request_type: String,
+) -> bool:
 	if not _json_tree_is_bounded(presentation):
 		return false
 	for field in presentation:
@@ -156,6 +162,35 @@ static func _validate_choice_presentation(presentation: Dictionary) -> bool:
 		for ref in refs:
 			if not _validate_entity_ref(ref) and not _validate_attachment_unit_ref(ref):
 				return false
+	if presentation.has("browse_card_refs"):
+		if (
+			request_type == "select_prize"
+			or str(presentation.get("domain", "")) != "search"
+			or int(presentation.get("source_player", -1)) != request_player
+			or str(presentation.get("source_zone", "")) != "deck"
+		):
+			return false
+		var browse_refs: Variant = presentation["browse_card_refs"]
+		if not browse_refs is Array or Array(browse_refs).size() > MAX_DECK_CARDS:
+			return false
+		var seen_indices: Dictionary = {}
+		for ref_value in Array(browse_refs):
+			if not _validate_entity_ref(ref_value):
+				return false
+			var ref: Dictionary = ref_value
+			var browse_index := int(ref.get("index", -1))
+			if (
+				str(ref.get("kind", "")) != "card"
+				or int(ref.get("player", -1)) != request_player
+				or str(ref.get("zone", "")) != "deck"
+				or browse_index < 0
+				or browse_index >= MAX_DECK_CARDS
+				or seen_indices.has(browse_index)
+				or not _bounded_string(
+					ref.get("card_id", ""), MAX_IDENTIFIER_BYTES)
+			):
+				return false
+			seen_indices[browse_index] = true
 	if presentation.has("predetermined_flips"):
 		var flips: Variant = presentation["predetermined_flips"]
 		if not flips is Array or Array(flips).size() > MAX_CHOICE_OPTIONS:

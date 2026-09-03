@@ -725,7 +725,8 @@ sequenceDiagram
 
 1. Godot 提交完整 Action V4；核心核对 schema、revision、actor、来源、目标和合法动作。
 2. 核心在事务内执行 VM 与结算栈，并独占 RNG。
-3. 如果需要玩家选择，生成可序列化 ChoiceView v2 与 continuation 并暂停。
+3. 如果需要玩家选择，生成可序列化 ChoiceView v2 与 continuation 并暂停。整副牌库检索通过
+   owner-only `presentation.browse_card_refs` 携带只读浏览引用；`options` 仍是唯一合法选择集合。
 4. UI 按对象路由：唯一场上目标直接高亮卡牌；隐藏区、歧义目标和多选显示
    `choice_panel.tscn`；能量分配与硬币分别使用专用卡牌面板和硬币动画。
 5. `NativeRulesSessionAdapter.apply_choice()` 把 ChoiceResponse 原样交给核心验证 request ID、revision 和选项。

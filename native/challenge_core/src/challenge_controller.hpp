@@ -4,8 +4,10 @@
 #include "ptcg_traditional_strategy.hpp"
 #include "ptcg_traditional_trusted.hpp"
 #include "ptcg_value.hpp"
+#include "planner_v3/strategic_intent_planner.hpp"
 
 #include <atomic>
+#include <array>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -40,6 +42,12 @@ private:
         std::vector<CachedPlanStep> steps;
         std::int64_t last_revision = -1;
     };
+    struct DeckInspectionMemory {
+        Value::Array prize_cards;
+        std::string match_instance_id;
+        std::int64_t learned_revision = -1;
+        bool valid = false;
+    };
 
     Value decide_action(const Value &request, std::int64_t generation);
     Value decide_choice(const Value &request, std::int64_t generation);
@@ -69,12 +77,21 @@ private:
         std::int64_t revision,
         const TraditionalSearchResult &result
     );
+    bool apply_deck_inspection_memory(
+        const Value &request,
+        class TraditionalInformationSet &information_set
+    );
+    void remember_deck_inspection(
+        const Value &request,
+        const TraditionalInformationSet &information_set
+    );
 
     Value catalog_ = Value::make_object();
     Value decks_ = Value::make_object();
     Value strategies_ = Value::make_object();
     std::unique_ptr<TraditionalStrategyCatalog> strategy_catalog_;
     std::unique_ptr<TraditionalTrustedEvaluator> trusted_evaluator_;
+    std::unique_ptr<planner_v3::StrategicIntentPlanner> strategic_planner_;
     std::string active_match_instance_id_;
     std::atomic<std::int64_t> cancelled_through_generation_{0};
     std::atomic<std::int64_t> active_generation_{0};
@@ -83,6 +100,7 @@ private:
     std::vector<std::string> action_cycle_order_;
     std::map<std::string, CachedPlanEntry> turn_plan_cache_;
     std::vector<std::string> turn_plan_cache_order_;
+    std::array<DeckInspectionMemory, 2> deck_inspection_memory_{};
     bool configured_ = false;
 };
 

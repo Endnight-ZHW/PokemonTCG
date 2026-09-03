@@ -133,6 +133,50 @@ class ChallengeArenaTaskTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "search_contract_mismatch"):
             validate_equal_search_contract(candidate, baseline)
 
+    def test_engine_ab_keeps_equal_work_budget(self) -> None:
+        strategies = {"schema": "test"}
+        candidate = ArenaAgentSpec(
+            "candidate", "a", strategies,
+            {"engine": "strategic_intent_v3", "node_budget": 192,
+             "belief_samples": 3},
+        )
+        baseline = ArenaAgentSpec(
+            "baseline", "b", strategies,
+            {"engine": "turn_beam_v2", "node_budget": 192,
+             "belief_samples": 3},
+        )
+        validate_equal_search_contract(candidate, baseline)
+
+    def test_deck_inspection_ab_keeps_equal_work_budget(self) -> None:
+        strategies = {"schema": "test"}
+        candidate = ArenaAgentSpec(
+            "candidate", "a", strategies,
+            {"engine": "turn_beam_v2", "node_budget": 192,
+             "belief_samples": 3, "use_deck_inspection": True},
+        )
+        baseline = ArenaAgentSpec(
+            "baseline", "b", strategies,
+            {"engine": "turn_beam_v2", "node_budget": 192,
+             "belief_samples": 3, "use_deck_inspection": False},
+        )
+        validate_equal_search_contract(candidate, baseline)
+
+    def test_strategy_optimization_ab_keeps_equal_work_budget(self) -> None:
+        strategies = {"schema": "test"}
+        candidate = ArenaAgentSpec(
+            "candidate", "a", strategies,
+            {"engine": "strategic_intent_v3", "node_budget": 192,
+             "belief_samples": 3, "use_deck_inspection": True,
+             "use_strategy_optimization": True},
+        )
+        baseline = ArenaAgentSpec(
+            "baseline", "b", strategies,
+            {"engine": "strategic_intent_v3", "node_budget": 192,
+             "belief_samples": 3, "use_deck_inspection": True,
+             "use_strategy_optimization": False},
+        )
+        validate_equal_search_contract(candidate, baseline)
+
     def test_watchdog_must_be_equal_but_is_not_a_search_budget(self) -> None:
         strategies = {"schema": "test"}
         candidate = ArenaAgentSpec(

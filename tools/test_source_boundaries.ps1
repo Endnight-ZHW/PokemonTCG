@@ -84,9 +84,12 @@ function Assert-SourceManifest {
             throw "Missing source manifest entry target '$name': $manifestPath"
         }
     }
+    $sourceRoot = Join-Path $ComponentRoot 'src'
     $actual = @(
-        Get-ChildItem -LiteralPath (Join-Path $ComponentRoot 'src') `
-            -Filter '*.cpp' -File | ForEach-Object Name | Sort-Object
+        Get-ChildItem -LiteralPath $sourceRoot -Recurse `
+            -Filter '*.cpp' -File | ForEach-Object {
+                [IO.Path]::GetRelativePath($sourceRoot, $_.FullName).Replace('\', '/')
+            } | Sort-Object
     )
     $expected = @($listed | Sort-Object)
     $difference = @(Compare-Object $expected $actual)

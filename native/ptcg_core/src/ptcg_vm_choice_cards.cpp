@@ -637,7 +637,7 @@ bool resume_vm_cards(
                     "deck",
                     "pokemon"
                 );
-                if (options.empty()) {
+                if (required(self, "deck").as_array().empty()) {
                     shuffle_array(
                         required(self, "deck").as_array(),
                         rng
@@ -649,17 +649,22 @@ bool resume_vm_cards(
                 }
                 Value continued = continuation;
                 continued["stage"] = Value(1);
+                const std::int64_t search_maximum =
+                    options.empty() ? 0 : 1;
+                Value request = pending_request(
+                    "search_move",
+                    actor,
+                    0,
+                    search_maximum,
+                    false,
+                    false,
+                    std::move(options),
+                    "search_move"
+                );
+                decorate_deck_search_request(
+                    request, cards, self, actor);
                 next(
-                    pending_request(
-                        "search_move",
-                        actor,
-                        0,
-                        1,
-                        false,
-                        false,
-                        std::move(options),
-                        "search_move"
-                    ),
+                    std::move(request),
                     std::move(continued)
                 );
             } else {

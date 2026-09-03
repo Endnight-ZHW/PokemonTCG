@@ -431,6 +431,233 @@ void verify_look_top_reveal_choice_contract(const Value &cards) {
     );
 }
 
+void verify_deck_search_browse_contract(const Value &cards) {
+    using ptcg::ai::NativeRulesKernel;
+    using namespace ptcg::ai::session_detail;
+
+    const Value energy_search(Object{
+        {"op", Value("search_cards")},
+        {"args", Value(Object{
+            {"count", Value(2)},
+            {"min_select", Value(0)},
+            {"destination", Value("hand")},
+            {"filter", Value("energy")},
+            {"from_zone", Value("deck")},
+        })},
+        {"branches", Value::make_object()},
+    });
+    Value mixed_state(Object{
+        {"players", Value(Array{
+            empty_player("Player 1", Array{
+                Value("test-basic"),
+                Value("test-water-energy"),
+                Value("test-weak"),
+                Value("test-water-energy"),
+            }),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+        {"revision", Value(7)},
+    });
+    NativeRulesKernel kernel(cards.deep_clone());
+    const auto mixed = kernel.execute(
+        mixed_state, energy_search, 0, "", 0x42524F57U, "trainer");
+    require(
+        mixed.success && mixed.pending.is_object()
+            && mixed.pending.find("options")->as_array().size() == 2,
+        "filtered deck search did not preserve its legal option set"
+    );
+    const Value *raw_presentation = mixed.pending.find("presentation");
+    const Value *raw_browse = raw_presentation != nullptr
+        ? raw_presentation->find("browse_card_refs") : nullptr;
+    require(
+        raw_browse != nullptr && raw_browse->is_array()
+            && raw_browse->as_array().size() == 4,
+        "filtered deck search did not retain every remaining deck card"
+    );
+    Value projected_state = mixed.state.deep_clone();
+    const Value projected = public_choice(projected_state, mixed.pending);
+    const Value *projected_browse = projected.find("presentation")
+        ->find("browse_card_refs");
+    require(
+        projected_browse != nullptr && projected_browse->is_array()
+            && projected_browse->as_array().size() == 4
+            && projected_browse->as_array()[0].find("kind")->string_or()
+                == "card"
+            && projected_browse->as_array()[0].find("player")->as_integer(-1)
+                == 0
+            && projected_browse->as_array()[0].find("zone")->string_or()
+                == "deck",
+        "ChoiceView lost or malformed its owner-only deck browse refs"
+    );
+    Value duplicate_ref_pending = mixed.pending.deep_clone();
+    Value &duplicate_entry = duplicate_ref_pending.find("presentation")
+        ->find("browse_card_refs")->as_array()[1];
+    Value *duplicate_ref = duplicate_entry.find("ref");
+    if (duplicate_ref == nullptr || !duplicate_ref->is_object()) {
+        duplicate_ref = &duplicate_entry;
+    }
+    (*duplicate_ref)["index"] = Value(0);
+    const Value duplicate_projection = public_choice(
+        projected_state, duplicate_ref_pending);
+    require(
+        duplicate_projection.find("presentation")
+            ->find("browse_card_refs") == nullptr,
+        "ChoiceView projected duplicate deck browse references"
+    );
+    Value opponent_source_pending = mixed.pending.deep_clone();
+    (*opponent_source_pending.find("presentation"))["source_player"] = Value(1);
+    const Value opponent_source_projection = public_choice(
+        projected_state, opponent_source_pending);
+    require(
+        opponent_source_projection.find("presentation")
+            ->find("browse_card_refs") == nullptr,
+        "ChoiceView projected an opponent-sourced deck browser"
+    );
+    const auto illegal_browse_selection = kernel.resume(
+        mixed.state.deep_clone(),
+        mixed.context.deep_clone(),
+        mixed.continuation,
+        Value(Array{raw_browse->as_array().front().deep_clone()}),
+        false,
+        mixed.rng_state
+    );
+    require(
+        !illegal_browse_selection.success,
+        "a browse-only non-matching card was accepted as a legal selection"
+    );
+
+    Value no_match_state(Object{
+        {"players", Value(Array{
+            empty_player("Player 1", Array{
+                Value("test-basic"), Value("test-weak"),
+            }),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+        {"revision", Value(8)},
+    });
+    const auto no_match = kernel.execute(
+        no_match_state, energy_search, 0, "", 0x4E4F4D41U, "trainer");
+    const Value *no_match_browse = no_match.pending.find("presentation")
+        ->find("browse_card_refs");
+    require(
+        no_match.success && no_match.pending.is_object()
+            && no_match.pending.find("options")->as_array().empty()
+            && no_match.pending.find("min_select")->as_integer(-1) == 0
+            && no_match.pending.find("max_select")->as_integer(-1) == 0
+            && !no_match.pending.find("can_cancel")->as_bool()
+            && no_match_browse != nullptr && no_match_browse->is_array()
+            && no_match_browse->as_array().size() == 2,
+        "no-match deck search did not suspend for owner inspection"
+    );
+    const auto no_match_resolved = kernel.resume(
+        no_match.state.deep_clone(),
+        no_match.context.deep_clone(),
+        no_match.continuation,
+        Value::make_array(),
+        false,
+        no_match.rng_state
+    );
+    require(
+        no_match_resolved.success
+            && std::find(
+                no_match_resolved.event_types.begin(),
+                no_match_resolved.event_types.end(),
+                "deck_shuffled"
+            ) != no_match_resolved.event_types.end(),
+        "no-match deck inspection did not resume and shuffle the deck"
+    );
+
+    Value empty_deck_state(Object{
+        {"players", Value(Array{
+            empty_player("Player 1", Array{}),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+        {"revision", Value(9)},
+    });
+    const auto empty_deck = kernel.execute(
+        empty_deck_state, energy_search, 0, "", 0x454D5054U, "trainer");
+    require(
+        empty_deck.success && empty_deck.pending.is_object()
+            && empty_deck.pending.as_object().empty(),
+        "an actually empty deck created a pointless browse request"
+    );
+
+    Value paid_owner = empty_player(
+        "Player 1", Array{Value("test-water-energy")});
+    paid_owner["hand"] = Value(Array{
+        Value("test-water-energy"), Value("test-water-energy"),
+    });
+    Value paid_state(Object{
+        {"players", Value(Array{
+            std::move(paid_owner),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+        {"revision", Value(10)},
+    });
+    const Value paid_search(Object{
+        {"op", Value("conditional")},
+        {"args", Value::make_object()},
+        {"branches", Value::make_object()},
+    });
+    const auto paid = kernel.execute(
+        paid_state, paid_search, 0, "", 0x50414944U, "trainer");
+    const Value &paid_player = paid.state.find("players")->as_array()[0];
+    require(
+        paid.success && paid.pending.is_object()
+            && paid.pending.find("options")->as_array().empty()
+            && paid.pending.find("max_select")->as_integer(-1) == 0
+            && paid.pending.find("presentation")
+                ->find("browse_card_refs")->as_array().size() == 1
+            && paid_player.find("hand")->as_array().empty()
+            && paid_player.find("discard")->as_array().size() == 2,
+        "a paid no-match search rolled back its cost or skipped inspection"
+    );
+    const auto paid_resolved = kernel.resume(
+        paid.state.deep_clone(),
+        paid.context.deep_clone(),
+        paid.continuation,
+        Value::make_array(),
+        false,
+        paid.rng_state
+    );
+    require(
+        paid_resolved.success
+            && paid_resolved.state.find("players")->as_array()[0]
+                .find("discard")->as_array().size() == 2,
+        "paid no-match deck inspection did not preserve its discarded cost"
+    );
+
+    Value discard_owner = empty_player(
+        "Player 1", Array{Value("test-basic")});
+    discard_owner["discard"] = Value(Array{
+        Value("test-water-energy"), Value("test-basic"),
+    });
+    Value discard_state(Object{
+        {"players", Value(Array{
+            std::move(discard_owner),
+            empty_player("Player 2", Array{Value("test-basic")}),
+        })},
+        {"choice_sequence", Value(0)},
+        {"revision", Value(9)},
+    });
+    Value discard_search = energy_search.deep_clone();
+    (*discard_search.find("args"))["from_zone"] = Value("discard");
+    const auto discard_started = kernel.execute(
+        discard_state, discard_search, 0, "", 0x44495343U, "trainer");
+    const Value *discard_presentation = discard_started.pending.find(
+        "presentation");
+    require(
+        discard_started.success && discard_started.pending.is_object()
+            && (discard_presentation == nullptr
+                || discard_presentation->find("browse_card_refs") == nullptr),
+        "non-deck recovery incorrectly exposed a deck browser"
+    );
+}
+
 void verify_information_visibility_contract(const Value &cards) {
     using ptcg::ai::NativeRulesKernel;
     using namespace ptcg::ai::session_detail;
@@ -1170,6 +1397,7 @@ int main() {
         verify_trekking_shoes_choice_contract(cards);
         verify_tatsugiri_action_and_retreat_contract(cards);
         verify_look_top_reveal_choice_contract(cards);
+        verify_deck_search_browse_contract(cards);
         verify_information_visibility_contract(cards);
         verify_choice_projection_localization();
         verify_optional_switch_choice_contract(cards);

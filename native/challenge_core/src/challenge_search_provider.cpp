@@ -24,12 +24,14 @@ using namespace challenge;
         ptcg::ai::Value decks,
         ptcg::ai::Value strategies,
         std::int32_t root_actor,
-        const ptcg::ai::TraditionalInformationSet *information_set
+        const ptcg::ai::TraditionalInformationSet *information_set,
+        bool strategy_optimization
     ) : catalog_(std::move(catalog)),
         decks_(std::move(decks)), evaluator_(catalog_),
         strategy_catalog_(std::move(strategies), catalog_),
         trusted_evaluator_(catalog_, decks_, strategy_catalog_),
-        information_set_(information_set), root_actor_(root_actor) {
+        information_set_(information_set), root_actor_(root_actor),
+        strategy_optimization_(strategy_optimization) {
         const ptcg::ai::Value *cards = catalog_.find("cards");
         cards_ = cards != nullptr && cards->is_object() ? *cards : catalog_;
     }
@@ -55,6 +57,9 @@ using namespace challenge;
             known_reply_actions_promoted_.load(std::memory_order_relaxed));
         counters["simulated_action_score_calls"] = static_cast<int64_t>(
             simulated_action_score_calls_.load(std::memory_order_relaxed));
+        counters["prize_aware_choice_adjustments"] = static_cast<int64_t>(
+            prize_aware_choice_adjustments_.load(std::memory_order_relaxed));
+        counters["strategy_optimization_enabled"] = strategy_optimization_;
         return counters;
     }
 

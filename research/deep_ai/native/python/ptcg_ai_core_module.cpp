@@ -766,6 +766,12 @@ py::dict challenge_arena_game_to_python(
     result["baseline_forced_tactics"] = source.baseline_forced_tactics;
     result["candidate_plan_cache_hits"] = source.candidate_plan_cache_hits;
     result["baseline_plan_cache_hits"] = source.baseline_plan_cache_hits;
+    result["candidate_deck_inspections"] = source.candidate_deck_inspections;
+    result["baseline_deck_inspections"] = source.baseline_deck_inspections;
+    result["candidate_inspection_memory_decisions"] =
+        source.candidate_inspection_memory_decisions;
+    result["baseline_inspection_memory_decisions"] =
+        source.baseline_inspection_memory_decisions;
     result["candidate_completed_depth"] = source.candidate_completed_depth;
     result["baseline_completed_depth"] = source.baseline_completed_depth;
     result["candidate_reply_depth"] = source.candidate_reply_depth;

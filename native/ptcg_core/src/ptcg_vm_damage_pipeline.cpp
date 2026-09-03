@@ -170,21 +170,26 @@ bool execute_vm_damage_pipeline(
                 continued["stage"] = Value(1);
                 Array search_options = zone_options(
                     cards, self, actor, "deck", "pokemon");
-                if (search_options.empty()) {
+                if (required(self, "deck").as_array().empty()) {
                     shuffle_array(required(self, "deck").as_array(), rng);
                     result.event_types.emplace_back("deck_shuffled");
                 } else {
+                    const std::int64_t search_maximum =
+                        search_options.empty() ? 0 : 1;
+                    Value request = pending_request(
+                        "search_move",
+                        actor,
+                        0,
+                        search_maximum,
+                        false,
+                        false,
+                        std::move(search_options),
+                        "search_move"
+                    );
+                    decorate_deck_search_request(
+                        request, cards, self, actor);
                     suspend(
-                        pending_request(
-                            "search_move",
-                            actor,
-                            0,
-                            1,
-                            false,
-                            false,
-                            std::move(search_options),
-                            "search_move"
-                        ),
+                        std::move(request),
                         std::move(continued)
                     );
                 }
@@ -240,7 +245,7 @@ bool execute_vm_damage_pipeline(
                 "deck",
                 string_arg(args, "filter", "any")
             );
-            if (options.empty()) {
+            if (required(self, "deck").as_array().empty()) {
                 shuffle_array(required(self, "deck").as_array(), rng);
                 result.event_types.emplace_back("deck_shuffled");
                 result.success = true;
@@ -252,17 +257,23 @@ bool execute_vm_damage_pipeline(
                 static_cast<std::int64_t>(options.size())
             );
             const std::int64_t minimum = 0;
+            if (count <= 0) {
+                options.clear();
+            }
+            Value request = pending_request(
+                "search_move",
+                actor,
+                minimum,
+                count,
+                false,
+                count > 0,
+                std::move(options),
+                "search_move"
+            );
+            decorate_deck_search_request(
+                request, cards, self, actor);
             suspend(
-                pending_request(
-                    "search_move",
-                    actor,
-                    minimum,
-                    count,
-                    false,
-                    true,
-                    std::move(options),
-                    "search_move"
-                ),
+                std::move(request),
                 make_continuation(
                     op,
                     command_spec,

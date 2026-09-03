@@ -79,6 +79,7 @@ Array rare_candy_options( const Value &cards, Value &player_value, std::int32_t 
 bool card_matches_filter( const Value &cards, const std::string &id, const std::string &filter );
 Array zone_options( const Value &cards, const Value &player_value, std::int32_t owner, const std::string &zone, const std::string &filter, std::int64_t first_index = 0, std::int64_t last_index = std::numeric_limits<std::int64_t>::max(), bool descending = false, const std::string &filter_name = "" );
 Value pending_request( const std::string &request_type, std::int32_t actor, std::int64_t min_select, std::int64_t max_select, bool allow_duplicates, bool can_cancel, Array options, const std::string &continuation_kind );
+void decorate_deck_search_request( Value &request, const Value &cards, const Value &player_value, std::int32_t actor );
 void increment_integer(Value &object, const std::string &key);
 Value make_continuation( const std::string &op, const Value &command_spec, std::int32_t actor, const std::string &source_slot, std::int64_t stage = 0 );
 std::vector<std::size_t> selected_indices( const Value &selected_options, const std::string &zone );

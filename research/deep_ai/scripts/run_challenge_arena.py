@@ -37,6 +37,32 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--candidate", default="challenge_next")
     parser.add_argument("--baseline", default="challenge_release_v1")
+    parser.add_argument(
+        "--candidate-engine",
+        choices=("turn_beam_v2", "strategic_intent_v3"),
+    )
+    parser.add_argument(
+        "--baseline-engine",
+        choices=("turn_beam_v2", "strategic_intent_v3"),
+    )
+    parser.add_argument(
+        "--candidate-deck-inspection",
+        choices=("enabled", "disabled"),
+        help="A/B treatment: let the candidate use owner-only full-deck browse data.",
+    )
+    parser.add_argument(
+        "--baseline-deck-inspection",
+        choices=("enabled", "disabled"),
+        help="A/B treatment: let the baseline use owner-only full-deck browse data.",
+    )
+    parser.add_argument(
+        "--candidate-strategy-optimization",
+        choices=("enabled", "disabled"),
+    )
+    parser.add_argument(
+        "--baseline-strategy-optimization",
+        choices=("enabled", "disabled"),
+    )
     parser.add_argument("--candidate-build-manifest", type=Path)
     parser.add_argument("--baseline-build-manifest", type=Path)
     parser.add_argument(
@@ -130,6 +156,62 @@ def main(argv: list[str] | None = None) -> int:
         product_strategies=product_strategies,
         build_manifest=args.baseline_build_manifest,
     )
+    if args.candidate_engine:
+        candidate = replace(
+            candidate,
+            evaluation_options={
+                **dict(candidate.evaluation_options),
+                "engine": args.candidate_engine,
+            },
+        )
+    if args.baseline_engine:
+        baseline = replace(
+            baseline,
+            evaluation_options={
+                **dict(baseline.evaluation_options),
+                "engine": args.baseline_engine,
+            },
+        )
+    if args.candidate_deck_inspection:
+        candidate = replace(
+            candidate,
+            evaluation_options={
+                **dict(candidate.evaluation_options),
+                "use_deck_inspection": (
+                    args.candidate_deck_inspection == "enabled"
+                ),
+            },
+        )
+    if args.baseline_deck_inspection:
+        baseline = replace(
+            baseline,
+            evaluation_options={
+                **dict(baseline.evaluation_options),
+                "use_deck_inspection": (
+                    args.baseline_deck_inspection == "enabled"
+                ),
+            },
+        )
+    if args.candidate_strategy_optimization:
+        candidate = replace(
+            candidate,
+            evaluation_options={
+                **dict(candidate.evaluation_options),
+                "use_strategy_optimization": (
+                    args.candidate_strategy_optimization == "enabled"
+                ),
+            },
+        )
+    if args.baseline_strategy_optimization:
+        baseline = replace(
+            baseline,
+            evaluation_options={
+                **dict(baseline.evaluation_options),
+                "use_strategy_optimization": (
+                    args.baseline_strategy_optimization == "enabled"
+                ),
+            },
+        )
     if args.decision_timeout_milliseconds <= 0:
         raise ValueError("decision_timeout_milliseconds_must_be_positive")
     candidate = replace(

@@ -101,8 +101,8 @@ bool execute_vm_trigger_pipeline(
                     if (filter != "any") {
                         minimum = 0;
                     }
-                    // A zero-card hidden search resolves the effect. It must
-                    // not roll back a Trainer or a cost that was already paid.
+                    // Failing a hidden-zone search must not roll back a
+                    // Trainer or a cost that was already paid.
                     can_cancel = minimum == 0 && context_mode != "trainer";
                 }
             }
@@ -119,6 +119,9 @@ bool execute_vm_trigger_pipeline(
                     ? string_arg(args, "filter_name")
                     : std::string{}
             );
+            const bool deck_search = source_zone == "deck";
+            const bool deck_has_cards = deck_search
+                && !required(self, "deck").as_array().empty();
             if (
                 op == "search_cards"
                 && string_arg(args, "destination", "hand") == "bench"
@@ -133,7 +136,7 @@ bool execute_vm_trigger_pipeline(
                     )
                 );
             }
-            if (options.empty()) {
+            if (options.empty() && !deck_has_cards) {
                 if (source_zone == "deck") {
                     shuffle_array(
                         required(self, "deck").as_array(),
@@ -145,7 +148,7 @@ bool execute_vm_trigger_pipeline(
                 result.rng_state = rng.state();
                 early_return = true; return true;
             }
-            if (maximum <= 0) {
+            if (maximum <= 0 && !deck_has_cards) {
                 if (source_zone == "deck") {
                     shuffle_array(
                         required(self, "deck").as_array(),
@@ -162,13 +165,18 @@ bool execute_vm_trigger_pipeline(
                 static_cast<std::int64_t>(options.size())
             );
             minimum = std::min(minimum, maximum);
+            if (maximum <= 0) {
+                options.clear();
+            }
+            const bool request_can_cancel = can_cancel
+                && maximum > 0 && !options.empty();
             Value request = pending_request(
                 request_type,
                 actor,
                 minimum,
                 maximum,
                 false,
-                can_cancel,
+                request_can_cancel,
                 std::move(options),
                 continuation_kind
             );
@@ -181,6 +189,10 @@ bool execute_vm_trigger_pipeline(
                     {"domain", Value("search")},
                     {"purpose", Value("arven")},
                 });
+            }
+            if (deck_search) {
+                decorate_deck_search_request(
+                    request, cards, self, actor);
             }
             suspend(
                 std::move(request),

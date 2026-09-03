@@ -39,6 +39,7 @@ func _check_main_shell_contract() -> void:
 		"ModalSpec semantic button-role defaults changed",
 	)
 	_check_generic_choice_category_limits(main)
+	await _check_deck_browse_choice(main)
 	await _check_trekking_shoes_choice(main)
 	await _check_semantic_effect_choices(main)
 	await _check_native_energy_distribution_choice(main)
@@ -274,6 +275,140 @@ func _check_generic_choice_category_limits(main: Control) -> void:
 			request, "pokemon:0")).is_empty(),
 		"Generic ChoiceView category_limits were ignored by the player UI",
 	)
+	main.selected_choice_ids.clear()
+
+
+func _check_deck_browse_choice(main: Control) -> void:
+	var browse_refs: Array[Dictionary] = [
+		EntityRef.new("card", 0, "deck", "", 0, "", "svi-chim").to_dict(),
+		EntityRef.new("card", 0, "deck", "", 1, "", "svf-potion").to_dict(),
+		EntityRef.new("card", 0, "deck", "", 2, "", "sv1-ener-2").to_dict(),
+	]
+	var request := ChoiceView.new(
+		"choice:deck-browse-ui",
+		1,
+		"search_move",
+		0,
+		"请选择要搜寻的卡牌。",
+		[{
+			"option_id": "deck:legal",
+			"label": main.catalog.card_name("svi-chim"),
+			"ref": browse_refs[0],
+		}],
+		0,
+		1,
+		false,
+		false,
+		{
+			"domain": "search",
+			"purpose": "search_move",
+			"source_player": 0,
+			"source_zone": "deck",
+			"browse_card_refs": browse_refs,
+		},
+	)
+	main._show_choice_overlay(request)
+	await context._settle_layout(3)
+	var panel := main.active_choice_panel as ChoicePanel
+	context._check(
+		panel != null
+		and panel.browse_mode_row.visible
+		and not panel._deck_browse_show_all
+		and panel.browse_valid_button.text == "可选（1）"
+		and panel.browse_all_button.text == "全部（3）"
+		and panel.card_option_count() == 1,
+		"Deck search did not default to the legal-target view",
+	)
+	panel.browse_all_button.pressed.emit()
+	await context._settle_layout(2)
+	context._check(
+		panel._deck_browse_show_all
+		and panel.card_option_count() == 3
+		and panel._read_only_option_keys.size() == 2,
+		"Deck search All view did not include read-only non-matches",
+	)
+	var read_only_key := str(panel._read_only_option_keys.keys()[0])
+	var read_only_card_id := str(panel._option_card_ids.get(read_only_key, ""))
+	panel._request_card_option(read_only_key, read_only_card_id)
+	context._check(
+		main.selected_choice_ids.is_empty()
+		and panel.previewed_card_id() == read_only_card_id,
+		"A read-only deck card was selectable or could not be inspected",
+	)
+	main._toggle_choice("deck:legal")
+	panel.browse_valid_button.pressed.emit()
+	await context._settle_layout(2)
+	context._check(
+		main.selected_choice_ids == ["deck:legal"]
+		and panel.selected_count_for("deck:legal") == 1,
+		"Deck-browser mode switching discarded the legal selection",
+	)
+	main.modal_host_controller.close()
+	main.modal_host_controller.finish_close(main.modal_host_controller.generation)
+	main.selected_choice_ids.clear()
+
+	var large_browse_refs: Array[Dictionary] = []
+	var browse_card_ids: Array[String] = [
+		"svi-chim", "svf-potion", "sv1-ener-2",
+	]
+	for index in range(50):
+		large_browse_refs.append(EntityRef.new(
+			"card",
+			0,
+			"deck",
+			"",
+			index,
+			"",
+			browse_card_ids[index % browse_card_ids.size()],
+		).to_dict())
+	var no_match := ChoiceView.new(
+		"choice:deck-browse-empty-ui",
+		1,
+		"search_move",
+		0,
+		"请选择要搜寻的卡牌。",
+		[],
+		0,
+		0,
+		false,
+		false,
+		{
+			"domain": "search",
+			"purpose": "search_move",
+			"source_player": 0,
+			"source_zone": "deck",
+			"browse_card_refs": large_browse_refs,
+		},
+	)
+	main._show_choice_overlay(no_match)
+	await context._settle_layout(3)
+	panel = main.active_choice_panel as ChoicePanel
+	context._check(
+		panel != null
+		and panel._deck_browse_show_all
+		and panel.browse_valid_button.disabled
+		and panel.card_option_count() == 50
+		and panel.metadata_label.text.contains("没有符合条件")
+		and main.modal_confirm.text == "检查完毕并继续"
+		and not main.modal_confirm.disabled,
+		"A no-match deck search did not open its inspectable All view",
+	)
+	var previous_root_size := context.tree.root.size
+	context.tree.root.size = Vector2i(360, 640)
+	await context._settle_layout(4)
+	context._check(
+		not panel.browse_mode_label.visible
+		and panel.browse_mode_row.size.x <= panel.choice_column.size.x + 1.0
+		and main.modal_scroll.horizontal_scroll_mode
+			== ScrollContainer.SCROLL_MODE_DISABLED
+		and main.modal_scroll.get_v_scroll_bar().max_value
+			> main.modal_scroll.get_v_scroll_bar().page,
+		"The 50-card deck browser overflowed or stopped scrolling in compact layout",
+	)
+	context.tree.root.size = previous_root_size
+	await context._settle_layout(3)
+	main.modal_host_controller.close()
+	main.modal_host_controller.finish_close(main.modal_host_controller.generation)
 	main.selected_choice_ids.clear()
 
 

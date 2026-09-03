@@ -127,6 +127,105 @@ func _choice_option_display_card_id(
 			return target_card_id
 	return _choice_option_card_id(option)
 
+func _choice_card_ref_key(ref: Dictionary) -> String:
+	if (
+		str(ref.get("kind", "")) != "card"
+		or int(ref.get("player", -1)) not in [0, 1]
+		or str(ref.get("zone", "")) != "deck"
+		or int(ref.get("index", -1)) < 0
+		or str(ref.get("card_id", "")).is_empty()
+	):
+		return ""
+	return "%d|deck|%d|%s" % [
+		int(ref.get("player", -1)),
+		int(ref.get("index", -1)),
+		str(ref.get("card_id", "")),
+	]
+
+func _choice_deck_browse_refs(request: ChoiceView) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if request == null:
+		return result
+	for ref_value in _choice_presentation(request).get("browse_card_refs", []):
+		if not ref_value is Dictionary:
+			continue
+		var ref := Dictionary(ref_value)
+		if (
+			_choice_card_ref_key(ref).is_empty()
+			or int(ref.get("player", -1)) != request.player
+		):
+			continue
+		result.append(ref.duplicate(true))
+	return result
+
+func _choice_has_deck_browse(request: ChoiceView) -> bool:
+	return not _choice_deck_browse_refs(request).is_empty()
+
+func _choice_browse_category_rank(card_id: String) -> int:
+	if catalog == null:
+		return 3
+	match str(catalog.get_card(card_id).get("supertype", "")):
+		"Pokémon":
+			return 0
+		"Trainer":
+			return 1
+		"Energy":
+			return 2
+	return 3
+
+func _choice_deck_browse_rows(request: ChoiceView) -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	if request == null:
+		return rows
+	var legal_by_ref: Dictionary = {}
+	for option_value in request.options:
+		var option := Dictionary(option_value)
+		var ref_value: Variant = option.get("ref")
+		if not ref_value is Dictionary:
+			continue
+		var key := _choice_card_ref_key(Dictionary(ref_value))
+		if not key.is_empty():
+			legal_by_ref[key] = option.duplicate(true)
+	for ref in _choice_deck_browse_refs(request):
+		var key := _choice_card_ref_key(ref)
+		var legal_option: Dictionary = Dictionary(legal_by_ref.get(key, {}))
+		var selectable := not legal_option.is_empty()
+		var card_id := str(ref.get("card_id", ""))
+		var card_name := catalog.card_name(card_id) if catalog != null else card_id
+		var caption := (
+			_choice_option_caption(legal_option)
+			if selectable
+			else "%s · 仅查看" % card_name
+		)
+		rows.append({
+			"row_id": "browse:%s" % key,
+			"option_id": str(legal_option.get("option_id", "")),
+			"card_id": card_id,
+			"player": int(ref.get("player", request.player)),
+			"index": int(ref.get("index", -1)),
+			"selectable": selectable,
+			"caption": caption,
+		})
+	rows.sort_custom(func(left_value: Dictionary, right_value: Dictionary) -> bool:
+		var left_selectable := bool(left_value.get("selectable", false))
+		var right_selectable := bool(right_value.get("selectable", false))
+		if left_selectable != right_selectable:
+			return left_selectable
+		var left_id := str(left_value.get("card_id", ""))
+		var right_id := str(right_value.get("card_id", ""))
+		var left_category := _choice_browse_category_rank(left_id)
+		var right_category := _choice_browse_category_rank(right_id)
+		if left_category != right_category:
+			return left_category < right_category
+		var left_name := catalog.card_name(left_id) if catalog != null else left_id
+		var right_name := catalog.card_name(right_id) if catalog != null else right_id
+		var name_order := left_name.naturalnocasecmp_to(right_name)
+		if name_order != 0:
+			return name_order < 0
+		return int(left_value.get("index", -1)) < int(right_value.get("index", -1))
+	)
+	return rows
+
 func _choice_energy_distribution_view(
 	request: ChoiceView,
 	presentation_card_ids: Array[String],
@@ -498,7 +597,11 @@ func _choice_confirm_cta(request: ChoiceView, selected_count: int) -> String:
 	if request == null:
 		return "确认选择"
 	if request.max_select == 0:
-		return "继续结算"
+		return (
+			"检查完毕并继续"
+			if _choice_has_deck_browse(request)
+			else "继续结算"
+		)
 	if request.min_select == 0 and selected_count == 0:
 		return "不选择并继续"
 	if request.request_type == "select_retreat_payment":
@@ -1048,6 +1151,8 @@ func _choice_text_option_label(option: Dictionary, request: ChoiceView) -> Strin
 
 func _choice_metadata_text(request: ChoiceView) -> String:
 	var presentation := _choice_presentation(request)
+	if request.max_select == 0 and _choice_has_deck_browse(request):
+		return "牌库中没有符合条件的卡牌；你仍可检查全部剩余牌库，然后继续结算。"
 	if str(presentation.get("purpose", "")) == "trekking_shoes":
 		# The prompt, revealed-card preview and live selection hint already carry
 		# the full decision. Repeating "请选择 1 项" here adds no information.
@@ -1103,6 +1208,8 @@ func _choice_metadata_text(request: ChoiceView) -> String:
 func _choice_view_has_card_options(request: ChoiceView) -> bool:
 	if request == null:
 		return false
+	if _choice_has_deck_browse(request):
+		return true
 	for option_value in request.options:
 		if not _choice_option_card_id(Dictionary(option_value)).is_empty():
 			return true

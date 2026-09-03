@@ -20,7 +20,7 @@ Native Challenge Arena 是研究与晋升专用的全原生、无界面对局池
 - 正式 Challenge 搜索会按已知手牌自适应信念预算：完全隐藏时最多 3 个样本；至少 1 张身份确定时使用 2 个条件化样本；手牌全知且牌库为空时使用 1 个。`native_performance_counters` 同时报告请求/实际样本及已知/未知手牌数。
 - 已知手牌摘要进入回合计划缓存前置条件；知识因公开离手、整手变化等发生改变时，旧计划不能跨该变化命中。
 - 对局内玩家名固定为 `Arena-Seat-0/1`。`agent_id`、`build_id` 只进入结果和 manifest，不参与随机种子或语义哈希。
-- 双方使用完全相同的 `fixed_contract` evaluation options，内层 search worker 固定为 1；并行只发生在对局之间。
+- 双方使用完全相同的工作预算与采样设置，内层 search worker 固定为 1；并行只发生在对局之间。`engine`、`use_deck_inspection` 与 `use_strategy_optimization` 可作为显式 A/B treatment 不同，manifest 会分别记录双方取值。
 - 每个有序牌组对覆盖 candidate seat 与 first-player 的四种组合。无序牌组对、replicate 和 base seed 通过稳定 SHA-256 派生 pair seed；A-vs-B 与 B-vs-A 共享该 seed。
 - Action 按 Action v4 语义字段匹配，Choice 检查 request ID、数量、成员关系、重复项与取消状态。Agent 退出或非法响应会标记违规方、保留 failure trace 并使结构门禁失败。
 - 双方配置同时失败属于基础设施失败；只有单方非 watchdog 的配置或运行失败才判该 Agent 负。
@@ -55,6 +55,46 @@ sidecar 与 Arena manifest v3 记录：实际二进制路径、SHA-256、UTC mti
 
 # 当前同二进制策略诊断；不具备跨版本晋升证据效力
 -ComparisonMode same-binary-strategy
+```
+
+跨规划引擎 A/B 允许 engine 字段不同，但 `node_budget`、
+`belief_samples`、smoke 降档和 watchdog 必须完全相同。例如：
+
+```powershell
+.\research\deep_ai\tools\run_challenge_arena.ps1 `
+    -Preset focused `
+    -CandidateEngine strategic_intent_v3 `
+    -Baseline challenge_pre_v3 `
+    -BaselineEngine turn_beam_v2 `
+    -ComparisonMode implementation-only
+```
+
+牌库检查知识可在同一当前二进制、同一策略和同一预算下隔离验证：
+
+```powershell
+.\research\deep_ai\tools\run_challenge_arena.ps1 `
+    -Preset focused `
+    -MirrorOnly `
+    -Replicates 5 `
+    -CandidateEngine turn_beam_v2 `
+    -BaselineEngine turn_beam_v2 `
+    -CandidateDeckInspection enabled `
+    -BaselineDeckInspection disabled `
+    -ComparisonMode same-binary-strategy
+```
+
+报告中的 `deck_inspection_count` 与
+`inspection_memory_decision_count` 用于确认 treatment 实际被触发；它们只记录次数，不包含任何牌库或奖赏卡身份。
+
+策略优化也可在同一二进制中消融；该开关覆盖奖赏稀缺/死进化线检索评分与纯引擎攻击手管线，不改变合法动作或工作预算：
+
+```powershell
+.\research\deep_ai\tools\run_challenge_arena.ps1 `
+    -Preset focused `
+    -MirrorOnly `
+    -CandidateStrategyOptimization enabled `
+    -BaselineStrategyOptimization disabled `
+    -ComparisonMode same-binary-strategy
 ```
 
 实现、策略与 evaluation options 全部相同时默认报 `arena_agents_are_identical`。只有明确的校准或 CI 自博弈才应使用 `-AllowSelfPlay`：

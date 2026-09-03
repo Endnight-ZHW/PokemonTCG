@@ -1818,6 +1818,35 @@ Value pending_request(
     return Value(std::move(result));
 }
 
+void decorate_deck_search_request(
+    Value &request,
+    const Value &cards,
+    const Value &player_value,
+    std::int32_t actor
+) {
+    Object presentation;
+    const Value *existing = request.find("presentation");
+    if (existing != nullptr && existing->is_object()) {
+        presentation = existing->as_object();
+    }
+    presentation["domain"] = Value("search");
+    presentation["purpose"] = Value(string_arg(
+        request,
+        "continuation_kind",
+        string_arg(request, "request_type", "search_move")
+    ));
+    presentation["source_player"] = Value(actor);
+    presentation["source_zone"] = Value("deck");
+    presentation["browse_card_refs"] = Value(zone_options(
+        cards,
+        player_value,
+        actor,
+        "deck",
+        "any"
+    ));
+    request["presentation"] = Value(std::move(presentation));
+}
+
 void increment_integer(Value &object, const std::string &key) {
     set_integer(object, key, get_integer(object, key) + 1);
 }

@@ -115,6 +115,10 @@ struct ChallengeArenaGameResult {
     std::uint32_t baseline_forced_tactics = 0;
     std::uint32_t candidate_plan_cache_hits = 0;
     std::uint32_t baseline_plan_cache_hits = 0;
+    std::uint32_t candidate_deck_inspections = 0;
+    std::uint32_t baseline_deck_inspections = 0;
+    std::uint32_t candidate_inspection_memory_decisions = 0;
+    std::uint32_t baseline_inspection_memory_decisions = 0;
     std::uint64_t candidate_completed_depth = 0;
     std::uint64_t baseline_completed_depth = 0;
     std::uint64_t candidate_reply_depth = 0;
@@ -203,6 +207,10 @@ private:
     std::atomic<std::uint64_t> baseline_decision_us_{0};
     std::atomic<std::uint64_t> candidate_nodes_{0};
     std::atomic<std::uint64_t> baseline_nodes_{0};
+    std::atomic<std::uint64_t> candidate_deck_inspections_{0};
+    std::atomic<std::uint64_t> baseline_deck_inspections_{0};
+    std::atomic<std::uint64_t> candidate_inspection_memory_decisions_{0};
+    std::atomic<std::uint64_t> baseline_inspection_memory_decisions_{0};
     std::atomic<std::uint64_t> projection_us_{0};
     std::atomic<std::uint64_t> legal_actions_us_{0};
     std::atomic<std::uint64_t> apply_us_{0};

@@ -33,7 +33,8 @@ std::unique_ptr<ChallengeSearchProvider> make_challenge_search_provider(
     Value decks,
     Value strategies,
     std::int32_t root_actor,
-    const TraditionalInformationSet *information_set
+    const TraditionalInformationSet *information_set,
+    bool strategy_optimization = true
 );
 
 } // namespace ptcg::ai

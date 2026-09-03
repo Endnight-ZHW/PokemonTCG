@@ -29,7 +29,7 @@ using namespace challenge;
 
 class ChallengeSearchProviderImpl final : public ChallengeSearchProvider {
 public:
-ChallengeSearchProviderImpl( ptcg::ai::Value catalog, ptcg::ai::Value decks, ptcg::ai::Value strategies, std::int32_t root_actor, const ptcg::ai::TraditionalInformationSet *information_set );
+ChallengeSearchProviderImpl( ptcg::ai::Value catalog, ptcg::ai::Value decks, ptcg::ai::Value strategies, std::int32_t root_actor, const ptcg::ai::TraditionalInformationSet *information_set, bool strategy_optimization );
 Value performance_counters() const override;
 bool select_choice( const ptcg::ai::RulesSession &position, const ptcg::ai::Value &pending, ptcg::ai::Value &response );
 ptcg::ai::Value post_plan_tactical_guard( const ptcg::ai::RulesSession &position, std::int32_t actor, const ptcg::ai::Value &preferred, const ptcg::ai::Value &actions, std::uint32_t seed, bool &changed );
@@ -56,6 +56,7 @@ std::string resolved_option_card_id( const ptcg::ai::Value &option ) const;
 bool arven_choice_response( const ptcg::ai::RulesSession &position, const ptcg::ai::Value &pending, const ptcg::ai::typed::ChoiceView &choice, ptcg::ai::Value &response ) const;
 bool sequential_discard_response( const ptcg::ai::RulesSession &position, const ptcg::ai::Value &pending, const ptcg::ai::typed::ChoiceView &choice, ptcg::ai::Value &response ) const;
 bool single_choice_response( const ptcg::ai::RulesSession &position, const ptcg::ai::Value &pending, const ptcg::ai::typed::ChoiceView &choice, ptcg::ai::Value &response ) const;
+double prize_aware_search_choice_score( const ptcg::ai::RulesSession &position, std::int32_t actor, const ptcg::ai::Value &pending, const ptcg::ai::Value &option ) const;
 bool forced_choice_response( const ptcg::ai::Value &state, const ptcg::ai::Value &pending, const ptcg::ai::typed::ChoiceView &choice, ptcg::ai::Value &response ) const;
 bool retreat_payment_response( const ptcg::ai::Value &state, const ptcg::ai::Value &pending, ptcg::ai::Value &response ) const;
 std::int64_t energy_units_provided_by_card( const ptcg::ai::Value::Array &attached, std::size_t index ) const;
@@ -70,6 +71,7 @@ ptcg::ai::TraditionalStrategyCatalog strategy_catalog_;
 ptcg::ai::TraditionalTrustedEvaluator trusted_evaluator_;
 const ptcg::ai::TraditionalInformationSet *information_set_ = nullptr;
 std::int32_t root_actor_ = -1;
+bool strategy_optimization_ = true;
 std::atomic<std::uint64_t> determinizations_{0};
 std::atomic<std::uint64_t> ranked_queries_{0};
 std::atomic<std::uint64_t> state_score_queries_{0};
@@ -79,6 +81,7 @@ std::atomic<std::uint64_t> native_choice_resolutions_{0};
     std::atomic<std::uint64_t> native_trusted_action_scores_{0};
     std::atomic<std::uint64_t> known_reply_actions_promoted_{0};
     std::atomic<std::uint64_t> simulated_action_score_calls_{0};
+    mutable std::atomic<std::uint64_t> prize_aware_choice_adjustments_{0};
 };
 
 } // namespace ptcg::ai::challenge_detail

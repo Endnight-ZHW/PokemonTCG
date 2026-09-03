@@ -1630,11 +1630,17 @@ func _show_choice_overlay(request: ChoiceView) -> void:
 		if target_value is Dictionary:
 			energy_target_models.append(Dictionary(target_value))
 	var revealed_cards := choice_model._choice_revealed_cards(request)
-	var has_card_preview := not energy_cards.is_empty() or not revealed_cards.is_empty()
+	var deck_browse_rows := choice_model._choice_deck_browse_rows(request)
+	var has_card_preview := (
+		not energy_cards.is_empty()
+		or not revealed_cards.is_empty()
+		or not deck_browse_rows.is_empty()
+	)
 	var pure_empty_choice := (
 		request.options.is_empty()
 		and energy_cards.is_empty()
 		and revealed_cards.is_empty()
+		and deck_browse_rows.is_empty()
 	)
 	for option in request.options:
 		if not choice_model._choice_option_display_card_id(option, request).is_empty():
@@ -1664,7 +1670,7 @@ func _show_choice_overlay(request: ChoiceView) -> void:
 	active_choice_panel = panel
 	panel.configure(
 		metadata_text,
-		not request.options.is_empty(),
+		not request.options.is_empty() or not deck_browse_rows.is_empty(),
 		catalog,
 		{
 			"prompt": display_prompt,
@@ -1689,27 +1695,30 @@ func _show_choice_overlay(request: ChoiceView) -> void:
 		panel.add_energy_preview(energy_cards, catalog)
 	elif not revealed_cards.is_empty():
 		panel.add_revealed_cards(revealed_cards, catalog)
-	for option in request.options:
-		if not energy_target_models.is_empty():
-			break
-		var option_id := str(option.get("option_id", ""))
-		var option_card_id := choice_model._choice_option_display_card_id(option, request)
-		if option_id.is_empty():
-			continue
-		if not option_card_id.is_empty():
-			panel.add_card_option(
-				option_id,
-				option_card_id,
-				choice_model._choice_option_caption(option),
-				choice_model._choice_option_owner(option, request.player),
-			)
-		else:
-			option_buttons.append(
-				panel.add_text_option(
+	if not deck_browse_rows.is_empty() and energy_target_models.is_empty():
+		panel.configure_deck_browser(deck_browse_rows, catalog)
+	else:
+		for option in request.options:
+			if not energy_target_models.is_empty():
+				break
+			var option_id := str(option.get("option_id", ""))
+			var option_card_id := choice_model._choice_option_display_card_id(option, request)
+			if option_id.is_empty():
+				continue
+			if not option_card_id.is_empty():
+				panel.add_card_option(
 					option_id,
-					choice_model._choice_text_option_label(option, request),
+					option_card_id,
+					choice_model._choice_option_caption(option),
+					choice_model._choice_option_owner(option, request.player),
 				)
-			)
+			else:
+				option_buttons.append(
+					panel.add_text_option(
+						option_id,
+						choice_model._choice_text_option_label(option, request),
+					)
+				)
 	modal_confirm.pressed.connect(_confirm_choice, CONNECT_ONE_SHOT)
 	if request.can_cancel:
 		modal_cancel.pressed.connect(_cancel_choice, CONNECT_ONE_SHOT)

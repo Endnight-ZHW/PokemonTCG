@@ -302,6 +302,61 @@ func _run_protocol_boundaries() -> void:
 		).get("ok", false)),
 		"valid choice metadata source_zone was rejected",
 	)
+	var browse_refs: Array[Dictionary] = []
+	for index in range(60):
+		browse_refs.append(EntityRef.new(
+			"card", 0, "deck", "", index, "", "svi-chim"
+		).to_dict())
+	var deck_browse_view: Dictionary = view.duplicate(true)
+	deck_browse_view["choice_request"] = ChoiceView.new(
+		"choice:deck-browse-contract",
+		int(view["state"]["revision"]),
+		"search_move",
+		0,
+		"选择牌库中的卡牌",
+		[{
+			"option_id": "card:0",
+			"label": "Card",
+			"ref": browse_refs[0],
+		}],
+		0,
+		1,
+		false,
+		false,
+		{
+			"domain": "search",
+			"purpose": "search_move",
+			"source_player": 0,
+			"source_zone": "deck",
+			"browse_card_refs": browse_refs,
+		},
+	).to_dict()
+	_expect(
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, deck_browse_view
+		).get("ok", false)),
+		"owner-only 60-card deck browse contract was rejected",
+	)
+	var opponent_browse_ref: Dictionary = deck_browse_view.duplicate(true)
+	opponent_browse_ref["choice_request"]["presentation"]["browse_card_refs"][0]["player"] = 1
+	_expect_invalid_state(opponent_browse_ref, "opponent deck browse reference")
+	var opponent_browse_source: Dictionary = deck_browse_view.duplicate(true)
+	opponent_browse_source["choice_request"]["presentation"]["source_player"] = 1
+	_expect_invalid_state(opponent_browse_source, "opponent deck browse source")
+	var hand_browse_ref: Dictionary = deck_browse_view.duplicate(true)
+	hand_browse_ref["choice_request"]["presentation"]["browse_card_refs"][0]["zone"] = "hand"
+	_expect_invalid_state(hand_browse_ref, "non-deck browse reference")
+	var out_of_range_browse_ref: Dictionary = deck_browse_view.duplicate(true)
+	out_of_range_browse_ref["choice_request"]["presentation"]["browse_card_refs"][0]["index"] = 60
+	_expect_invalid_state(out_of_range_browse_ref, "out-of-range deck browse reference")
+	var duplicate_browse_ref: Dictionary = deck_browse_view.duplicate(true)
+	duplicate_browse_ref["choice_request"]["presentation"]["browse_card_refs"][1]["index"] = 0
+	_expect_invalid_state(duplicate_browse_ref, "duplicate deck browse reference")
+	var oversized_browse: Dictionary = deck_browse_view.duplicate(true)
+	oversized_browse["choice_request"]["presentation"]["browse_card_refs"].append(
+		EntityRef.new("card", 0, "deck", "", 60, "", "svi-chim").to_dict()
+	)
+	_expect_invalid_state(oversized_browse, "oversized deck browse reference list")
 	var prize_choice_view: Dictionary = view.duplicate(true)
 	prize_choice_view["choice_request"] = ChoiceView.new(
 		"choice:prize-contract",
@@ -332,6 +387,11 @@ func _run_protocol_boundaries() -> void:
 		"card", 0, "prizes", "", 0, "", "secret-prize-card"
 	).to_dict()
 	_expect_invalid_state(leaked_prize_ref, "Prize option identity reference")
+	var leaked_prize_browse: Dictionary = prize_choice_view.duplicate(true)
+	leaked_prize_browse["choice_request"]["presentation"]["browse_card_refs"] = [
+		browse_refs[0],
+	]
+	_expect_invalid_state(leaked_prize_browse, "Prize deck-browse identity reference")
 
 
 	var attachment_ref := EntityRef.new(

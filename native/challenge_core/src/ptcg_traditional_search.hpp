@@ -74,6 +74,16 @@ struct TraditionalChoiceTrace {
     bool unpredictable = false;
 };
 
+struct TraditionalReplyEvaluation {
+    std::int64_t score_milli = 0;
+    std::uint64_t nodes_expanded = 0;
+    bool cancelled = false;
+    bool applicable = false;
+    std::size_t completed_depth = 0;
+    std::string completion_reason;
+    std::shared_ptr<RulesSession> resulting_position;
+};
+
 // The controller owns only the fixed turn_beam_v2 traversal.  Every semantic
 // operation is supplied by a provider so the migration can compare the native
 // traversal against the existing Godot policy before replacing each provider.
@@ -149,6 +159,13 @@ public:
         std::int32_t actor,
         std::uint32_t seed,
         const Value &root_actions,
+        const std::atomic<bool> *cancel_requested = nullptr
+    );
+
+    TraditionalReplyEvaluation evaluate_reply(
+        const RulesSession &post_turn_position,
+        std::int32_t actor,
+        std::uint32_t seed,
         const std::atomic<bool> *cancel_requested = nullptr
     );
 

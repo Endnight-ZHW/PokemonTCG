@@ -152,5 +152,59 @@ func run(ui: Control) -> void:
 	if not harness._capture("choice-exp-share-confirm.png"):
 		harness._finish(1)
 		return
+	ui.modal_host_controller.close()
+	await harness._wait_until_hidden(ui.modal_layer)
+
+	var browse_refs: Array[Dictionary] = []
+	var browse_options: Array[Dictionary] = []
+	var browse_ids: Array[String] = [
+		"svi-chim", "svf-potion", "sv1-ener-2",
+	]
+	for index in range(24):
+		var card_id := browse_ids[index % browse_ids.size()]
+		var ref := EntityRef.new(
+			"card", 0, "deck", "", index, "", card_id,
+		).to_dict()
+		browse_refs.append(ref)
+		if index % 6 == 0:
+			browse_options.append({
+				"option_id": "deck:%d" % index,
+				"label": ui.catalog.card_name(card_id),
+				"ref": ref,
+			})
+	var deck_search_choice := ChoiceView.new(
+		"preview-deck-search",
+		demo.revision,
+		"search_move",
+		0,
+		"请选择要加入手牌的基础宝可梦。",
+		browse_options,
+		0,
+		2,
+		false,
+		false,
+		{
+			"domain": "search",
+			"purpose": "search_move",
+			"source_player": 0,
+			"source_zone": "deck",
+			"browse_card_refs": browse_refs,
+		},
+	)
+	ui._show_choice_overlay(deck_search_choice)
+	await harness._settle_rendered(4)
+	if not harness._capture("choice-deck-search-valid.png"):
+		harness._finish(1)
+		return
+	ui.active_choice_panel.browse_all_button.pressed.emit()
+	await harness._settle_rendered(4)
+	if not harness._capture("choice-deck-search-all.png"):
+		harness._finish(1)
+		return
+	harness.tree.root.size = Vector2i(900, 540)
+	await harness._settle_rendered(4)
+	if not harness._capture("choice-deck-search-compact.png"):
+		harness._finish(1)
+		return
 	print("SEMANTIC_CHOICE_PREVIEWS_OK")
 	harness._finish(0)

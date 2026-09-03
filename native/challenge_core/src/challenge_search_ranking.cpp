@@ -373,6 +373,22 @@ using namespace challenge;
         }
         const std::string known_hand_fingerprint = sha256_text(
             "known-opponent-hand:v1|" + known_hand_wire);
+        std::string known_prize_wire;
+        if (information_set_ != nullptr && information_set_->valid()
+            && information_set_->has_exact_hidden_zones(actor)) {
+            std::vector<std::string> known_ids;
+            for (const ptcg::ai::Value &entry :
+                information_set_->known_prizes(actor)) {
+                known_ids.push_back(entry.string_or());
+            }
+            std::sort(known_ids.begin(), known_ids.end());
+            for (const std::string &card_id : known_ids) {
+                known_prize_wire += std::to_string(card_id.size())
+                    + ":" + card_id + "|";
+            }
+        }
+        const std::string known_prize_fingerprint = sha256_text(
+            "known-own-prizes:v1|" + known_prize_wire);
         const ptcg::ai::Value *observed_actor = information.public_snapshot().find("actor");
         const ptcg::ai::Value *phase = information.public_snapshot().find("phase");
         return ptcg::ai::Value(ptcg::ai::Value::Object{
@@ -380,6 +396,8 @@ using namespace challenge;
                 "public:" + fingerprint)},
             {"expected_known_hand_fingerprint", ptcg::ai::Value(
                 "known:" + known_hand_fingerprint)},
+            {"expected_known_prize_fingerprint", ptcg::ai::Value(
+                "known:" + known_prize_fingerprint)},
             {"expected_actor", observed_actor == nullptr
                 ? ptcg::ai::Value(-1) : *observed_actor},
             {"expected_phase", phase == nullptr

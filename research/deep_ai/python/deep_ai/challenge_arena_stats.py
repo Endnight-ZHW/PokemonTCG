@@ -63,6 +63,13 @@ def _agent_performance(
     cache_hits = sum(
         int(row.get(f"{prefix}_plan_cache_hits", 0)) for row in games
     )
+    deck_inspections = sum(
+        int(row.get(f"{prefix}_deck_inspections", 0)) for row in games
+    )
+    inspection_memory_decisions = sum(
+        int(row.get(f"{prefix}_inspection_memory_decisions", 0))
+        for row in games
+    )
 
     def milliseconds(values: Sequence[float], percentile: float) -> float:
         return _percentile(values, percentile) / 1000.0
@@ -108,6 +115,8 @@ def _agent_performance(
         "plan_cache_hit_rate": (
             cache_hits / action_decisions if action_decisions else 0.0
         ),
+        "deck_inspection_count": deck_inspections,
+        "inspection_memory_decision_count": inspection_memory_decisions,
         "average_completed_depth": (
             sum(int(row.get(f"{prefix}_completed_depth", 0)) for row in games)
             / search_decisions

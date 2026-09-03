@@ -405,6 +405,8 @@ def with_preset_contract(spec: ArenaAgentSpec, preset: str) -> ArenaAgentSpec:
     options.setdefault("engine", "turn_beam_v2")
     options.setdefault("node_budget", 192)
     options.setdefault("belief_samples", 3)
+    options.setdefault("use_deck_inspection", True)
+    options.setdefault("use_strategy_optimization", True)
     if preset == "smoke":
         options.update({
             "internal_evaluation_smoke": True,
@@ -420,10 +422,20 @@ def validate_equal_search_contract(
     candidate: ArenaAgentSpec,
     baseline: ArenaAgentSpec,
 ) -> None:
-    if dict(candidate.evaluation_options) != dict(baseline.evaluation_options):
+    candidate_budget = dict(candidate.evaluation_options)
+    baseline_budget = dict(baseline.evaluation_options)
+    # Engine identity and owner deck-inspection knowledge are explicit A/B
+    # treatments. Every actual work budget and sampling setting remains paired.
+    candidate_budget.pop("engine", None)
+    baseline_budget.pop("engine", None)
+    candidate_budget.pop("use_deck_inspection", None)
+    baseline_budget.pop("use_deck_inspection", None)
+    candidate_budget.pop("use_strategy_optimization", None)
+    baseline_budget.pop("use_strategy_optimization", None)
+    if candidate_budget != baseline_budget:
         raise ValueError(
             "challenge_arena_search_contract_mismatch: candidate and baseline "
-            "must use identical fixed evaluation options"
+            "must use identical fixed work budgets"
         )
     if (
         candidate.decision_timeout_milliseconds
@@ -649,6 +661,10 @@ def aggregate_native_metrics(
         "baseline_decision_us",
         "candidate_nodes",
         "baseline_nodes",
+        "candidate_deck_inspections",
+        "baseline_deck_inspections",
+        "candidate_inspection_memory_decisions",
+        "baseline_inspection_memory_decisions",
         "projection_us",
         "legal_actions_us",
         "apply_us",
@@ -749,6 +765,30 @@ def build_manifest(
         "search_contract": {
             "mode": "fixed_contract",
             "evaluation_options": dict(candidate.evaluation_options),
+            "candidate_evaluation_options": dict(candidate.evaluation_options),
+            "baseline_evaluation_options": dict(baseline.evaluation_options),
+            "treatments": {
+                "engine": {
+                    "candidate": candidate.evaluation_options.get("engine"),
+                    "baseline": baseline.evaluation_options.get("engine"),
+                },
+                "use_deck_inspection": {
+                    "candidate": candidate.evaluation_options.get(
+                        "use_deck_inspection", True
+                    ),
+                    "baseline": baseline.evaluation_options.get(
+                        "use_deck_inspection", True
+                    ),
+                },
+                "use_strategy_optimization": {
+                    "candidate": candidate.evaluation_options.get(
+                        "use_strategy_optimization", True
+                    ),
+                    "baseline": baseline.evaluation_options.get(
+                        "use_strategy_optimization", True
+                    ),
+                },
+            },
             "inner_search_workers": 1,
         },
         "runtime": {

@@ -109,6 +109,38 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "清空分配"
 
+[node name="BrowseModeRow" type="HBoxContainer" parent="ContentRow/ChoiceColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BrowseModeLabel" type="Label" parent="ContentRow/ChoiceColumn/BrowseModeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+theme_override_font_sizes/font_size = 13
+text = "牌库视图"
+vertical_alignment = 1
+
+[node name="BrowseValidButton" type="Button" parent="ContentRow/ChoiceColumn/BrowseModeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(118, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+toggle_mode = true
+text = "可选（0）"
+
+[node name="BrowseAllButton" type="Button" parent="ContentRow/ChoiceColumn/BrowseModeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(118, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+toggle_mode = true
+text = "全部（0）"
+
 [node name="PreviewToggleButton" type="Button" parent="ContentRow/ChoiceColumn"]
 unique_name_in_owner = true
 visible = false

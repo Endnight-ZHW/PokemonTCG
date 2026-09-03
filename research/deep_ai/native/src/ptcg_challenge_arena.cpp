@@ -530,7 +530,8 @@ void add_evaluation_options(Value &request, const Value &options) {
     if (options.is_object()) {
         for (const char *key : {
             "engine", "node_budget", "belief_samples", "skip_mandatory",
-            "internal_evaluation_smoke",
+            "internal_evaluation_smoke", "use_deck_inspection",
+            "use_strategy_optimization",
         }) {
             const Value *entry = options.find(key);
             if (entry != nullptr) request[key] = *entry;
@@ -564,6 +565,14 @@ void add_agent_metrics(
     const bool choice_decision = string_field(decision, "kind") == "choice";
     const bool search_decision = action_decision
         && bool_field(decision, "search_depth_applicable");
+    const Value *performance = field(decision, "native_performance_counters");
+    const bool deck_inspection = bool_field(decision, "deck_inspection_applied")
+        || (performance != nullptr
+            && bool_field(*performance, "deck_inspection_applied"));
+    const bool inspection_memory = bool_field(
+            decision, "deck_inspection_memory_applied")
+        || (performance != nullptr
+            && bool_field(*performance, "deck_inspection_memory_applied"));
     const std::uint64_t completed_depth = static_cast<std::uint64_t>(
         std::max<std::int64_t>(0, integer_field(decision, "completed_depth", 0)));
     const std::uint64_t reply_depth = static_cast<std::uint64_t>(
@@ -596,6 +605,9 @@ void add_agent_metrics(
         summary.candidate_search_decisions += search_decision ? 1U : 0U;
         summary.candidate_forced_tactics += forced ? 1U : 0U;
         summary.candidate_plan_cache_hits += cache_hit ? 1U : 0U;
+        summary.candidate_deck_inspections += deck_inspection ? 1U : 0U;
+        summary.candidate_inspection_memory_decisions +=
+            inspection_memory ? 1U : 0U;
         summary.candidate_completed_depth += completed_depth;
         summary.candidate_reply_depth += reply_depth;
         summary.candidate_belief_samples += belief_samples;
@@ -624,6 +636,9 @@ void add_agent_metrics(
         summary.baseline_search_decisions += search_decision ? 1U : 0U;
         summary.baseline_forced_tactics += forced ? 1U : 0U;
         summary.baseline_plan_cache_hits += cache_hit ? 1U : 0U;
+        summary.baseline_deck_inspections += deck_inspection ? 1U : 0U;
+        summary.baseline_inspection_memory_decisions +=
+            inspection_memory ? 1U : 0U;
         summary.baseline_completed_depth += completed_depth;
         summary.baseline_reply_depth += reply_depth;
         summary.baseline_belief_samples += belief_samples;
@@ -851,6 +866,16 @@ Value NativeChallengeArenaPool::metrics() const {
             candidate_nodes_.load()))},
         {"baseline_nodes", Value(static_cast<std::int64_t>(
             baseline_nodes_.load()))},
+        {"candidate_deck_inspections", Value(static_cast<std::int64_t>(
+            candidate_deck_inspections_.load()))},
+        {"baseline_deck_inspections", Value(static_cast<std::int64_t>(
+            baseline_deck_inspections_.load()))},
+        {"candidate_inspection_memory_decisions", Value(
+            static_cast<std::int64_t>(
+                candidate_inspection_memory_decisions_.load()))},
+        {"baseline_inspection_memory_decisions", Value(
+            static_cast<std::int64_t>(
+                baseline_inspection_memory_decisions_.load()))},
         {"projection_us", Value(static_cast<std::int64_t>(
             projection_us_.load()))},
         {"legal_actions_us", Value(static_cast<std::int64_t>(
@@ -994,6 +1019,12 @@ void NativeChallengeArenaPool::worker() {
         baseline_decision_us_ += result.baseline_decision_us;
         candidate_nodes_ += result.candidate_nodes;
         baseline_nodes_ += result.baseline_nodes;
+        candidate_deck_inspections_ += result.candidate_deck_inspections;
+        baseline_deck_inspections_ += result.baseline_deck_inspections;
+        candidate_inspection_memory_decisions_ +=
+            result.candidate_inspection_memory_decisions;
+        baseline_inspection_memory_decisions_ +=
+            result.baseline_inspection_memory_decisions;
         projection_us_ += result.projection_us;
         legal_actions_us_ += result.legal_actions_us;
         apply_us_ += result.apply_us;

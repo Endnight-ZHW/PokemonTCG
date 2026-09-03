@@ -1,0 +1,13 @@
+{
+  "schema": "ptcg.challenge_arena.agent/2",
+  "agent_id": "challenge_pre_v3",
+  "build_id": "pre-strategic-intent-v3",
+  "backend": "external_process",
+  "git_ref": "e8690e9ee39993dc85f79b2da5fa879e00e8ae13",
+  "strategies_ref_path": "godot/data/ai_strategies.json",
+  "evaluation_options": {
+    "engine": "turn_beam_v2",
+    "node_budget": 192,
+    "belief_samples": 3
+  }
+}

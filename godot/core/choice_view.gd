@@ -2,6 +2,7 @@ class_name ChoiceView
 extends RefCounted
 
 const SCHEMA_VERSION := 2
+const MAX_BROWSE_CARD_REFS := 60
 const PRIVATE_FIELD_NAMES: Array[String] = [
 	"value",
 	"continuation",
@@ -25,6 +26,7 @@ const PRESENTATION_FIELDS: Array[String] = [
 	"revealed_card_ids",
 	"top_card_id",
 	"attachment_refs",
+	"browse_card_refs",
 	"source_player",
 	"source_slot",
 	"source_zone",
@@ -88,7 +90,8 @@ func _init(
 	max_select = p_max_select
 	allow_duplicates = p_allow_duplicates
 	can_cancel = p_can_cancel
-	presentation = _project_presentation(p_presentation, p_request_type)
+	presentation = _project_presentation(
+		p_presentation, p_request_type, p_player)
 
 
 func to_dict() -> Dictionary:
@@ -167,6 +170,7 @@ static func _public_options(
 static func _project_presentation(
 	raw: Dictionary,
 	request_type: String = "",
+	request_player: int = -1,
 ) -> Dictionary:
 	var result: Dictionary = {}
 	for field in PRESENTATION_FIELDS:
@@ -175,6 +179,7 @@ static func _project_presentation(
 			"revealed_card_ids",
 			"top_card_id",
 			"attachment_refs",
+			"browse_card_refs",
 			"source_card_id",
 			"card_id",
 			"labels",
@@ -183,8 +188,14 @@ static func _project_presentation(
 		if raw.has(field):
 			var copied: Variant = _json_copy(raw[field])
 			copied = _normalize_presentation_value(field, copied)
-			if _presentation_value_is_valid(field, copied):
+			if _presentation_value_is_valid(field, copied, request_player):
 				result[field] = copied
+	if result.has("browse_card_refs") and (
+		str(result.get("domain", "")) != "search"
+		or int(result.get("source_player", -1)) != request_player
+		or str(result.get("source_zone", "")) != "deck"
+	):
+		result.erase("browse_card_refs")
 	return result
 
 
@@ -200,7 +211,7 @@ static func _normalize_presentation_value(field: String, value: Variant) -> Vari
 			if _is_wire_integer(limits[category]):
 				limits[category] = int(limits[category])
 		return limits
-	if field == "attachment_refs" and value is Array:
+	if field in ["attachment_refs", "browse_card_refs"] and value is Array:
 		var refs: Array = []
 		for ref_value in Array(value):
 			if not ref_value is Dictionary:
@@ -238,7 +249,11 @@ static func _ref_is_public_for_request(
 	return true
 
 
-static func _presentation_value_is_valid(field: String, value: Variant) -> bool:
+static func _presentation_value_is_valid(
+	field: String,
+	value: Variant,
+	request_player: int = -1,
+) -> bool:
 	if value == null:
 		return false
 	if field in [
@@ -292,6 +307,27 @@ static func _presentation_value_is_valid(field: String, value: Variant) -> bool:
 			)
 			if not entity_ref_valid and not unit_ref_valid:
 				return false
+		return true
+	if field == "browse_card_refs":
+		if not value is Array or Array(value).size() > MAX_BROWSE_CARD_REFS:
+			return false
+		var seen_indices: Dictionary = {}
+		for ref_value in Array(value):
+			if not ref_value is Dictionary:
+				return false
+			var ref := Dictionary(ref_value)
+			var browse_index := int(ref.get("index", -1))
+			if (
+				not EntityRef.validate_dict(ref).is_empty()
+				or str(ref.get("kind", "")) != "card"
+				or int(ref.get("player", -1)) != request_player
+				or str(ref.get("zone", "")) != "deck"
+				or browse_index < 0
+				or browse_index >= MAX_BROWSE_CARD_REFS
+				or seen_indices.has(browse_index)
+			):
+				return false
+			seen_indices[browse_index] = true
 		return true
 	if field == "category_limits":
 		if not value is Dictionary or Dictionary(value).size() > 256:

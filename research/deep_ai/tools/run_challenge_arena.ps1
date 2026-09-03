@@ -4,6 +4,18 @@ param(
     [string]$Preset = 'smoke',
     [string]$Candidate = 'challenge_next',
     [string]$Baseline = 'challenge_release_v1',
+    [ValidateSet('', 'turn_beam_v2', 'strategic_intent_v3')]
+    [string]$CandidateEngine = '',
+    [ValidateSet('', 'turn_beam_v2', 'strategic_intent_v3')]
+    [string]$BaselineEngine = '',
+    [ValidateSet('', 'enabled', 'disabled')]
+    [string]$CandidateDeckInspection = '',
+    [ValidateSet('', 'enabled', 'disabled')]
+    [string]$BaselineDeckInspection = '',
+    [ValidateSet('', 'enabled', 'disabled')]
+    [string]$CandidateStrategyOptimization = '',
+    [ValidateSet('', 'enabled', 'disabled')]
+    [string]$BaselineStrategyOptimization = '',
     [ValidateRange(1, 64)]
     [int]$Workers = 8,
     [string]$Output = '',
@@ -101,6 +113,24 @@ if (-not [string]::IsNullOrWhiteSpace($candidateManifest)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($baselineManifest)) {
     $arguments += @('--baseline-build-manifest', $baselineManifest)
+}
+if (-not [string]::IsNullOrWhiteSpace($CandidateEngine)) {
+    $arguments += @('--candidate-engine', $CandidateEngine)
+}
+if (-not [string]::IsNullOrWhiteSpace($BaselineEngine)) {
+    $arguments += @('--baseline-engine', $BaselineEngine)
+}
+if (-not [string]::IsNullOrWhiteSpace($CandidateDeckInspection)) {
+    $arguments += @('--candidate-deck-inspection', $CandidateDeckInspection)
+}
+if (-not [string]::IsNullOrWhiteSpace($BaselineDeckInspection)) {
+    $arguments += @('--baseline-deck-inspection', $BaselineDeckInspection)
+}
+if (-not [string]::IsNullOrWhiteSpace($CandidateStrategyOptimization)) {
+    $arguments += @('--candidate-strategy-optimization', $CandidateStrategyOptimization)
+}
+if (-not [string]::IsNullOrWhiteSpace($BaselineStrategyOptimization)) {
+    $arguments += @('--baseline-strategy-optimization', $BaselineStrategyOptimization)
 }
 if ($Replicates -gt 0) {
     $arguments += @('--replicates', [string]$Replicates)

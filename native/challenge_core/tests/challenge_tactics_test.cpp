@@ -1,8 +1,10 @@
 #include "ptcg_json_adapter.hpp"
 #include "ptcg_traditional_infoset.hpp"
 #include "ptcg_traditional_strategy.hpp"
+#include "planner_v3/strategic_types.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -11,6 +13,7 @@ using nlohmann::json;
 using ptcg::ai::TraditionalStrategyCatalog;
 using ptcg::ai::TraditionalInformationSet;
 using ptcg::ai::Value;
+using namespace ptcg::ai::planner_v3;
 using Array = Value::Array;
 using Object = Value::Object;
 
@@ -255,6 +258,188 @@ void check_known_hand_determinization(const json &cards_json) {
         "information set accepted authoritative hidden identity history");
 }
 
+Value deck_browse_ref(
+    std::int32_t player,
+    std::int64_t index,
+    const std::string &card_id,
+    const std::string &zone = "deck"
+) {
+    return Value(Object{
+        {"kind", Value("card")},
+        {"player", Value(player)},
+        {"zone", Value(zone)},
+        {"index", Value(index)},
+        {"card_id", Value(card_id)},
+    });
+}
+
+std::size_t card_count(const Array &cards, const std::string &card_id) {
+    return static_cast<std::size_t>(std::count_if(
+        cards.begin(), cards.end(), [&card_id](const Value &card) {
+            return card.string_or() == card_id;
+        }));
+}
+
+void check_owner_deck_inspection_determinization(const json &cards_json) {
+    const Value catalog = ptcg::json_adapter::to_value(cards_json);
+    const Value decks(Object{
+        {"inspection-test", Value(Object{
+            {"cards", Value(Array{
+                Value(Object{
+                    {"card_id", Value("sv1-151")}, {"count", Value(1)},
+                }),
+                Value(Object{
+                    {"card_id", Value("sv1-152")}, {"count", Value(1)},
+                }),
+                Value(Object{
+                    {"card_id", Value("sv1-ener-1")}, {"count", Value(2)},
+                }),
+                Value(Object{
+                    {"card_id", Value("sv1-ener-2")}, {"count", Value(1)},
+                }),
+            })},
+        })},
+    });
+    Value owner = hidden_player(1, 2);
+    owner["hand"] = Value(Array{Value("sv1-151")});
+    owner["prizes"] = Value(Array{
+        Value("__ai_hidden_prize__"), Value("__ai_hidden_prize__"),
+    });
+    const Value state(Object{
+        {"players", Value(Array{owner, hidden_player(0, 0)})},
+        {"public_deck_keys", Value(Array{
+            Value("inspection-test"), Value(""),
+        })},
+        {"active_player_idx", Value(0)},
+        {"first_player_idx", Value(0)},
+        {"phase", Value("MAIN")},
+        {"turn_number", Value(3)},
+        {"revision", Value(11)},
+    });
+    const Value choice(Object{
+        {"player", Value(0)},
+        {"presentation", Value(Object{
+            {"source_player", Value(0)},
+            {"source_zone", Value("deck")},
+            {"browse_card_refs", Value(Array{
+                deck_browse_ref(0, 0, "sv1-152"),
+                deck_browse_ref(0, 1, "sv1-ener-1"),
+            })},
+        })},
+    });
+
+    TraditionalInformationSet inspected;
+    std::string error;
+    require(inspected.capture(
+            state, 0, catalog, decks, Value::make_array(),
+            Value::make_array(), 41, &error),
+        "owner inspection fixture capture failed");
+    require(inspected.apply_deck_inspection(choice, &error)
+            && inspected.has_exact_hidden_zones(0),
+        "owner deck inspection was not accepted");
+    require(inspected.known_prizes(0).size() == 2
+            && card_count(inspected.known_prizes(0), "sv1-ener-1") == 1
+            && card_count(inspected.known_prizes(0), "sv1-ener-2") == 1,
+        "deck inspection did not infer the exact prize multiset");
+    require(inspected.known_deck(0).size() == 2
+            && card_count(inspected.known_deck(0), "sv1-152") == 1
+            && card_count(inspected.known_deck(0), "sv1-ener-1") == 1,
+        "deck inspection did not retain the exact searchable multiset");
+    const Value sampled = inspected.sample_state(43U);
+    const Value &sampled_owner = sampled.find("players")->as_array()[0];
+    const Array &sampled_deck = sampled_owner.find("deck")->as_array();
+    const Array &sampled_prizes = sampled_owner.find("prizes")->as_array();
+    require(sampled_deck.size() == 2
+            && card_count(sampled_deck, "sv1-152") == 1
+            && card_count(sampled_deck, "sv1-ener-1") == 1,
+        "determinization ignored the inspected deck multiset");
+    require(sampled_prizes.size() == 2
+            && card_count(sampled_prizes, "sv1-ener-1") == 1
+            && card_count(sampled_prizes, "sv1-ener-2") == 1,
+        "determinization ignored the inferred prize multiset");
+
+    TraditionalInformationSet remembered;
+    require(remembered.capture(
+            state, 0, catalog, decks, Value::make_array(),
+            Value::make_array(), 47, &error)
+            && remembered.apply_known_prizes(
+                inspected.known_prizes(0), &error)
+            && remembered.has_exact_hidden_zones(0),
+        "a later decision could not restore inspected prize knowledge");
+
+    TraditionalInformationSet rejected;
+    require(rejected.capture(
+            state, 0, catalog, decks, Value::make_array(),
+            Value::make_array(), 53, &error),
+        "invalid inspection fixture capture failed");
+    Value opponent_ref = choice.deep_clone();
+    (*opponent_ref.find("presentation"))[
+        "browse_card_refs"].as_array()[0]["player"] = Value(1);
+    require(!rejected.apply_deck_inspection(opponent_ref, &error),
+        "opponent deck browse identity was accepted");
+    Value wrong_zone = choice.deep_clone();
+    (*wrong_zone.find("presentation"))[
+        "browse_card_refs"].as_array()[0]["zone"] = Value("hand");
+    require(!rejected.apply_deck_inspection(wrong_zone, &error),
+        "non-deck browse identity was accepted");
+    Value duplicate_index = choice.deep_clone();
+    (*duplicate_index.find("presentation"))[
+        "browse_card_refs"].as_array()[1]["index"] = Value(0);
+    require(!rejected.apply_deck_inspection(duplicate_index, &error),
+        "duplicate deck browse index was accepted");
+    Value wrong_cards = choice.deep_clone();
+    (*wrong_cards.find("presentation"))[
+        "browse_card_refs"].as_array()[0]["card_id"] = Value("sv1-151");
+    require(!rejected.apply_deck_inspection(wrong_cards, &error),
+        "browse cards outside the remaining hidden pool were accepted");
+}
+
+void check_strategic_planner_primitives() {
+    require(std::abs(at_least_one_out_probability(10, 2, 1) - 0.2) < 1e-9,
+        "analytic out probability is incorrect for one draw");
+    require(std::abs(at_least_one_out_probability(10, 2, 2)
+            - (1.0 - (8.0 / 10.0) * (7.0 / 9.0))) < 1e-9,
+        "analytic out probability is incorrect for two draws");
+    require(estimate_turns_to_win(5, 2, 1) == 4.0,
+        "prize clock did not include readiness delay");
+    require(match_loss_probability(1.0, false, false) == 0.0,
+        "ordinary active knockout was classified as a match catastrophe");
+    require(match_loss_probability(1.0, true, false) == 1.0,
+        "last-Pokemon knockout was not classified as a match catastrophe");
+    require(match_loss_probability(0.4, false, true) == 0.4,
+        "final-prize loss probability was not preserved");
+
+    PlanScore safe;
+    safe.catastrophe_probability = 0.05;
+    safe.prize_clock_margin = 0.5;
+    PlanScore risky = safe;
+    risky.catastrophe_probability = 0.55;
+    risky.prize_clock_margin = 3.0;
+    require(plan_score_better(safe, risky),
+        "lexicographic score traded catastrophe safety for clock margin");
+    PlanScore winning = risky;
+    winning.terminal_rank = 3;
+    require(plan_score_better(winning, safe),
+        "terminal win was not the first comparison tier");
+
+    ActionFootprint left;
+    left.reads.insert("slot:bench_0");
+    left.writes.insert("slot:bench_0");
+    ActionFootprint right;
+    right.reads.insert("slot:bench_1");
+    right.writes.insert("slot:bench_1");
+    require(footprints_commute(left, right),
+        "independent board actions did not commute");
+    left.consumes.insert("attachment_per_turn");
+    right.consumes.insert("attachment_per_turn");
+    require(!footprints_commute(left, right),
+        "once-per-turn resource conflict was treated as commutative");
+    right.consumes.clear();
+    right.random = true;
+    require(!footprints_commute(left, right),
+        "random action was treated as commutative");
+}
+
 std::string slot_for_card(const json &state, const std::string &card_id) {
     const auto &own = state.at("players").at(0);
     if (own.value("active", json::object()).value("card_id", "") == card_id) {
@@ -345,6 +530,8 @@ int main(int argc, char **argv) {
         if (!catalog.valid()) throw std::runtime_error("strategy_catalog_invalid");
         check_normalized_deck_plans(strategies_json, cards_json, catalog);
         check_known_hand_determinization(cards_json);
+        check_owner_deck_inspection_determinization(cards_json);
+        check_strategic_planner_primitives();
 
         std::size_t count = 0;
         const auto &decks = fixture.at("decks");

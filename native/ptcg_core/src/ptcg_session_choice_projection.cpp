@@ -276,9 +276,10 @@ Value public_choice(
     // author-provided hints is part of the public choice contract; omitting
     // them makes otherwise valid selectors (for example retreat payment)
     // unable to construct a legal response.
-    static constexpr std::array<const char *, 34> presentation_fields{
+    static constexpr std::array<const char *, 35> presentation_fields{
         "decision_mode", "cancel_mode", "card_ids", "revealed_card_ids",
-        "top_card_id", "attachment_refs", "source_player", "source_slot",
+        "top_card_id", "attachment_refs", "browse_card_refs",
+        "source_player", "source_slot",
         "source_zone", "source_card_id", "card_id", "target_player",
         "target_slot", "target_slots", "required_units", "max_per_target",
         "same_target", "same_source", "pokemon_count", "energy_count",
@@ -289,7 +290,7 @@ Value public_choice(
     };
     static const std::unordered_set<std::string> prize_private_fields{
         "card_ids", "revealed_card_ids", "top_card_id", "attachment_refs",
-        "source_card_id", "card_id", "labels",
+        "browse_card_refs", "source_card_id", "card_id", "labels",
     };
     for (const char *field_name : presentation_fields) {
         const std::string key(field_name);
@@ -305,6 +306,46 @@ Value public_choice(
         if (source == nullptr && raw_metadata != nullptr
             && raw_metadata->is_object()) {
             source = raw_metadata->find(key);
+        }
+        if (key == "browse_card_refs") {
+            const Value *browse_metadata = raw_presentation != nullptr
+                    && raw_presentation->is_object()
+                ? raw_presentation : raw_metadata;
+            if (source == nullptr || !source->is_array()
+                || source->as_array().size() > 60
+                || presentation_domain != "search"
+                || browse_metadata == nullptr || !browse_metadata->is_object()
+                || integer_field(*browse_metadata, "source_player", -1) != actor
+                || string_field(*browse_metadata, "source_zone") != "deck") {
+                continue;
+            }
+            Array references;
+            references.reserve(source->as_array().size());
+            std::unordered_set<std::int64_t> seen_indices;
+            bool valid_browse_refs = true;
+            for (const Value &entry : source->as_array()) {
+                Value reference = public_option_ref(
+                    entry, actor, request_type);
+                const std::int64_t index = integer_field(
+                    reference, "index", -1);
+                if (
+                    !reference.is_object()
+                    || string_field(reference, "kind") != "card"
+                    || integer_field(reference, "player", -1) != actor
+                    || string_field(reference, "zone") != "deck"
+                    || index < 0 || index >= 60
+                    || !seen_indices.insert(index).second
+                    || string_field(reference, "card_id").empty()
+                ) {
+                    valid_browse_refs = false;
+                    break;
+                }
+                references.push_back(std::move(reference));
+            }
+            if (valid_browse_refs) {
+                presentation[key] = Value(std::move(references));
+            }
+            continue;
         }
         if (source != nullptr) {
             presentation[key] = source->deep_clone();

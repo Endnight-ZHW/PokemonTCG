@@ -65,6 +65,205 @@ using namespace challenge;
     }
 
 
+    double ChallengeSearchProviderImpl::prize_aware_search_choice_score(
+        const ptcg::ai::RulesSession &position,
+        std::int32_t actor,
+        const ptcg::ai::Value &pending,
+        const ptcg::ai::Value &option
+    ) const {
+        if (!strategy_optimization_ || actor != root_actor_
+            || information_set_ == nullptr
+            || !information_set_->valid()
+            || information_set_->perspective() != actor
+            || !information_set_->has_exact_hidden_zones(actor)) {
+            return 0.0;
+        }
+        const ptcg::ai::Value *presentation = pending.find("presentation");
+        const ptcg::ai::Value *reference = option.find("ref");
+        if (presentation == nullptr || !presentation->is_object()
+            || string_field(*presentation, "domain") != "search"
+            || string_field(*presentation, "source_zone") != "deck"
+            || reference == nullptr || !reference->is_object()
+            || string_field(*reference, "kind") != "card"
+            || integer_field(*reference, "player", -1) != actor
+            || string_field(*reference, "zone") != "deck") {
+            return 0.0;
+        }
+        const std::string card_id = string_field(*reference, "card_id");
+        if (card_id.empty()) return 0.0;
+        const ptcg::ai::Value &state = position.search_state();
+        const ptcg::ai::Value *players = state.find("players");
+        if (players == nullptr || !players->is_array()
+            || actor < 0
+            || static_cast<std::size_t>(actor) >= players->as_array().size()) {
+            return 0.0;
+        }
+        const ptcg::ai::Value &owner = players->as_array()[
+            static_cast<std::size_t>(actor)];
+        const auto count_zone = [&card_id](const ptcg::ai::Value *zone) {
+            if (zone == nullptr || !zone->is_array()) return std::int64_t{0};
+            return static_cast<std::int64_t>(std::count_if(
+                zone->as_array().begin(), zone->as_array().end(),
+                [&card_id](const ptcg::ai::Value &entry) {
+                    return entry.string_or() == card_id;
+                }));
+        };
+        const std::int64_t deck_copies = count_zone(owner.find("deck"));
+        if (deck_copies <= 0) return 0.0;
+        const std::int64_t prize_copies = static_cast<std::int64_t>(
+            std::count_if(
+                information_set_->known_prizes(actor).begin(),
+                information_set_->known_prizes(actor).end(),
+                [&card_id](const ptcg::ai::Value &entry) {
+                    return entry.string_or() == card_id;
+                }));
+
+        double dead_evolution_line_penalty = 0.0;
+        const ptcg::ai::Value *definition = cards_.find(card_id);
+        const auto has_role = [&](const std::string &candidate_id,
+                                  const char *name) {
+            return strategy_catalog_.card_has_role(
+                state, actor, candidate_id, name);
+        };
+        const bool candidate_is_attacker = has_role(
+                card_id, "primary_attacker")
+            || has_role(card_id, "secondary_attacker");
+        if (definition != nullptr && definition->is_object()
+            && string_field(*definition, "supertype") == "Pokémon"
+            && !candidate_is_attacker) {
+            const std::string candidate_name = string_field(
+                *definition, "name");
+            std::set<std::string> direct_names;
+            std::set<std::string> evolution_ids;
+            for (const auto &[evolution_id, evolution] : cards_.as_object()) {
+                if (!evolution.is_object()
+                    || string_field(evolution, "evolves_from")
+                        != candidate_name) continue;
+                direct_names.insert(string_field(evolution, "name"));
+                if (has_role(evolution_id, "primary_attacker")
+                    || has_role(evolution_id, "secondary_attacker")
+                    || has_role(evolution_id, "bench_engine")
+                    || has_role(evolution_id, "energy_acceleration")
+                    || has_role(evolution_id, "evolution")) {
+                    evolution_ids.insert(evolution_id);
+                }
+            }
+            if (!direct_names.empty()) {
+                for (const auto &[evolution_id, evolution] :
+                    cards_.as_object()) {
+                    if (!evolution.is_object()
+                        || direct_names.count(string_field(
+                            evolution, "evolves_from")) == 0) continue;
+                    if (has_role(evolution_id, "primary_attacker")
+                        || has_role(evolution_id, "secondary_attacker")
+                        || has_role(evolution_id, "bench_engine")
+                        || has_role(evolution_id, "energy_acceleration")
+                        || has_role(evolution_id, "evolution")) {
+                        evolution_ids.insert(evolution_id);
+                    }
+                }
+            }
+            if (!evolution_ids.empty()) {
+                const auto count_ids = [&evolution_ids](
+                    const ptcg::ai::Value *zone
+                ) {
+                    if (zone == nullptr || !zone->is_array()) {
+                        return std::int64_t{0};
+                    }
+                    return static_cast<std::int64_t>(std::count_if(
+                        zone->as_array().begin(), zone->as_array().end(),
+                        [&evolution_ids](const ptcg::ai::Value &entry) {
+                            return evolution_ids.count(entry.string_or()) != 0;
+                        }));
+                };
+                const auto count_known = [&evolution_ids](
+                    const std::vector<ptcg::ai::Value> &zone
+                ) {
+                    return static_cast<std::int64_t>(std::count_if(
+                        zone.begin(), zone.end(),
+                        [&evolution_ids](const ptcg::ai::Value &entry) {
+                            return evolution_ids.count(entry.string_or()) != 0;
+                        }));
+                };
+                std::int64_t accessible = count_known(
+                    information_set_->known_deck(actor));
+                accessible += count_ids(owner.find("hand"));
+                const auto count_pokemon_id = [&](const ptcg::ai::Value *pokemon) {
+                    if (pokemon != nullptr && pokemon->is_object()
+                        && evolution_ids.count(string_field(
+                            *pokemon, "card_id")) != 0) ++accessible;
+                };
+                count_pokemon_id(owner.find("active"));
+                const ptcg::ai::Value *bench = owner.find("bench");
+                if (bench != nullptr && bench->is_array()) {
+                    for (const ptcg::ai::Value &pokemon : bench->as_array()) {
+                        count_pokemon_id(&pokemon);
+                    }
+                }
+                const std::int64_t prized = count_known(
+                    information_set_->known_prizes(actor));
+                const std::int64_t discarded = count_ids(owner.find("discard"));
+                if (accessible == 0 && prized > 0 && discarded == 0) {
+                    dead_evolution_line_penalty = -180.0;
+                }
+            }
+        }
+
+        double role_value = 0.0;
+        const auto role = [&](const char *name) {
+            return strategy_catalog_.card_has_role(
+                state, actor, card_id, name);
+        };
+        if (role("primary_attacker")) role_value = std::max(role_value, 22.0);
+        if (role("bench_engine") || role("energy_acceleration")) {
+            role_value = std::max(role_value, 19.0);
+        }
+        if (role("setup_basic")) role_value = std::max(role_value, 15.0);
+        if (role("evolution")) role_value = std::max(role_value, 14.0);
+        if (role("secondary_attacker")) role_value = std::max(role_value, 11.0);
+        if (role("recovery")) role_value = std::max(role_value, 8.0);
+        if (role("search")) role_value = std::max(role_value, 6.0);
+        if (role("energy")) role_value = std::max(role_value, 5.0);
+        double scarcity_bonus = 0.0;
+        if (role_value > 0.0 && prize_copies > 0) {
+            double scarcity = deck_copies == 1 ? 1.0
+                : (deck_copies == 2 ? 0.35 : 0.0);
+            if (scarcity > 0.0) {
+                scarcity += std::min(
+                    0.5, static_cast<double>(prize_copies) * 0.2);
+
+                std::int64_t visible_copies = count_zone(owner.find("hand"));
+                const auto count_pokemon = [&](const ptcg::ai::Value *pokemon) {
+                    if (pokemon == nullptr || !pokemon->is_object()) return;
+                    if (string_field(*pokemon, "card_id") == card_id) {
+                        ++visible_copies;
+                    }
+                    const ptcg::ai::Value *stack = pokemon->find(
+                        "evolution_stack_ids");
+                    visible_copies += count_zone(stack);
+                };
+                count_pokemon(owner.find("active"));
+                const ptcg::ai::Value *bench = owner.find("bench");
+                if (bench != nullptr && bench->is_array()) {
+                    for (const ptcg::ai::Value &pokemon : bench->as_array()) {
+                        count_pokemon(&pokemon);
+                    }
+                }
+                if (visible_copies > 0) scarcity *= 0.35;
+                scarcity_bonus = std::clamp(
+                    role_value * scarcity, 0.0, 30.0);
+            }
+        }
+        const double result = std::clamp(
+            dead_evolution_line_penalty + scarcity_bonus, -180.0, 30.0);
+        if (std::abs(result) > 0.000001) {
+            prize_aware_choice_adjustments_.fetch_add(
+                1, std::memory_order_relaxed);
+        }
+        return result;
+    }
+
+
     bool ChallengeSearchProviderImpl::arven_choice_response(
         const ptcg::ai::RulesSession &position,
         const ptcg::ai::Value &pending,
@@ -98,7 +297,9 @@ using namespace challenge;
             const double score = trusted_evaluator_.choice_option_score(
                 position, choice.player, pending, options[index]).value_or(0.0)
                 + strategy_catalog_.choice_score(
-                    position.search_state(), choice.player, pending, options[index]);
+                    position.search_state(), choice.player, pending, options[index])
+                + prize_aware_search_choice_score(
+                    position, choice.player, pending, options[index]);
             const std::string card_id = resolved_option_card_id(options[index]);
             if (has_subtype(card_id, "Item") && score > best_item_score) {
                 best_item = static_cast<std::int64_t>(index);
@@ -399,7 +600,9 @@ using namespace challenge;
             ranked.push_back({
                 index,
                 *base + strategy_catalog_.choice_score(
-                    position.search_state(), actor, pending, option),
+                    position.search_state(), actor, pending, option)
+                    + prize_aware_search_choice_score(
+                        position, actor, pending, option),
             });
         }
         const auto approximately_equal = [](double left, double right) {

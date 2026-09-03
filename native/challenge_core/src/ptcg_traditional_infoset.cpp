@@ -4,9 +4,11 @@
 #include "ptcg_random.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace ptcg::ai {
 
@@ -543,6 +545,20 @@ Array slice(const Array &source, std::size_t begin, std::size_t end) {
                  source.begin() + static_cast<std::ptrdiff_t>(end));
 }
 
+bool subtract_cards(Array &pool, const Array &cards) {
+    for (const Value &card : cards) {
+        const std::string card_id = card.string_or();
+        if (card_id.empty() || is_hidden_id(card_id)) return false;
+        const auto found = std::find_if(
+            pool.begin(), pool.end(), [&card_id](const Value &entry) {
+                return entry.string_or() == card_id;
+            });
+        if (found == pool.end()) return false;
+        pool.erase(found);
+    }
+    return true;
+}
+
 } // namespace
 
 bool TraditionalInformationSet::capture(
@@ -558,7 +574,10 @@ bool TraditionalInformationSet::capture(
     valid_ = false;
     remaining_pools_ = {};
     known_hands_ = {};
+    exact_decks_ = {};
+    exact_prizes_ = {};
     published_deck_valid_ = {};
+    exact_hidden_zones_valid_ = {};
     if (perspective != 0 && perspective != 1) {
         if (error != nullptr) *error = "invalid_perspective";
         return false;
@@ -730,6 +749,151 @@ bool TraditionalInformationSet::has_published_deck(
         && published_deck_valid_[static_cast<std::size_t>(player)];
 }
 
+bool TraditionalInformationSet::apply_known_prizes(
+    const Value::Array &prize_cards,
+    std::string *error
+) {
+    if (!valid_ || perspective_ < 0 || perspective_ > 1) {
+        if (error != nullptr) *error = "invalid_information_set";
+        return false;
+    }
+    const std::size_t player = static_cast<std::size_t>(perspective_);
+    const Value *players = public_snapshot_.find("players");
+    if (players == nullptr || !players->is_array()
+        || player >= players->as_array().size()) {
+        if (error != nullptr) *error = "invalid_player_snapshot";
+        return false;
+    }
+    const Value &row = players->as_array()[player];
+    const Value *deck = row.find("deck");
+    const Value *prizes = row.find("prizes");
+    if (!published_deck_valid_[player]
+        || deck == nullptr || !deck->is_array()
+        || prizes == nullptr || !prizes->is_array()
+        || prize_cards.size() != prizes->as_array().size()
+        || prize_cards.size() > 60) {
+        if (error != nullptr) *error = "deck_inspection_memory_mismatch";
+        return false;
+    }
+    Array exact_deck = remaining_pools_[player];
+    if (exact_deck.size() != deck->as_array().size() + prize_cards.size()
+        || !subtract_cards(exact_deck, prize_cards)
+        || exact_deck.size() != deck->as_array().size()) {
+        if (error != nullptr) *error = "deck_inspection_memory_mismatch";
+        return false;
+    }
+    exact_decks_[player] = std::move(exact_deck);
+    exact_prizes_[player] = prize_cards;
+    exact_hidden_zones_valid_[player] = true;
+    if (error != nullptr) error->clear();
+    return true;
+}
+
+bool TraditionalInformationSet::apply_deck_inspection(
+    const Value &choice_view,
+    std::string *error
+) {
+    if (!valid_ || perspective_ < 0 || perspective_ > 1) {
+        if (error != nullptr) *error = "invalid_information_set";
+        return false;
+    }
+    const std::size_t player = static_cast<std::size_t>(perspective_);
+    const Value *presentation = field(choice_view, "presentation");
+    const Value *references = presentation != nullptr
+        ? field(*presentation, "browse_card_refs") : nullptr;
+    if (!choice_view.is_object()
+        || integer_field(choice_view, "player", -1) != perspective_
+        || presentation == nullptr || !presentation->is_object()
+        || integer_field(*presentation, "source_player", -1) != perspective_
+        || string_field(*presentation, "source_zone") != "deck"
+        || references == nullptr || !references->is_array()
+        || references->as_array().size() > 60) {
+        if (error != nullptr) *error = "invalid_deck_inspection";
+        return false;
+    }
+    const Value *players = public_snapshot_.find("players");
+    if (players == nullptr || !players->is_array()
+        || player >= players->as_array().size()) {
+        if (error != nullptr) *error = "invalid_player_snapshot";
+        return false;
+    }
+    const Value &row = players->as_array()[player];
+    const Value *deck = row.find("deck");
+    const Value *prizes = row.find("prizes");
+    if (!published_deck_valid_[player]
+        || deck == nullptr || !deck->is_array()
+        || prizes == nullptr || !prizes->is_array()
+        || references->as_array().size() != deck->as_array().size()) {
+        if (error != nullptr) *error = "deck_inspection_count_mismatch";
+        return false;
+    }
+
+    Array exact_deck(references->as_array().size());
+    std::vector<bool> seen(references->as_array().size(), false);
+    for (const Value &reference : references->as_array()) {
+        if (!reference.is_object() || reference.as_object().size() != 5
+            || string_field(reference, "kind") != "card"
+            || integer_field(reference, "player", -1) != perspective_
+            || string_field(reference, "zone") != "deck") {
+            if (error != nullptr) *error = "invalid_deck_inspection_ref";
+            return false;
+        }
+        const std::int64_t index = integer_field(
+            reference, "index", std::numeric_limits<std::int64_t>::min());
+        const std::string card_id = string_field(reference, "card_id");
+        if (index < 0
+            || static_cast<std::size_t>(index) >= exact_deck.size()
+            || seen[static_cast<std::size_t>(index)]
+            || card_id.empty() || is_hidden_id(card_id)) {
+            if (error != nullptr) *error = "invalid_deck_inspection_ref";
+            return false;
+        }
+        seen[static_cast<std::size_t>(index)] = true;
+        exact_deck[static_cast<std::size_t>(index)] = Value(card_id);
+    }
+    if (std::any_of(seen.begin(), seen.end(), [](bool value) {
+            return !value;
+        })) {
+        if (error != nullptr) *error = "invalid_deck_inspection_ref";
+        return false;
+    }
+
+    Array exact_prizes = remaining_pools_[player];
+    if (exact_prizes.size()
+            != exact_deck.size() + prizes->as_array().size()
+        || !subtract_cards(exact_prizes, exact_deck)
+        || exact_prizes.size() != prizes->as_array().size()) {
+        if (error != nullptr) *error = "deck_inspection_cards_mismatch";
+        return false;
+    }
+    exact_decks_[player] = std::move(exact_deck);
+    exact_prizes_[player] = std::move(exact_prizes);
+    exact_hidden_zones_valid_[player] = true;
+    if (error != nullptr) error->clear();
+    return true;
+}
+
+bool TraditionalInformationSet::has_exact_hidden_zones(
+    std::int32_t player
+) const noexcept {
+    return (player == 0 || player == 1)
+        && exact_hidden_zones_valid_[static_cast<std::size_t>(player)];
+}
+
+const Value::Array &TraditionalInformationSet::known_deck(
+    std::int32_t player
+) const {
+    if (player != 0 && player != 1) throw std::out_of_range("invalid_player");
+    return exact_decks_[static_cast<std::size_t>(player)];
+}
+
+const Value::Array &TraditionalInformationSet::known_prizes(
+    std::int32_t player
+) const {
+    if (player != 0 && player != 1) throw std::out_of_range("invalid_player");
+    return exact_prizes_[static_cast<std::size_t>(player)];
+}
+
 Value TraditionalInformationSet::sample_state(std::uint32_t seed) const {
     if (!valid_) return Value();
     Value result = public_snapshot_;
@@ -744,6 +908,17 @@ Value TraditionalInformationSet::sample_state(std::uint32_t seed) const {
         const std::size_t hand_count = total_hand_count - known_hand.size();
         const std::size_t deck_count = row["deck"].as_array().size();
         const std::size_t prize_count = row["prizes"].as_array().size();
+        if (exact_hidden_zones_valid_[static_cast<std::size_t>(player)]) {
+            Array exact_deck = exact_decks_[static_cast<std::size_t>(player)];
+            Array exact_prizes = exact_prizes_[static_cast<std::size_t>(player)];
+            // Inspection reveals identities, not usable post-search order, and
+            // prize positions remain hidden.  Determinize both exact multisets.
+            shuffle(exact_deck, rng);
+            shuffle(exact_prizes, rng);
+            row["deck"] = Value(std::move(exact_deck));
+            row["prizes"] = Value(std::move(exact_prizes));
+            continue;
+        }
         const std::size_t needed = hand_count + deck_count + prize_count;
         while (pool.size() < needed) pool.emplace_back(fallback_card_id_);
         shuffle(pool, rng);
