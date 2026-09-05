@@ -127,10 +127,6 @@ var own_allowance_row: HBoxContainer
 var own_allowance_labels: Dictionary = {}
 var phase_labels: Dictionary = {}
 var phase_advance_button: Button
-var all_actions_button: Button
-var action_list: VBoxContainer
-var all_actions_scroll: ScrollContainer
-var all_actions_toggle: Button
 var detail_panel: PanelContainer
 var detail_image: TextureRect
 var detail_title: Label
@@ -208,6 +204,7 @@ var presentation_coordinator: BattlePresentationCoordinator
 
 
 func _ready() -> void:
+	set_process(false)
 	initialize_ui()
 
 
@@ -218,6 +215,7 @@ func _process(_delta: float) -> void:
 		or _drag_session.proxy == null
 		or not is_instance_valid(_drag_session.proxy)
 	):
+		set_process(false)
 		return
 	var proxy: Control = _drag_session.proxy
 	proxy.position = hand_view._drag_proxy_position_for_pointer(
@@ -519,10 +517,6 @@ func _resolve_scene_nodes() -> void:
 	phase_advance_button = get_node(
 		"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseAdvanceButton"
 	) as Button
-	all_actions_button = null
-	action_list = null
-	all_actions_scroll = null
-	all_actions_toggle = null
 	detail_panel = get_node("OverlayPanels/DetailPanel") as PanelContainer
 	var detail_component := detail_panel as BattleDetailPanel
 	detail_image = detail_component.detail_image if detail_component else null

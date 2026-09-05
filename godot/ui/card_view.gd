@@ -175,6 +175,8 @@ func set_local_visual_id(value: String) -> void:
 
 
 func _ready() -> void:
+	set_process(false)
+	visibility_changed.connect(_sync_detached_selection_ring)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	focus_mode = Control.FOCUS_NONE
@@ -269,6 +271,15 @@ func set_interaction_state(
 	allowed_hand_indices: Array = [],
 	show_inline_target_hint := true,
 ) -> void:
+	if (
+		actionable == p_actionable
+		and _disabled_reason == disabled_reason
+		and _legal_target_hint == legal_target_hint
+		and _show_inline_target_hint == show_inline_target_hint
+		and _allowed_drop_hand_indices == allowed_hand_indices
+		and targetable == (not legal_target_hint.is_empty() or not allowed_hand_indices.is_empty())
+	):
+		return
 	# Read-only presentation state supplied by the interaction router. CardView
 	# visualizes legality but never derives or executes a game action itself.
 	actionable = p_actionable
@@ -321,7 +332,10 @@ func clear_interaction_state() -> void:
 
 
 func set_selected(value: bool) -> void:
+	if selected == value:
+		return
 	selected = value
+	_sync_detached_selection_ring()
 	_refresh_state_animation()
 	_refresh_empty_slot_visibility()
 	_refresh_interaction_visuals()
@@ -1323,6 +1337,7 @@ func _content_is_visible() -> bool:
 
 
 func _sync_detached_selection_ring() -> void:
+	set_process(selected and is_visible_in_tree())
 	if selection_ring == null:
 		return
 	var content_visible := _content_is_visible()

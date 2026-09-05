@@ -84,9 +84,8 @@ struct TraditionalReplyEvaluation {
     std::shared_ptr<RulesSession> resulting_position;
 };
 
-// The controller owns only the fixed turn_beam_v2 traversal.  Every semantic
-// operation is supplied by a provider so the migration can compare the native
-// traversal against the existing Godot policy before replacing each provider.
+// Shared rules/semantic boundary for turn_beam_v2 and strategic_intent_v3.
+// Traversals own their ordering and seed derivation; providers own game policy.
 class TraditionalSearchProvider {
 public:
     virtual ~TraditionalSearchProvider() = default;

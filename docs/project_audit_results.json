@@ -1,0 +1,1688 @@
+{
+  "schema": "ptcg.project_audit_results/1",
+  "environment": {
+    "cpu": "Intel Core i7-13700K",
+    "logical_processors": 24,
+    "godot": "4.7.stable.official.5b4e0cb0f",
+    "graphics_previews": "OpenGL 3.3 / NVIDIA RTX 4070 Ti",
+    "android_device_connected": false
+  },
+  "baseline": {
+    "head": "52d094b93cdf2f29a25672d545f871ed3edb225a",
+    "includes_uncommitted_changes": true,
+    "snapshot_manifest_sha256": "7ff2b1df1f312ce1875f5966ba32fef908ebd8ada0f79fa2cd79ee927a2ef8b2",
+    "agent_implementation_hash": "22259966e17e869dbb2a202f5076fd7a7dd8482143aa36a0a49196121e3b994a",
+    "agent_binary_sha256": "a7325c97aa5b8e9693a93ba11f0286db4f8719ca18ff48f36e99888d954e4911"
+  },
+  "candidate_agent_implementation_hash": "bc7b930898c3ad367b1bda83ddc88021b3391c64e87795ead8401c9026929782",
+  "performance": {
+    "schema": "ptcg.project_performance_comparison/1",
+    "rounds": 3,
+    "baseline_project": "E:\\PokemonTCG\\build\\project-audit\\baseline\\godot",
+    "candidate_project": "E:\\PokemonTCG\\godot",
+    "frame_measurement": "Headless frame intervals include scheduler delay; no GPU rendering is measured.",
+    "samples": [
+      {
+        "round": 1,
+        "role": "baseline",
+        "metrics": {
+          "capture_player_view": {
+            "p50_us": 145.0,
+            "p95_us": 187.0,
+            "samples": 1000
+          },
+          "card_nodes": 23,
+          "godot": "4.7-stable (official)",
+          "idle_frame_interval": {
+            "p50_us": 6897.0,
+            "p95_us": 6918.0,
+            "samples": 300
+          },
+          "memory_end": 155568660,
+          "memory_start": 117877866,
+          "node_count": 721,
+          "processing_cards": 23,
+          "refresh_battle": {
+            "p50_us": 8667.0,
+            "p95_us": 9221.0,
+            "samples": 200
+          },
+          "render_snapshot": {
+            "p50_us": 42.0,
+            "p95_us": 45.0,
+            "samples": 1000
+          },
+          "renderer": "headless",
+          "rules_legal_actions": {
+            "p50_us": 68.0,
+            "p95_us": 82.0,
+            "samples": 1000
+          },
+          "rules_snapshot": {
+            "p50_us": 33.0,
+            "p95_us": 35.0,
+            "samples": 1000
+          },
+          "schema": "ptcg.project_performance/1",
+          "seed": 20260623,
+          "table_processing": true,
+          "texture_cache": {
+            "entries": 14,
+            "hits": 905,
+            "limit": 24,
+            "misses": 14
+          },
+          "unchanged_interaction": {
+            "p50_us": 170.0,
+            "p95_us": 247.0,
+            "samples": 1000
+          }
+        }
+      },
+      {
+        "round": 1,
+        "role": "candidate",
+        "metrics": {
+          "capture_player_view": {
+            "p50_us": 100.0,
+            "p95_us": 118.0,
+            "samples": 1000
+          },
+          "card_nodes": 23,
+          "godot": "4.7-stable (official)",
+          "idle_frame_interval": {
+            "p50_us": 6898.0,
+            "p95_us": 6920.0,
+            "samples": 300
+          },
+          "memory_end": 155599822,
+          "memory_start": 117895600,
+          "node_count": 721,
+          "processing_cards": 0,
+          "refresh_battle": {
+            "p50_us": 5827.0,
+            "p95_us": 6720.0,
+            "samples": 200
+          },
+          "render_snapshot": {
+            "p50_us": 42.0,
+            "p95_us": 47.0,
+            "samples": 1000
+          },
+          "renderer": "headless",
+          "rules_legal_actions": {
+            "p50_us": 69.0,
+            "p95_us": 82.0,
+            "samples": 1000
+          },
+          "rules_snapshot": {
+            "p50_us": 34.0,
+            "p95_us": 39.0,
+            "samples": 1000
+          },
+          "schema": "ptcg.project_performance/1",
+          "seed": 20260623,
+          "table_processing": false,
+          "texture_cache": {
+            "entries": 14,
+            "hits": 905,
+            "limit": 24,
+            "misses": 14
+          },
+          "unchanged_interaction": {
+            "p50_us": 0.0,
+            "p95_us": 1.0,
+            "samples": 1000
+          }
+        }
+      },
+      {
+        "round": 2,
+        "role": "candidate",
+        "metrics": {
+          "capture_player_view": {
+            "p50_us": 99.0,
+            "p95_us": 124.0,
+            "samples": 1000
+          },
+          "card_nodes": 23,
+          "godot": "4.7-stable (official)",
+          "idle_frame_interval": {
+            "p50_us": 6899.0,
+            "p95_us": 6918.0,
+            "samples": 300
+          },
+          "memory_end": 155599822,
+          "memory_start": 117895600,
+          "node_count": 721,
+          "processing_cards": 0,
+          "refresh_battle": {
+            "p50_us": 5762.0,
+            "p95_us": 6167.0,
+            "samples": 200
+          },
+          "render_snapshot": {
+            "p50_us": 42.0,
+            "p95_us": 46.0,
+            "samples": 1000
+          },
+          "renderer": "headless",
+          "rules_legal_actions": {
+            "p50_us": 69.0,
+            "p95_us": 81.0,
+            "samples": 1000
+          },
+          "rules_snapshot": {
+            "p50_us": 34.0,
+            "p95_us": 37.0,
+            "samples": 1000
+          },
+          "schema": "ptcg.project_performance/1",
+          "seed": 20260623,
+          "table_processing": false,
+          "texture_cache": {
+            "entries": 14,
+            "hits": 905,
+            "limit": 24,
+            "misses": 14
+          },
+          "unchanged_interaction": {
+            "p50_us": 0.0,
+            "p95_us": 1.0,
+            "samples": 1000
+          }
+        }
+      },
+      {
+        "round": 2,
+        "role": "baseline",
+        "metrics": {
+          "capture_player_view": {
+            "p50_us": 146.0,
+            "p95_us": 187.0,
+            "samples": 1000
+          },
+          "card_nodes": 23,
+          "godot": "4.7-stable (official)",
+          "idle_frame_interval": {
+            "p50_us": 6899.0,
+            "p95_us": 6917.0,
+            "samples": 300
+          },
+          "memory_end": 155568660,
+          "memory_start": 117877866,
+          "node_count": 721,
+          "processing_cards": 23,
+          "refresh_battle": {
+            "p50_us": 8816.0,
+            "p95_us": 9240.0,
+            "samples": 200
+          },
+          "render_snapshot": {
+            "p50_us": 42.0,
+            "p95_us": 46.0,
+            "samples": 1000
+          },
+          "renderer": "headless",
+          "rules_legal_actions": {
+            "p50_us": 68.0,
+            "p95_us": 87.0,
+            "samples": 1000
+          },
+          "rules_snapshot": {
+            "p50_us": 34.0,
+            "p95_us": 38.0,
+            "samples": 1000
+          },
+          "schema": "ptcg.project_performance/1",
+          "seed": 20260623,
+          "table_processing": true,
+          "texture_cache": {
+            "entries": 14,
+            "hits": 905,
+            "limit": 24,
+            "misses": 14
+          },
+          "unchanged_interaction": {
+            "p50_us": 171.0,
+            "p95_us": 250.0,
+            "samples": 1000
+          }
+        }
+      },
+      {
+        "round": 3,
+        "role": "baseline",
+        "metrics": {
+          "capture_player_view": {
+            "p50_us": 145.0,
+            "p95_us": 187.0,
+            "samples": 1000
+          },
+          "card_nodes": 23,
+          "godot": "4.7-stable (official)",
+          "idle_frame_interval": {
+            "p50_us": 6898.0,
+            "p95_us": 6915.0,
+            "samples": 300
+          },
+          "memory_end": 155568660,
+          "memory_start": 117877866,
+          "node_count": 721,
+          "processing_cards": 23,
+          "refresh_battle": {
+            "p50_us": 8761.0,
+            "p95_us": 9329.0,
+            "samples": 200
+          },
+          "render_snapshot": {
+            "p50_us": 42.0,
+            "p95_us": 43.0,
+            "samples": 1000
+          },
+          "renderer": "headless",
+          "rules_legal_actions": {
+            "p50_us": 68.0,
+            "p95_us": 84.0,
+            "samples": 1000
+          },
+          "rules_snapshot": {
+            "p50_us": 34.0,
+            "p95_us": 38.0,
+            "samples": 1000
+          },
+          "schema": "ptcg.project_performance/1",
+          "seed": 20260623,
+          "table_processing": true,
+          "texture_cache": {
+            "entries": 14,
+            "hits": 905,
+            "limit": 24,
+            "misses": 14
+          },
+          "unchanged_interaction": {
+            "p50_us": 172.0,
+            "p95_us": 252.0,
+            "samples": 1000
+          }
+        }
+      },
+      {
+        "round": 3,
+        "role": "candidate",
+        "metrics": {
+          "capture_player_view": {
+            "p50_us": 100.0,
+            "p95_us": 122.0,
+            "samples": 1000
+          },
+          "card_nodes": 23,
+          "godot": "4.7-stable (official)",
+          "idle_frame_interval": {
+            "p50_us": 6898.0,
+            "p95_us": 6918.0,
+            "samples": 300
+          },
+          "memory_end": 155599822,
+          "memory_start": 117895600,
+          "node_count": 721,
+          "processing_cards": 0,
+          "refresh_battle": {
+            "p50_us": 5752.0,
+            "p95_us": 6238.0,
+            "samples": 200
+          },
+          "render_snapshot": {
+            "p50_us": 42.0,
+            "p95_us": 46.0,
+            "samples": 1000
+          },
+          "renderer": "headless",
+          "rules_legal_actions": {
+            "p50_us": 68.0,
+            "p95_us": 88.0,
+            "samples": 1000
+          },
+          "rules_snapshot": {
+            "p50_us": 34.0,
+            "p95_us": 40.0,
+            "samples": 1000
+          },
+          "schema": "ptcg.project_performance/1",
+          "seed": 20260623,
+          "table_processing": false,
+          "texture_cache": {
+            "entries": 14,
+            "hits": 905,
+            "limit": 24,
+            "misses": 14
+          },
+          "unchanged_interaction": {
+            "p50_us": 0.0,
+            "p95_us": 1.0,
+            "samples": 1000
+          }
+        }
+      }
+    ]
+  },
+  "ai_trace_timing": {
+    "schema": "ptcg.challenge_trace_timing/1",
+    "workers": 1,
+    "warmup_rounds": 1,
+    "trace": "E:\\PokemonTCG\\build\\project-audit\\parity-v3\\game-00\\strategic_override.json",
+    "baseline_manifest": "E:\\PokemonTCG\\research\\deep_ai\\build\\arena-agents\\project_audit_baseline\\1f3c301e374d49e0fb7dc12b8206dfca8c36b8fa8afe2c3ad92961fbf064d98d\\agent.build.json",
+    "candidate_manifest": "E:\\PokemonTCG\\research\\deep_ai\\build\\arena-agents\\challenge_next\\609bd516c6c42542be35d8e4dd8cbd2c2c65468987318bae390a6ae521076a01\\agent.build.json",
+    "requests_per_round": 21,
+    "rounds": [
+      {
+        "round": 1,
+        "samples": [
+          {
+            "index": 0,
+            "kind": "choice",
+            "baseline": 3.0099,
+            "candidate": 2.5754
+          },
+          {
+            "index": 1,
+            "kind": "action",
+            "baseline": 4.5994,
+            "candidate": 4.7492
+          },
+          {
+            "index": 2,
+            "kind": "action",
+            "baseline": 4.7321,
+            "candidate": 4.4881
+          },
+          {
+            "index": 3,
+            "kind": "action",
+            "baseline": 570.7625,
+            "candidate": 575.0564
+          },
+          {
+            "index": 4,
+            "kind": "action",
+            "baseline": 11.1391,
+            "candidate": 10.8307
+          },
+          {
+            "index": 5,
+            "kind": "choice",
+            "baseline": 2.9814,
+            "candidate": 2.8339
+          },
+          {
+            "index": 6,
+            "kind": "choice",
+            "baseline": 3.8108,
+            "candidate": 3.3998
+          },
+          {
+            "index": 7,
+            "kind": "action",
+            "baseline": 8.7498,
+            "candidate": 8.9481
+          },
+          {
+            "index": 8,
+            "kind": "action",
+            "baseline": 124.9896,
+            "candidate": 124.8959
+          },
+          {
+            "index": 9,
+            "kind": "choice",
+            "baseline": 3.3604,
+            "candidate": 3.2607
+          },
+          {
+            "index": 10,
+            "kind": "choice",
+            "baseline": 2.4733,
+            "candidate": 2.4766
+          },
+          {
+            "index": 11,
+            "kind": "action",
+            "baseline": 124.6945,
+            "candidate": 125.9478
+          },
+          {
+            "index": 12,
+            "kind": "choice",
+            "baseline": 3.3483,
+            "candidate": 3.3205
+          },
+          {
+            "index": 13,
+            "kind": "choice",
+            "baseline": 3.0114,
+            "candidate": 2.3572
+          },
+          {
+            "index": 14,
+            "kind": "action",
+            "baseline": 5.1499,
+            "candidate": 5.3776
+          },
+          {
+            "index": 15,
+            "kind": "action",
+            "baseline": 424.12,
+            "candidate": 427.5842
+          },
+          {
+            "index": 16,
+            "kind": "action",
+            "baseline": 21.3793,
+            "candidate": 21.355
+          },
+          {
+            "index": 17,
+            "kind": "action",
+            "baseline": 576.0189,
+            "candidate": 582.5299
+          },
+          {
+            "index": 18,
+            "kind": "action",
+            "baseline": 758.2127,
+            "candidate": 772.3579
+          },
+          {
+            "index": 19,
+            "kind": "action",
+            "baseline": 87.3259,
+            "candidate": 88.448
+          },
+          {
+            "index": 20,
+            "kind": "action",
+            "baseline": 233.4964,
+            "candidate": 235.1798
+          }
+        ],
+        "summary": {
+          "baseline": {
+            "samples": 21,
+            "p50_ms": 8.7498,
+            "p95_ms": 576.0189
+          },
+          "candidate": {
+            "samples": 21,
+            "p50_ms": 8.9481,
+            "p95_ms": 582.5299
+          }
+        }
+      },
+      {
+        "round": 2,
+        "samples": [
+          {
+            "index": 0,
+            "kind": "choice",
+            "baseline": 2.7806,
+            "candidate": 2.8478
+          },
+          {
+            "index": 1,
+            "kind": "action",
+            "baseline": 4.8419,
+            "candidate": 5.0228
+          },
+          {
+            "index": 2,
+            "kind": "action",
+            "baseline": 4.6157,
+            "candidate": 4.7693
+          },
+          {
+            "index": 3,
+            "kind": "action",
+            "baseline": 563.5093,
+            "candidate": 572.7694
+          },
+          {
+            "index": 4,
+            "kind": "action",
+            "baseline": 10.6744,
+            "candidate": 10.9789
+          },
+          {
+            "index": 5,
+            "kind": "choice",
+            "baseline": 2.8481,
+            "candidate": 3.0386
+          },
+          {
+            "index": 6,
+            "kind": "choice",
+            "baseline": 3.4096,
+            "candidate": 3.8368
+          },
+          {
+            "index": 7,
+            "kind": "action",
+            "baseline": 7.9896,
+            "candidate": 8.675
+          },
+          {
+            "index": 8,
+            "kind": "action",
+            "baseline": 123.0748,
+            "candidate": 124.2358
+          },
+          {
+            "index": 9,
+            "kind": "choice",
+            "baseline": 3.3574,
+            "candidate": 3.6131
+          },
+          {
+            "index": 10,
+            "kind": "choice",
+            "baseline": 2.3524,
+            "candidate": 2.5864
+          },
+          {
+            "index": 11,
+            "kind": "action",
+            "baseline": 124.2246,
+            "candidate": 126.0147
+          },
+          {
+            "index": 12,
+            "kind": "choice",
+            "baseline": 3.3287,
+            "candidate": 3.5606
+          },
+          {
+            "index": 13,
+            "kind": "choice",
+            "baseline": 2.4532,
+            "candidate": 2.5286
+          },
+          {
+            "index": 14,
+            "kind": "action",
+            "baseline": 4.9511,
+            "candidate": 5.1634
+          },
+          {
+            "index": 15,
+            "kind": "action",
+            "baseline": 424.6434,
+            "candidate": 431.149
+          },
+          {
+            "index": 16,
+            "kind": "action",
+            "baseline": 20.7806,
+            "candidate": 21.8723
+          },
+          {
+            "index": 17,
+            "kind": "action",
+            "baseline": 570.0306,
+            "candidate": 586.2504
+          },
+          {
+            "index": 18,
+            "kind": "action",
+            "baseline": 758.7477,
+            "candidate": 771.9776
+          },
+          {
+            "index": 19,
+            "kind": "action",
+            "baseline": 87.2067,
+            "candidate": 89.0972
+          },
+          {
+            "index": 20,
+            "kind": "action",
+            "baseline": 228.7115,
+            "candidate": 233.5219
+          }
+        ],
+        "summary": {
+          "baseline": {
+            "samples": 21,
+            "p50_ms": 7.9896,
+            "p95_ms": 570.0306
+          },
+          "candidate": {
+            "samples": 21,
+            "p50_ms": 8.675,
+            "p95_ms": 586.2504
+          }
+        }
+      },
+      {
+        "round": 3,
+        "samples": [
+          {
+            "index": 0,
+            "kind": "choice",
+            "baseline": 2.8873,
+            "candidate": 2.626
+          },
+          {
+            "index": 1,
+            "kind": "action",
+            "baseline": 4.7437,
+            "candidate": 4.704
+          },
+          {
+            "index": 2,
+            "kind": "action",
+            "baseline": 4.3278,
+            "candidate": 4.6405
+          },
+          {
+            "index": 3,
+            "kind": "action",
+            "baseline": 563.8726,
+            "candidate": 569.722
+          },
+          {
+            "index": 4,
+            "kind": "action",
+            "baseline": 10.8118,
+            "candidate": 10.8928
+          },
+          {
+            "index": 5,
+            "kind": "choice",
+            "baseline": 2.9995,
+            "candidate": 2.8303
+          },
+          {
+            "index": 6,
+            "kind": "choice",
+            "baseline": 3.5868,
+            "candidate": 3.4917
+          },
+          {
+            "index": 7,
+            "kind": "action",
+            "baseline": 8.5445,
+            "candidate": 8.3393
+          },
+          {
+            "index": 8,
+            "kind": "action",
+            "baseline": 122.7713,
+            "candidate": 125.4595
+          },
+          {
+            "index": 9,
+            "kind": "choice",
+            "baseline": 3.3333,
+            "candidate": 3.4813
+          },
+          {
+            "index": 10,
+            "kind": "choice",
+            "baseline": 2.3644,
+            "candidate": 2.4403
+          },
+          {
+            "index": 11,
+            "kind": "action",
+            "baseline": 124.037,
+            "candidate": 125.4563
+          },
+          {
+            "index": 12,
+            "kind": "choice",
+            "baseline": 3.1559,
+            "candidate": 3.4598
+          },
+          {
+            "index": 13,
+            "kind": "choice",
+            "baseline": 2.4932,
+            "candidate": 2.3667
+          },
+          {
+            "index": 14,
+            "kind": "action",
+            "baseline": 5.5426,
+            "candidate": 5.1718
+          },
+          {
+            "index": 15,
+            "kind": "action",
+            "baseline": 421.639,
+            "candidate": 430.6571
+          },
+          {
+            "index": 16,
+            "kind": "action",
+            "baseline": 20.8531,
+            "candidate": 20.2695
+          },
+          {
+            "index": 17,
+            "kind": "action",
+            "baseline": 575.4851,
+            "candidate": 580.5588
+          },
+          {
+            "index": 18,
+            "kind": "action",
+            "baseline": 766.6093,
+            "candidate": 768.0139
+          },
+          {
+            "index": 19,
+            "kind": "action",
+            "baseline": 89.4874,
+            "candidate": 86.1229
+          },
+          {
+            "index": 20,
+            "kind": "action",
+            "baseline": 225.7935,
+            "candidate": 235.2213
+          }
+        ],
+        "summary": {
+          "baseline": {
+            "samples": 21,
+            "p50_ms": 8.5445,
+            "p95_ms": 575.4851
+          },
+          "candidate": {
+            "samples": 21,
+            "p50_ms": 8.3393,
+            "p95_ms": 580.5588
+          }
+        }
+      }
+    ],
+    "divergences": 0
+  },
+  "decision_parity": {
+    "v3": {
+      "engine": "strategic_intent_v3",
+      "games": [
+        {
+          "index": 0,
+          "decks": [
+            "fire",
+            "water"
+          ],
+          "decisions": 154,
+          "counts": {
+            "choice": 49,
+            "action": 105
+          },
+          "nodes": [
+            63861,
+            63861
+          ],
+          "winner": 0,
+          "turns": 26,
+          "coverage": [
+            "legacy_fallback",
+            "strategic_override"
+          ],
+          "timing": {
+            "baseline": {
+              "samples": 149,
+              "p50_ms": 106.9367,
+              "p95_ms": 1317.7512
+            },
+            "candidate": {
+              "samples": 149,
+              "p50_ms": 109.1904,
+              "p95_ms": 1323.0375
+            }
+          }
+        },
+        {
+          "index": 1,
+          "decks": [
+            "water",
+            "psychic"
+          ],
+          "decisions": 175,
+          "counts": {
+            "choice": 53,
+            "action": 122
+          },
+          "nodes": [
+            76821,
+            76821
+          ],
+          "winner": 0,
+          "turns": 28,
+          "coverage": [
+            "legacy_fallback",
+            "strategic_override"
+          ],
+          "timing": {
+            "baseline": {
+              "samples": 170,
+              "p50_ms": 66.344,
+              "p95_ms": 1426.5735
+            },
+            "candidate": {
+              "samples": 170,
+              "p50_ms": 65.5389,
+              "p95_ms": 1408.2873
+            }
+          }
+        },
+        {
+          "index": 2,
+          "decks": [
+            "psychic",
+            "lightning"
+          ],
+          "decisions": 160,
+          "counts": {
+            "choice": 58,
+            "action": 102
+          },
+          "nodes": [
+            60323,
+            60323
+          ],
+          "winner": 1,
+          "turns": 18,
+          "coverage": [
+            "legacy_fallback",
+            "strategic_override"
+          ],
+          "timing": {
+            "baseline": {
+              "samples": 155,
+              "p50_ms": 15.0746,
+              "p95_ms": 989.1484
+            },
+            "candidate": {
+              "samples": 155,
+              "p50_ms": 15.4784,
+              "p95_ms": 938.0395
+            }
+          }
+        },
+        {
+          "index": 3,
+          "decks": [
+            "lightning",
+            "fighting"
+          ],
+          "decisions": 118,
+          "counts": {
+            "choice": 40,
+            "action": 78
+          },
+          "nodes": [
+            40458,
+            40458
+          ],
+          "winner": 0,
+          "turns": 16,
+          "coverage": [
+            "legacy_fallback",
+            "strategic_override"
+          ],
+          "timing": {
+            "baseline": {
+              "samples": 113,
+              "p50_ms": 14.9919,
+              "p95_ms": 1183.9116
+            },
+            "candidate": {
+              "samples": 113,
+              "p50_ms": 14.8185,
+              "p95_ms": 1230.9894
+            }
+          }
+        },
+        {
+          "index": 4,
+          "decks": [
+            "fighting",
+            "colorless"
+          ],
+          "decisions": 104,
+          "counts": {
+            "choice": 27,
+            "action": 77
+          },
+          "nodes": [
+            33194,
+            33194
+          ],
+          "winner": 1,
+          "turns": 19,
+          "coverage": [
+            "legacy_fallback",
+            "strategic_override"
+          ],
+          "timing": {
+            "baseline": {
+              "samples": 99,
+              "p50_ms": 66.826,
+              "p95_ms": 950.7494
+            },
+            "candidate": {
+              "samples": 99,
+              "p50_ms": 69.3937,
+              "p95_ms": 968.6557
+            }
+          }
+        },
+        {
+          "index": 5,
+          "decks": [
+            "colorless",
+            "dragon"
+          ],
+          "decisions": 117,
+          "counts": {
+            "choice": 36,
+            "action": 81
+          },
+          "nodes": [
+            42098,
+            42098
+          ],
+          "winner": 0,
+          "turns": 17,
+          "coverage": [
+            "legacy_fallback",
+            "strategic_override"
+          ],
+          "timing": {
+            "baseline": {
+              "samples": 112,
+              "p50_ms": 76.3675,
+              "p95_ms": 1307.1141
+            },
+            "candidate": {
+              "samples": 112,
+              "p50_ms": 74.7639,
+              "p95_ms": 1301.3334
+            }
+          }
+        },
+        {
+          "index": 6,
+          "decks": [
+            "dragon",
+            "grass"
+          ],
+          "decisions": 57,
+          "counts": {
+            "choice": 15,
+            "action": 42
+          },
+          "nodes": [
+            9674,
+            9674
+          ],
+          "winner": 0,
+          "turns": 10,
+          "coverage": [
+            "legacy_fallback"
+          ],
+          "timing": {
+            "baseline": {
+              "samples": 52,
+              "p50_ms": 13.6068,
+              "p95_ms": 675.9425
+            },
+            "candidate": {
+              "samples": 52,
+              "p50_ms": 13.8119,
+              "p95_ms": 683.3161
+            }
+          }
+        },
+        {
+          "index": 7,
+          "decks": [
+            "grass",
+            "steel"
+          ],
+          "decisions": 160,
+          "counts": {
+            "choice": 64,
+            "action": 96
+          },
+          "nodes": [
+            33068,
+            33068
+          ],
+          "winner": 0,
+          "turns": 16,
+          "coverage": [
+            "legacy_fallback"
+          ],
+          "timing": {
+            "baseline": {
+              "samples": 155,
+              "p50_ms": 9.4165,
+              "p95_ms": 914.2178
+            },
+            "candidate": {
+              "samples": 155,
+              "p50_ms": 9.6335,
+              "p95_ms": 925.9028
+            }
+          }
+        },
+        {
+          "index": 8,
+          "decks": [
+            "steel",
+            "darkness"
+          ],
+          "decisions": 235,
+          "counts": {
+            "choice": 114,
+            "action": 121
+          },
+          "nodes": [
+            61866,
+            61866
+          ],
+          "winner": 0,
+          "turns": 23,
+          "coverage": [
+            "legacy_fallback",
+            "strategic_override"
+          ],
+          "timing": {
+            "baseline": {
+              "samples": 230,
+              "p50_ms": 6.0785,
+              "p95_ms": 1049.3635
+            },
+            "candidate": {
+              "samples": 230,
+              "p50_ms": 6.0045,
+              "p95_ms": 1055.8473
+            }
+          }
+        },
+        {
+          "index": 9,
+          "decks": [
+            "darkness",
+            "fire"
+          ],
+          "decisions": 179,
+          "counts": {
+            "choice": 49,
+            "action": 130
+          },
+          "nodes": [
+            101016,
+            101016
+          ],
+          "winner": 0,
+          "turns": 28,
+          "coverage": [
+            "legacy_fallback",
+            "strategic_override"
+          ],
+          "timing": {
+            "baseline": {
+              "samples": 174,
+              "p50_ms": 188.8254,
+              "p95_ms": 1517.4968
+            },
+            "candidate": {
+              "samples": 174,
+              "p50_ms": 191.1393,
+              "p95_ms": 1521.2308
+            }
+          }
+        }
+      ],
+      "workers": 4,
+      "timing_warmup_decisions_per_game": 5,
+      "baseline_manifest": "E:\\PokemonTCG\\research\\deep_ai\\build\\arena-agents\\project_audit_baseline\\1f3c301e374d49e0fb7dc12b8206dfca8c36b8fa8afe2c3ad92961fbf064d98d\\agent.build.json",
+      "candidate_manifest": "E:\\PokemonTCG\\research\\deep_ai\\build\\arena-agents\\challenge_next\\609bd516c6c42542be35d8e4dd8cbd2c2c65468987318bae390a6ae521076a01\\agent.build.json",
+      "decisions_compared": 1459,
+      "divergences": 0,
+      "baseline_nodes": 522379,
+      "candidate_nodes": 522379
+    },
+    "v2": {
+      "engine": "turn_beam_v2",
+      "games": [
+        {
+          "index": 0,
+          "decks": [
+            "fire",
+            "water"
+          ],
+          "decisions": 116,
+          "counts": {
+            "choice": 40,
+            "action": 76
+          },
+          "nodes": [
+            33636,
+            33636
+          ],
+          "winner": 1,
+          "turns": 19,
+          "coverage": [],
+          "timing": {
+            "baseline": {
+              "samples": 111,
+              "p50_ms": 4.2722,
+              "p95_ms": 915.73
+            },
+            "candidate": {
+              "samples": 111,
+              "p50_ms": 4.2591,
+              "p95_ms": 922.7061
+            }
+          }
+        },
+        {
+          "index": 1,
+          "decks": [
+            "water",
+            "psychic"
+          ],
+          "decisions": 183,
+          "counts": {
+            "choice": 57,
+            "action": 126
+          },
+          "nodes": [
+            69687,
+            69687
+          ],
+          "winner": 0,
+          "turns": 30,
+          "coverage": [],
+          "timing": {
+            "baseline": {
+              "samples": 178,
+              "p50_ms": 4.3099,
+              "p95_ms": 1142.348
+            },
+            "candidate": {
+              "samples": 178,
+              "p50_ms": 4.3312,
+              "p95_ms": 1152.9428
+            }
+          }
+        },
+        {
+          "index": 2,
+          "decks": [
+            "psychic",
+            "lightning"
+          ],
+          "decisions": 173,
+          "counts": {
+            "choice": 61,
+            "action": 112
+          },
+          "nodes": [
+            62970,
+            62970
+          ],
+          "winner": 1,
+          "turns": 24,
+          "coverage": [],
+          "timing": {
+            "baseline": {
+              "samples": 168,
+              "p50_ms": 4.1003,
+              "p95_ms": 917.0725
+            },
+            "candidate": {
+              "samples": 168,
+              "p50_ms": 4.154,
+              "p95_ms": 930.1053
+            }
+          }
+        },
+        {
+          "index": 3,
+          "decks": [
+            "lightning",
+            "fighting"
+          ],
+          "decisions": 116,
+          "counts": {
+            "choice": 39,
+            "action": 77
+          },
+          "nodes": [
+            36632,
+            36632
+          ],
+          "winner": 0,
+          "turns": 16,
+          "coverage": [],
+          "timing": {
+            "baseline": {
+              "samples": 111,
+              "p50_ms": 3.9114,
+              "p95_ms": 1019.1876
+            },
+            "candidate": {
+              "samples": 111,
+              "p50_ms": 3.8643,
+              "p95_ms": 1005.9605
+            }
+          }
+        },
+        {
+          "index": 4,
+          "decks": [
+            "fighting",
+            "colorless"
+          ],
+          "decisions": 103,
+          "counts": {
+            "choice": 27,
+            "action": 76
+          },
+          "nodes": [
+            30514,
+            30514
+          ],
+          "winner": 1,
+          "turns": 19,
+          "coverage": [],
+          "timing": {
+            "baseline": {
+              "samples": 98,
+              "p50_ms": 3.9714,
+              "p95_ms": 945.2443
+            },
+            "candidate": {
+              "samples": 98,
+              "p50_ms": 4.2625,
+              "p95_ms": 958.9377
+            }
+          }
+        },
+        {
+          "index": 5,
+          "decks": [
+            "colorless",
+            "dragon"
+          ],
+          "decisions": 117,
+          "counts": {
+            "choice": 36,
+            "action": 81
+          },
+          "nodes": [
+            39324,
+            39324
+          ],
+          "winner": 0,
+          "turns": 17,
+          "coverage": [],
+          "timing": {
+            "baseline": {
+              "samples": 112,
+              "p50_ms": 4.252,
+              "p95_ms": 1244.701
+            },
+            "candidate": {
+              "samples": 112,
+              "p50_ms": 4.3377,
+              "p95_ms": 1275.0187
+            }
+          }
+        },
+        {
+          "index": 6,
+          "decks": [
+            "dragon",
+            "grass"
+          ],
+          "decisions": 57,
+          "counts": {
+            "choice": 15,
+            "action": 42
+          },
+          "nodes": [
+            9200,
+            9200
+          ],
+          "winner": 0,
+          "turns": 10,
+          "coverage": [],
+          "timing": {
+            "baseline": {
+              "samples": 52,
+              "p50_ms": 4.034,
+              "p95_ms": 557.5761
+            },
+            "candidate": {
+              "samples": 52,
+              "p50_ms": 4.2459,
+              "p95_ms": 565.2243
+            }
+          }
+        },
+        {
+          "index": 7,
+          "decks": [
+            "grass",
+            "steel"
+          ],
+          "decisions": 160,
+          "counts": {
+            "choice": 64,
+            "action": 96
+          },
+          "nodes": [
+            31570,
+            31570
+          ],
+          "winner": 0,
+          "turns": 16,
+          "coverage": [],
+          "timing": {
+            "baseline": {
+              "samples": 155,
+              "p50_ms": 3.5516,
+              "p95_ms": 836.9992
+            },
+            "candidate": {
+              "samples": 155,
+              "p50_ms": 3.5494,
+              "p95_ms": 798.9197
+            }
+          }
+        },
+        {
+          "index": 8,
+          "decks": [
+            "steel",
+            "darkness"
+          ],
+          "decisions": 295,
+          "counts": {
+            "choice": 152,
+            "action": 143
+          },
+          "nodes": [
+            93249,
+            93249
+          ],
+          "winner": 0,
+          "turns": 23,
+          "coverage": [],
+          "timing": {
+            "baseline": {
+              "samples": 290,
+              "p50_ms": 3.4623,
+              "p95_ms": 1196.988
+            },
+            "candidate": {
+              "samples": 290,
+              "p50_ms": 3.4904,
+              "p95_ms": 1205.5628
+            }
+          }
+        },
+        {
+          "index": 9,
+          "decks": [
+            "darkness",
+            "fire"
+          ],
+          "decisions": 178,
+          "counts": {
+            "choice": 49,
+            "action": 129
+          },
+          "nodes": [
+            93052,
+            93052
+          ],
+          "winner": 0,
+          "turns": 28,
+          "coverage": [],
+          "timing": {
+            "baseline": {
+              "samples": 173,
+              "p50_ms": 8.2156,
+              "p95_ms": 1337.2789
+            },
+            "candidate": {
+              "samples": 173,
+              "p50_ms": 8.0645,
+              "p95_ms": 1349.43
+            }
+          }
+        }
+      ],
+      "workers": 4,
+      "timing_warmup_decisions_per_game": 5,
+      "baseline_manifest": "E:\\PokemonTCG\\research\\deep_ai\\build\\arena-agents\\project_audit_baseline\\1f3c301e374d49e0fb7dc12b8206dfca8c36b8fa8afe2c3ad92961fbf064d98d\\agent.build.json",
+      "candidate_manifest": "E:\\PokemonTCG\\research\\deep_ai\\build\\arena-agents\\challenge_next\\609bd516c6c42542be35d8e4dd8cbd2c2c65468987318bae390a6ae521076a01\\agent.build.json",
+      "decisions_compared": 1498,
+      "divergences": 0,
+      "baseline_nodes": 499834,
+      "candidate_nodes": 499834
+    }
+  },
+  "relay_runs": [
+    {
+      "burst_60_per_connection": {
+        "failures": 0,
+        "messages": 12000,
+        "p95_latency_ms": 1.6898,
+        "seconds": 0.1837066,
+        "throughput_messages_per_second": 65321.55077716315
+      },
+      "connections": 200,
+      "legal_frames_lost": 0,
+      "rooms": 100,
+      "success": true,
+      "sustained": {
+        "failures": 0,
+        "messages": 24000,
+        "p95_latency_ms": 5.1161,
+        "seconds": 3.023595,
+        "throughput_messages_per_second": 7937.571004053123
+      },
+      "server_cpu_ms": 2140.625
+    },
+    {
+      "burst_60_per_connection": {
+        "failures": 0,
+        "messages": 12000,
+        "p95_latency_ms": 2.2364,
+        "seconds": 0.1986405,
+        "throughput_messages_per_second": 60410.64133447107
+      },
+      "connections": 200,
+      "legal_frames_lost": 0,
+      "rooms": 100,
+      "success": true,
+      "sustained": {
+        "failures": 0,
+        "messages": 24000,
+        "p95_latency_ms": 4.8734,
+        "seconds": 3.0264114,
+        "throughput_messages_per_second": 7930.184243953086
+      },
+      "server_cpu_ms": 1703.125
+    },
+    {
+      "burst_60_per_connection": {
+        "failures": 0,
+        "messages": 12000,
+        "p95_latency_ms": 1.9197,
+        "seconds": 0.1966481,
+        "throughput_messages_per_second": 61022.710110090055
+      },
+      "connections": 200,
+      "legal_frames_lost": 0,
+      "rooms": 100,
+      "success": true,
+      "sustained": {
+        "failures": 0,
+        "messages": 24000,
+        "p95_latency_ms": 5.0507,
+        "seconds": 3.0234545,
+        "throughput_messages_per_second": 7937.939863159839
+      },
+      "server_cpu_ms": 2531.25
+    }
+  ],
+  "visual_comparison": [
+    {
+      "file": "choice-deck-search-all.png",
+      "baseline_size": [
+        1600,
+        900
+      ],
+      "candidate_size": [
+        1600,
+        900
+      ],
+      "identical_pixels": true
+    },
+    {
+      "file": "choice-deck-search-compact.png",
+      "baseline_size": [
+        900,
+        540
+      ],
+      "candidate_size": [
+        900,
+        540
+      ],
+      "identical_pixels": true
+    },
+    {
+      "file": "choice-deck-search-valid.png",
+      "baseline_size": [
+        1600,
+        900
+      ],
+      "candidate_size": [
+        1600,
+        900
+      ],
+      "identical_pixels": true
+    },
+    {
+      "file": "choice-exp-share-confirm.png",
+      "baseline_size": [
+        1600,
+        900
+      ],
+      "candidate_size": [
+        1600,
+        900
+      ],
+      "identical_pixels": true
+    },
+    {
+      "file": "choice-nest-ball-bench-slot.png",
+      "baseline_size": [
+        1600,
+        900
+      ],
+      "candidate_size": [
+        1600,
+        900
+      ],
+      "identical_pixels": true
+    },
+    {
+      "file": "choice-switch-confirm.png",
+      "baseline_size": [
+        1600,
+        900
+      ],
+      "candidate_size": [
+        1600,
+        900
+      ],
+      "identical_pixels": true
+    },
+    {
+      "file": "choice-treasure-energy-compact.png",
+      "baseline_size": [
+        900,
+        540
+      ],
+      "candidate_size": [
+        900,
+        540
+      ],
+      "identical_pixels": true
+    },
+    {
+      "file": "choice-treasure-energy.png",
+      "baseline_size": [
+        1600,
+        900
+      ],
+      "candidate_size": [
+        1600,
+        900
+      ],
+      "identical_pixels": true
+    }
+  ],
+  "native_runtime_artifacts": [
+    {
+      "path": "godot/bin/android/libpokemon_ai.android.template_debug.arm64.so",
+      "bytes": 3868552,
+      "sha256": "1f0dc7690229a20e048f84dda7b13c9b84972fe9914b347e5356f8596d865d36"
+    },
+    {
+      "path": "godot/bin/android/libpokemon_ai.android.template_release.arm64.so",
+      "bytes": 4052336,
+      "sha256": "016c64b93713ec22a5525e52a436d931c1ace9b1ae40db4b400b7b34d8c9e701"
+    },
+    {
+      "path": "godot/bin/windows/libpokemon_ai.windows.template_debug.x86_64.dll",
+      "bytes": 3988480,
+      "sha256": "6c9008a7a78dc76a026eaa505c0544b9467f13352b700130f42d36635fdea2cc"
+    },
+    {
+      "path": "godot/bin/windows/libpokemon_ai.windows.template_release.x86_64.dll",
+      "bytes": 3631104,
+      "sha256": "67216366d767b61073dea7f07c200e1213d3a32b0f413e84f1d5e3b6a0dd55a1"
+    }
+  ],
+  "validation": {
+    "fast": true,
+    "standard": true,
+    "godot_contracts_after_final_edits": true,
+    "research_tests": 61,
+    "challenge_tactics_scenarios": 109,
+    "godot_ai_full_games": 10,
+    "lan_and_relay_full_games": 2,
+    "native_builds": [
+      "windows-debug",
+      "windows-release",
+      "android-debug",
+      "android-release"
+    ],
+    "release_entry_smoke": true,
+    "android_on_device_tested": false
+  }
+}

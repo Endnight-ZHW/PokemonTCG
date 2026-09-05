@@ -745,12 +745,12 @@ func _check_retreat_payment_ui(main: Control) -> void:
 		),
 	)
 	var confirmation_text := "\n".join(
-		main.choice_model._retreat_confirmation_lines(retreat_action))
+		main.choice_presenter.retreat_confirmation_lines(retreat_action, main.state, main.catalog))
 	context._check(
 		"无需丢弃能量" not in confirmation_text
 		and "卡面撤退费用：1 点" in confirmation_text
 		and "下一步选择" in confirmation_text
-		and "无需丢弃能量" not in main.choice_model._action_label(retreat_action),
+		and "无需丢弃能量" not in main.choice_presenter.action_label(retreat_action, main.state, main.catalog),
 		"Retreat action without preselected indices was incorrectly presented as free",
 	)
 

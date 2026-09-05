@@ -2,6 +2,7 @@
 #include "challenge_search_provider.hpp"
 
 #include "challenge_support.hpp"
+#include "ptcg_traditional_value.hpp"
 #include "ptcg_traditional_evaluator.hpp"
 #include "ptcg_traditional_mandatory.hpp"
 #include "ptcg_traditional_policy.hpp"
@@ -26,6 +27,9 @@
 namespace ptcg::ai::challenge_detail {
 
 using namespace challenge;
+using traditional_value::string_field;
+using traditional_value::integer_field;
+using traditional_value::bool_field;
 
 class ChallengeSearchProviderImpl final : public ChallengeSearchProvider {
 public:
@@ -50,6 +54,7 @@ std::string deck_key_for_actor( const ptcg::ai::RulesSession &position, std::int
 std::string strategy_id_for_actor( const ptcg::ai::RulesSession &position, std::int32_t actor ) override;
 ptcg::ai::Value cache_precondition( const ptcg::ai::RulesSession &position, std::int32_t actor ) override;
 private:
+bool select_choice(const RulesSession &position, const Value &pending, const typed::ChoiceView &choice, Value &response);
 bool duplicate_energy_choice_response( const ptcg::ai::RulesSession &position, const ptcg::ai::Value &pending, const ptcg::ai::typed::ChoiceView &choice, ptcg::ai::Value &response ) const;
 bool confirm_choice_response( const ptcg::ai::RulesSession &position, const ptcg::ai::Value &pending, const ptcg::ai::typed::ChoiceView &choice, ptcg::ai::Value &response ) const;
 std::string resolved_option_card_id( const ptcg::ai::Value &option ) const;
@@ -60,9 +65,6 @@ double prize_aware_search_choice_score( const ptcg::ai::RulesSession &position, 
 bool forced_choice_response( const ptcg::ai::Value &state, const ptcg::ai::Value &pending, const ptcg::ai::typed::ChoiceView &choice, ptcg::ai::Value &response ) const;
 bool retreat_payment_response( const ptcg::ai::Value &state, const ptcg::ai::Value &pending, ptcg::ai::Value &response ) const;
 std::int64_t energy_units_provided_by_card( const ptcg::ai::Value::Array &attached, std::size_t index ) const;
-static std::string string_field( const ptcg::ai::Value &value, const char *key, const std::string &fallback = {} );
-static std::int64_t integer_field( const ptcg::ai::Value &value, const char *key, std::int64_t fallback = 0 );
-static bool bool_field( const ptcg::ai::Value &value, const char *key, bool fallback = false );
 ptcg::ai::Value catalog_;
 ptcg::ai::Value cards_ = ptcg::ai::Value::make_object();
 ptcg::ai::Value decks_;

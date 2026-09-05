@@ -11,10 +11,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $researchRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $researchRoot)
-$portable = Join-Path $repoRoot '.tools\python311\python.exe'
-if ([string]::IsNullOrWhiteSpace($Python)) {
-    $Python = if (Test-Path -LiteralPath $portable) { $portable } else { 'python' }
-}
+. (Join-Path $repoRoot 'tools\toolchain_common.ps1')
+$Python = Resolve-ProjectPython -RepoRoot $repoRoot -Python $Python
 & $Python -c 'import SCons' 2>$null
 if ($LASTEXITCODE -ne 0) {
     throw 'The selected Python needs SCons.'
@@ -57,13 +55,7 @@ try {
     $manifestScript = Join-Path $researchRoot 'scripts\challenge_arena_build.py'
     $sourceStrategies = Join-Path $sourceRoot 'godot\data\ai_strategies.json'
     $agentSource = Join-Path $researchRoot 'native\agent'
-    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    $vsPath = if (Test-Path -LiteralPath $vswhere) {
-        & $vswhere -latest -products * `
-            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-            -property installationPath
-    }
-    $vsDevCmd = if ($vsPath) { Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat' } else { '' }
+    $vsDevCmd = Get-VisualCppDevCommand
     if (-not (Test-Path -LiteralPath $vsDevCmd)) {
         throw 'Visual C++ Build Tools are required for Arena Agent builds.'
     }

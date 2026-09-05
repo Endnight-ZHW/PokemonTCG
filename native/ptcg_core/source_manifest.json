@@ -3,6 +3,8 @@
     "ptcg_random.cpp",
     "ptcg_rules.cpp",
     "ptcg_vm_support.cpp",
+    "ptcg_vm_formula_support.cpp",
+    "ptcg_vm_selection_support.cpp",
     "ptcg_vm_modifier_pipeline.cpp",
     "ptcg_vm_damage_pipeline.cpp",
     "ptcg_vm_card_pipeline.cpp",

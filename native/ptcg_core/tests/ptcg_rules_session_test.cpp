@@ -1,3 +1,5 @@
+#include "../../common/ptcg_sha256.hpp"
+#include "../../common/ptcg_json_string.hpp"
 #include "ptcg_rules_session.hpp"
 #include "ptcg_rules.hpp"
 #include "ptcg_game.hpp"
@@ -1381,6 +1383,16 @@ void verify_search_bench_slot_choice_contract(const Value &cards) {
 
 int main() {
     try {
+        require(ptcg::crypto::sha256("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "SHA256 empty vector");
+        require(ptcg::crypto::sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "SHA256 abc vector");
+        require(ptcg::crypto::sha256(std::string(1000000, 'a')) == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0", "SHA256 multiblock vector");
+        require(ptcg::crypto::sha256(u8"宝可梦") == "ffc69a0482867d75d151d78e2db87b4d6f432c033605ce18cbe2f7177f387f93", "SHA256 UTF8 vector");
+        std::string escaped;
+        ptcg::json_text::append_string(escaped, std::string("\0\b\f\n\r\t\"\\", 8) + u8"宝可梦");
+        require(escaped == std::string("\"\\u0000\\b\\f\\n\\r\\t\\\"\\\\") + u8"宝可梦" + "\"", "JSON string byte escaping");
+        std::string canonical;
+        ptcg::ai::session_detail::append_canonical_json(canonical, Value(Array{Value(-0.0), Value(1.25), Value(1e20)}));
+        require(canonical == "[-0,1.25,1e+20]", "Legacy snapshot number formatting changed");
         const Value content_contract = ptcg::ai::content_compiler_contract();
         require(
             content_contract.find("boundary_id")->string_or()

@@ -16,6 +16,7 @@ else:
     env.Append(CXXFLAGS=["-std=c++17", "-O2"])
 
 test_objects = [
+    env.Object(os.path.join("build", "challenge_support"), "src/challenge_support.cpp")[0],
     env.Object(
         os.path.join("build", "challenge_tactics_test"),
         "tests/challenge_tactics_test.cpp",

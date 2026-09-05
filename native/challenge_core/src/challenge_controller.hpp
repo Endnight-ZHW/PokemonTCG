@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -42,10 +43,13 @@ private:
         std::vector<CachedPlanStep> steps;
         std::int64_t last_revision = -1;
     };
+    struct PlanCacheUpdate {
+        std::string key;
+        std::optional<CachedPlanEntry> entry;
+    };
     struct DeckInspectionMemory {
         Value::Array prize_cards;
         std::string match_instance_id;
-        std::int64_t learned_revision = -1;
         bool valid = false;
     };
 
@@ -59,24 +63,27 @@ private:
     void record_action_cycle_selection(
         const Value &request,
         const Value &public_state,
-        const Value &action
+        const Value &action,
+        bool commit_shadow = false
     );
     std::string turn_plan_cache_key(
         const Value &request,
         const class TraditionalInformationSet &information_set
     ) const;
-    Value take_cached_turn_action(
+    Value probe_cached_turn_action(
         const std::string &cache_key,
         std::int64_t revision,
         const Value &actions,
         const Value &precondition,
-        std::int32_t actor
-    );
-    void store_turn_plan(
+        std::int32_t actor,
+        PlanCacheUpdate &update
+    ) const;
+    PlanCacheUpdate prepare_turn_plan(
         const std::string &cache_key,
         std::int64_t revision,
         const TraditionalSearchResult &result
-    );
+    ) const;
+    void commit_plan_cache_update(PlanCacheUpdate update);
     bool apply_deck_inspection_memory(
         const Value &request,
         class TraditionalInformationSet &information_set

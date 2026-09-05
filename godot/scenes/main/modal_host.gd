@@ -128,10 +128,7 @@ func close(completion: Callable = Callable()) -> void:
 	var close_generation := generation
 	_close_completion = completion
 	_close_completion_generation = close_generation
-	main.active_request = null
-	main.active_choice_panel = null
-	main.selected_choice_ids.clear()
-	main.option_buttons.clear()
+	main.choice_presenter.clear()
 	back_action = Callable()
 	modal_confirm.disabled = true
 	modal_cancel.disabled = true

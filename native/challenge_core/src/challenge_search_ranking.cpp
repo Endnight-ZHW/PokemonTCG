@@ -1,3 +1,4 @@
+#include "challenge_search_support.hpp"
 #include "challenge_search_provider_internal.hpp"
 
 
@@ -178,40 +179,13 @@ using namespace challenge;
                 position.typed_search_pending_choice(pending_player);
             if (typed_pending == nullptr) return false;
             trace.had_choice = true;
-            ++choice_resolutions_;
             ptcg::ai::Value response;
-            if (arven_choice_response(
-                position, *pending, *typed_pending, response)) {
-                ++native_choice_resolutions_;
-            } else if (confirm_choice_response(
-                position, *pending, *typed_pending, response)) {
-                ++native_choice_resolutions_;
-            } else if (duplicate_energy_choice_response(
-                position, *pending, *typed_pending, response)) {
-                ++native_choice_resolutions_;
-            } else if (single_choice_response(
-                position, *pending, *typed_pending, response)) {
-                ++native_choice_resolutions_;
-            } else if (forced_choice_response(
-                position.search_state(), *pending, *typed_pending, response)) {
-                ++native_forced_choice_resolutions_;
-            } else {
-                return false;
-            }
+            if (!select_choice(position, *pending, *typed_pending, response)) return false;
             const ptcg::ai::RulesSessionResult applied = position.apply_choice(
                 response);
             if (!applied.success) return false;
-            for (const ptcg::ai::Value &event : applied.events) {
-                const ptcg::ai::Value *event_type = event.find("event_type");
-                const std::string type = event_type == nullptr
-                    ? std::string{} : event_type->string_or();
-                if (type == "coin_flip"
-                    || type.find("shuffle") != std::string::npos
-                    || type.find("draw") != std::string::npos
-                    || type.find("random") != std::string::npos) {
-                    trace.unpredictable = true;
-                }
-            }
+            trace.unpredictable = trace.unpredictable || std::any_of(
+                applied.events.begin(), applied.events.end(), event_is_unpredictable);
         }
         return false;
     }

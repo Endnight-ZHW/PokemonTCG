@@ -12,7 +12,7 @@ function Assert-SourceLimits {
         [Parameter(Mandatory = $true)][int]$MaxLines
     )
 
-    foreach ($file in Get-ChildItem -LiteralPath $Directory -File) {
+    foreach ($file in Get-ChildItem -LiteralPath $Directory -Recurse -File) {
         if ($Extensions -notcontains $file.Extension.ToLowerInvariant()) {
             continue
         }

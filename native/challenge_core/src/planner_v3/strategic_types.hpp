@@ -195,14 +195,6 @@ struct TurnIntent {
     std::int32_t priority = 0;
 };
 
-struct DeliberationNeed {
-    double ambiguity = 0.0;
-    double strategic_impact = 0.0;
-    double uncertainty = 0.0;
-    double irreversibility = 0.0;
-    double catastrophe_risk = 0.0;
-};
-
 struct ActionFootprint {
     std::set<std::string> reads;
     std::set<std::string> writes;

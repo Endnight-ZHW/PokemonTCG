@@ -35,54 +35,10 @@ function Clear-StaleGodotImportArtifacts {
     }
 }
 
-function Invoke-GodotCapture {
-    param([string[]]$ArgumentList)
-    $previousErrorActionPreference = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        & $godot @ArgumentList 2>&1
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-}
-
-$ignoredGodotErrorPattern = 'Failed to read the root certificate store\.'
-$fatalGodotErrorPattern = "(?m)^(SCRIPT ERROR|ERROR|WARNING): (?!$ignoredGodotErrorPattern)"
-
-function Invoke-GodotCheckedScript {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Script,
-
-        [Parameter(Mandatory)]
-        [string]$SuccessMarker,
-
-        [Parameter(Mandatory)]
-        [string]$ContractName
-    )
-
-    $output = Invoke-GodotCapture -ArgumentList @(
-        '--headless',
-        '--path', (Join-Path $repoRoot 'godot'),
-        '--script', $Script
-    )
-    $output | ForEach-Object { Write-Host $_ }
-
-    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-    if ($exitCode -ne 0) {
-        throw "$ContractName failed with exit code $exitCode"
-    }
-    $joinedOutput = $output -join "`n"
-    if ($joinedOutput -match $fatalGodotErrorPattern) {
-        throw "Godot emitted script/runtime errors during $ContractName."
-    }
-    if ($joinedOutput -notmatch [regex]::Escape($SuccessMarker)) {
-        throw "$ContractName success marker '$SuccessMarker' was not emitted."
-    }
-}
+$fatalGodotErrorPattern = '(?m)^(SCRIPT ERROR|ERROR|WARNING): (?!Failed to read the root certificate store\.)'
 
 Clear-StaleGodotImportArtifacts
-$importOutput = Invoke-GodotCapture -ArgumentList @(
+$importOutput = Invoke-GodotCapture -Executable $godot -ArgumentList @(
     '--headless',
     '--path', (Join-Path $repoRoot 'godot'),
     '--import'
@@ -98,52 +54,62 @@ if ($joinedImportOutput -match $fatalGodotErrorPattern) {
     throw 'Godot emitted script/runtime errors during import.'
 }
 
-Invoke-GodotCheckedScript `
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
     -Script 'res://tests/card_catalog_contract.gd' `
     -SuccessMarker 'CARD_CATALOG_CONTRACT_OK' `
     -ContractName 'Card catalog contract'
 
-Invoke-GodotCheckedScript `
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
     -Script 'res://tests/card_presentation_contract.gd' `
     -SuccessMarker 'CARD_PRESENTATION_CONTRACT_OK' `
     -ContractName 'Card visual audit coverage and shared presentation contract'
 
-Invoke-GodotCheckedScript `
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
     -Script 'res://tests/network_protocol_contract.gd' `
     -SuccessMarker 'NETWORK_PROTOCOL_CONTRACT_OK' `
     -ContractName 'Network protocol contract'
 
-Invoke-GodotCheckedScript `
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
     -Script 'res://tests/native_rules_session_contract_test.gd' `
     -SuccessMarker 'NATIVE_RULES_SESSION_CONTRACT_OK' `
     -ContractName 'Native ABI 2 stateful rules session, privacy, rollback, Snapshot and journal contract'
 
-Invoke-GodotCheckedScript `
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
     -Script 'res://tests/vm_descriptor_contract_test.gd' `
     -SuccessMarker 'VM_DESCRIPTOR_CONTRACT_OK' `
     -ContractName 'Generated VM IR descriptor and negative-schema contract'
 
-Invoke-GodotCheckedScript `
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
     -Script 'res://tests/frontend_layout_contract.gd' `
     -SuccessMarker 'FRONTEND_LAYOUT_CONTRACT_OK' `
     -ContractName 'Frontend layout contract'
 
-Invoke-GodotCheckedScript `
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
     -Script 'res://tests/battle_feedback_lifecycle_contract.gd' `
     -SuccessMarker 'BATTLE_FEEDBACK_LIFECYCLE_OK' `
     -ContractName 'Battle feedback lifecycle contract'
 
-Invoke-GodotCheckedScript `
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
     -Script 'res://tests/card_view_layers_contract.gd' `
     -SuccessMarker 'CARD_VIEW_LAYERS_OK' `
     -ContractName 'Card view layers contract'
 
-Invoke-GodotCheckedScript `
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
+    -Script 'res://tests/view_model_ownership_contract.gd' `
+    -SuccessMarker 'VIEW_MODEL_OWNERSHIP_OK' `
+    -ContractName 'Player view privacy and queued snapshot ownership'
+
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
+    -Script 'res://tests/battle_drag_lifecycle_contract.gd' `
+    -SuccessMarker 'BATTLE_DRAG_LIFECYCLE_OK' `
+    -ContractName 'Drag tracking, stale completions, cancellation and resync'
+
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
     -Script 'res://tests/attachment_visual_contract.gd' `
     -SuccessMarker 'ATTACHMENT_VISUAL_CONTRACT_OK' `
     -ContractName 'Attachment visual descriptor and badge contract'
 
-Invoke-GodotCheckedScript `
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
     -Script 'res://tests/ui_workbench_transition_contract.gd' `
     -SuccessMarker 'UI_WORKBENCH_TRANSITION_OK' `
     -ContractName 'UI Workbench transition contract'

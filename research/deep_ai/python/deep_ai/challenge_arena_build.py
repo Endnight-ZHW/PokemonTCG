@@ -40,7 +40,8 @@ def _manifest_sources(source_root: Path, component: str) -> list[Path]:
     )
     paths = [component_root / "source_manifest.json"]
     paths.extend(component_root / "src" / name for name in manifest["runtime"])
-    paths.extend(sorted((component_root / "src").glob("*.hpp")))
+    paths.extend(sorted((component_root / "src").rglob("*.hpp")))
+    paths.extend(sorted((source_root / "native" / "common").glob("*.hpp")))
     return paths
 
 
@@ -97,6 +98,7 @@ def agent_input_manifest(
         repo_root / "native" / "common" / "ptcg_json_adapter.hpp",
     ]
     build_tool_paths = [
+        repo_root / "tools" / "toolchain_common.ps1",
         repo_root / "research" / "deep_ai" / "tools" / "build_challenge_agent.ps1",
         repo_root / "research" / "deep_ai" / "scripts" / "challenge_arena_build.py",
         repo_root / "research" / "deep_ai" / "python" / "deep_ai"

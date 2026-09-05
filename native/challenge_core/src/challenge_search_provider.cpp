@@ -75,6 +75,15 @@ using namespace challenge;
         ptcg::ai::typed::ChoiceView typed_pending;
         std::string error;
         if (!codec.decode_choice_view(pending, typed_pending, &error)) return false;
+        return select_choice(position, pending, typed_pending, response);
+    }
+
+    bool ChallengeSearchProviderImpl::select_choice(
+        const RulesSession &position,
+        const Value &pending,
+        const typed::ChoiceView &typed_pending,
+        Value &response
+    ) {
         ++choice_resolutions_;
         if (arven_choice_response(position, pending, typed_pending, response)
             || confirm_choice_response(position, pending, typed_pending, response)

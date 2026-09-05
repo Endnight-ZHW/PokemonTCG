@@ -20,6 +20,7 @@ func _run() -> void:
 	card.interaction_duration = 0.02
 	card.configure("layer-contract-card", null, false, 0, 0)
 	await process_frame
+	_check(not card.is_processing(), "Unselected cards must not poll the selection ring")
 
 	_check(
 		card.interaction_root != null
@@ -38,6 +39,11 @@ func _run() -> void:
 	var layout_position := card.position
 	card.remember_base_position()
 	card.set_selected(true)
+	_check(card.is_processing(), "Selected cards must keep the ring synchronized during motion")
+	card.hide()
+	_check(not card.is_processing(), "Hidden cards must suspend selection synchronization")
+	card.show()
+	_check(card.is_processing(), "Visible selected cards must resume selection synchronization")
 	await create_timer(0.04).timeout
 	await process_frame
 	_check(

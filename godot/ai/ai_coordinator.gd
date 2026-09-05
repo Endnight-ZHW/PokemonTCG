@@ -30,7 +30,7 @@ func needs_poll() -> bool:
 	return pending
 
 
-func start_request(request: Dictionary, _inference: Variant = null) -> bool:
+func start_request(request: Dictionary) -> bool:
 	# Reaping is non-blocking: _reap_finished_task only waits after the global
 	# pool has reported completion. A still-running worker is never waited on.
 	_reap_finished_task()
@@ -122,7 +122,6 @@ func cancel_request() -> void:
 ## Test tools use the same worker as asynchronous gameplay.
 func decide_sync_for_evaluation(
 	request: Dictionary,
-	_inference: Variant = null,
 ) -> Dictionary:
 	return _decide(request, Callable())
 

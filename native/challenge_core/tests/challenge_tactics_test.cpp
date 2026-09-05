@@ -1,3 +1,6 @@
+#include "ptcg_traditional_card.hpp"
+#include "challenge_support.hpp"
+#include <limits>
 #include "ptcg_json_adapter.hpp"
 #include "ptcg_traditional_infoset.hpp"
 #include "ptcg_traditional_strategy.hpp"
@@ -510,6 +513,15 @@ json make_action(const json &compact, const json &state) {
 
 int main(int argc, char **argv) {
     try {
+        using ptcg::ai::traditional_card::missing_energy_units;
+        const std::vector<std::string> energy{"Fire", "Rainbow"};
+        require(missing_energy_units(energy, Array{Value("Water"), Value("Colorless")}) == 0, "Rainbow must pay typed energy before Colorless");
+        require(missing_energy_units(energy, Array{Value("Water"), Value("Water"), Value("Colorless")}) == 1, "Missing energy count changed");
+        require(missing_energy_units({}, Array{Value("Colorless")}) == 1, "Empty energy pool changed");
+        require(missing_energy_units(energy, {}) == 0 && energy.size() == 2, "Energy helper must not mutate callers");
+        require(ptcg::ai::challenge::sha256_text("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "Challenge SHA wrapper changed");
+        require(ptcg::ai::challenge::json_scalar_text(Value(1.25)) == "1.25", "Challenge scalar number formatting changed");
+        require(ptcg::ai::challenge::json_scalar_text(Value(std::numeric_limits<double>::infinity())) == "null", "Challenge nonfinite scalar formatting changed");
         if (argc != 4) {
             throw std::runtime_error("usage: challenge_core_tests <strategies.json> <cards.json> <tactics.json>");
         }

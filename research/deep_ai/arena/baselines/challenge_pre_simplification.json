@@ -1,0 +1,13 @@
+{
+  "schema": "ptcg.challenge_arena.agent/2",
+  "agent_id": "challenge_pre_simplification",
+  "build_id": "pre-simplification-52d094b",
+  "backend": "external_process",
+  "git_ref": "52d094b93cdf2f29a25672d545f871ed3edb225a",
+  "strategies_ref_path": "godot/data/ai_strategies.json",
+  "evaluation_options": {
+    "engine": "strategic_intent_v3",
+    "node_budget": 192,
+    "belief_samples": 3
+  }
+}

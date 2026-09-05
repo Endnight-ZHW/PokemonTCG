@@ -1,3 +1,4 @@
+#include "challenge_search_support.hpp"
 #include "ptcg_traditional_search.hpp"
 #include "ptcg_traditional_policy.hpp"
 
@@ -106,46 +107,8 @@ struct SampleResult {
     std::uint64_t trajectory_events = 0;
 };
 
-struct ExpandedAction {
-    std::shared_ptr<RulesSession> state;
-    RulesSessionResult step;
-    TraditionalChoiceTrace trace;
-};
-
-bool event_is_unpredictable(const Value &event) {
-    const Value *type_value = event.find("event_type");
-    const std::string type = type_value == nullptr
-        ? std::string{} : type_value->string_or();
-    return type == "coin_flip" || type.find("shuffle") != std::string::npos
-        || type.find("draw") != std::string::npos
-        || type.find("random") != std::string::npos;
-}
-
-ExpandedAction apply_action(
-    TraditionalSearchProvider &provider,
-    const RulesSession &parent,
-    std::int32_t actor,
-    const Value &candidate,
-    std::uint32_t seed,
-    const std::string &action_id,
-    std::uint64_t &nodes_expanded
-) {
-    auto branch = parent.fork_for_search(seed);
-    Value bound = provider.bind_action(candidate, *branch, actor, action_id);
-    RulesSessionResult applied = branch->apply_action_for_search(bound);
-    ++nodes_expanded;
-    if (!applied.success) return {};
-    TraditionalChoiceTrace trace;
-    trace.unpredictable = std::any_of(
-        applied.events.begin(), applied.events.end(), event_is_unpredictable);
-    if (!provider.resolve_pending(
-        *branch, actor, nodes_expanded, trace)) return {};
-    return ExpandedAction{
-        std::shared_ptr<RulesSession>(branch.release()),
-        std::move(applied),
-        trace,
-    };
-}
+using challenge::ExpandedAction;
+using challenge::apply_action;
 
 struct ReplyResult {
     std::int64_t score_milli = 0;

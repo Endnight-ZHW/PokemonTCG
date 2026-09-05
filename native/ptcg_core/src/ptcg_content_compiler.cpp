@@ -1,3 +1,4 @@
+#include "../../common/ptcg_json_string.hpp"
 #include "ptcg_content_compiler.hpp"
 
 #include "ptcg_typed_ir.hpp"
@@ -40,31 +41,9 @@ void append_canonical_json(std::string &output, const Value &value) {
             output.append(buffer, converted.ptr);
             return;
         }
-        case Value::Type::string: {
-            static constexpr char hex[] = "0123456789abcdef";
-            output.push_back('"');
-            for (const unsigned char byte : value.as_string()) {
-                switch (byte) {
-                    case '"': output += "\\\""; break;
-                    case '\\': output += "\\\\"; break;
-                    case '\b': output += "\\b"; break;
-                    case '\f': output += "\\f"; break;
-                    case '\n': output += "\\n"; break;
-                    case '\r': output += "\\r"; break;
-                    case '\t': output += "\\t"; break;
-                    default:
-                        if (byte < 0x20U) {
-                            output += "\\u00";
-                            output.push_back(hex[(byte >> 4U) & 0x0fU]);
-                            output.push_back(hex[byte & 0x0fU]);
-                        } else {
-                            output.push_back(static_cast<char>(byte));
-                        }
-                }
-            }
-            output.push_back('"');
+        case Value::Type::string:
+            json_text::append_string(output, value.as_string());
             return;
-        }
         case Value::Type::array: {
             output.push_back('[');
             bool first = true;

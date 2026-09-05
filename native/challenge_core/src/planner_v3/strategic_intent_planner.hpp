@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -24,6 +25,9 @@ struct StrategicPlannerConfig {
     // rather than the much weaker ranked_actions().front() proxy.
     Value legacy_action = Value::make_object();
     Value::Array legacy_sequence;
+    // Internal C++ supplier, evaluated only after cache/dominance exits.
+    // It never calls a binding or recurses into the controller entry point.
+    std::function<const Value &()> legacy_decision;
 };
 
 struct StrategicPlannerResult {

@@ -1,7 +1,8 @@
 #include "challenge_controller.hpp"
 
 #include "challenge_search_provider.hpp"
-#include "challenge_support.hpp"
+#include "challenge_search_support.hpp"
+#include "ptcg_traditional_value.hpp"
 #include "ptcg_traditional_infoset.hpp"
 #include "ptcg_traditional_mandatory.hpp"
 #include "ptcg_traditional_policy.hpp"
@@ -18,38 +19,20 @@ namespace {
 
 using namespace challenge;
 
-const Value *field(const Value &value, const char *key) {
-    return value.is_object() ? value.find(key) : nullptr;
-}
+using traditional_value::field;
+using traditional_value::string_field;
+using traditional_value::integer_field;
+using traditional_value::bool_field;
 
 Value value_or(const Value &value, const char *key, Value fallback = {}) {
     const Value *entry = field(value, key);
     return entry == nullptr ? std::move(fallback) : *entry;
 }
 
-std::string string_or(
-    const Value &value,
-    const char *key,
-    std::string fallback = {}
-) {
-    const Value *entry = field(value, key);
-    return entry == nullptr ? std::move(fallback)
-                            : entry->string_or(std::move(fallback));
-}
-
-std::int64_t integer_or(
-    const Value &value,
-    const char *key,
-    std::int64_t fallback = 0
-) {
-    const Value *entry = field(value, key);
-    return entry == nullptr ? fallback : entry->as_integer(fallback);
-}
-
-bool bool_or(const Value &value, const char *key, bool fallback = false) {
-    const Value *entry = field(value, key);
-    return entry == nullptr ? fallback : entry->as_bool(fallback);
-}
+struct ActiveRequest {
+    std::atomic<std::int64_t> &generation;
+    ~ActiveRequest() { generation.store(0, std::memory_order_release); }
+};
 
 Value error_result(const std::string &error, bool cancelled = false) {
     return Value(Value::Object{
@@ -64,6 +47,68 @@ Value strings_value(const std::vector<std::string> &values) {
     result.reserve(values.size());
     for (const std::string &value : values) result.emplace_back(value);
     return Value(std::move(result));
+}
+
+Value search_result_value(
+    const TraditionalSearchResult &result,
+    std::size_t requested_depth,
+    std::size_t reply_depth
+) {
+    Value root_counts = Value::make_object();
+    for (const auto &[signature, count] : result.root_sample_counts) {
+        root_counts[signature] = Value(static_cast<std::int64_t>(count));
+    }
+    Value output = Value::make_object();
+    output["success"] = Value(result.success);
+    output["cancelled"] = Value(result.cancelled);
+    output["error"] = Value(result.error);
+    output["action"] = result.selected;
+    output["sequence"] = Value(result.sequence);
+    output["cache_preconditions"] = Value(result.cache_preconditions);
+    output["root_candidates"] = Value(result.root_candidates);
+    output["score_milli"] = Value(result.score_milli);
+    output["worst_score_milli"] = Value(result.worst_score_milli);
+    output["nodes_expanded"] = Value(static_cast<std::int64_t>(
+        result.nodes_expanded));
+    output["planner_ms"] = Value(0.0);
+    output["completed_depth"] = Value(static_cast<std::int64_t>(
+        result.completed_depth));
+    output["max_path_depth"] = Value(static_cast<std::int64_t>(
+        result.max_path_depth));
+    output["reply_completed_depth"] = Value(static_cast<std::int64_t>(
+        result.reply_completed_depth));
+    output["reply_depth_applicable"] = Value(result.reply_depth_applicable);
+    output["completion_reason"] = Value(result.completion_reason);
+    output["trajectory_hash"] = Value(result.trajectory_hash);
+    output["trajectory_events"] = Value(static_cast<std::int64_t>(
+        result.trajectory_events));
+    output["belief_samples"] = Value(static_cast<std::int64_t>(
+        result.belief_samples));
+    output["belief_consensus"] = Value(static_cast<std::int64_t>(
+        result.belief_consensus));
+    output["root_signatures_attempted"] = strings_value(
+        result.root_signatures_attempted);
+    output["root_sample_counts"] = std::move(root_counts);
+    output["belief_seed_hash"] = Value(result.belief_seed_hash);
+    output["opponent_strategy_id"] = Value(result.opponent_strategy_id);
+    output["layers_completed"] = Value(static_cast<std::int64_t>(
+        result.layers_completed));
+    output["reply_completion_reasons"] = strings_value(
+        result.reply_completion_reasons);
+    output["reply_completion_reason"] = Value(result.reply_completion_reason);
+    output["requested_depth"] = Value(static_cast<std::int64_t>(requested_depth));
+    output["reply_requested_depth"] = Value(static_cast<std::int64_t>(
+        reply_depth));
+    output["search_depth_applicable"] = Value(true);
+    output["search_depth_requested"] = Value(static_cast<std::int64_t>(
+        requested_depth));
+    output["search_depth_reached"] = Value(static_cast<std::int64_t>(
+        result.max_path_depth));
+    output["search_depth_completed"] = Value(static_cast<std::int64_t>(
+        result.completed_depth));
+    output["search_depth_stop_reason"] = Value(result.completion_reason);
+    output["native_determinization"] = Value(true);
+    return output;
 }
 
 } // namespace
@@ -112,16 +157,16 @@ Value ChallengeController::filter_root_actions(
     const Value &actions
 ) {
     const std::int32_t actor = static_cast<std::int32_t>(
-        integer_or(request, "actor", -1));
+        integer_field(request, "actor", -1));
     Value filtered = filter_exhausted_repeatable_abilities(
         public_state, actor, actions, catalog_);
-    const std::string engine = string_or(request, "engine", "turn_beam_v2");
+    const std::string engine = string_field(request, "engine", "turn_beam_v2");
     if (!filtered.is_array()
         || (engine != "turn_beam_v2"
             && engine != planner_v3::STRATEGIC_INTENT_ENGINE_ID)) {
         return filtered;
     }
-    const std::string match_id = string_or(request, "match_instance_id");
+    const std::string match_id = string_field(request, "match_instance_id");
     if (match_id.empty()) return filtered;
     const std::string ledger_key = match_id + "|" + std::to_string(actor)
         + "|" + std::to_string(value_integer_field(
@@ -130,7 +175,7 @@ Value ChallengeController::filter_root_actions(
     if (found == action_cycle_ledger_.end()) return filtered;
     ActionCycleEntry &entry = found->second;
     const std::string fingerprint = action_cycle_state_fingerprint(public_state);
-    const std::int64_t revision = integer_or(
+    const std::int64_t revision = integer_field(
         request, "revision", value_integer_field(public_state, "revision", 0));
     if (entry.last_state_fingerprint == fingerprint
         && revision > entry.last_revision
@@ -158,7 +203,7 @@ bool ChallengeController::apply_deck_inspection_memory(
     const Value &request,
     TraditionalInformationSet &information_set
 ) {
-    if (!bool_or(request, "use_deck_inspection", true)
+    if (!bool_field(request, "use_deck_inspection", true)
         || !information_set.valid()) {
         return false;
     }
@@ -166,7 +211,7 @@ bool ChallengeController::apply_deck_inspection_memory(
     if (actor < 0 || actor > 1) return false;
     DeckInspectionMemory &memory = deck_inspection_memory_[
         static_cast<std::size_t>(actor)];
-    const std::string match_id = string_or(request, "match_instance_id");
+    const std::string match_id = string_field(request, "match_instance_id");
     if (match_id.empty() || !memory.valid
         || memory.match_instance_id != match_id) return false;
     std::string ignored;
@@ -184,7 +229,7 @@ void ChallengeController::remember_deck_inspection(
     const TraditionalInformationSet &information_set
 ) {
     const std::int32_t actor = information_set.perspective();
-    const std::string match_id = string_or(request, "match_instance_id");
+    const std::string match_id = string_field(request, "match_instance_id");
     if (actor < 0 || actor > 1
         || match_id.empty()
         || !information_set.has_exact_hidden_zones(actor)) {
@@ -194,23 +239,23 @@ void ChallengeController::remember_deck_inspection(
         static_cast<std::size_t>(actor)];
     memory.prize_cards = information_set.known_prizes(actor);
     memory.match_instance_id = match_id;
-    memory.learned_revision = integer_or(request, "revision", -1);
     memory.valid = true;
 }
 
 void ChallengeController::record_action_cycle_selection(
     const Value &request,
     const Value &public_state,
-    const Value &action
+    const Value &action,
+    bool commit_shadow
 ) {
-    if (bool_or(request, "shadow_probe")) return;
-    const std::string engine = string_or(request, "engine", "turn_beam_v2");
+    if (bool_field(request, "shadow_probe") && !commit_shadow) return;
+    const std::string engine = string_field(request, "engine", "turn_beam_v2");
     if (engine != "turn_beam_v2"
         && engine != planner_v3::STRATEGIC_INTENT_ENGINE_ID) return;
-    const std::string match_id = string_or(request, "match_instance_id");
+    const std::string match_id = string_field(request, "match_instance_id");
     if (match_id.empty() || !action.is_object()) return;
     const std::int32_t actor = static_cast<std::int32_t>(
-        integer_or(request, "actor", -1));
+        integer_field(request, "actor", -1));
     const std::string ledger_key = match_id + "|" + std::to_string(actor)
         + "|" + std::to_string(value_integer_field(
             public_state, "turn_number", 0));
@@ -219,7 +264,7 @@ void ChallengeController::record_action_cycle_selection(
     ActionCycleEntry &entry = action_cycle_ledger_[ledger_key];
     entry.last_state_fingerprint = action_cycle_state_fingerprint(public_state);
     entry.last_action_signature = value_action_signature(action);
-    entry.last_revision = integer_or(
+    entry.last_revision = integer_field(
         request, "revision", value_integer_field(public_state, "revision", 0));
     if (inserted) action_cycle_order_.push_back(ledger_key);
     while (action_cycle_order_.size() > 64) {
@@ -232,7 +277,7 @@ std::string ChallengeController::turn_plan_cache_key(
     const Value &request,
     const TraditionalInformationSet &information_set
 ) const {
-    const std::string match_id = string_or(request, "match_instance_id");
+    const std::string match_id = string_field(request, "match_instance_id");
     if (match_id.empty() || !information_set.valid()) return {};
     const std::int32_t actor = information_set.perspective();
     const Value &state = information_set.public_snapshot();
@@ -241,33 +286,26 @@ std::string ChallengeController::turn_plan_cache_key(
         && actor >= 0 && static_cast<std::size_t>(actor) < keys->as_array().size()
         ? keys->as_array()[static_cast<std::size_t>(actor)].string_or()
         : std::string{};
-    return match_id + "|" + string_or(request, "engine", "turn_beam_v2")
+    return match_id + "|" + string_field(request, "engine", "turn_beam_v2")
         + "|" + std::to_string(actor) + "|"
         + std::to_string(value_integer_field(state, "turn_number", 0))
         + "|" + deck_key;
 }
 
-Value ChallengeController::take_cached_turn_action(
+Value ChallengeController::probe_cached_turn_action(
     const std::string &cache_key,
     std::int64_t revision,
     const Value &actions,
     const Value &precondition,
-    std::int32_t actor
-) {
-    const auto erase = [this](const std::string &key) {
-        turn_plan_cache_.erase(key);
-        turn_plan_cache_order_.erase(std::remove(
-            turn_plan_cache_order_.begin(), turn_plan_cache_order_.end(), key),
-            turn_plan_cache_order_.end());
-    };
+    std::int32_t actor,
+    PlanCacheUpdate &update
+) const {
     const auto found = turn_plan_cache_.find(cache_key);
     if (cache_key.empty() || found == turn_plan_cache_.end()) return {};
-    CachedPlanEntry &entry = found->second;
+    update = {cache_key, std::nullopt};
+    const CachedPlanEntry &entry = found->second;
     if (revision <= entry.last_revision || entry.steps.empty()
-        || !actions.is_array() || !precondition.is_object()) {
-        erase(cache_key);
-        return {};
-    }
+        || !actions.is_array() || !precondition.is_object()) return {};
     const CachedPlanStep &next = entry.steps.front();
     const auto same = [&next, &precondition](const char *key) {
         return value_string_field(next.precondition, key)
@@ -279,44 +317,25 @@ Value ChallengeController::take_cached_turn_action(
         || value_integer_field(next.precondition, "expected_actor", -1)
             != value_integer_field(precondition, "expected_actor", -1)
         || !same("expected_phase")
-        || value_integer_field(next.action, "actor", -1) != actor) {
-        erase(cache_key);
-        return {};
+        || value_integer_field(next.action, "actor", -1) != actor) return {};
+    const Value *matched = find_action_by_signature(actions, next.signature);
+    if (matched == nullptr) return {};
+    if (entry.steps.size() > 1) {
+        update.entry = CachedPlanEntry{
+            std::vector<CachedPlanStep>(entry.steps.begin() + 1, entry.steps.end()),
+            revision};
     }
-    const Value *matched = nullptr;
-    for (const Value &action : actions.as_array()) {
-        if (value_action_signature(action) == next.signature) {
-            matched = &action;
-            break;
-        }
-    }
-    if (matched == nullptr) {
-        erase(cache_key);
-        return {};
-    }
-    Value result = *matched;
-    entry.steps.erase(entry.steps.begin());
-    if (entry.steps.empty()) erase(cache_key);
-    else entry.last_revision = revision;
-    return result;
+    return *matched;
 }
 
-void ChallengeController::store_turn_plan(
+ChallengeController::PlanCacheUpdate ChallengeController::prepare_turn_plan(
     const std::string &cache_key,
     std::int64_t revision,
     const TraditionalSearchResult &result
-) {
-    const auto erase = [this](const std::string &key) {
-        turn_plan_cache_.erase(key);
-        turn_plan_cache_order_.erase(std::remove(
-            turn_plan_cache_order_.begin(), turn_plan_cache_order_.end(), key),
-            turn_plan_cache_order_.end());
-    };
-    if (cache_key.empty() || !result.success || !result.selected.is_object()) return;
-    if (traditional_action_is_terminal(result.selected)) {
-        erase(cache_key);
-        return;
-    }
+) const {
+    if (cache_key.empty() || !result.success || !result.selected.is_object()) return {};
+    PlanCacheUpdate update{cache_key, std::nullopt};
+    if (traditional_action_is_terminal(result.selected)) return update;
     const std::string selected_signature = value_action_signature(result.selected);
     bool removed_selected = false;
     std::vector<CachedPlanStep> steps;
@@ -331,13 +350,23 @@ void ChallengeController::store_turn_plan(
         steps.push_back({
             result.sequence[index], result.cache_preconditions[index], signature});
     }
-    if (steps.empty()) {
-        erase(cache_key);
+    if (!steps.empty()) update.entry = CachedPlanEntry{std::move(steps), revision};
+    return update;
+}
+
+void ChallengeController::commit_plan_cache_update(PlanCacheUpdate update) {
+    if (update.key.empty()) return;
+    if (!update.entry.has_value()) {
+        turn_plan_cache_.erase(update.key);
+        turn_plan_cache_order_.erase(std::remove(
+            turn_plan_cache_order_.begin(), turn_plan_cache_order_.end(), update.key),
+            turn_plan_cache_order_.end());
         return;
     }
-    const bool inserted = turn_plan_cache_.find(cache_key) == turn_plan_cache_.end();
-    turn_plan_cache_[cache_key] = CachedPlanEntry{std::move(steps), revision};
-    if (inserted) turn_plan_cache_order_.push_back(cache_key);
+    if (turn_plan_cache_.find(update.key) == turn_plan_cache_.end()) {
+        turn_plan_cache_order_.push_back(update.key);
+    }
+    turn_plan_cache_[update.key] = std::move(*update.entry);
     while (turn_plan_cache_order_.size() > 8) {
         turn_plan_cache_.erase(turn_plan_cache_order_.front());
         turn_plan_cache_order_.erase(turn_plan_cache_order_.begin());
@@ -357,7 +386,7 @@ Value ChallengeController::decide_action(
     const Value public_state = value_or(
         request, "public_snapshot", value_or(request, "state", Value()));
     const std::int32_t actor = static_cast<std::int32_t>(
-        integer_or(request, "actor", -1));
+        integer_field(request, "actor", -1));
     if (!actions.is_array()) {
         return error_result("native_challenge_root_actions_missing");
     }
@@ -366,11 +395,11 @@ Value ChallengeController::decide_action(
     }
 
     active_generation_.store(generation, std::memory_order_release);
+    const ActiveRequest active_request{active_generation_};
     cancel_requested_.store(false, std::memory_order_release);
     const Value filtered_actions = filter_root_actions(
         request, public_state, actions);
     if (!filtered_actions.is_array() || filtered_actions.as_array().empty()) {
-        active_generation_.store(0, std::memory_order_release);
         return error_result("no_bounded_legal_action");
     }
 
@@ -385,10 +414,9 @@ Value ChallengeController::decide_action(
         decks_,
         filtered_actions,
         public_history,
-        integer_or(request, "match_seed", integer_or(request, "seed", 0)),
+        integer_field(request, "match_seed", integer_field(request, "seed", 0)),
         &information_error
     )) {
-        active_generation_.store(0, std::memory_order_release);
         return error_result(information_error.empty()
             ? "information_set_capture_failed" : information_error);
     }
@@ -407,7 +435,7 @@ Value ChallengeController::decide_action(
             public_deck_keys->as_array()[static_cast<std::size_t>(actor)]
                 .string_or() != "psychic";
     }
-    const bool deck_inspection_action_search_enabled = bool_or(
+    const bool deck_inspection_action_search_enabled = bool_field(
         request, "use_deck_inspection_action_search",
         default_deck_inspection_action_search);
     const bool deck_inspection_memory_applied =
@@ -416,12 +444,12 @@ Value ChallengeController::decide_action(
 
     auto provider_owner = make_challenge_search_provider(
         catalog_, decks_, strategies_, actor, &information_set,
-        bool_or(request, "use_strategy_optimization", true));
+        bool_field(request, "use_strategy_optimization", true));
     ChallengeSearchProvider &provider = *provider_owner;
     const std::int32_t opponent = 1 - actor;
     const std::size_t requested_belief_samples = static_cast<std::size_t>(
         std::max<std::int64_t>(1, std::min<std::int64_t>(
-            3, integer_or(request, "belief_samples", 3))));
+            3, integer_field(request, "belief_samples", 3))));
     const std::size_t adaptive_belief_samples =
         information_set.recommended_belief_samples(
             opponent, requested_belief_samples);
@@ -432,8 +460,8 @@ Value ChallengeController::decide_action(
 #else
     constexpr std::size_t platform_search_workers = 1;
 #endif
-    const bool evaluation_request = bool_or(request, "internal_evaluation_batch")
-        || bool_or(request, "internal_evaluation_smoke");
+    const bool evaluation_request = bool_field(request, "internal_evaluation_batch")
+        || bool_field(request, "internal_evaluation_smoke");
     const std::size_t search_worker_count = evaluation_request
         ? 1 : platform_search_workers;
     const auto performance = [&]() {
@@ -455,7 +483,7 @@ Value ChallengeController::decide_action(
         counters["belief_samples_effective"] = Value(
             static_cast<std::int64_t>(adaptive_belief_samples));
         counters["deck_inspection_knowledge_enabled"] = Value(
-            bool_or(request, "use_deck_inspection", true));
+            bool_field(request, "use_deck_inspection", true));
         counters["deck_inspection_action_search_enabled"] = Value(
             deck_inspection_action_search_enabled);
         counters["deck_inspection_memory_applied"] = Value(
@@ -468,91 +496,251 @@ Value ChallengeController::decide_action(
         return counters;
     };
 
-    const bool shadow_probe = bool_or(request, "shadow_probe");
+    const bool shadow_probe = bool_field(request, "shadow_probe");
     const std::string cache_key = shadow_probe
         ? std::string{} : turn_plan_cache_key(request, information_set);
-    const std::int64_t revision = integer_or(
+    const std::int64_t revision = integer_field(
         request, "revision", value_integer_field(public_state, "revision", 0));
     std::uint64_t mandatory_nodes = 0;
     std::string mandatory_reason = "skipped";
 
-    if (string_or(request, "engine", "turn_beam_v2")
-            == planner_v3::STRATEGIC_INTENT_ENGINE_ID
-        && strategic_planner_ != nullptr) {
-        const std::uint32_t strategic_seed = static_cast<std::uint32_t>(
-            integer_or(request, "seed", 1));
-        // Run the frozen controller on the exact same information set.  Keep
-        // its cache/cycle mutations when v3 falls back, because those are part
-        // of turn_beam_v2's observable policy; roll them back only when a
-        // strategic plan actually takes control.
-        const auto saved_turn_plan_cache = turn_plan_cache_;
-        const auto saved_turn_plan_cache_order = turn_plan_cache_order_;
-        const auto saved_action_cycle_ledger = action_cycle_ledger_;
-        const auto saved_action_cycle_order = action_cycle_order_;
-        const auto rollback_legacy_shadow = [&]() {
-            turn_plan_cache_ = saved_turn_plan_cache;
-            turn_plan_cache_order_ = saved_turn_plan_cache_order;
-            action_cycle_ledger_ = saved_action_cycle_ledger;
-            action_cycle_order_ = saved_action_cycle_order;
-        };
+    const bool strategic_engine = string_field(request, "engine", "turn_beam_v2")
+        == planner_v3::STRATEGIC_INTENT_ENGINE_ID && strategic_planner_ != nullptr;
+    PlanCacheUpdate legacy_update;
+    const auto run_legacy = [&]() -> Value {
         Value legacy_request = request;
         legacy_request["engine"] = Value("turn_beam_v2");
-        legacy_request["shadow_probe"] = Value(false);
-        Value legacy_shadow = decide_action(legacy_request, generation);
-        active_generation_.store(generation, std::memory_order_release);
-        if (bool_or(legacy_shadow, "cancelled")
-            || cancel_requested_.load(std::memory_order_acquire)) {
-            rollback_legacy_shadow();
-            active_generation_.store(0, std::memory_order_release);
+        const std::string cache_key = shadow_probe && !strategic_engine
+            ? std::string{} : turn_plan_cache_key(legacy_request, information_set);
+        if (!bool_field(request, "skip_mandatory")
+            && strategy_catalog_ != nullptr && trusted_evaluator_ != nullptr) {
+            const std::uint32_t mandatory_seed = static_cast<std::uint32_t>(
+                integer_field(request, "seed", 1));
+            const Value sampled = information_set.sample_state(mandatory_seed);
+            RulesSession mandatory_position(catalog_);
+            std::string restore_error;
+            if (!sampled.is_object() || !mandatory_position.restore(
+                    sampled, mandatory_seed, &restore_error)) {
+                return error_result(restore_error.empty()
+                    ? "native_mandatory_determinization_failed" : restore_error);
+            }
+
+            TraditionalMandatoryResult forced;
+            const Value &mandatory_state = mandatory_position.search_state();
+            const bool setup_public_policy =
+                value_string_field(mandatory_state, "phase") == "SETUP"
+                && value_string_field(mandatory_state, "setup_stage") != "COMPLETE"
+                && filtered_actions.as_array().size() > 1;
+            bool cache_hit = false;
+            bool cache_guarded = false;
+            if (setup_public_policy) {
+                const auto ranked = provider.ranked_actions(
+                    mandatory_position, actor, filtered_actions,
+                    filtered_actions.as_array().size());
+                if (ranked.empty()) {
+                    return error_result("no_ranked_setup_action");
+                }
+                forced.resolved = true;
+                forced.action = ranked.front().action;
+                forced.reason = "setup_public_policy";
+            } else {
+                const TraditionalMandatoryTactics tactics(
+                    catalog_, *strategy_catalog_, *trusted_evaluator_);
+                forced = tactics.resolve(
+                    information_set,
+                    mandatory_position,
+                    actor,
+                    filtered_actions,
+                    provider,
+                    mandatory_seed,
+                    static_cast<std::uint64_t>(std::max<std::int64_t>(
+                        0, integer_field(request, "node_budget", 192))),
+                    &cancel_requested_);
+            }
+            mandatory_nodes = forced.nodes_expanded;
+            mandatory_reason = forced.reason;
+            if (forced.cancelled || cancel_requested_.load(std::memory_order_acquire)) {
+                return error_result("cancelled", true);
+            }
+
+            if (!forced.resolved && !cache_key.empty()) {
+                Value cached = probe_cached_turn_action(
+                    cache_key,
+                    revision,
+                    filtered_actions,
+                    provider.cache_precondition(mandatory_position, actor),
+                    actor, legacy_update);
+                if (cached.is_object() && !cached.as_object().empty()) {
+                    const std::string kind = value_string_field(cached, "kind");
+                    if ((kind == "DECLARE_ATTACK" || kind == "RETREAT"
+                            || kind == "END_TURN")) {
+                        bool changed = false;
+                        const Value guarded = provider.post_plan_tactical_guard(
+                            mandatory_position,
+                            actor,
+                            cached,
+                            filtered_actions,
+                            mandatory_seed + 700001U,
+                            changed);
+                        if (changed) {
+                            cached = guarded;
+                            cache_guarded = true;
+                            legacy_update = {cache_key, std::nullopt};
+                        }
+                    }
+                    forced.resolved = true;
+                    forced.action = cached;
+                    forced.reason = cache_guarded ? "plan_cache_guard" : "plan_cache";
+                    forced.nodes_expanded = mandatory_nodes;
+                    cache_hit = true;
+                }
+            }
+
+            if (forced.resolved) {
+                const std::string signature = value_action_signature(forced.action);
+                const std::string completion = cache_hit
+                    ? "cache_hit" : "forced_tactic";
+                const std::string trajectory = sha256_text(
+                    "turn_beam_v2|" + completion + "|" + signature);
+                TraditionalSearchResult result;
+            result.success = true;
+            result.selected = forced.action;
+            result.sequence = {forced.action};
+            result.cache_preconditions = {provider.cache_precondition(mandatory_position, actor)};
+            result.nodes_expanded = forced.nodes_expanded;
+            result.completion_reason = completion;
+            result.trajectory_hash = trajectory;
+            Value output = search_result_value(result, 8, 3);
+                output["forced_tactic"] = Value(cache_guarded
+                    ? "post_plan_tactical_guard"
+                    : (cache_hit ? "" : forced.reason));
+                output["stop_reason"] = Value(forced.reason);
+                output["search_depth_applicable"] = Value(false);
+                output["native_mandatory_tactics"] = Value(true);
+                output["native_setup_public_policy"] = Value(setup_public_policy);
+                output["native_turn_plan_cache_hit"] = Value(cache_hit);
+                output["native_mandatory_nodes"] = Value(static_cast<std::int64_t>(
+                    forced.nodes_expanded));
+                output["native_performance_counters"] = performance();
+                return output;
+            }
+        }
+
+        TraditionalSearchConfig config;
+        config.worker_count = search_worker_count;
+        config.belief_samples = adaptive_belief_samples;
+        if (bool_field(request, "internal_evaluation_smoke")) {
+            config.root_actions = 2;
+            config.per_root_width = 1;
+            config.max_depth = 1;
+            config.actions_per_node = 2;
+            config.reply_depth = 1;
+            config.reply_width = 2;
+            config.reply_actions_per_node = 2;
+            config.belief_samples = 1;
+        }
+        TraditionalTurnBeamSearch search(provider, config);
+        const auto planner_started = std::chrono::steady_clock::now();
+        TraditionalSearchResult result = search.search(
+            actor,
+            static_cast<std::uint32_t>(integer_field(request, "seed", 1)),
+            filtered_actions,
+            &cancel_requested_);
+        const double planner_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - planner_started).count();
+
+        bool post_plan_guarded = false;
+        if (result.success) {
+            const std::uint32_t seed = static_cast<std::uint32_t>(
+                integer_field(request, "seed", 1));
+            const Value sample = information_set.sample_state(seed);
+            RulesSession guard_position(catalog_);
+            std::string guard_error;
+            if (sample.is_object() && guard_position.restore(
+                    sample, seed, &guard_error)) {
+                bool changed = false;
+                const Value guarded = provider.post_plan_tactical_guard(
+                    guard_position,
+                    actor,
+                    result.selected,
+                    filtered_actions,
+                    seed + 700001U,
+                    changed);
+                if (changed) {
+                    result.selected = guarded;
+                    result.sequence = {guarded};
+                    result.cache_preconditions = {
+                        provider.cache_precondition(guard_position, actor)};
+                    post_plan_guarded = true;
+                }
+            }
+        }
+        if (result.success) legacy_update = prepare_turn_plan(cache_key, revision, result);
+
+        Value output = search_result_value(result, config.max_depth, config.reply_depth);
+        output["planner_ms"] = Value(planner_ms);
+        output["forced_tactic"] = Value(post_plan_guarded ? "post_plan_tactical_guard" : "");
+        output["native_mandatory_tactics"] = Value(!bool_field(request, "skip_mandatory"));
+        output["native_mandatory_nodes"] = Value(static_cast<std::int64_t>(
+            mandatory_nodes));
+        output["native_mandatory_reason"] = Value(mandatory_reason);
+        output["native_turn_plan_cache_hit"] = Value(false);
+        output["native_performance_counters"] = performance();
+        return output;
+    };
+    const auto finish = [&](Value output, PlanCacheUpdate update, bool legacy_selected = false) {
+        if (cancel_requested_.load(std::memory_order_acquire)
+            || generation <= cancelled_through_generation_.load(std::memory_order_acquire)) {
             return error_result("cancelled", true);
         }
-        const std::int64_t legacy_shadow_nodes = integer_or(
-            legacy_shadow, "nodes_expanded", 0);
-        const Value legacy_shadow_action = value_or(
-            legacy_shadow, "action", Value::make_object());
-        const Value legacy_shadow_sequence_value = value_or(
-            legacy_shadow, "sequence", Value::make_array());
-        const Value::Array legacy_shadow_sequence =
-            legacy_shadow_sequence_value.is_array()
-            ? legacy_shadow_sequence_value.as_array() : Value::Array{};
+        // Invalid cache entries must also be discarded on an unsuccessful search.
+        commit_plan_cache_update(std::move(update));
+        if (bool_field(output, "success")) {
+            // The legacy fallback historically commits its own non-shadow
+            // cycle record, even when the strategic caller is a diagnostic probe.
+            record_action_cycle_selection(request, public_state, value_or(output, "action"),
+                legacy_selected && strategic_engine);
+        }
+        return output;
+    };
+
+    if (strategic_engine) {
+        const std::uint32_t strategic_seed = static_cast<std::uint32_t>(
+            integer_field(request, "seed", 1));
+        std::optional<Value> legacy_shadow;
+        double legacy_ms = 0.0;
+        const auto get_legacy = [&]() -> const Value & {
+            if (!legacy_shadow.has_value()) {
+                const auto started = std::chrono::steady_clock::now();
+                legacy_shadow = run_legacy();
+                legacy_ms = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - started).count();
+            }
+            return *legacy_shadow;
+        };
         const auto emit_strategic = [&](const planner_v3::StrategicPlannerResult &row,
                                         bool cache_hit) {
             const TraditionalSearchResult &result = row.plan;
+            const std::int64_t legacy_shadow_nodes = legacy_shadow.has_value()
+                ? integer_field(*legacy_shadow, "nodes_expanded", 0) : 0;
+            const Value legacy_shadow_action = legacy_shadow.has_value()
+                ? value_or(*legacy_shadow, "action", Value::make_object())
+                : Value::make_object();
             const bool forced = row.dominance_resolved;
             const std::size_t requested_depth = row.deliberation
                     == planner_v3::DeliberationLevel::D0
                 ? 0 : (row.deliberation == planner_v3::DeliberationLevel::D1
                     ? 2 : (row.deliberation
                             == planner_v3::DeliberationLevel::D2 ? 4 : 5));
-            Value root_counts = Value::make_object();
-            for (const auto &[signature, count] : result.root_sample_counts) {
-                root_counts[signature] = Value(static_cast<std::int64_t>(count));
-            }
             Value counters = performance();
             counters["strategic_intent_decisions"] = Value(1);
             counters["strategic_deliberation_level"] = Value(
                 planner_v3::deliberation_name(row.deliberation));
             counters["strategic_fallback"] = Value(false);
             counters["strategic_shadow_nodes"] = Value(legacy_shadow_nodes);
-            Value output = Value::make_object();
-            output["success"] = Value(result.success);
-            output["cancelled"] = Value(result.cancelled);
-            output["error"] = Value(result.error);
-            output["action"] = result.selected;
-            output["sequence"] = Value(result.sequence);
-            output["cache_preconditions"] = Value(result.cache_preconditions);
-            output["root_candidates"] = Value(result.root_candidates);
-            output["score_milli"] = Value(result.score_milli);
-            output["worst_score_milli"] = Value(result.worst_score_milli);
+            Value output = search_result_value(result, requested_depth, 0);
             output["nodes_expanded"] = Value(static_cast<std::int64_t>(
                 result.nodes_expanded) + legacy_shadow_nodes);
-            output["planner_ms"] = Value(0.0);
-            output["completed_depth"] = Value(static_cast<std::int64_t>(
-                result.completed_depth));
-            output["max_path_depth"] = Value(static_cast<std::int64_t>(
-                result.max_path_depth));
-            output["reply_completed_depth"] = Value(0);
-            output["reply_depth_applicable"] = Value(false);
             output["completion_reason"] = Value(cache_hit
                 ? "cache_hit" : (forced ? "forced_tactic"
                     : result.completion_reason));
@@ -563,37 +751,12 @@ Value ChallengeController::decide_action(
             output["stop_reason"] = Value(cache_hit
                 ? "plan_memory" : (forced ? "dominance_solver"
                     : "intent_compiled"));
-            output["trajectory_hash"] = Value(result.trajectory_hash);
-            output["trajectory_events"] = Value(static_cast<std::int64_t>(
-                result.trajectory_events));
-            output["belief_samples"] = Value(static_cast<std::int64_t>(
-                result.belief_samples));
-            output["belief_consensus"] = Value(static_cast<std::int64_t>(
-                result.belief_consensus));
-            output["root_signatures_attempted"] = strings_value(
-                result.root_signatures_attempted);
-            output["root_sample_counts"] = std::move(root_counts);
-            output["belief_seed_hash"] = Value(result.belief_seed_hash);
-            output["opponent_strategy_id"] = Value("");
-            output["layers_completed"] = Value(static_cast<std::int64_t>(
-                result.layers_completed));
-            output["reply_completion_reasons"] = Value::make_array();
             output["reply_completion_reason"] = Value(
                 row.deliberation == planner_v3::DeliberationLevel::D3
                     ? "threat_scenarios" : "not_applicable");
-            output["requested_depth"] = Value(static_cast<std::int64_t>(
-                requested_depth));
-            output["reply_requested_depth"] = Value(0);
             output["search_depth_applicable"] = Value(!forced && !cache_hit);
-            output["search_depth_requested"] = Value(
-                static_cast<std::int64_t>(requested_depth));
-            output["search_depth_reached"] = Value(static_cast<std::int64_t>(
-                result.max_path_depth));
-            output["search_depth_completed"] = Value(static_cast<std::int64_t>(
-                result.completed_depth));
             output["search_depth_stop_reason"] = Value(cache_hit
                 ? "plan_memory" : result.completion_reason);
-            output["native_determinization"] = Value(true);
             output["native_mandatory_tactics"] = Value(false);
             output["native_mandatory_nodes"] = Value(0);
             output["native_mandatory_reason"] = Value("replaced_by_dominance");
@@ -612,64 +775,41 @@ Value ChallengeController::decide_action(
             output["strategic_fallback"] = Value(false);
             output["strategic_safety_validator"] = Value(true);
             output["strategic_plan_memory"] = Value(cache_hit || row.cacheable);
-            output["strategic_shadow_legacy"] = Value(true);
+            output["strategic_shadow_legacy"] = Value(legacy_shadow.has_value());
             output["strategic_shadow_nodes"] = Value(legacy_shadow_nodes);
+            output["strategic_shadow_ms"] = Value(legacy_ms);
             output["strategic_legacy_action"] = legacy_shadow_action;
             return output;
         };
 
-        // Deterministic, fully validated strategic plans may continue without
-        // replanning.  Probe after the legacy transaction so its decision is
-        // still available for audit, then roll the legacy side effects back
-        // and consume the v3 cache from the clean controller state.
+        // A validated continuation never needs a second policy to rediscover it.
+        PlanCacheUpdate strategic_update;
         if (!cache_key.empty()) {
             auto cache_position = provider.determinize(0, strategic_seed);
             if (cache_position != nullptr) {
-                Value cached = take_cached_turn_action(
-                    cache_key,
-                    revision,
-                    filtered_actions,
-                    provider.cache_precondition(*cache_position, actor),
-                    actor);
+                const Value precondition = provider.cache_precondition(*cache_position, actor);
+                const Value cached = probe_cached_turn_action(
+                    cache_key, revision, filtered_actions, precondition, actor,
+                    strategic_update);
                 if (cached.is_object() && !cached.as_object().empty()) {
-                    rollback_legacy_shadow();
-                    auto clean_position = provider.determinize(0, strategic_seed);
-                    cached = clean_position == nullptr ? Value::make_object()
-                        : take_cached_turn_action(
-                            cache_key,
-                            revision,
-                            filtered_actions,
-                            provider.cache_precondition(*clean_position, actor),
-                            actor);
-                    if (cached.is_object() && !cached.as_object().empty()) {
-                        planner_v3::StrategicPlannerResult cached_result;
-                        cached_result.plan.success = true;
-                        cached_result.plan.selected = cached;
-                        cached_result.plan.sequence = Value::Array{cached};
-                        cached_result.plan.cache_preconditions = Value::Array{
-                            provider.cache_precondition(*clean_position, actor)};
-                        cached_result.plan.root_candidates = Value::Array{cached};
-                        cached_result.plan.completion_reason = "plan_memory_hit";
-                        cached_result.plan.trajectory_hash = sha256_text(
-                            std::string("strategic_intent_v3|plan_memory|")
-                            + value_action_signature(cached));
-                        cached_result.plan.belief_samples = 1;
-                        cached_result.plan.belief_consensus = 1;
-                        cached_result.plan.root_signatures_attempted = {
-                            value_action_signature(cached)};
-                        cached_result.plan.root_sample_counts[
-                            value_action_signature(cached)] = 1;
-                        cached_result.explanation = Value(Value::Object{
-                            {"plan_memory", Value("preconditions_validated")},
-                        });
-                        active_generation_.store(0, std::memory_order_release);
-                        record_action_cycle_selection(request, public_state, cached);
-                        return emit_strategic(cached_result, true);
-                    }
-                    // The clean re-check failed; run a fresh legacy transaction
-                    // so fallback semantics remain exact.
-                    legacy_shadow = decide_action(legacy_request, generation);
-                    active_generation_.store(generation, std::memory_order_release);
+                    planner_v3::StrategicPlannerResult cached_result;
+                    auto &plan = cached_result.plan;
+                    plan.success = true;
+                    plan.selected = cached;
+                    plan.sequence = Value::Array{cached};
+                    plan.cache_preconditions = Value::Array{precondition};
+                    plan.root_candidates = Value::Array{cached};
+                    plan.completion_reason = "plan_memory_hit";
+                    const std::string signature = value_action_signature(cached);
+                    plan.trajectory_hash = sha256_text(
+                        "strategic_intent_v3|plan_memory|" + signature);
+                    plan.belief_samples = plan.belief_consensus = 1;
+                    plan.root_signatures_attempted = {signature};
+                    plan.root_sample_counts[signature] = 1;
+                    cached_result.explanation = Value(Value::Object{
+                        {"plan_memory", Value("preconditions_validated")},
+                    });
+                    return finish(emit_strategic(cached_result, true), std::move(strategic_update));
                 }
             }
         }
@@ -678,15 +818,14 @@ Value ChallengeController::decide_action(
         planner_v3::StrategicPlannerConfig strategic_config;
         strategic_config.belief_samples = adaptive_belief_samples;
         strategic_config.node_budget = static_cast<std::uint64_t>(
-            std::max<std::int64_t>(1, integer_or(request, "node_budget", 192)));
-        strategic_config.evaluation_smoke = bool_or(
+            std::max<std::int64_t>(1, integer_field(request, "node_budget", 192)));
+        strategic_config.evaluation_smoke = bool_field(
             request, "internal_evaluation_smoke");
-        strategic_config.strategy_optimization = bool_or(
+        strategic_config.strategy_optimization = bool_field(
             request, "use_strategy_optimization", true);
-        strategic_config.legacy_action = legacy_shadow_action;
-        strategic_config.legacy_sequence = legacy_shadow_sequence;
+        strategic_config.legacy_decision = get_legacy;
         planner_v3::StrategicPlannerResult strategic = strategic_planner_->decide(
-            string_or(request, "match_instance_id"),
+            string_field(request, "match_instance_id"),
             information_set,
             provider,
             actor,
@@ -694,17 +833,16 @@ Value ChallengeController::decide_action(
             filtered_actions,
             strategic_config,
             &cancel_requested_);
-        const double strategic_ms = std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - strategic_started).count();
+        const double strategic_ms = std::max(0.0,
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - strategic_started).count() - legacy_ms);
         if (strategic.plan.cancelled
             || cancel_requested_.load(std::memory_order_acquire)) {
-            rollback_legacy_shadow();
-            active_generation_.store(0, std::memory_order_release);
             return error_result("cancelled", true);
         }
         if (strategic.fallback_requested || !strategic.plan.success) {
-            Value legacy = legacy_shadow;
-            const std::int64_t legacy_nodes = integer_or(
+            Value legacy = get_legacy();
+            const std::int64_t legacy_nodes = integer_field(
                 legacy, "nodes_expanded", 0);
             legacy["nodes_expanded"] = Value(legacy_nodes
                 + static_cast<std::int64_t>(strategic.plan.nodes_expanded));
@@ -712,8 +850,9 @@ Value ChallengeController::decide_action(
                 static_cast<std::int64_t>(strategic.plan.nodes_expanded));
             legacy["strategic_probe_ms"] = Value(strategic_ms);
             legacy["strategic_shadow_legacy"] = Value(true);
-            legacy["strategic_shadow_nodes"] = Value(legacy_shadow_nodes);
-            legacy["strategic_legacy_action"] = legacy_shadow_action;
+            legacy["strategic_shadow_nodes"] = Value(legacy_nodes);
+            legacy["strategic_shadow_ms"] = Value(legacy_ms);
+            legacy["strategic_legacy_action"] = value_or(legacy, "action", Value::make_object());
             legacy["strategic_fallback"] = Value(true);
             legacy["strategic_fallback_reason"] = Value(
                 strategic.fallback_reason);
@@ -722,298 +861,27 @@ Value ChallengeController::decide_action(
             legacy["strategic_explanation"] = strategic.explanation;
             legacy["engine_id"] = Value(
                 planner_v3::STRATEGIC_INTENT_ENGINE_ID);
-            Value *counters = legacy.find("native_performance_counters");
-            if (counters != nullptr && counters->is_object()) {
-                (*counters)["strategic_intent_decisions"] = Value(1);
-                (*counters)["strategic_fallback"] = Value(true);
-                (*counters)["strategic_probe_nodes"] = Value(
-                    static_cast<std::int64_t>(strategic.plan.nodes_expanded));
+            legacy["native_performance_counters"] = performance();
+            Value &final_counters = legacy["native_performance_counters"];
+            final_counters["strategic_intent_decisions"] = Value(1);
+            final_counters["strategic_fallback"] = Value(true);
+            final_counters["strategic_probe_nodes"] = Value(
+                static_cast<std::int64_t>(strategic.plan.nodes_expanded));
+            if (!cancel_requested_.load(std::memory_order_acquire)) {
+                commit_plan_cache_update(std::move(strategic_update));
             }
-            return legacy;
+            return finish(std::move(legacy), std::move(legacy_update), true);
         }
-        rollback_legacy_shadow();
         if (strategic.cacheable) {
-            store_turn_plan(cache_key, revision, strategic.plan);
+            strategic_update = prepare_turn_plan(cache_key, revision, strategic.plan);
         }
-        active_generation_.store(0, std::memory_order_release);
         Value strategic_output = emit_strategic(strategic, false);
         strategic_output["planner_ms"] = Value(strategic_ms);
-        record_action_cycle_selection(
-            request, public_state, strategic.plan.selected);
-        return strategic_output;
+        return finish(std::move(strategic_output), std::move(strategic_update));
     }
 
-    if (!bool_or(request, "skip_mandatory")
-        && strategy_catalog_ != nullptr && trusted_evaluator_ != nullptr) {
-        const std::uint32_t mandatory_seed = static_cast<std::uint32_t>(
-            integer_or(request, "seed", 1));
-        const Value sampled = information_set.sample_state(mandatory_seed);
-        RulesSession mandatory_position(catalog_);
-        std::string restore_error;
-        if (!sampled.is_object() || !mandatory_position.restore(
-                sampled, mandatory_seed, &restore_error)) {
-            active_generation_.store(0, std::memory_order_release);
-            return error_result(restore_error.empty()
-                ? "native_mandatory_determinization_failed" : restore_error);
-        }
-
-        TraditionalMandatoryResult forced;
-        const Value &mandatory_state = mandatory_position.search_state();
-        const bool setup_public_policy =
-            value_string_field(mandatory_state, "phase") == "SETUP"
-            && value_string_field(mandatory_state, "setup_stage") != "COMPLETE"
-            && filtered_actions.as_array().size() > 1;
-        bool cache_hit = false;
-        bool cache_guarded = false;
-        if (setup_public_policy) {
-            const auto ranked = provider.ranked_actions(
-                mandatory_position, actor, filtered_actions,
-                filtered_actions.as_array().size());
-            if (ranked.empty()) {
-                active_generation_.store(0, std::memory_order_release);
-                return error_result("no_ranked_setup_action");
-            }
-            forced.resolved = true;
-            forced.action = ranked.front().action;
-            forced.reason = "setup_public_policy";
-        } else {
-            const TraditionalMandatoryTactics tactics(
-                catalog_, *strategy_catalog_, *trusted_evaluator_);
-            forced = tactics.resolve(
-                information_set,
-                mandatory_position,
-                actor,
-                filtered_actions,
-                provider,
-                mandatory_seed,
-                static_cast<std::uint64_t>(std::max<std::int64_t>(
-                    0, integer_or(request, "node_budget", 192))),
-                &cancel_requested_);
-        }
-        mandatory_nodes = forced.nodes_expanded;
-        mandatory_reason = forced.reason;
-        if (forced.cancelled || cancel_requested_.load(std::memory_order_acquire)) {
-            active_generation_.store(0, std::memory_order_release);
-            return error_result("cancelled", true);
-        }
-
-        if (!forced.resolved && !cache_key.empty()) {
-            Value cached = take_cached_turn_action(
-                cache_key,
-                revision,
-                filtered_actions,
-                provider.cache_precondition(mandatory_position, actor),
-                actor);
-            if (cached.is_object() && !cached.as_object().empty()) {
-                const std::string kind = value_string_field(cached, "kind");
-                if ((kind == "DECLARE_ATTACK" || kind == "RETREAT"
-                        || kind == "END_TURN")) {
-                    bool changed = false;
-                    const Value guarded = provider.post_plan_tactical_guard(
-                        mandatory_position,
-                        actor,
-                        cached,
-                        filtered_actions,
-                        mandatory_seed + 700001U,
-                        changed);
-                    if (changed) {
-                        cached = guarded;
-                        cache_guarded = true;
-                        turn_plan_cache_.erase(cache_key);
-                        turn_plan_cache_order_.erase(std::remove(
-                            turn_plan_cache_order_.begin(),
-                            turn_plan_cache_order_.end(),
-                            cache_key), turn_plan_cache_order_.end());
-                    }
-                }
-                forced.resolved = true;
-                forced.action = cached;
-                forced.reason = cache_guarded ? "plan_cache_guard" : "plan_cache";
-                forced.nodes_expanded = mandatory_nodes;
-                cache_hit = true;
-            }
-        }
-
-        if (forced.resolved) {
-            active_generation_.store(0, std::memory_order_release);
-            const std::string signature = value_action_signature(forced.action);
-            const std::string completion = cache_hit
-                ? "cache_hit" : "forced_tactic";
-            const std::string trajectory = sha256_text(
-                "turn_beam_v2|" + completion + "|" + signature);
-            Value::Array sequence{forced.action};
-            Value::Array preconditions{
-                provider.cache_precondition(mandatory_position, actor)};
-            Value output = Value::make_object();
-            output["success"] = Value(true);
-            output["cancelled"] = Value(false);
-            output["error"] = Value("");
-            output["action"] = forced.action;
-            output["sequence"] = Value(std::move(sequence));
-            output["cache_preconditions"] = Value(std::move(preconditions));
-            output["root_candidates"] = Value::make_array();
-            output["score_milli"] = Value(0);
-            output["worst_score_milli"] = Value(0);
-            output["nodes_expanded"] = Value(static_cast<std::int64_t>(
-                forced.nodes_expanded));
-            output["planner_ms"] = Value(0.0);
-            output["completed_depth"] = Value(0);
-            output["max_path_depth"] = Value(0);
-            output["reply_completed_depth"] = Value(0);
-            output["reply_depth_applicable"] = Value(false);
-            output["completion_reason"] = Value(completion);
-            output["forced_tactic"] = Value(cache_guarded
-                ? "post_plan_tactical_guard"
-                : (cache_hit ? "" : forced.reason));
-            output["stop_reason"] = Value(forced.reason);
-            output["trajectory_hash"] = Value(trajectory);
-            output["trajectory_events"] = Value(0);
-            output["belief_samples"] = Value(0);
-            output["belief_consensus"] = Value(0);
-            output["root_signatures_attempted"] = Value::make_array();
-            output["root_sample_counts"] = Value::make_object();
-            output["belief_seed_hash"] = Value("");
-            output["opponent_strategy_id"] = Value("");
-            output["layers_completed"] = Value(0);
-            output["reply_completion_reasons"] = Value::make_array();
-            output["reply_completion_reason"] = Value("not_applicable");
-            output["requested_depth"] = Value(8);
-            output["reply_requested_depth"] = Value(3);
-            output["search_depth_applicable"] = Value(false);
-            output["search_depth_requested"] = Value(8);
-            output["search_depth_reached"] = Value(0);
-            output["search_depth_completed"] = Value(0);
-            output["search_depth_stop_reason"] = Value(completion);
-            output["native_determinization"] = Value(true);
-            output["native_mandatory_tactics"] = Value(true);
-            output["native_setup_public_policy"] = Value(setup_public_policy);
-            output["native_turn_plan_cache_hit"] = Value(cache_hit);
-            output["native_mandatory_nodes"] = Value(static_cast<std::int64_t>(
-                forced.nodes_expanded));
-            output["native_performance_counters"] = performance();
-            record_action_cycle_selection(request, public_state, forced.action);
-            return output;
-        }
-    }
-
-    TraditionalSearchConfig config;
-    config.worker_count = search_worker_count;
-    config.belief_samples = adaptive_belief_samples;
-    if (bool_or(request, "internal_evaluation_smoke")) {
-        config.root_actions = 2;
-        config.per_root_width = 1;
-        config.max_depth = 1;
-        config.actions_per_node = 2;
-        config.reply_depth = 1;
-        config.reply_width = 2;
-        config.reply_actions_per_node = 2;
-        config.belief_samples = 1;
-    }
-    TraditionalTurnBeamSearch search(provider, config);
-    const auto planner_started = std::chrono::steady_clock::now();
-    TraditionalSearchResult result = search.search(
-        actor,
-        static_cast<std::uint32_t>(integer_or(request, "seed", 1)),
-        filtered_actions,
-        &cancel_requested_);
-    const double planner_ms = std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - planner_started).count();
-
-    bool post_plan_guarded = false;
-    if (result.success) {
-        const std::uint32_t seed = static_cast<std::uint32_t>(
-            integer_or(request, "seed", 1));
-        const Value sample = information_set.sample_state(seed);
-        RulesSession guard_position(catalog_);
-        std::string guard_error;
-        if (sample.is_object() && guard_position.restore(
-                sample, seed, &guard_error)) {
-            bool changed = false;
-            const Value guarded = provider.post_plan_tactical_guard(
-                guard_position,
-                actor,
-                result.selected,
-                filtered_actions,
-                seed + 700001U,
-                changed);
-            if (changed) {
-                result.selected = guarded;
-                result.sequence = {guarded};
-                result.cache_preconditions = {
-                    provider.cache_precondition(guard_position, actor)};
-                post_plan_guarded = true;
-            }
-        }
-    }
-    if (result.success) store_turn_plan(cache_key, revision, result);
-    active_generation_.store(0, std::memory_order_release);
-
-    Value root_counts = Value::make_object();
-    for (const auto &[signature, count] : result.root_sample_counts) {
-        root_counts[signature] = Value(static_cast<std::int64_t>(count));
-    }
-    Value output = Value::make_object();
-    output["success"] = Value(result.success);
-    output["cancelled"] = Value(result.cancelled);
-    output["error"] = Value(result.error);
-    output["action"] = result.selected;
-    output["sequence"] = Value(result.sequence);
-    output["cache_preconditions"] = Value(result.cache_preconditions);
-    output["root_candidates"] = Value(result.root_candidates);
-    output["score_milli"] = Value(result.score_milli);
-    output["worst_score_milli"] = Value(result.worst_score_milli);
-    output["nodes_expanded"] = Value(static_cast<std::int64_t>(
-        result.nodes_expanded));
-    output["planner_ms"] = Value(planner_ms);
-    output["completed_depth"] = Value(static_cast<std::int64_t>(
-        result.completed_depth));
-    output["max_path_depth"] = Value(static_cast<std::int64_t>(
-        result.max_path_depth));
-    output["reply_completed_depth"] = Value(static_cast<std::int64_t>(
-        result.reply_completed_depth));
-    output["reply_depth_applicable"] = Value(result.reply_depth_applicable);
-    output["completion_reason"] = Value(result.completion_reason);
-    output["forced_tactic"] = Value(post_plan_guarded
-        ? "post_plan_tactical_guard" : "");
-    output["trajectory_hash"] = Value(result.trajectory_hash);
-    output["trajectory_events"] = Value(static_cast<std::int64_t>(
-        result.trajectory_events));
-    output["belief_samples"] = Value(static_cast<std::int64_t>(
-        result.belief_samples));
-    output["belief_consensus"] = Value(static_cast<std::int64_t>(
-        result.belief_consensus));
-    output["root_signatures_attempted"] = strings_value(
-        result.root_signatures_attempted);
-    output["root_sample_counts"] = std::move(root_counts);
-    output["belief_seed_hash"] = Value(result.belief_seed_hash);
-    output["opponent_strategy_id"] = Value(result.opponent_strategy_id);
-    output["layers_completed"] = Value(static_cast<std::int64_t>(
-        result.layers_completed));
-    output["reply_completion_reasons"] = strings_value(
-        result.reply_completion_reasons);
-    output["reply_completion_reason"] = Value(result.reply_completion_reason);
-    output["requested_depth"] = Value(static_cast<std::int64_t>(config.max_depth));
-    output["reply_requested_depth"] = Value(static_cast<std::int64_t>(
-        config.reply_depth));
-    output["search_depth_applicable"] = Value(true);
-    output["search_depth_requested"] = Value(static_cast<std::int64_t>(
-        config.max_depth));
-    output["search_depth_reached"] = Value(static_cast<std::int64_t>(
-        result.max_path_depth));
-    output["search_depth_completed"] = Value(static_cast<std::int64_t>(
-        result.completed_depth));
-    output["search_depth_stop_reason"] = Value(result.completion_reason);
-    output["native_determinization"] = Value(true);
-    output["native_mandatory_tactics"] = Value(!bool_or(request, "skip_mandatory"));
-    output["native_mandatory_nodes"] = Value(static_cast<std::int64_t>(
-        mandatory_nodes));
-    output["native_mandatory_reason"] = Value(mandatory_reason);
-    output["native_turn_plan_cache_hit"] = Value(false);
-    output["native_performance_counters"] = performance();
-    if (result.success) {
-        record_action_cycle_selection(request, public_state, result.selected);
-    }
-    return output;
+    Value output = run_legacy();
+    return finish(std::move(output), std::move(legacy_update));
 }
 
 Value ChallengeController::decide_choice(
@@ -1038,7 +906,7 @@ Value ChallengeController::decide_choice(
         result["kind"] = Value("choice");
         return result;
     }
-    const std::int64_t revision = integer_or(request, "revision", -1);
+    const std::int64_t revision = integer_field(request, "revision", -1);
     if (revision < 0
         || revision != value_integer_field(state, "revision", -2)
         || revision != value_integer_field(choice, "base_revision", -3)) {
@@ -1047,7 +915,7 @@ Value ChallengeController::decide_choice(
         return result;
     }
     const std::int32_t actor = static_cast<std::int32_t>(
-        value_integer_field(choice, "player", integer_or(request, "actor", -1)));
+        value_integer_field(choice, "player", integer_field(request, "actor", -1)));
     if (actor < 0 || actor > 1) {
         Value result = error_result("invalid_actor");
         result["kind"] = Value("choice");
@@ -1067,7 +935,7 @@ Value ChallengeController::decide_choice(
         decks_,
         Value::make_array(),
         public_history,
-        integer_or(request, "match_seed", integer_or(request, "seed", 0)),
+        integer_field(request, "match_seed", integer_field(request, "seed", 0)),
         &error
     )) {
         active_generation_.store(0, std::memory_order_release);
@@ -1076,7 +944,7 @@ Value ChallengeController::decide_choice(
         result["kind"] = Value("choice");
         return result;
     }
-    const bool deck_inspection_enabled = bool_or(
+    const bool deck_inspection_enabled = bool_field(
         request, "use_deck_inspection", true);
     const bool deck_inspection_memory_applied =
         apply_deck_inspection_memory(request, information_set);
@@ -1097,7 +965,7 @@ Value ChallengeController::decide_choice(
         remember_deck_inspection(request, information_set);
     }
     const std::uint32_t seed = static_cast<std::uint32_t>(
-        integer_or(request, "seed", 17));
+        integer_field(request, "seed", 17));
     const Value sampled = information_set.sample_state(seed);
     RulesSession position(catalog_);
     if (!sampled.is_object() || !position.restore(sampled, seed, &error)) {
@@ -1109,12 +977,12 @@ Value ChallengeController::decide_choice(
     }
     auto provider = make_challenge_search_provider(
         catalog_, decks_, strategies_, actor, &information_set,
-        bool_or(request, "use_strategy_optimization", true));
+        bool_field(request, "use_strategy_optimization", true));
     Value response;
     const Value *options = choice.find("options");
     if (options != nullptr && options->is_array() && options->as_array().empty()) {
         const bool cancelled = value_integer_field(choice, "min_select", 0) <= 0
-            && bool_or(choice, "can_cancel");
+            && bool_field(choice, "can_cancel");
         response = Value(Value::Object{
             {"request_id", Value(value_string_field(choice, "request_id"))},
             {"option_ids", Value::make_array()},
@@ -1150,7 +1018,7 @@ Value ChallengeController::decide_choice(
         strategy_catalog_->strategy_version(deck_key));
     output["strategy_hash"] = Value(
         strategy_catalog_->strategy_content_hash(deck_key));
-    output["engine_id"] = Value(string_or(request, "engine", "turn_beam_v2"));
+    output["engine_id"] = Value(string_field(request, "engine", "turn_beam_v2"));
     output["planner"] = output["engine_id"];
     output["completion_reason"] = Value("forced_tactic");
     output["decision_origin"] = Value("choice_policy");
@@ -1159,7 +1027,7 @@ Value ChallengeController::decide_choice(
     output["revision"] = Value(revision);
     output["request_id"] = value_or(request, "request_id", Value(""));
     output["heuristic_variant"] = Value(
-        string_or(request, "engine", "turn_beam_v2")
+        string_field(request, "engine", "turn_beam_v2")
                 == planner_v3::STRATEGIC_INTENT_ENGINE_ID
             ? "strategic_semantic_v3" : "semantic_v2");
     Value counters = provider->performance_counters();
@@ -1186,7 +1054,7 @@ Value ChallengeController::decide(
 ) {
     const auto started = std::chrono::steady_clock::now();
     if (!request.is_object()) return error_result("invalid_request");
-    if (string_or(request, "kind", "action") == "choice") {
+    if (string_field(request, "kind", "action") == "choice") {
         Value result = decide_choice(request, generation);
         result["elapsed_ms"] = Value(std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - started).count());
@@ -1195,7 +1063,7 @@ Value ChallengeController::decide(
     Value planner = decide_action(request, generation);
     const double elapsed_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - started).count();
-    if (!bool_or(planner, "success")) {
+    if (!bool_field(planner, "success")) {
         planner["kind"] = Value("action");
         planner["decision_origin"] = Value("failure");
         planner["failure_stage"] = Value("search");
@@ -1217,9 +1085,9 @@ Value ChallengeController::decide(
     const Value sequence = value_or(planner, "sequence", Value::make_array());
     Value preconditions = value_or(
         planner, "cache_preconditions", Value::make_array());
-    const bool cache_hit = bool_or(planner, "native_turn_plan_cache_hit");
+    const bool cache_hit = bool_field(planner, "native_turn_plan_cache_hit");
     const bool cache_guarded = cache_hit
-        && !string_or(planner, "forced_tactic").empty();
+        && !string_field(planner, "forced_tactic").empty();
     Value turn_plan = Value::make_array();
     if ((!cache_hit || cache_guarded)
         && sequence.is_array() && preconditions.is_array()) {
@@ -1231,7 +1099,7 @@ Value ChallengeController::decide(
         }
     }
     Value semantic_planner = planner;
-    const std::string effective_engine = string_or(
+    const std::string effective_engine = string_field(
         request, "engine", "turn_beam_v2");
     semantic_planner["engine_id"] = Value(effective_engine);
     semantic_planner["turn_plan"] = turn_plan;
@@ -1247,7 +1115,7 @@ Value ChallengeController::decide(
     const std::string semantic_hash = traditional_decision_semantic_hash(
         selected, semantic_planner, turn_plan);
     const std::int32_t actor = static_cast<std::int32_t>(
-        integer_or(request, "actor", -1));
+        integer_field(request, "actor", -1));
     const Value state = value_or(
         request, "public_snapshot", value_or(request, "state", Value::make_object()));
     const Value *keys = state.find("public_deck_keys");
@@ -1255,12 +1123,12 @@ Value ChallengeController::decide(
         && actor >= 0 && static_cast<std::size_t>(actor) < keys->as_array().size()
         ? keys->as_array()[static_cast<std::size_t>(actor)].string_or()
         : std::string{};
-    const std::string requested_deck = string_or(request, "deck_key");
+    const std::string requested_deck = string_field(request, "deck_key");
     const std::string deck_key = requested_deck.empty()
         ? inferred_deck : requested_deck;
-    const std::string completion = string_or(planner, "completion_reason");
-    const std::string forced = string_or(planner, "forced_tactic");
-    const std::int64_t score_milli = integer_or(planner, "score_milli", 0);
+    const std::string completion = string_field(planner, "completion_reason");
+    const std::string forced = string_field(planner, "forced_tactic");
+    const std::int64_t score_milli = integer_field(planner, "score_milli", 0);
 
     Value output = planner;
     output["success"] = Value(true);

@@ -38,15 +38,16 @@ static func capture_player_view(
 	p_ai_thinking: bool,
 	p_game_mode: String,
 ) -> BattleViewModel:
-	var visible_state := player_view_state(state, p_view_player)
-	return capture(
-		visible_state,
-		p_view_player,
-		p_action_rows,
-		p_selected_entity_key,
-		p_ai_thinking,
-		p_game_mode,
-	)
+	# player_view_state creates an independent, privacy-filtered DTO. Adopt it
+	# directly; capture() still clones borrowed inputs and render reads stay isolated.
+	var result := BattleViewModel.new()
+	result._state = player_view_state(state, p_view_player)
+	result.view_player = p_view_player
+	result.action_rows = p_action_rows.duplicate(true)
+	result.selected_entity_key = p_selected_entity_key
+	result.ai_thinking = p_ai_thinking
+	result.game_mode = p_game_mode
+	return result
 
 
 static func player_view_state(state: GameState, player_idx: int) -> GameState:

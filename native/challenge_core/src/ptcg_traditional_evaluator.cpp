@@ -21,27 +21,11 @@ using traditional_card::card;
 using traditional_card::energy_units;
 
 std::int64_t missing_energy_units(
-    std::vector<std::string> available,
+    const std::vector<std::string> &available,
     const Value *cost
 ) {
-    if (cost == nullptr || !cost->is_array()) return 0;
-    std::int64_t missing = 0;
-    std::int64_t colorless = 0;
-    for (const Value &required_value : cost->as_array()) {
-        const std::string required = required_value.string_or();
-        if (required == "Colorless") {
-            ++colorless;
-            continue;
-        }
-        auto found = std::find(available.begin(), available.end(), required);
-        if (found == available.end()) {
-            found = std::find(available.begin(), available.end(), "Rainbow");
-        }
-        if (found == available.end()) ++missing;
-        else available.erase(found);
-    }
-    return missing + std::max<std::int64_t>(
-        0, colorless - static_cast<std::int64_t>(available.size()));
+    return cost == nullptr || !cost->is_array() ? 0
+        : traditional_card::missing_energy_units(available, cost->as_array());
 }
 
 bool modifier_operation_matches(

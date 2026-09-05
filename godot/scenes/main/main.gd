@@ -10,18 +10,11 @@ const VICTORY_SCENE := preload("res://scenes/end/victory_screen.tscn")
 const TITLE_SCENE := preload("res://scenes/title/title_page.tscn")
 const DECK_SELECT_SCENE := preload("res://scenes/decks/deck_select_page.tscn")
 const NETWORK_LOBBY_SCENE := preload("res://scenes/network/network_lobby_page.tscn")
-const SETTINGS_PANEL_SCENE := preload("res://ui/dialogs/settings_panel.tscn")
-const CHOICE_PANEL_SCENE := preload("res://ui/dialogs/choice_panel.tscn")
-const COIN_SHOWCASE := preload("res://scenes/battle/components/coin_showcase.gd")
 const PRIVACY_PANEL_SCENE := preload("res://ui/dialogs/privacy_panel.tscn")
 const COIN_PRESENTATION_TOMBSTONE_TTL_MSEC := 120000
 const COIN_PRESENTATION_TOMBSTONE_LIMIT := 64
 const NETWORK_GRACEFUL_CLOSE_TIMEOUT_MSEC := 2000
 const PAUSE_PANEL_SCENE := preload("res://ui/dialogs/pause_panel.tscn")
-const HELP_PANEL_SCENE := preload("res://ui/panels/help_panel.tscn")
-const CARD_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/card_inspector_panel.tscn")
-const ZONE_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/zone_inspector_panel.tscn")
-const DECK_DETAIL_PANEL_SCENE := preload("res://ui/panels/deck_detail_panel.tscn")
 const FRONTEND_THEME := preload("res://ui/frontend/front_end_theme.tres")
 
 const SCREEN_TITLE := "title"
@@ -43,7 +36,9 @@ const MAX_AI_PUBLIC_HISTORY := 4096
 
 var catalog: CardCatalog = CardDatabase.catalog
 var native_rules := NativeRulesSessionAdapter.new(catalog)
-var choice_model = ChoiceSelectionModelScript.new()
+var choice_model = ChoiceSelectionModelScript.new(catalog)
+var choice_presenter: ChoicePresenter
+var auxiliary_panels: AuxiliaryPanelPresenter
 var state: GameState
 var rng := PortableRandomSource.new(1)
 var last_match_seed := 0
@@ -58,7 +53,6 @@ var selected_choice_ids: Array[String]:
 		return choice_model.selected_ids
 	set(value):
 		choice_model.replace(value)
-var option_buttons: Array[Button] = []
 var game_mode := MODE_LOCAL
 var ai_deck_key := ""
 var ai_thinking := false
@@ -102,8 +96,16 @@ var modal_body: VBoxContainer
 var modal_scroll: ScrollContainer
 var modal_confirm: Button
 var modal_cancel: Button
-var active_request: ChoiceView
-var active_choice_panel: ChoicePanel
+var active_request: ChoiceView:
+	get: return choice_presenter.active_request if choice_presenter != null else null
+	set(value):
+		if choice_presenter != null:
+			choice_presenter.active_request = value
+var active_choice_panel: ChoicePanel:
+	get: return choice_presenter.active_choice_panel if choice_presenter != null else null
+	set(value):
+		if choice_presenter != null:
+			choice_presenter.active_choice_panel = value
 var ui_initialized := false
 var _presented_coin_request_ids: Dictionary = {}
 var _pending_ai_resume_revision := -1
@@ -114,7 +116,6 @@ func _ready() -> void:
 	set_process(false)
 	shell_view = get_node_or_null("ShellView")
 	shell_view.configure(self)
-	choice_model.bind_owner(self)
 	shell_view.configure_responsive_canvas()
 	var user_args := OS.get_cmdline_user_args()
 	if ExportSmokeRunner.PHASE_FOUR_FLAG in user_args:
@@ -185,7 +186,6 @@ func initialize_ui() -> void:
 		push_error("MainShellView is missing from main.tscn")
 		return
 	shell_view.configure(self)
-	choice_model.bind_owner(self)
 	shell_view.configure_responsive_canvas()
 	ui_initialized = true
 	click_stream = UISound.make_tone(620.0, 0.055, 0.12)
@@ -239,6 +239,22 @@ func _build_shell() -> void:
 	shell_view.configure(self)
 	modal_host_controller = modal_layer as ModalHost
 	modal_host_controller.configure(self)
+	choice_presenter = ChoicePresenter.new()
+	add_child(choice_presenter)
+	choice_presenter.configure(modal_host_controller, choice_model)
+	choice_presenter.confirm_requested.connect(_confirm_choice)
+	choice_presenter.cancel_requested.connect(_cancel_choice)
+	choice_presenter.response_ready.connect(_submit_choice_response)
+	choice_presenter.field_choice_started.connect(_on_field_choice_started)
+	choice_presenter.click_requested.connect(_play_click)
+	choice_presenter.retreat_confirmed.connect(_execute_action_now)
+	auxiliary_panels = AuxiliaryPanelPresenter.new()
+	add_child(auxiliary_panels)
+	auxiliary_panels.host = modal_host_controller
+	auxiliary_panels.click_requested.connect(_play_click)
+	auxiliary_panels.toast_requested.connect(shell_view.show_toast)
+	auxiliary_panels.choice_resume_requested.connect(_resume_field_choice_after_auxiliary_modal)
+	auxiliary_panels.ai_resume_requested.connect(_resume_after_pause)
 	modal_layer.z_index = 400
 	loading_layer.z_index = 500
 
@@ -1172,7 +1188,7 @@ func _current_action_rows() -> Array[Dictionary]:
 	for action in actions:
 		rows.append({
 			"action": action,
-			"label": choice_model._action_label(action),
+			"label": choice_presenter.action_label(action, state, catalog),
 		})
 	return rows
 
@@ -1413,7 +1429,8 @@ func _execute_action_now(action: GameAction) -> StepResult:
 		battle_screen.hide_card_detail()
 	shell_view.show_toast(result.message if not result.message.is_empty() else "动作完成。")
 	var presented_revision := state.revision
-	var local_handoff := choice_model._build_local_handoff_plan(
+	var local_handoff := LocalHandoffPlan.create(
+		state, current_view_player, ai_thinking, game_mode,
 		result.events,
 		previous_active,
 		previous_phase,
@@ -1601,177 +1618,6 @@ func _after_step(previous_active: int, previous_phase: String) -> void:
 		return
 	_refresh_game()
 
-func _show_choice_overlay(request: ChoiceView) -> void:
-	active_request = request
-	active_choice_panel = null
-	choice_model.configure(request, state, catalog, current_view_player)
-	option_buttons.clear()
-	if battle_screen:
-		battle_screen.clear_choice_targets()
-	if request.request_type == "coin_flip":
-		_show_coin_flip_choice(request)
-		return
-	var field_targets := choice_model._choice_field_target_options(request)
-	if not field_targets.is_empty() and battle_screen:
-		selected_entity_key = ""
-		selected_entity_identity = ""
-		battle_screen.set_choice_targets(field_targets, choice_model._choice_field_prompt(request))
-		_refresh_game()
-		return
-	var energy_cards := choice_model._choice_energy_cards(request)
-	var energy_distribution_view := choice_model._choice_energy_distribution_view(
-		request,
-		energy_cards,
-	)
-	if not energy_distribution_view.is_empty():
-		energy_cards.assign(energy_distribution_view.get("card_ids", energy_cards))
-	var energy_target_models: Array[Dictionary] = []
-	for target_value in energy_distribution_view.get("targets", []):
-		if target_value is Dictionary:
-			energy_target_models.append(Dictionary(target_value))
-	var revealed_cards := choice_model._choice_revealed_cards(request)
-	var deck_browse_rows := choice_model._choice_deck_browse_rows(request)
-	var has_card_preview := (
-		not energy_cards.is_empty()
-		or not revealed_cards.is_empty()
-		or not deck_browse_rows.is_empty()
-	)
-	var pure_empty_choice := (
-		request.options.is_empty()
-		and energy_cards.is_empty()
-		and revealed_cards.is_empty()
-		and deck_browse_rows.is_empty()
-	)
-	for option in request.options:
-		if not choice_model._choice_option_display_card_id(option, request).is_empty():
-			has_card_preview = true
-			break
-	var choice_spec := ModalSpec.battle(
-		modal_host_controller.choice_size(has_card_preview, pure_empty_choice),
-		false,
-		(
-			ModalSpec.SizeMode.FIT_CONTENT
-			if pure_empty_choice
-			else ModalSpec.SizeMode.PREFERRED
-		),
-	)
-	var display_prompt := choice_model._choice_prompt_text(request)
-	modal_host_controller.open(
-		display_prompt,
-		choice_model._choice_confirm_cta(request, 0),
-		choice_model._choice_cancel_cta(request),
-		false,
-		choice_spec,
-	)
-	modal_title.text = choice_model._choice_title(request)
-	var metadata_text := choice_model._choice_metadata_text(request)
-	var panel := CHOICE_PANEL_SCENE.instantiate() as ChoicePanel
-	modal_body.add_child(panel)
-	active_choice_panel = panel
-	panel.configure(
-		metadata_text,
-		not request.options.is_empty() or not deck_browse_rows.is_empty(),
-		catalog,
-		{
-			"prompt": display_prompt,
-			"min_select": request.min_select,
-			"max_select": request.max_select,
-			"request_type": request.request_type,
-			"can_cancel": request.can_cancel,
-			"allow_duplicates": request.allow_duplicates,
-		},
-	)
-	panel.option_toggled.connect(_toggle_choice)
-	panel.energy_index_requested.connect(_rewind_energy_distribution)
-	panel.undo_requested.connect(_undo_energy_distribution)
-	panel.clear_requested.connect(_clear_energy_distribution)
-	if not energy_target_models.is_empty():
-		panel.configure_energy_distribution(
-			energy_cards,
-			energy_target_models,
-			catalog,
-		)
-	elif not energy_cards.is_empty():
-		panel.add_energy_preview(energy_cards, catalog)
-	elif not revealed_cards.is_empty():
-		panel.add_revealed_cards(revealed_cards, catalog)
-	if not deck_browse_rows.is_empty() and energy_target_models.is_empty():
-		panel.configure_deck_browser(deck_browse_rows, catalog)
-	else:
-		for option in request.options:
-			if not energy_target_models.is_empty():
-				break
-			var option_id := str(option.get("option_id", ""))
-			var option_card_id := choice_model._choice_option_display_card_id(option, request)
-			if option_id.is_empty():
-				continue
-			if not option_card_id.is_empty():
-				panel.add_card_option(
-					option_id,
-					option_card_id,
-					choice_model._choice_option_caption(option),
-					choice_model._choice_option_owner(option, request.player),
-				)
-			else:
-				option_buttons.append(
-					panel.add_text_option(
-						option_id,
-						choice_model._choice_text_option_label(option, request),
-					)
-				)
-	modal_confirm.pressed.connect(_confirm_choice, CONNECT_ONE_SHOT)
-	if request.can_cancel:
-		modal_cancel.pressed.connect(_cancel_choice, CONNECT_ONE_SHOT)
-	_refresh_choice_buttons()
-
-func _show_coin_flip_choice(request: ChoiceView) -> void:
-	modal_host_controller.open(
-		request.prompt,
-		"继续结算",
-		"",
-		false,
-		ModalSpec.battle(Vector2(680, 500)),
-	)
-	modal_title.text = "硬币结算"
-	var results: Array = choice_model._choice_presentation(request).get("predetermined_flips", [])
-	var showcase := COIN_SHOWCASE.new() as CoinShowcase
-	showcase.name = "CoinShowcase"
-	showcase.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	showcase.custom_minimum_size = Vector2(540, 300)
-	if audio_director:
-		showcase.audio_requested.connect(audio_director.play_cue)
-	modal_body.add_child(showcase)
-	var reveal_generation := modal_host_controller.generation
-	var playback := showcase.play(results, true, "硬币结果")
-	modal_confirm.disabled = not playback.is_finished()
-	if not playback.is_finished():
-		playback.completed.connect(
-			_on_coin_choice_playback_completed.bind(
-				reveal_generation,
-				request.request_id,
-			),
-			CONNECT_ONE_SHOT,
-		)
-	modal_confirm.text = "继续结算"
-	modal_confirm.pressed.connect(_confirm_choice, CONNECT_ONE_SHOT)
-
-func _on_coin_choice_playback_completed(
-	_handle: MotionHandle,
-	generation: int,
-	request_id: String,
-) -> void:
-	_finish_coin_flip_reveal(generation, request_id)
-
-func _finish_coin_flip_reveal(generation: int, request_id: String) -> void:
-	if (
-		generation != modal_host_controller.generation
-		or not modal_layer.visible
-		or active_request == null
-		or active_request.request_id != request_id
-	):
-		return
-	modal_confirm.disabled = false
-
 func _on_battle_choice_target_selected(option_id: String) -> void:
 	if active_request == null or option_id.is_empty():
 		return
@@ -1787,102 +1633,6 @@ func _on_battle_choice_target_selected(option_id: String) -> void:
 	selected_choice_ids.assign([option_id])
 	_confirm_choice()
 
-func _show_retreat_confirmation(action: GameAction) -> void:
-	_play_click()
-	modal_host_controller.open(
-		"确认撤退",
-		"确认撤退",
-		"取消",
-		false,
-		ModalSpec.battle(
-			Vector2(640, 420),
-			false,
-			ModalSpec.SizeMode.FIT_CONTENT,
-		),
-	)
-	var lines := choice_model._retreat_confirmation_lines(action)
-	var body := Label.new()
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.add_theme_font_size_override("font_size", 18)
-	body.add_theme_color_override("font_color", DesignTokens.TEXT)
-	body.text = "\n".join(lines)
-	modal_body.add_child(body)
-	modal_confirm.pressed.connect(func() -> void:
-		_play_click()
-		modal_host_controller.close(_execute_action_now.bind(action))
-	, CONNECT_ONE_SHOT)
-	modal_cancel.pressed.connect(func() -> void:
-		_play_click()
-		modal_host_controller.close()
-	, CONNECT_ONE_SHOT)
-
-func _show_choice_blocked_reason(reason: String) -> void:
-	if reason.is_empty() or active_choice_panel == null:
-		return
-	active_choice_panel.show_blocked_reason(reason)
-
-func _toggle_choice(option_id: String) -> void:
-	_play_click()
-	if active_request == null:
-		return
-	var blocked_reason := choice_model._choice_addition_blocked_reason(active_request, option_id)
-	var rejection := choice_model.toggle(option_id, blocked_reason)
-	if not rejection.is_empty():
-		_refresh_choice_buttons()
-		_show_choice_blocked_reason(rejection)
-		return
-	_refresh_choice_buttons()
-
-func _rewind_energy_distribution(index: int) -> void:
-	if active_request == null or active_request.request_type != "distribute_energy":
-		return
-	if not choice_model.rewind(index):
-		return
-	_play_click()
-	_refresh_choice_buttons()
-
-func _undo_energy_distribution() -> void:
-	if active_request == null or active_request.request_type != "distribute_energy":
-		return
-	if not choice_model.undo():
-		return
-	_play_click()
-	_refresh_choice_buttons()
-
-func _clear_energy_distribution() -> void:
-	if active_request == null or active_request.request_type != "distribute_energy":
-		return
-	if selected_choice_ids.is_empty():
-		return
-	_play_click()
-	selected_choice_ids.clear()
-	_refresh_choice_buttons()
-
-func _refresh_choice_buttons() -> void:
-	if active_request == null:
-		return
-	var disabled_reasons := choice_model._choice_option_disabled_reasons(active_request)
-	if active_choice_panel:
-		active_choice_panel.refresh_selection(
-			selected_choice_ids,
-			active_request.max_select,
-			active_request.allow_duplicates,
-		)
-		active_choice_panel.set_option_disabled_reasons(
-			disabled_reasons,
-		)
-	elif battle_screen:
-		battle_screen.set_choice_targets(
-			choice_model._choice_field_target_options(active_request),
-			choice_model._choice_field_prompt(active_request),
-		)
-		battle_screen.update_choice_selection(selected_choice_ids, disabled_reasons)
-	modal_confirm.disabled = not choice_model._choice_selection_is_complete(
-		active_request, selected_choice_ids)
-	modal_confirm.text = choice_model._choice_confirm_cta(active_request, selected_choice_ids.size())
-	if active_request.can_cancel:
-		modal_cancel.text = choice_model._choice_cancel_cta(active_request)
-
 func _confirm_choice() -> void:
 	if active_request == null:
 		return
@@ -1890,12 +1640,7 @@ func _confirm_choice() -> void:
 		shell_view.show_toast("动画或局面同步尚未完成，请稍候。", true)
 		return
 	_play_click()
-	var request := active_request
-	var confirmed_ids: Array[String] = selected_choice_ids.duplicate()
-	if battle_screen:
-		battle_screen.clear_choice_targets()
-	var response := ChoiceResponse.new(request.request_id, confirmed_ids)
-	modal_host_controller.close(_submit_choice_response.bind(request, response))
+	choice_presenter.submit_response(false)
 
 func _submit_choice_response(
 	request: ChoiceView,
@@ -1931,7 +1676,8 @@ func _submit_choice_response(
 		shell_view.show_toast(result.message, false)
 	var presentation_events: Array = _choice_presentation_events(request, result.events)
 	var presented_revision := state.revision
-	var local_handoff := choice_model._build_local_handoff_plan(
+	var local_handoff := LocalHandoffPlan.create(
+		state, current_view_player, ai_thinking, game_mode,
 		presentation_events,
 		previous_active,
 		previous_phase,
@@ -1976,7 +1722,6 @@ func _submit_choice_response(
 		),
 	)
 
-
 func _choice_presentation_events(request: ChoiceView, events: Array) -> Array:
 	if request == null or request.request_type != "coin_flip":
 		return events
@@ -2013,11 +1758,7 @@ func _cancel_choice() -> void:
 		shell_view.show_toast("动画或局面同步尚未完成，请稍候。", true)
 		return
 	_play_click()
-	var request := active_request
-	if battle_screen:
-		battle_screen.clear_choice_targets()
-	var response := ChoiceResponse.new(request.request_id, [], true)
-	modal_host_controller.close(_submit_choice_response.bind(request, response))
+	choice_presenter.submit_response(true)
 
 func _step_pending_choice(result: StepResult) -> ChoiceView:
 	if result != null and result.pending_choice != null:
@@ -2101,7 +1842,7 @@ func _show_pause_overlay(resume_choice_context: Dictionary = {}) -> void:
 			field_choice_context,
 		)
 	)
-	var resume_action := _complete_auxiliary_modal.bind(
+	var resume_action := auxiliary_panels._complete_auxiliary_modal.bind(
 		field_choice_context,
 		Callable(self, "_resume_after_pause"),
 	)
@@ -2197,170 +1938,6 @@ func _surrender_network_and_show_title() -> void:
 	state = null
 	shell_view.show_title()
 
-func _show_help(
-	resume_ai_on_close: bool = false,
-	resume_choice_context: Dictionary = {},
-) -> void:
-	var field_choice_context := resume_choice_context
-	if field_choice_context.is_empty():
-		field_choice_context = _suspend_field_choice_for_auxiliary_modal()
-	_play_click()
-	modal_host_controller.open(
-		"规则与操作帮助",
-		"关闭",
-		"",
-		current_screen == SCREEN_GAME,
-		ModalSpec.frontend(Vector2(900, 700)),
-	)
-	var panel := HELP_PANEL_SCENE.instantiate() as HelpPanel
-	modal_body.add_child(panel)
-	panel.configure()
-	var resume_action := _complete_auxiliary_modal.bind(
-		field_choice_context,
-		(
-			Callable(self, "_resume_after_pause")
-			if resume_ai_on_close
-			else Callable()
-		),
-	)
-	if not field_choice_context.is_empty():
-		modal_host_controller.back_action = modal_host_controller.close.bind(resume_action)
-	modal_confirm.pressed.connect(func() -> void:
-		modal_host_controller.close(resume_action)
-	, CONNECT_ONE_SHOT)
-
-func _show_card_inspector(
-	context: Dictionary,
-	return_action: Callable = Callable(),
-	return_label: String = "",
-	resume_choice_context: Dictionary = {},
-) -> void:
-	var card_id := str(context.get("card_id", ""))
-	if card_id.is_empty():
-		return
-	var field_choice_context := resume_choice_context
-	if field_choice_context.is_empty():
-		field_choice_context = _suspend_field_choice_for_auxiliary_modal()
-	_play_click()
-	var card := catalog.get_card(card_id)
-	var title := str(card.get("name", card_id))
-	var card_spec := (
-		ModalSpec.battle(Vector2(860, 700), current_screen == SCREEN_GAME)
-		if current_screen == SCREEN_GAME
-		else ModalSpec.frontend(Vector2(860, 700))
-	)
-	if return_action.is_valid():
-		card_spec.stack_behavior = ModalSpec.StackBehavior.RESTORE_PARENT
-	modal_host_controller.open(title, "关闭", "", current_screen == SCREEN_GAME, card_spec)
-	var panel := CARD_INSPECTOR_PANEL_SCENE.instantiate() as CardInspectorPanel
-	modal_body.add_child(panel)
-	panel.configure(catalog, context)
-	panel.card_requested.connect(_show_card_inspector.bind(
-		return_action,
-		return_label,
-		field_choice_context,
-	))
-	modal_host_controller.back_action = return_action
-	if return_action.is_valid():
-		modal_confirm.text = return_label if not return_label.is_empty() else "返回上一界面"
-		modal_confirm.pressed.connect(return_action, CONNECT_ONE_SHOT)
-	elif not field_choice_context.is_empty():
-		var resume_action := _complete_auxiliary_modal.bind(
-			field_choice_context,
-			Callable(),
-		)
-		modal_host_controller.back_action = modal_host_controller.close.bind(resume_action)
-		modal_confirm.pressed.connect(
-			modal_host_controller.close.bind(resume_action),
-			CONNECT_ONE_SHOT,
-		)
-	else:
-		modal_confirm.pressed.connect(modal_host_controller.close, CONNECT_ONE_SHOT)
-
-func _show_zone_inspector(
-	context: Dictionary,
-	resume_choice_context: Dictionary = {},
-) -> void:
-	var field_choice_context := resume_choice_context
-	if field_choice_context.is_empty():
-		field_choice_context = _suspend_field_choice_for_auxiliary_modal()
-	_play_click()
-	var title := "%s · %s" % [
-		_player_name_for_context(int(context.get("player", -1))),
-		str(context.get("title", context.get("zone", "区域"))),
-	]
-	var zone_spec := (
-		ModalSpec.battle(Vector2(820, 680), current_screen == SCREEN_GAME)
-		if current_screen == SCREEN_GAME
-		else ModalSpec.frontend(Vector2(820, 680))
-	)
-	modal_host_controller.open(
-		title.strip_edges(),
-		"关闭",
-		"",
-		current_screen == SCREEN_GAME,
-		zone_spec,
-	)
-	var panel := ZONE_INSPECTOR_PANEL_SCENE.instantiate() as ZoneInspectorPanel
-	modal_body.add_child(panel)
-	panel.configure(catalog, context)
-	if field_choice_context.is_empty():
-		panel.card_requested.connect(_show_card_inspector)
-		modal_confirm.pressed.connect(modal_host_controller.close, CONNECT_ONE_SHOT)
-		return
-	panel.card_requested.connect(_show_zone_card_inspector.bind(
-		context.duplicate(true),
-		field_choice_context,
-	))
-	var resume_action := _complete_auxiliary_modal.bind(
-		field_choice_context,
-		Callable(),
-	)
-	# The system-back path calls modal_host_controller.back_action directly. Close the inspector
-	# first so its full-screen shade cannot keep intercepting the restored field
-	# choice after the request has been re-established.
-	modal_host_controller.back_action = modal_host_controller.close.bind(resume_action)
-	modal_confirm.pressed.connect(
-		modal_host_controller.close.bind(resume_action),
-		CONNECT_ONE_SHOT,
-	)
-
-func _show_zone_card_inspector(
-	card_context: Dictionary,
-	zone_context: Dictionary,
-	field_choice_context: Dictionary,
-) -> void:
-	_show_card_inspector(
-		card_context,
-		_show_zone_inspector.bind(zone_context, field_choice_context),
-		"返回区域查看",
-		field_choice_context,
-	)
-
-func _suspend_field_choice_for_auxiliary_modal() -> Dictionary:
-	if active_request == null or active_choice_panel != null:
-		return {}
-	if choice_model._choice_field_target_options(active_request).is_empty():
-		return {}
-	var context := {
-		"request": active_request,
-		"selected_ids": selected_choice_ids.duplicate(),
-	}
-	active_request = null
-	selected_choice_ids.clear()
-	option_buttons.clear()
-	if battle_screen:
-		battle_screen.clear_choice_targets()
-	return context
-
-func _complete_auxiliary_modal(
-	context: Dictionary,
-	completion: Callable = Callable(),
-) -> void:
-	_resume_field_choice_after_auxiliary_modal(context)
-	if completion.is_valid():
-		completion.call()
-
 func _resume_field_choice_after_auxiliary_modal(context: Dictionary) -> void:
 	if context.is_empty() or current_screen != SCREEN_GAME:
 		return
@@ -2407,106 +1984,6 @@ func _resume_field_choice_after_auxiliary_modal(context: Dictionary) -> void:
 		restored_ids.append(option_id)
 	selected_choice_ids.assign(restored_ids)
 	_refresh_choice_buttons()
-
-func _show_deck_details(
-	deck_key: String,
-	restore_scroll: int = -1,
-) -> void:
-	_play_click()
-	var deck := catalog.get_deck(deck_key)
-	if deck.is_empty():
-		shell_view.show_toast("找不到牌组：%s" % deck_key, true)
-		return
-	modal_host_controller.open(
-		"牌组详情",
-		"关闭",
-		"",
-		false,
-		ModalSpec.frontend(Vector2(980, 720)),
-	)
-	var panel := DECK_DETAIL_PANEL_SCENE.instantiate() as DeckDetailPanel
-	modal_body.add_child(panel)
-	panel.configure(catalog, deck_key)
-	panel.card_requested.connect(_show_deck_card_inspector.bind(deck_key))
-	modal_confirm.pressed.connect(modal_host_controller.close, CONNECT_ONE_SHOT)
-	if restore_scroll >= 0:
-		_restore_deck_detail_modal_state(
-			modal_host_controller.generation,
-			restore_scroll,
-		)
-
-func _show_deck_card_inspector(context: Dictionary, deck_key: String) -> void:
-	var scroll_position := modal_scroll.scroll_vertical if modal_scroll else 0
-	_show_card_inspector(
-		context,
-		_show_deck_details.bind(deck_key, scroll_position),
-		"返回牌组详情",
-	)
-
-func _restore_deck_detail_modal_state(
-	generation: int,
-	scroll_position: int,
-) -> void:
-	await get_tree().process_frame
-	await get_tree().process_frame
-	if generation != modal_host_controller.generation or not modal_layer.visible:
-		return
-	if modal_scroll and scroll_position >= 0:
-		modal_scroll.scroll_vertical = scroll_position
-
-func _show_settings(resume_choice_context: Dictionary = {}) -> void:
-	var field_choice_context := resume_choice_context
-	if field_choice_context.is_empty():
-		field_choice_context = _suspend_field_choice_for_auxiliary_modal()
-	_play_click()
-	modal_host_controller.open(
-		"设置",
-		"保存设置",
-		"取消",
-		current_screen == SCREEN_GAME,
-		ModalSpec.frontend(Vector2(900, 760)),
-	)
-	var panel := SETTINGS_PANEL_SCENE.instantiate() as SettingsPanel
-	modal_body.add_child(panel)
-	panel.configure()
-	panel.save_requested.connect(_save_settings_values.bind(field_choice_context))
-	# Keep the save action connected while the modal remains open so a transient
-	# filesystem failure can be corrected and retried without reopening Settings.
-	modal_confirm.pressed.connect(panel.request_save)
-	var resume_action := _complete_auxiliary_modal.bind(
-		field_choice_context,
-		Callable(),
-	)
-	if not field_choice_context.is_empty():
-		modal_host_controller.back_action = modal_host_controller.close.bind(resume_action)
-	modal_cancel.pressed.connect(
-		modal_host_controller.close.bind(resume_action),
-		CONNECT_ONE_SHOT,
-	)
-
-func _save_settings_values(
-	values: Dictionary,
-	resume_choice_context: Dictionary = {},
-) -> void:
-	AppSettings.update(
-		float(values.get("master_volume", AppSettings.master_volume)),
-		bool(values.get("muted", AppSettings.muted)),
-		bool(values.get("reduced_motion", AppSettings.reduced_motion)),
-		int(values.get("card_cache_size", AppSettings.card_cache_size)),
-		str(values.get("animation_mode", AppSettings.animation_mode)),
-		str(values.get("quality_profile", AppSettings.quality_profile)),
-		float(values.get("music_volume", AppSettings.music_volume)),
-		float(values.get("sfx_volume", AppSettings.sfx_volume)),
-	)
-	if not AppSettings.save_settings():
-		shell_view.show_toast("设置保存失败。", true)
-		return
-	modal_host_controller.close(_complete_auxiliary_modal.bind(
-		resume_choice_context,
-		Callable(),
-	))
-	Engine.max_fps = AppSettings.target_fps()
-	shell_view.show_toast("设置已保存。")
 
 func _select_hand_card(index: int, card_id: String) -> void:
 	_play_click()
@@ -2618,11 +2095,6 @@ func _select_pokemon(player_idx: int, slot: String, card_id: String) -> void:
 				card_id,
 				state.get_player(player_idx).get_pokemon(slot) if state else null,
 			)
-
-func _player_name_for_context(player_idx: int) -> String:
-	if player_idx < 0 or state == null:
-		return ""
-	return state.get_player(player_idx).name
 
 func _current_actor() -> int:
 	if state == null:
@@ -2957,18 +2429,58 @@ func _refresh_process_state() -> void:
 		or network_controller.needs_poll()
 	)
 
-func _slot_name(slot: String) -> String:
-	if slot == "active":
-		return "战斗区"
-	if slot.begins_with("bench_"):
-		return "备战区 %d" % (slot.trim_prefix("bench_").to_int() + 1)
-	return slot
+func _show_choice_overlay(request: ChoiceView) -> void:
+	choice_presenter.show_choice(request, state, catalog, current_view_player,
+		battle_screen, audio_director)
 
-func _zone_name(zone: String) -> String:
-	return {
-		"hand": "手牌",
-		"deck": "牌库",
-		"discard": "弃牌区",
-		"prizes": "奖赏卡区",
-		"lost_zone": "放逐区",
-	}.get(zone, zone)
+func _on_field_choice_started() -> void:
+	selected_entity_key = ""
+	selected_entity_identity = ""
+	_refresh_game()
+
+func _toggle_choice(option_id: String) -> void:
+	choice_presenter.toggle_choice(option_id)
+
+func _refresh_choice_buttons() -> void:
+	choice_presenter.refresh_selection()
+
+func _show_retreat_confirmation(action: GameAction) -> void:
+	choice_presenter.show_retreat_confirmation(action, state, catalog)
+
+func _suspend_field_choice_for_auxiliary_modal() -> Dictionary:
+	return choice_presenter.suspend_field_choice()
+
+func _prepare_auxiliary_panels() -> void:
+	var names: Array[String] = []
+	if state != null:
+		names.assign([state.players[0].name, state.players[1].name])
+	auxiliary_panels.configure_context(catalog, current_screen == SCREEN_GAME, names)
+
+func _show_help(resume_ai_on_close: bool = false, resume_choice_context: Dictionary = {}) -> void:
+	_prepare_auxiliary_panels()
+	auxiliary_panels._show_help(resume_ai_on_close,
+		_suspended_choice_context(resume_choice_context))
+
+func _show_card_inspector(context: Dictionary, return_action: Callable = Callable(),
+		return_label: String = "", resume_choice_context: Dictionary = {}) -> void:
+	if str(context.get("card_id", "")).is_empty():
+		return
+	_prepare_auxiliary_panels()
+	auxiliary_panels._show_card_inspector(context, return_action, return_label,
+		_suspended_choice_context(resume_choice_context))
+
+func _show_zone_inspector(context: Dictionary, resume_choice_context: Dictionary = {}) -> void:
+	_prepare_auxiliary_panels()
+	auxiliary_panels._show_zone_inspector(context,
+		_suspended_choice_context(resume_choice_context))
+
+func _show_deck_details(deck_key: String, restore_scroll: int = -1) -> void:
+	_prepare_auxiliary_panels()
+	auxiliary_panels._show_deck_details(deck_key, restore_scroll)
+
+func _show_settings(resume_choice_context: Dictionary = {}) -> void:
+	_prepare_auxiliary_panels()
+	auxiliary_panels._show_settings(_suspended_choice_context(resume_choice_context))
+
+func _suspended_choice_context(context: Dictionary) -> Dictionary:
+	return _suspend_field_choice_for_auxiliary_modal() if context.is_empty() else context

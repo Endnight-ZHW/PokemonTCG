@@ -5,8 +5,6 @@ extends RefCounted
 ## Rules, search, tactics, choice policy, and strategy scoring live in C++.
 
 const TRADITIONAL_ENGINE_ID := "strategic_intent_v3"
-const LEGACY_TRADITIONAL_ENGINE_ID := "turn_beam_v2"
-const EXPERIMENTAL_STRATEGIC_ENGINE_ID := "strategic_intent_v3"
 const STRATEGY_DATA_PATH := "res://data/ai_strategies.json"
 const MAX_PUBLIC_HISTORY := 4096
 const CHOICE_VIEW_FIELDS := [
@@ -38,7 +36,6 @@ func cancel_native_request() -> void:
 func decide(
 	request: Dictionary,
 	cancel_check: Callable,
-	_inference: Variant = null,
 ) -> Dictionary:
 	var error := _request_error(request)
 	if not error.is_empty():

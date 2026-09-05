@@ -29,19 +29,9 @@ $godotPaths = Get-GodotToolchainPaths -RepoRoot $repoRoot
 $godot = $godotPaths.Console
 Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
 $projectRoot = Join-Path $repoRoot 'godot'
-$godotOutput = & $godot `
-    --headless `
-    --path $projectRoot `
-    --script 'res://tests/native_rules_session_contract_test.gd' 2>&1
-$godotOutput | ForEach-Object { Write-Host $_ }
-$godotExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-$joinedGodotOutput = $godotOutput -join "`n"
-if (
-    $godotExitCode -ne 0 `
-    -or $joinedGodotOutput -match '(?m)^(SCRIPT ERROR|ERROR|WARNING):' `
-    -or $joinedGodotOutput -notmatch 'NATIVE_RULES_SESSION_CONTRACT_OK'
-) {
-    throw 'Single-process Godot Native ABI 2 contract failed.'
-}
+Invoke-GodotCheckedScript -Executable $godot -ProjectRoot $projectRoot `
+    -Script 'res://tests/native_rules_session_contract_test.gd' `
+    -SuccessMarker 'NATIVE_RULES_SESSION_CONTRACT_OK' `
+    -ContractName 'Single-process Godot Native ABI 2 contract'
 
 Write-Host 'FAST_VERIFICATION_OK'

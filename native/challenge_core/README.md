@@ -64,3 +64,35 @@ the prize-aware choice adjustments are controlled by the evaluation-only
 paired mirror promotion gate at 0.575 [0.525, 0.650], with zero structural
 errors and an acceptable 1.115 search-P95 ratio. `turn_beam_v2` remains the
 explicit compatibility/fallback engine and the frozen Arena baseline.
+
+## Decision execution and regression checks
+
+The controller captures public information once. A valid strategic continuation,
+unique legal action, or rules-proven immediate win returns before requesting the
+legacy policy. Otherwise an internal C++ supplier computes that policy once;
+the strategic planner still uses its complete action/sequence as the comparison
+baseline. Cache consumption/replacement is staged per entry and committed for
+the selected policy. No recursive controller call or whole-cache rollback is
+needed. Known-hand/prize fingerprints, action-cycle protection, and full-sequence
+safety validation remain part of the decision contract.
+
+Real and simulated choices share one typed dispatcher. Fixed sequence replays
+match legal actions directly by their stable signatures without scoring the
+entire action set. Atomic rules transitions share one implementation, while each
+traversal retains its original seed derivation and termination rules. Legacy
+reply/recovery scenarios are computed lazily at most once per sample within a
+single strategic decision; neither results nor sampled states escape that call.
+
+Counter field names remain compatible and report work actually performed.
+`strategic_shadow_legacy=false` and `strategic_shadow_nodes=0` describe a skipped
+legacy policy; `strategic_shadow_ms` reports its execution time when needed.
+Node-dependent diagnostic hashes can change even when actions remain identical.
+
+`research/deep_ai/tests/test_challenge_controller.py` exercises the complete
+native controller, including plan reuse/invalidation, public hand knowledge,
+generation cancellation, match reset, and fallback. The research tool
+`scripts/compare_challenge_decisions.py` runs two frozen external agents against
+the same public requests, applies only the baseline's decisions, and fails on
+the first action/choice divergence. Its output is separate from paired Arena
+strength/performance reports. See `docs/TRADITIONAL_AI_SIMPLIFICATION.md` at the
+repository root for the implementation audit and validation results.

@@ -1,5 +1,63 @@
 $ErrorActionPreference = 'Stop'
 
+function Resolve-ProjectPython {
+    param([Parameter(Mandatory)][string]$RepoRoot, [string]$Python = '')
+    if ([string]::IsNullOrWhiteSpace($Python)) {
+        $portable = Join-Path $RepoRoot '.tools\python311\python.exe'
+        $Python = if (Test-Path -LiteralPath $portable) { $portable } else { 'python' }
+    }
+    if (Test-Path -LiteralPath $Python -PathType Leaf) {
+        return (Resolve-Path -LiteralPath $Python).Path
+    }
+    $command = Get-Command $Python -ErrorAction SilentlyContinue
+    if ($null -eq $command) { throw "Python command is unavailable: $Python" }
+    return $command.Source
+}
+
+function Get-VisualCppDevCommand {
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path -LiteralPath $vswhere)) { return '' }
+    $installation = & $vswhere -latest -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -property installationPath
+    if (-not $installation) { return '' }
+    return Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
+}
+
+function Invoke-GodotCapture {
+    param([Parameter(Mandatory)][string]$Executable, [string[]]$ArgumentList)
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Executable @ArgumentList 2>&1 }
+    finally { $ErrorActionPreference = $previousPreference }
+}
+
+function Invoke-GodotCheckedScript {
+    param(
+        [Parameter(Mandatory)][string]$Executable,
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [Parameter(Mandatory)][string]$Script,
+        [Parameter(Mandatory)][string]$SuccessMarker,
+        [string]$ContractName = $Script,
+        [string[]]$ScriptArguments = @(),
+        [switch]$AllowWarnings,
+        [switch]$AllowRootCertificateWarning
+    )
+    $arguments = @('--headless', '--path', $ProjectRoot, '--script', $Script)
+    if ($ScriptArguments.Count -gt 0) { $arguments += @('--') + $ScriptArguments }
+    $output = Invoke-GodotCapture -Executable $Executable -ArgumentList $arguments
+    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    $output | ForEach-Object { Write-Host $_ }
+    $joined = $output -join "`n"
+    $levels = if ($AllowWarnings) { 'SCRIPT ERROR|ERROR' } else { 'SCRIPT ERROR|ERROR|WARNING' }
+    $fatal = "(?m)^($levels):"
+    if ($AllowRootCertificateWarning) { $fatal += ' (?!Failed to read the root certificate store\.)' }
+    if ($exitCode -ne 0 -or $joined -match $fatal -or
+        $joined -notmatch [regex]::Escape($SuccessMarker)) {
+        throw "$ContractName failed (exit=$exitCode, expected=$SuccessMarker)."
+    }
+}
+
 function Get-ToolchainLock {
     param([Parameter(Mandatory)] [string]$RepoRoot)
     $path = Join-Path $RepoRoot 'tools\toolchain.lock.json'

@@ -1,6 +1,6 @@
 #include "planner_v3/safety_validator.hpp"
 
-#include "challenge_support.hpp"
+#include "challenge_search_support.hpp"
 #include "ptcg_traditional_value.hpp"
 
 #include <algorithm>
@@ -73,13 +73,7 @@ ReplayResult replay_sequence(
             return output;
         }
         const std::string signature = challenge::value_action_signature(planned);
-        const Value *matched = nullptr;
-        for (const Value &action : legal.as_array()) {
-            if (challenge::value_action_signature(action) == signature) {
-                matched = &action;
-                break;
-            }
-        }
+        const Value *matched = challenge::find_action_by_signature(legal, signature);
         if (matched == nullptr) {
             output.reason = index == 0
                 ? "action_no_longer_legal" : "plan_step_no_longer_legal";

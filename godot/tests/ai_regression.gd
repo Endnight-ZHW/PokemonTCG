@@ -45,7 +45,6 @@ func _initialize() -> void:
 				catalog,
 				engine,
 				worker,
-				null,
 			)
 			summary["elapsed_ms"] = Time.get_ticks_msec() - game_started
 			summaries.append(summary)
@@ -405,7 +404,6 @@ func _play_game(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	worker: ChallengeAIClient,
-	backend: Variant,
 ) -> Dictionary:
 	var state := GameState.new()
 	state.public_deck_keys = [deck_key, opponent_key]
@@ -443,7 +441,7 @@ func _play_game(
 					"seed": game_seed + actions_taken * 31,
 					"internal_evaluation_smoke": true,
 					"deterministic": true,
-				}, func() -> bool: return false, backend)
+				}, func() -> bool: return false)
 				if not choice_result.get("success", false):
 					return {"success": false, "error": choice_result.get("error", "choice")}
 				response = ChoiceResponse.from_dict(choice_result["choice_response"])
@@ -498,7 +496,7 @@ func _play_game(
 				"internal_evaluation_smoke": true,
 				"deterministic": true,
 				"actions": rows,
-			}, func() -> bool: return false, backend)
+			}, func() -> bool: return false)
 			if not decision.get("success", false):
 				return {"success": false, "error": decision.get("error", "decision")}
 			action = GameAction.from_dict(decision["action"])

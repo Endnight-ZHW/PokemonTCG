@@ -11,15 +11,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $repoRoot 'tools\toolchain_common.ps1')
 $toolsRoot = Join-Path $repoRoot '.tools'
-$portablePython = Join-Path $toolsRoot 'python311\python.exe'
-if ([string]::IsNullOrWhiteSpace($Python)) {
-    $Python = if (Test-Path -LiteralPath $portablePython) {
-        $portablePython
-    } else {
-        'python'
-    }
-}
+$Python = Resolve-ProjectPython -RepoRoot $repoRoot -Python $Python
 $sourceRoot = Join-Path $repoRoot 'godot\native\bindings'
 $projectRoot = Join-Path $repoRoot 'godot'
 $godotCpp = Join-Path $toolsRoot 'native\godot-cpp'
@@ -41,13 +35,7 @@ $configs = if ($Configuration -eq 'all') {
     @($Configuration)
 }
 $targets = if ($Target -eq 'all') { @('windows', 'android') } else { @($Target) }
-$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-$vsPath = if (Test-Path -LiteralPath $vswhere) {
-    & $vswhere -latest -products * `
-        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-        -property installationPath
-}
-$vsDevCmd = if ($vsPath) { Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat' } else { '' }
+$vsDevCmd = Get-VisualCppDevCommand
 
 foreach ($platform in $targets) {
     foreach ($config in $configs) {

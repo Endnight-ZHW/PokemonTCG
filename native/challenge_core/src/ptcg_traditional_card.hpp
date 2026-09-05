@@ -153,12 +153,10 @@ inline std::int64_t energy_type_count(
         }));
 }
 
-inline std::int64_t missing_energy(
-    const Value &cards,
-    const Value &pokemon,
+inline std::int64_t missing_energy_units(
+    std::vector<std::string> available,
     const Value::Array &cost
 ) {
-    std::vector<std::string> available = energy_units(cards, pokemon);
     std::int64_t missing = 0;
     std::int64_t colorless = 0;
     for (const Value &required_value : cost) {
@@ -176,6 +174,14 @@ inline std::int64_t missing_energy(
     }
     return missing + std::max<std::int64_t>(
         0, colorless - static_cast<std::int64_t>(available.size()));
+}
+
+inline std::int64_t missing_energy(
+    const Value &cards,
+    const Value &pokemon,
+    const Value::Array &cost
+) {
+    return missing_energy_units(energy_units(cards, pokemon), cost);
 }
 
 inline const Value &player(const Value &state, std::int32_t actor) {

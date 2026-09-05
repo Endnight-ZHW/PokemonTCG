@@ -147,34 +147,4 @@ using namespace challenge;
     }
 
 
-    std::string ChallengeSearchProviderImpl::string_field(
-        const ptcg::ai::Value &value,
-        const char *key,
-        const std::string &fallback
-    ) {
-        const ptcg::ai::Value *found = value.find(key);
-        return found == nullptr ? fallback : found->string_or(fallback);
-    }
-
-
-    std::int64_t ChallengeSearchProviderImpl::integer_field(
-        const ptcg::ai::Value &value,
-        const char *key,
-        std::int64_t fallback
-    ) {
-        const ptcg::ai::Value *found = value.find(key);
-        return found == nullptr ? fallback : found->as_integer(fallback);
-    }
-
-
-    bool ChallengeSearchProviderImpl::bool_field(
-        const ptcg::ai::Value &value,
-        const char *key,
-        bool fallback
-    ) {
-        const ptcg::ai::Value *found = value.find(key);
-        return found == nullptr ? fallback : found->as_bool(fallback);
-    }
-
-
 } // namespace ptcg::ai::challenge_detail

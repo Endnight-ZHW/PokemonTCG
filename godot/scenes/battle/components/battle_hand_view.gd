@@ -588,6 +588,7 @@ func _on_hand_drag_started(hand_index: int) -> void:
 	_tween_drag_hand_layout()
 
 func _on_hand_drag_ended() -> void:
+	table.set_process(false)
 	if table._drag_session == null:
 		return
 	table._drag_source_key = ""
@@ -611,6 +612,7 @@ func active_drag_context() -> Dictionary:
 	}
 
 func mark_drag_pending(action_id: String, network_pending: bool) -> String:
+	table.set_process(false)
 	if table._drag_session == null:
 		return ""
 	if table.state_ref == null or not table._drag_session.matches(
@@ -647,6 +649,7 @@ func prepare_pending_drag_for_transition(session_id: String) -> void:
 func commit_pending_drag_source(session_id: String) -> void:
 	if table._drag_session == null or table._drag_session.session_id != session_id:
 		return
+	table.set_process(false)
 	if table._drag_session.source_view != null and is_instance_valid(table._drag_session.source_view):
 		table._drag_session.source_view.clear_drag_mask()
 	table._drag_session.state = table.CARD_DRAG_SESSION.COMMITTED
@@ -659,6 +662,7 @@ func finish_pending_drag_transition(session_id: String) -> void:
 		table.motion_entities._dispose_flyer(table._drag_session.proxy)
 	table._presentation_drag_proxy = null
 	table._drag_session = null
+	table.set_process(false)
 	table._drag_source_key = ""
 	_layout_hand(_current_hand_card_size())
 
@@ -723,9 +727,11 @@ func _ensure_drag_proxy(start: Vector2) -> Control:
 	proxy.modulate.a = 1.0
 	table.card_motion_layer.add(proxy)
 	table._drag_session.proxy = proxy
+	table.set_process(table._drag_session.state == table.CARD_DRAG_SESSION.DRAGGING)
 	return proxy
 
 func _return_drag_session(reason: String) -> void:
+	table.set_process(false)
 	if table._drag_session == null:
 		return
 	var session_id: String = table._drag_session.session_id
@@ -754,6 +760,7 @@ func _finish_drag_return(session_id: String, _reason: String = "") -> void:
 		table.motion_entities._dispose_flyer(table._drag_session.proxy)
 	table._drag_session.state = table.CARD_DRAG_SESSION.CANCELLED
 	table._drag_session = null
+	table.set_process(false)
 	table._presentation_drag_proxy = null
 	_layout_hand(_current_hand_card_size())
 
@@ -768,6 +775,7 @@ func _clear_drag_session_immediately() -> void:
 	if table._drag_session.proxy != null and is_instance_valid(table._drag_session.proxy):
 		table.motion_entities._dispose_flyer(table._drag_session.proxy)
 	table._drag_session = null
+	table.set_process(false)
 	table._presentation_drag_proxy = null
 	table._drag_source_key = ""
 	_layout_hand(_current_hand_card_size())

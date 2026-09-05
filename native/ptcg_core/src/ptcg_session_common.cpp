@@ -1,3 +1,4 @@
+#include "../../common/ptcg_json_string.hpp"
 #include "ptcg_rules_session.hpp"
 #include "ptcg_session_internal.hpp"
 
@@ -1081,32 +1082,9 @@ void append_canonical_json(std::string &output, const Value &value) {
             output += stream.str();
             return;
         }
-        case Value::Type::string: {
-            output += '"';
-            for (const unsigned char character : value.as_string()) {
-                switch (character) {
-                    case '\\': output += "\\\\"; break;
-                    case '"': output += "\\\""; break;
-                    case '\b': output += "\\b"; break;
-                    case '\f': output += "\\f"; break;
-                    case '\n': output += "\\n"; break;
-                    case '\r': output += "\\r"; break;
-                    case '\t': output += "\\t"; break;
-                    default:
-                        if (character < 0x20) {
-                            std::ostringstream escaped;
-                            escaped << "\\u" << std::hex << std::setw(4)
-                                << std::setfill('0')
-                                << static_cast<int>(character);
-                            output += escaped.str();
-                        } else {
-                            output += static_cast<char>(character);
-                        }
-                }
-            }
-            output += '"';
+        case Value::Type::string:
+            json_text::append_string(output, value.as_string());
             return;
-        }
         case Value::Type::array: {
             output += '[';
             bool first = true;

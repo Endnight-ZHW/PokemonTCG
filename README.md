@@ -14,7 +14,7 @@ ChoiceView 2、Protocol 6、Snapshot 3、Journal 1 和 RNG 2。
 - `godot/native/bindings`：Godot 类型转换及 `NativeContentCompiler` 等绑定。
 - `godot/authoring`：卡牌、牌组、策略和 VM 描述符的唯一 JSON 作者源。
 - `godot`：发布客户端、UI、网络、生成数据与唯一卡图资源。
-- `research/deep_ai`：独立 Python 研究项目，不进入产品构建、客户端包或常规 CI。
+- `research/deep_ai`：独立 Python 研究项目，不进入产品运行时或客户端包；Challenge Arena 的产品 AI 验证在常规 CI 中运行，训练流程保留手动入口。
 
 产品业务不再包含 Python。Python 只作为 SCons 的构建解释器；Deep AI 的 Python 依赖和
 产物全部留在研究目录。版本、Android versionCode、发布牌组和 schema 的唯一清单是

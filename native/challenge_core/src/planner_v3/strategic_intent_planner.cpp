@@ -1,10 +1,11 @@
 #include "planner_v3/strategic_intent_planner.hpp"
 
-#include "challenge_support.hpp"
+#include "challenge_search_support.hpp"
 #include "ptcg_traditional_policy.hpp"
 #include "ptcg_traditional_value.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -45,42 +46,8 @@ std::string action_slot(const Value &action) {
     return {};
 }
 
-bool event_is_unpredictable(const Value &event) {
-    const std::string type = string_field(event, "event_type");
-    return type == "coin_flip" || type.find("shuffle") != std::string::npos
-        || type.find("draw") != std::string::npos
-        || type.find("random") != std::string::npos;
-}
-
-struct ExpandedAction {
-    std::shared_ptr<RulesSession> state;
-    TraditionalChoiceTrace trace;
-};
-
-ExpandedAction apply_action(
-    TraditionalSearchProvider &provider,
-    const RulesSession &parent,
-    std::int32_t actor,
-    const Value &candidate,
-    std::uint32_t seed,
-    const std::string &action_id,
-    std::uint64_t &nodes_expanded
-) {
-    auto branch = parent.fork_for_search(seed);
-    if (!branch) return {};
-    const Value bound = provider.bind_action(
-        candidate, *branch, actor, action_id);
-    const RulesSessionResult applied = branch->apply_action_for_search(bound);
-    ++nodes_expanded;
-    if (!applied.success) return {};
-    TraditionalChoiceTrace trace;
-    trace.unpredictable = std::any_of(
-        applied.events.begin(), applied.events.end(), event_is_unpredictable);
-    if (!provider.resolve_pending(
-            *branch, actor, nodes_expanded, trace)) return {};
-    return ExpandedAction{
-        std::shared_ptr<RulesSession>(branch.release()), trace};
-}
+using challenge::ExpandedAction;
+using challenge::apply_action;
 
 double readiness_sum(const AttackerPipeline &pipeline) {
     double result = 0.0;
@@ -402,29 +369,21 @@ std::optional<PlanNode> evaluate_fixed_sequence(
         const std::string expected = challenge::value_action_signature(
             sequence[depth]);
         const Value &legal = root->search_legal_action_candidates(actor);
-        const auto ranked = provider.ranked_actions(
-            *root, actor, legal, legal.is_array() ? legal.as_array().size() : 1);
-        const TraditionalRankedAction *matched = nullptr;
-        for (const TraditionalRankedAction &row : ranked) {
-            if (row.signature == expected) {
-                matched = &row;
-                break;
-            }
-        }
+        const Value *matched = challenge::find_action_by_signature(legal, expected);
         if (matched == nullptr) return std::nullopt;
         if (depth == 0) {
-            node.root_action = matched->action;
-            node.root_signature = matched->signature;
-            node.sequence_signature = matched->signature;
+            node.root_action = *matched;
+            node.root_signature = expected;
+            node.sequence_signature = expected;
         } else {
-            node.sequence_signature += "|" + matched->signature;
+            node.sequence_signature += "|" + expected;
         }
         node.preconditions.push_back(provider.cache_precondition(*root, actor));
         ExpandedAction expanded = apply_action(
             provider,
             *root,
             actor,
-            matched->action,
+            *matched,
             provider.branch_seed(
                 seed,
                 depth + 1,
@@ -434,13 +393,13 @@ std::optional<PlanNode> evaluate_fixed_sequence(
             "strategic-legacy-shadow-" + std::to_string(depth),
             nodes_expanded);
         if (!expanded.state) return std::nullopt;
-        node.sequence.push_back(matched->action);
+        node.sequence.push_back(*matched);
         node.unpredictable = node.unpredictable || expanded.trace.unpredictable;
         node.cacheable = node.cacheable && !expanded.trace.unpredictable;
         root = std::move(expanded.state);
         node.depth = depth + 1;
         node.ended = provider.terminal(*root)
-            || provider.action_ends_turn(matched->action)
+            || provider.action_ends_turn(*matched)
             || provider.decision_actor(*root) != actor;
         if (node.ended && depth + 1 != sequence.size()) return std::nullopt;
     }
@@ -630,10 +589,52 @@ bool reallocates_legacy_energy(
         && action_slot(*candidate_attachment) != action_slot(*legacy_attachment);
 }
 
+constexpr std::size_t threat_scenario_samples = 5;
+using LegacyScenarioCache = std::array<
+    std::optional<RecoveryEvaluation>, threat_scenario_samples>;
+
+RecoveryEvaluation evaluate_threat_scenario(
+    TraditionalSearchProvider &provider,
+    TraditionalTurnBeamSearch &reply_search,
+    const PlanNode &plan,
+    const StrategicFacts &initial,
+    const StrategicAnalyzer &analyzer,
+    const BeliefSummary &belief,
+    std::int32_t actor,
+    std::size_t sample,
+    std::uint32_t sample_seed,
+    const std::atomic<bool> *cancel_requested
+) {
+    RecoveryEvaluation output;
+    std::optional<PlanNode> replay;
+    const PlanNode *node = &plan;
+    if (sample > 0) {
+        replay = evaluate_fixed_sequence(
+            provider, provider.determinize(sample, sample_seed), plan.sequence,
+            initial, analyzer, belief, actor, sample_seed, plan.intent,
+            output.nodes_expanded);
+        if (!replay.has_value() || !replay->ended) return output;
+        node = &*replay;
+    }
+    const auto reply = reply_search.evaluate_reply(
+        *node->state, actor, sample_seed + 17U, cancel_requested);
+    output.nodes_expanded += reply.nodes_expanded;
+    if (reply.cancelled) {
+        output.cancelled = true;
+        return output;
+    }
+    auto recovery = evaluate_recovery_turn(
+        provider, reply.resulting_position, actor, sample_seed + 101U,
+        cancel_requested);
+    recovery.nodes_expanded += output.nodes_expanded;
+    return recovery;
+}
+
 ThreatScenarioComparison compare_threat_scenarios(
     TraditionalSearchProvider &provider,
     const PlanNode &candidate,
     const PlanNode &legacy,
+    LegacyScenarioCache &legacy_scenarios,
     const StrategicFacts &initial,
     const StrategicAnalyzer &analyzer,
     const BeliefSummary &belief,
@@ -654,86 +655,37 @@ ThreatScenarioComparison compare_threat_scenarios(
     reply_config.belief_samples = 1;
     reply_config.worker_count = 1;
     TraditionalTurnBeamSearch reply_search(provider, reply_config);
-    constexpr std::size_t scenario_samples = 5;
     long double total_gain = 0.0L;
-    for (std::size_t sample = 0; sample < scenario_samples; ++sample) {
+    for (std::size_t sample = 0; sample < threat_scenario_samples; ++sample) {
         if (cancelled(cancel_requested)) {
             output.cancelled = true;
             return output;
         }
         const std::uint32_t sample_seed = seed
             + static_cast<std::uint32_t>(sample * 1000003ULL + 700001ULL);
-        std::optional<PlanNode> candidate_sample;
-        std::optional<PlanNode> legacy_sample;
-        const PlanNode *candidate_node = &candidate;
-        const PlanNode *legacy_node = &legacy;
-        if (sample > 0) {
-            candidate_sample = evaluate_fixed_sequence(
-                provider,
-                provider.determinize(sample, sample_seed),
-                candidate.sequence,
-                initial,
-                analyzer,
-                belief,
-                actor,
-                sample_seed,
-                candidate.intent,
-                output.nodes_expanded);
-            legacy_sample = evaluate_fixed_sequence(
-                provider,
-                provider.determinize(sample, sample_seed),
-                legacy.sequence,
-                initial,
-                analyzer,
-                belief,
-                actor,
-                sample_seed,
-                legacy.intent,
-                output.nodes_expanded);
-            if (!candidate_sample.has_value() || !legacy_sample.has_value()
-                || !candidate_sample->ended || !legacy_sample->ended) {
+        const RecoveryEvaluation candidate_recovery = evaluate_threat_scenario(
+            provider, reply_search, candidate, initial, analyzer, belief,
+            actor, sample, sample_seed, cancel_requested);
+        output.nodes_expanded += candidate_recovery.nodes_expanded;
+        if (candidate_recovery.cancelled || cancelled(cancel_requested)) {
+            output.cancelled = true;
+            return output;
+        }
+        if (!candidate_recovery.valid) return output;
+        auto &cached = legacy_scenarios[sample];
+        if (!cached.has_value()) {
+            const auto recovery = evaluate_threat_scenario(
+                provider, reply_search, legacy, initial, analyzer, belief,
+                actor, sample, sample_seed, cancel_requested);
+            output.nodes_expanded += recovery.nodes_expanded;
+            if (recovery.cancelled || cancelled(cancel_requested)) {
+                output.cancelled = true;
                 return output;
             }
-            candidate_node = &*candidate_sample;
-            legacy_node = &*legacy_sample;
+            cached = recovery;
         }
-        const TraditionalReplyEvaluation candidate_reply =
-            reply_search.evaluate_reply(
-                *candidate_node->state,
-                actor,
-                sample_seed + 17U,
-                cancel_requested);
-        const TraditionalReplyEvaluation legacy_reply =
-            reply_search.evaluate_reply(
-                *legacy_node->state,
-                actor,
-                sample_seed + 17U,
-                cancel_requested);
-        output.nodes_expanded += candidate_reply.nodes_expanded
-            + legacy_reply.nodes_expanded;
-        if (candidate_reply.cancelled || legacy_reply.cancelled) {
-            output.cancelled = true;
-            return output;
-        }
-        const RecoveryEvaluation candidate_recovery = evaluate_recovery_turn(
-            provider,
-            candidate_reply.resulting_position,
-            actor,
-            sample_seed + 101U,
-            cancel_requested);
-        const RecoveryEvaluation legacy_recovery = evaluate_recovery_turn(
-            provider,
-            legacy_reply.resulting_position,
-            actor,
-            sample_seed + 101U,
-            cancel_requested);
-        output.nodes_expanded += candidate_recovery.nodes_expanded
-            + legacy_recovery.nodes_expanded;
-        if (candidate_recovery.cancelled || legacy_recovery.cancelled) {
-            output.cancelled = true;
-            return output;
-        }
-        if (!candidate_recovery.valid || !legacy_recovery.valid) return output;
+        const RecoveryEvaluation &legacy_recovery = *cached;
+        if (!legacy_recovery.valid) return output;
         const std::int64_t gain = candidate_recovery.score_milli
             - legacy_recovery.score_milli;
         output.minimum_gain_milli = std::min(
@@ -745,7 +697,7 @@ ThreatScenarioComparison compare_threat_scenarios(
         // eligible, so avoid spending reply/recovery search on them.
         if (gain < minimum_required_gain_milli) return output;
     }
-    output.valid = output.samples == scenario_samples;
+    output.valid = output.samples == threat_scenario_samples;
     if (output.valid) {
         output.mean_gain_milli = static_cast<std::int64_t>(std::llround(
             total_gain / static_cast<long double>(output.samples)));
@@ -1034,21 +986,13 @@ std::optional<PlanScore> replay_plan_score(
         const std::string expected = challenge::value_action_signature(
             candidate.sequence[depth]);
         const Value &legal = root->search_legal_action_candidates(actor);
-        const auto ranked = provider.ranked_actions(
-            *root, actor, legal, legal.is_array() ? legal.as_array().size() : 1);
-        const TraditionalRankedAction *matched = nullptr;
-        for (const TraditionalRankedAction &row : ranked) {
-            if (row.signature == expected) {
-                matched = &row;
-                break;
-            }
-        }
+        const Value *matched = challenge::find_action_by_signature(legal, expected);
         if (matched == nullptr) break;
         ExpandedAction expanded = apply_action(
             provider,
             *root,
             actor,
-            matched->action,
+            *matched,
             provider.branch_seed(
                 seed, depth + 1, candidate.root_signature,
                 candidate.sequence_signature, depth),
@@ -1058,7 +1002,7 @@ std::optional<PlanScore> replay_plan_score(
         unpredictable = unpredictable || expanded.trace.unpredictable;
         root.reset(new RulesSession(*expanded.state));
         if (provider.terminal(*root)
-            || provider.action_ends_turn(matched->action)
+            || provider.action_ends_turn(*matched)
             || provider.decision_actor(*root) != actor) break;
     }
     const StrategicFacts facts = analyzer.analyze(*root, belief, actor);
@@ -1400,11 +1344,6 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
     }
     const auto ranked_roots = provider.ranked_actions(
         *root, actor, root_actions, root_actions.as_array().size());
-    const std::string legacy_signature = config.legacy_action.is_object()
-            && !config.legacy_action.as_object().empty()
-        ? challenge::value_action_signature(config.legacy_action)
-        : (ranked_roots.empty() ? std::string{}
-            : ranked_roots.front().signature);
     for (std::size_t index = 0; index < ranked_roots.size(); ++index) {
         if (string_field(ranked_roots[index].action, "kind")
             != "DECLARE_ATTACK") continue;
@@ -1463,6 +1402,23 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
         });
         return output;
     }
+
+    if (config.legacy_decision) {
+        const Value &legacy = config.legacy_decision();
+        if (cancelled(cancel_requested) || bool_field(legacy, "cancelled")) {
+            output.plan.cancelled = true;
+            output.plan.error = "cancelled";
+            return output;
+        }
+        const Value *action = legacy.find("action");
+        if (action != nullptr) config.legacy_action = *action;
+        config.legacy_sequence = array_field(legacy, "sequence");
+    }
+    const std::string legacy_signature = config.legacy_action.is_object()
+            && !config.legacy_action.as_object().empty()
+        ? challenge::value_action_signature(config.legacy_action)
+        : (ranked_roots.empty() ? std::string{}
+            : ranked_roots.front().signature);
 
     // Compile once at the first energy-allocation decision of a turn, before
     // that scarce commitment is made, then re-check at the attack/end
@@ -1578,6 +1534,7 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
         && !config.legacy_action.as_object().empty();
     const PlanNode *best_ptr = &compiled.candidates.front();
     ThreatScenarioComparison threat_comparison;
+    LegacyScenarioCache legacy_scenarios;
     bool selected_extension_dominance = false;
     bool selected_direct_attack_dominance = false;
     bool selected_general_plan_dominance = false;
@@ -1621,6 +1578,7 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
                 provider,
                 candidate,
                 *legacy,
+                legacy_scenarios,
                 initial,
                 analyzer_,
                 belief,

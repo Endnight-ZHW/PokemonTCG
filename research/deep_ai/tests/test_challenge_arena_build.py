@@ -20,6 +20,21 @@ def _latest_manifest(agent_id: str) -> Path | None:
 
 
 class ChallengeArenaBuildTests(unittest.TestCase):
+    def test_nested_and_common_headers_invalidate_agent_and_binding(self) -> None:
+        original_agent = build.agent_input_manifest(REPO_ROOT, REPO_ROOT, compiler="msvc")
+        original_binding = build.binding_input_manifest(REPO_ROOT, compiler="msvc")
+        real_sha256 = build.sha256_file
+        for filename in ("strategic_types.hpp", "ptcg_sha256.hpp", "ptcg_json_string.hpp"):
+            with self.subTest(header=filename):
+                def changed(path: Path) -> str:
+                    return "0" * 64 if path.name == filename else real_sha256(path)
+                with mock.patch.object(build, "sha256_file", side_effect=changed):
+                    modified = build.agent_input_manifest(REPO_ROOT, REPO_ROOT, compiler="msvc")
+                    binding = build.binding_input_manifest(REPO_ROOT, compiler="msvc")
+                self.assertNotEqual(original_agent["implementation_hash"], modified["implementation_hash"])
+                self.assertNotEqual(original_agent["build_input_hash"], modified["build_input_hash"])
+                self.assertNotEqual(original_binding["input_hash"], binding["input_hash"])
+
     @unittest.skipUnless(
         (RESEARCH_ROOT / "build" / "native" / "ptcg_ai_core.pyd").is_file(),
         "Arena binding is not built",

@@ -85,7 +85,10 @@ flowchart TD
     Main --> Panels[ui/panels 查看面板]
     Main --> Shell[MainShellView 页面与安全区]
     Main --> Modal[ModalHost 弹窗生命周期]
-    Main --> ChoiceModel[ChoiceSelectionModel 选择状态]
+    Main --> ChoicePresenter[ChoicePresenter 选择界面与输入绑定]
+    ChoicePresenter --> ChoiceModel[ChoiceSelectionModel 选择状态与约束]
+    Main --> AuxiliaryPanels[AuxiliaryPanelPresenter 查看面板与返回上下文]
+    Main --> Handoff[LocalHandoffPlan 换手演出计划]
     Battle --> Header[battle_header.tscn]
     Battle --> HUD[battle_phase_hud.tscn 132px 悬浮命令轨]
     HUD --> Log[battle_log_panel.tscn 默认收起日志抽屉]
@@ -133,9 +136,18 @@ flowchart TD
 测试夹具才使用可变的 `CardCatalog.new(true)`，不要修改运行时仓库。
 
 `main.tscn` 直接挂载 `MainShellView` 与 `ModalHost`。前者拥有页面挂载、响应式画布、安全区、
-Toast 和 Loading；后者拥有弹窗开关、动画、尺寸、返回键和内容清理。选择项、分类限制、
-撤退支付与能量分配合法性统一由 `ChoiceSelectionModel` 保存。`Main` 保留网络与 AI 编排，
+Toast 和 Loading；后者拥有弹窗开关、动画、尺寸、返回键和内容清理。Main 初始化时创建
+`ChoicePresenter` 和 `AuxiliaryPanelPresenter`：前者拥有选择控件、硬币揭示及输入绑定，
+后者拥有帮助、设置、卡牌、区域和牌组面板及其返回上下文。选择项、分类限制、撤退支付与
+能量分配约束仍由 `ChoiceSelectionModel` 保存，模型接受 catalog 注入，不读取 Main。
+`LocalHandoffPlan.create()` 显式接收状态、视角和事件，生成独立的换手演出快照。
+Main 保留规则提交、请求恢复校验、网络与 AI 编排；展示器通过信号报告用户意图，不持有 Main。
 不要再为单纯转发属性或方法增加控制器节点。
+
+表现层快照仍须隔离权威状态和每个渲染消费者。`BattleViewModel.capture()` 克隆借用的输入，
+`capture_player_view()` 直接接收新建的脱敏视图，`state_for_render()` 返回独立克隆。
+不要把后两者改为共享可变引用。卡牌只在选中且可见时逐帧同步选中框，牌桌只在有效拖拽时
+跟随指针；更改这两处时运行卡牌分层、拖拽生命周期及视图所有权契约测试。
 
 ### 前台视觉框架与兼容边界
 
