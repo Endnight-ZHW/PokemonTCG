@@ -25,21 +25,23 @@ using namespace challenge;
         ptcg::ai::Value strategies,
         std::int32_t root_actor,
         const ptcg::ai::TraditionalInformationSet *information_set,
-        bool strategy_optimization
+        bool strategy_optimization,
+        std::shared_ptr<const planner_v3::StrategicAnalyzer::Knowledge> knowledge
     ) : catalog_(std::move(catalog)),
         decks_(std::move(decks)), evaluator_(catalog_),
         strategy_catalog_(std::move(strategies), catalog_),
         trusted_evaluator_(catalog_, decks_, strategy_catalog_),
-        resource_analyzer_(catalog_, decks_, strategy_catalog_),
+        resource_analyzer_(catalog_, decks_, strategy_catalog_, std::move(knowledge)),
         information_set_(information_set), root_actor_(root_actor),
         strategy_optimization_(strategy_optimization) {
+        resource_analyzer_.set_search_context(search_context());
         const ptcg::ai::Value *cards = catalog_.find("cards");
         cards_ = cards != nullptr && cards->is_object() ? *cards : catalog_;
     }
 
 
     Value ChallengeSearchProviderImpl::performance_counters() const {
-        Value counters = Value::make_object();
+        Value counters = search_context()->counters();
         counters["determinizations"] = static_cast<int64_t>(
             determinizations_.load(std::memory_order_relaxed));
         counters["ranked_action_queries"] = static_cast<int64_t>(

@@ -39,4 +39,9 @@ program = env.Program(
     source=test_objects,
 )
 env.NoCache(program)
-Default(program)
+context_tests = env.Program(
+    os.path.join("bin", "search_context_tests"),
+    source=env.Object(os.path.join("build", "search_context_test"),
+                      "tests/search_context_test.cpp"),
+)
+Default(program, context_tests)

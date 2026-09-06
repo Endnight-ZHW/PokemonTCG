@@ -387,24 +387,43 @@ BeliefSummary BeliefTracker::summarize(
     return result;
 }
 
+StrategicAnalyzer::Knowledge::Knowledge(const Value &catalog) {
+    const Value *rows = catalog.find("cards");
+    const Value &cards = rows != nullptr && rows->is_object() ? *rows : catalog;
+    for (const auto &[id, definition] : cards.as_object()) {
+        if (!definition.is_object()) continue;
+        const std::string name = string_field(definition, "name");
+        cards_by_name[name].push_back(id);
+        if (!name.empty()) evolves_from_by_name[name] = string_field(definition, "evolves_from");
+    }
+    for (const auto &[name, ids] : cards_by_name) {
+        auto &options = evolutions[name];
+        for (const auto &[id, definition] : cards.as_object()) {
+            if (!definition.is_object()) continue;
+            const auto previous = string_field(definition, "evolves_from");
+            const auto middle = evolves_from_by_name.find(previous);
+            if (previous == name || (!previous.empty() && middle != evolves_from_by_name.end()
+                    && middle->second == name)) {
+                options.push_back({id, previous, previous == name});
+            }
+        }
+    }
+}
+
 StrategicAnalyzer::StrategicAnalyzer(
     Value catalog,
     Value decks,
-    const TraditionalStrategyCatalog &strategies
+    const TraditionalStrategyCatalog &strategies,
+    std::shared_ptr<const Knowledge> knowledge
 ) : catalog_(std::move(catalog)), decks_(std::move(decks)),
-    strategies_(strategies), semantics_(catalog_) {
+    strategies_(strategies), knowledge_(knowledge ? std::move(knowledge)
+        : std::make_shared<Knowledge>(catalog_)), semantics_(catalog_) {
     const Value *cards = catalog_.find("cards");
     cards_ = cards != nullptr && cards->is_object() ? *cards : catalog_;
     for (const auto &[card_id, definition] : cards_.as_object()) {
         // Fully populate immutable semantic facts before shared search workers
         // use this analyzer. Const analysis must not race on lazy insertion.
         (void)semantics_.profile(card_id);
-        if (!definition.is_object()) continue;
-        const std::string name = string_field(definition, "name");
-        if (!name.empty()) {
-            evolves_from_by_name_[name] = string_field(
-                definition, "evolves_from");
-        }
     }
     (void)semantics_.profile("");
 }
@@ -440,8 +459,8 @@ std::size_t StrategicAnalyzer::missing_evolution_steps(
         const std::string evolves_from = string_field(definition, "evolves_from");
         if (evolves_from == source_name) best = std::min<std::size_t>(best, 1);
         if (evolves_from.empty()) continue;
-        const auto middle = evolves_from_by_name_.find(evolves_from);
-        if (middle != evolves_from_by_name_.end()
+        const auto middle = knowledge_->evolves_from_by_name.find(evolves_from);
+        if (middle != knowledge_->evolves_from_by_name.end()
             && middle->second == source_name) {
             best = std::min<std::size_t>(best, 2);
         }
@@ -497,6 +516,15 @@ AttackerClock StrategicAnalyzer::attacker_clock(
 }
 
 AttackerPipeline StrategicAnalyzer::attacker_pipeline(
+    const RulesSession &position, const Value &state, std::int32_t actor
+) const {
+    const auto compute = [&] { return compute_attacker_pipeline(position, state, actor); };
+    const auto context = context_.lock();
+    return context ? context->memoize<AttackerPipeline>(SearchMemo::Pipeline,
+        position, state, actor, strategy_optimization_, compute) : compute();
+}
+
+AttackerPipeline StrategicAnalyzer::compute_attacker_pipeline(
     const RulesSession &position,
     const Value &state,
     std::int32_t actor

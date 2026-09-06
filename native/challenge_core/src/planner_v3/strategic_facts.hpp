@@ -4,6 +4,7 @@
 #include "ptcg_rules_session.hpp"
 #include "ptcg_traditional_infoset.hpp"
 #include "ptcg_traditional_strategy.hpp"
+#include "decision_search_context.hpp"
 
 #include <cstdint>
 #include <map>
@@ -63,11 +64,29 @@ private:
 
 class StrategicAnalyzer {
 public:
+    struct EvolutionOption {
+        std::string id;
+        std::string previous_name;
+        bool direct = false;
+    };
+    struct Knowledge {
+        explicit Knowledge(const Value &catalog);
+        std::map<std::string, std::string> evolves_from_by_name;
+        std::map<std::string, std::vector<std::string>> cards_by_name;
+        std::map<std::string, std::vector<EvolutionOption>> evolutions;
+    };
+
     StrategicAnalyzer(
         Value catalog,
         Value decks,
-        const TraditionalStrategyCatalog &strategies
+        const TraditionalStrategyCatalog &strategies,
+        std::shared_ptr<const Knowledge> knowledge = {}
     );
+
+    void set_search_context(std::shared_ptr<DecisionSearchContext> context) {
+        context_ = std::move(context);
+    }
+    const std::shared_ptr<const Knowledge> &knowledge() const { return knowledge_; }
 
     StrategicFacts analyze(
         const RulesSession &position,
@@ -84,6 +103,10 @@ public:
         std::int32_t actor) const;
 
 private:
+    AttackerPipeline compute_attacker_pipeline(const RulesSession &position,
+        const Value &state, std::int32_t actor) const;
+    double compute_resource_value(const RulesSession &position,
+        const Value &state, std::int32_t actor) const;
     AttackerPipeline attacker_pipeline(
         const RulesSession &position,
         const Value &state,
@@ -110,7 +133,8 @@ private:
     Value cards_ = Value::make_object();
     Value decks_ = Value::make_object();
     const TraditionalStrategyCatalog &strategies_;
-    std::map<std::string, std::string> evolves_from_by_name_;
+    std::shared_ptr<const Knowledge> knowledge_;
+    std::weak_ptr<DecisionSearchContext> context_;
     CardSemanticModel semantics_;
     bool strategy_optimization_ = true;
 };

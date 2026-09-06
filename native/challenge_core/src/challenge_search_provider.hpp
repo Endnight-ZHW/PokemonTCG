@@ -2,6 +2,7 @@
 
 #include "ptcg_traditional_infoset.hpp"
 #include "ptcg_traditional_search.hpp"
+#include "planner_v3/strategic_facts.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -34,7 +35,8 @@ std::unique_ptr<ChallengeSearchProvider> make_challenge_search_provider(
     Value strategies,
     std::int32_t root_actor,
     const TraditionalInformationSet *information_set,
-    bool strategy_optimization = true
+    bool strategy_optimization = true,
+    std::shared_ptr<const planner_v3::StrategicAnalyzer::Knowledge> knowledge = {}
 );
 
 } // namespace ptcg::ai

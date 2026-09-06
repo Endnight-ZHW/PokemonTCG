@@ -128,10 +128,19 @@ using namespace challenge;
 
 
     std::int64_t ChallengeSearchProviderImpl::state_score_milli(
+        const RulesSession &position, std::int32_t actor
+    ) {
+        ++state_score_queries_;
+        if (time_budget_exhausted()) return evaluator_.base_state_score_milli(position, actor);
+        return search_context()->memoize<std::int64_t>(SearchMemo::StateScore,
+            position, position.search_state(), actor, strategy_optimization_,
+            [&] { return compute_state_score(position, actor); });
+    }
+
+    std::int64_t ChallengeSearchProviderImpl::compute_state_score(
         const ptcg::ai::RulesSession &position,
         std::int32_t root_actor
     ) {
-        ++state_score_queries_;
         const ptcg::ai::Value &state = position.search_state();
         if (
             string_field(state, "result_status", "ONGOING") != "ONGOING"
@@ -234,7 +243,9 @@ using namespace challenge;
     std::string ChallengeSearchProviderImpl::state_fingerprint(
         const ptcg::ai::RulesSession &position
     ) {
-        return traditional_state_fingerprint(position);
+        return search_context()->memoize<std::string>(SearchMemo::Fingerprint,
+            position, position.search_state(), -1, 0,
+            [&] { return traditional_state_fingerprint(position); });
     }
 
 
@@ -322,7 +333,15 @@ using namespace challenge;
     }
 
 
-    ptcg::ai::Value ChallengeSearchProviderImpl::cache_precondition(
+    Value ChallengeSearchProviderImpl::cache_precondition(
+        const RulesSession &position, std::int32_t actor
+    ) {
+        return search_context()->memoize<Value>(SearchMemo::Preconditions,
+            position, position.search_state(), actor, 0,
+            [&] { return compute_cache_precondition(position, actor); });
+    }
+
+    ptcg::ai::Value ChallengeSearchProviderImpl::compute_cache_precondition(
         const ptcg::ai::RulesSession &position,
         std::int32_t actor
     ) {

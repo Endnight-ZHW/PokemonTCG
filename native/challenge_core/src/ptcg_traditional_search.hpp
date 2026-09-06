@@ -2,6 +2,7 @@
 
 #include "ptcg_rules_session.hpp"
 #include "ptcg_value.hpp"
+#include "decision_search_context.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -90,6 +91,9 @@ struct TraditionalReplyEvaluation {
 class TraditionalSearchProvider {
 public:
     virtual ~TraditionalSearchProvider() = default;
+    const std::shared_ptr<DecisionSearchContext> &search_context() const noexcept {
+        return context_;
+    }
     void set_deadline(std::chrono::steady_clock::time_point deadline) noexcept {
         deadline_ = deadline;
     }
@@ -154,6 +158,7 @@ public:
         std::int32_t actor
     ) = 0;
 private:
+    std::shared_ptr<DecisionSearchContext> context_ = std::make_shared<DecisionSearchContext>();
     std::chrono::steady_clock::time_point deadline_{};
 };
 

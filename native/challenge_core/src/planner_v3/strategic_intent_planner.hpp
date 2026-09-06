@@ -87,6 +87,9 @@ public:
     );
 
     void reset_match(const std::string &match_id);
+    const std::shared_ptr<const StrategicAnalyzer::Knowledge> &knowledge() const {
+        return analyzer_.knowledge();
+    }
 
 private:
     std::string memory_key(

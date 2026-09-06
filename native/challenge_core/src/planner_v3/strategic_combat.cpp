@@ -8,28 +8,30 @@ namespace ptcg::ai::planner_v3 {
 namespace {
 using namespace traditional_trusted_detail;
 
-// Forecast only resources in the sampled accessible zones. Prizes are never
-// searched, and the forecast never exposes a sampled identity to a real choice.
-bool accessible(const Value &owner, const std::string &id) {
-    return array_contains(field(owner, "hand"), id)
-        || array_contains(field(owner, "deck"), id);
-}
-
 Value fund_attack(const Value &cards, const Value &owner, Value pokemon,
     const Value::Array &cost) {
+    if (missing_energy(cards, pokemon, cost) == 0) return pokemon;
     Value::Array pool = array_field(owner, "hand");
     const auto &deck = array_field(owner, "deck");
     pool.insert(pool.end(), deck.begin(), deck.end());
+    pool.erase(std::remove_if(pool.begin(), pool.end(), [&](const Value &entry) {
+        return !is_energy(cards, entry.string_or());
+    }), pool.end());
     std::sort(pool.begin(), pool.end(), [](const Value &a, const Value &b) { return a.string_or() < b.string_or(); });
     for (std::size_t step = 0; step < cost.size(); ++step) {
         const auto before = missing_energy(cards, pokemon, cost);
         if (before == 0) break;
         std::size_t best = pool.size();
         auto best_missing = before;
+        std::string previous_id;
         for (std::size_t index = 0; index < pool.size(); ++index) {
-            if (!is_energy(cards, pool[index].string_or())) continue;
+            const std::string id = pool[index].string_or();
+            // Identical energy cards have identical deficit effects. Preserve
+            // the original first-copy tie break and consume only that copy.
+            if (id == previous_id) continue;
+            previous_id = id;
             const auto after = missing_energy(cards,
-                pokemon_with_extra_energy(pokemon, pool[index].string_or()), cost);
+                pokemon_with_extra_energy(pokemon, id), cost);
             if (after < best_missing) { best = index; best_missing = after; }
         }
         if (best == pool.size()) break;
@@ -152,6 +154,7 @@ EnergyAccess engine_attachments(const RulesSession &position, const Value &cards
     Value available = owner;
     Value charged = pokemon;
     std::size_t count = 0;
+    const bool already_funded = missing_energy(cards, pokemon, cost) == 0;
     const auto accepts = [&](const std::string &id, std::string filter) {
         if (!is_energy(cards, id)) return false;
         filter = lower_ascii(filter);
@@ -182,16 +185,22 @@ EnergyAccess engine_attachments(const RulesSession &position, const Value &cards
     std::size_t manual_units = 0;
     if (manual_available) {
         auto &hand = available["hand"].as_array();
+        std::map<std::string, std::int64_t> deficits;
+        for (const auto &entry : hand) {
+            const auto id = entry.string_or();
+            if (deficits.count(id)) continue;
+            deficits[id] = !is_energy(cards, id) ? 99
+                : (already_funded ? 0 : missing_energy(cards,
+                    pokemon_with_extra_energy(pokemon, id), cost));
+        }
         std::stable_sort(hand.begin(), hand.end(), [&](const Value &left, const Value &right) {
-            const auto deficit = [&](const Value &entry) {
-                return !is_energy(cards, entry.string_or()) ? std::int64_t{99}
-                    : missing_energy(cards, pokemon_with_extra_energy(pokemon, entry.string_or()), cost);
-            };
-            return deficit(left) < deficit(right);
+            return deficits.at(left.string_or()) < deficits.at(right.string_or());
         });
+        if (already_funded) return {0, 0, std::move(charged), std::move(available)};
         consume(hand, "any", 1);
         manual_units = count;
     }
+    if (already_funded) return {0, 0, std::move(charged), std::move(available)};
     for (const Value *engine : board(state, actor)) {
         const auto *definition = card(cards, string_field(*engine, "card_id"));
         if (definition == nullptr) continue;
@@ -272,32 +281,53 @@ AttackerClock StrategicAnalyzer::combat_clock(const RulesSession &position,
     struct Evolution { std::string id; std::size_t steps; double access; };
     std::vector<Evolution> options{{result.card_id, 0, 1.0}};
     const std::string name = string_field(*current, "name");
-    for (const auto &[id, definition] : cards_.as_object()) {
-        if (!definition.is_object() || !accessible(owner, id)) continue;
-        const std::string previous = string_field(definition, "evolves_from");
-        std::size_t steps = previous == name ? 1 : 0;
-        double prerequisite_access = 1.0;
-        if (steps == 0 && !previous.empty()) {
-            const auto middle = evolves_from_by_name_.find(previous);
-            if (middle != evolves_from_by_name_.end() && middle->second == name) {
-                const bool candy = accessible(owner, "sv1-152");
-                bool middle_accessible = false;
-                bool middle_in_hand = false;
-                for (const auto &[mid_id, mid] : cards_.as_object()) {
-                    if (string_field(mid, "name") == previous && accessible(owner, mid_id)) {
+    struct Zones {
+        std::map<std::string, std::size_t> hand, accessible;
+    };
+    const auto make_zones = [&] {
+        auto zones = std::make_shared<Zones>();
+        for (const auto &entry : array_field(owner, "hand")) {
+            ++zones->hand[entry.string_or()]; ++zones->accessible[entry.string_or()];
+        }
+        for (const auto &entry : array_field(owner, "deck")) ++zones->accessible[entry.string_or()];
+        return std::shared_ptr<const Zones>(std::move(zones));
+    };
+    const auto context = context_.lock();
+    const Value *hand_zone = field(owner, "hand");
+    const Value *deck_zone = field(owner, "deck");
+    // This index depends only on these two exact arrays, not on the board or
+    // RNG. Retaining their COW identities also distinguishes sampled decks.
+    const auto zones = context && hand_zone && deck_zone
+        ? context->memoize_values<std::shared_ptr<const Zones>>(
+            SearchMemo::Zones, *deck_zone, *hand_zone, 0, actor, 0, make_zones)
+        : make_zones();
+    const auto found_options = knowledge_->evolutions.find(name);
+    if (found_options != knowledge_->evolutions.end()) {
+        for (const auto &option : found_options->second) {
+            const auto &id = option.id;
+            if (!zones->accessible.count(id)) continue;
+            std::size_t steps = option.direct ? 1 : 0;
+            double prerequisite_access = 1.0;
+            if (!option.direct) {
+                const bool candy = zones->accessible.count("sv1-152") != 0;
+                bool middle_accessible = false, middle_in_hand = false;
+                const auto middle = knowledge_->cards_by_name.find(option.previous_name);
+                if (middle != knowledge_->cards_by_name.end()) {
+                    for (const auto &mid_id : middle->second) {
+                        if (!zones->accessible.count(mid_id)) continue;
                         middle_accessible = true;
-                        middle_in_hand = middle_in_hand || array_contains(field(owner, "hand"), mid_id);
+                        middle_in_hand = middle_in_hand || zones->hand.count(mid_id) != 0;
                     }
                 }
                 if (candy || middle_accessible) steps = candy ? 1 : 2;
-                if (candy && !array_contains(field(owner, "hand"), "sv1-152")) prerequisite_access = 0.55;
+                if (candy && !zones->hand.count("sv1-152")) prerequisite_access = 0.55;
                 if (!candy && !middle_in_hand) prerequisite_access = 0.55;
             }
+            if (steps == 0) continue;
+            options.push_back({id, steps, (zones->hand.count(id) ? 1.0 : 0.55) * prerequisite_access});
         }
-        if (steps == 0) continue;
-        const double access = (array_contains(field(owner, "hand"), id) ? 1.0 : 0.55) * prerequisite_access;
-        options.push_back({id, steps, access});
     }
+    std::map<std::string, EnergyAccess> attachments_by_cost;
     double best_value = -1.0;
     for (const Evolution &evolution : options) {
         Value probe = pokemon;
@@ -308,7 +338,12 @@ AttackerClock StrategicAnalyzer::combat_clock(const RulesSession &position,
         const auto &attacks = array_field(*definition, "attacks");
         for (std::size_t index = 0; index < attacks.size(); ++index) {
             const auto &cost = array_field(attacks[index], "cost");
-            const auto energy_access = engine_attachments(position, cards_, state, actor, pokemon, slot, cost, manual_available);
+            std::string cost_key;
+            for (const auto &unit : cost) { cost_key += unit.string_or(); cost_key += '|'; }
+            auto access_entry = attachments_by_cost.find(cost_key);
+            if (access_entry == attachments_by_cost.end()) access_entry = attachments_by_cost.emplace(
+                cost_key, engine_attachments(position, cards_, state, actor, pokemon, slot, cost, manual_available)).first;
+            const auto &energy_access = access_entry->second;
             const auto missing = static_cast<std::size_t>(std::max<std::int64_t>(0, missing_energy(cards_, probe, cost)));
             Value prepared = probe;
             prepared["energy_card_ids"] = Value(array_field(energy_access.charged, "energy_card_ids"));
@@ -319,11 +354,10 @@ AttackerClock StrategicAnalyzer::combat_clock(const RulesSession &position,
             const auto damage = std::max<std::int64_t>(0, estimated_damage_for_pokemon(
                 position, projected_state, actor, funded, slot, index, cards_));
             if (evolution.steps == 0 && missing == 0) {
-                result.expected_damage = std::max(result.expected_damage,
-                    estimated_damage_for_pokemon(position, state, actor, pokemon, slot, index, cards_));
+                const auto current_damage = estimated_damage_for_pokemon(position, state, actor, pokemon, slot, index, cards_);
+                result.expected_damage = std::max(result.expected_damage, current_damage);
                 result.ready_ko_probability = std::max(result.ready_ko_probability,
-                    knockout_probability(position, state, actor, pokemon, slot, attacks[index],
-                        estimated_damage_for_pokemon(position, state, actor, pokemon, slot, index, cards_), cards_));
+                    knockout_probability(position, state, actor, pokemon, slot, attacks[index], current_damage, cards_));
             }
             std::size_t delay = missing > energy_access.units ? missing - energy_access.units : 0;
             std::size_t evolution_delay = evolution.steps;
@@ -392,6 +426,14 @@ double StrategicAnalyzer::readiness_value(const RulesSession &position, const Va
 }
 
 double StrategicAnalyzer::resource_value(const RulesSession &position, const Value &state,
+    std::int32_t actor) const {
+    const auto compute = [&] { return compute_resource_value(position, state, actor); };
+    const auto context = context_.lock();
+    return context ? context->memoize<double>(SearchMemo::Resources,
+        position, state, actor, strategy_optimization_, compute) : compute();
+}
+
+double StrategicAnalyzer::compute_resource_value(const RulesSession &position, const Value &state,
     std::int32_t actor) const {
     const auto pipeline = attacker_pipeline(position, state, actor);
     const auto &hand = array_field(player(state, actor), "hand");

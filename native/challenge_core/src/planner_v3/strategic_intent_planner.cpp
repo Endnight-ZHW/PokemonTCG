@@ -1270,6 +1270,7 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
         return output;
     }
     analyzer_.set_strategy_optimization(config.strategy_optimization);
+    analyzer_.set_search_context(provider.search_context());
     auto root = provider.determinize(0, seed);
     if (!root) {
         output.fallback_requested = true;

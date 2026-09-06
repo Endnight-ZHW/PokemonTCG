@@ -34,7 +34,7 @@ using traditional_value::bool_field;
 
 class ChallengeSearchProviderImpl final : public ChallengeSearchProvider {
 public:
-ChallengeSearchProviderImpl( ptcg::ai::Value catalog, ptcg::ai::Value decks, ptcg::ai::Value strategies, std::int32_t root_actor, const ptcg::ai::TraditionalInformationSet *information_set, bool strategy_optimization );
+ChallengeSearchProviderImpl( ptcg::ai::Value catalog, ptcg::ai::Value decks, ptcg::ai::Value strategies, std::int32_t root_actor, const ptcg::ai::TraditionalInformationSet *information_set, bool strategy_optimization, std::shared_ptr<const planner_v3::StrategicAnalyzer::Knowledge> knowledge );
 Value performance_counters() const override;
 bool select_choice( const ptcg::ai::RulesSession &position, const ptcg::ai::Value &pending, ptcg::ai::Value &response );
 ptcg::ai::Value post_plan_tactical_guard( const ptcg::ai::RulesSession &position, std::int32_t actor, const ptcg::ai::Value &preferred, const ptcg::ai::Value &actions, std::uint32_t seed, bool &changed );
@@ -55,6 +55,8 @@ std::string deck_key_for_actor( const ptcg::ai::RulesSession &position, std::int
 std::string strategy_id_for_actor( const ptcg::ai::RulesSession &position, std::int32_t actor ) override;
 ptcg::ai::Value cache_precondition( const ptcg::ai::RulesSession &position, std::int32_t actor ) override;
 private:
+std::int64_t compute_state_score(const RulesSession &position, std::int32_t actor);
+Value compute_cache_precondition(const RulesSession &position, std::int32_t actor);
 void improve_choice_bundle(const RulesSession &position, const Value &pending, const typed::ChoiceView &choice, Value &response);
 bool select_choice(const RulesSession &position, const Value &pending, const typed::ChoiceView &choice, Value &response);
 bool duplicate_energy_choice_response( const ptcg::ai::RulesSession &position, const ptcg::ai::Value &pending, const ptcg::ai::typed::ChoiceView &choice, ptcg::ai::Value &response ) const;

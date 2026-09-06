@@ -8,7 +8,8 @@ std::unique_ptr<ChallengeSearchProvider> make_challenge_search_provider(
     ptcg::ai::Value strategies,
     std::int32_t root_actor,
     const ptcg::ai::TraditionalInformationSet *information_set,
-    bool strategy_optimization
+    bool strategy_optimization,
+    std::shared_ptr<const planner_v3::StrategicAnalyzer::Knowledge> knowledge
 ) {
     return std::make_unique<challenge_detail::ChallengeSearchProviderImpl>(
         std::move(catalog),
@@ -16,7 +17,8 @@ std::unique_ptr<ChallengeSearchProvider> make_challenge_search_provider(
         std::move(strategies),
         root_actor,
         information_set,
-        strategy_optimization
+        strategy_optimization,
+        std::move(knowledge)
     );
 }
 

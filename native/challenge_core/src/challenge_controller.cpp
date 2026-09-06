@@ -455,8 +455,9 @@ Value ChallengeController::decide_action(
 
     auto provider_owner = make_challenge_search_provider(
         catalog_, decks_, strategies_, actor, &information_set,
-        bool_field(request, "use_strategy_optimization", true));
+        bool_field(request, "use_strategy_optimization", true), strategic_planner_->knowledge());
     ChallengeSearchProvider &provider = *provider_owner;
+    provider.search_context()->memoization_enabled = bool_field(request, "internal_search_memoization", true);
     const auto time_budget = std::clamp<std::int64_t>(integer_field(request, "time_budget_ms", 0), 0, 60000);
     if (time_budget > 0) provider.set_deadline(decision_started + std::chrono::milliseconds(time_budget));
     const std::int32_t opponent = 1 - actor;
@@ -1013,7 +1014,7 @@ Value ChallengeController::decide_choice(
     }
     auto provider = make_challenge_search_provider(
         catalog_, decks_, strategies_, actor, &information_set,
-        bool_field(request, "use_strategy_optimization", true));
+        bool_field(request, "use_strategy_optimization", true), strategic_planner_->knowledge());
     const auto time_budget = std::clamp<std::int64_t>(integer_field(request, "time_budget_ms", 0), 0, 60000);
     if (time_budget > 0) provider->set_deadline(decision_started + std::chrono::milliseconds(time_budget));
     Value response;

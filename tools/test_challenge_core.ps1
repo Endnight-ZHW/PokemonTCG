@@ -29,3 +29,6 @@ if ($LASTEXITCODE -ne 0) {
 if ($LASTEXITCODE -ne 0) {
     throw 'Challenge core tactics failed.'
 }
+
+& (Join-Path $sourceRoot 'bin\search_context_tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Challenge search context tests failed.' }
