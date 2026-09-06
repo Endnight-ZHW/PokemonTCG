@@ -182,6 +182,15 @@ Value ChallengeController::filter_root_actions(
         && !entry.last_action_signature.empty()) {
         entry.blocked_by_state[fingerprint].insert(entry.last_action_signature);
     }
+    // Detect A -> B -> A as well as A -> A. Revision checks keep repeated
+    // requests and cancelled generations from consuming a still-valid move.
+    if (revision > entry.last_revision) {
+        const auto previous_choices = entry.chosen_by_state.find(fingerprint);
+        if (previous_choices != entry.chosen_by_state.end()) {
+            entry.blocked_by_state[fingerprint].insert(
+                previous_choices->second.begin(), previous_choices->second.end());
+        }
+    }
     const auto blocked = entry.blocked_by_state.find(fingerprint);
     if (blocked == entry.blocked_by_state.end() || blocked->second.empty()) {
         return filtered;
@@ -264,6 +273,7 @@ void ChallengeController::record_action_cycle_selection(
     ActionCycleEntry &entry = action_cycle_ledger_[ledger_key];
     entry.last_state_fingerprint = action_cycle_state_fingerprint(public_state);
     entry.last_action_signature = value_action_signature(action);
+    entry.chosen_by_state[entry.last_state_fingerprint].insert(entry.last_action_signature);
     entry.last_revision = integer_field(
         request, "revision", value_integer_field(public_state, "revision", 0));
     if (inserted) action_cycle_order_.push_back(ledger_key);
@@ -377,6 +387,7 @@ Value ChallengeController::decide_action(
     const Value &request,
     std::int64_t generation
 ) {
+    const auto decision_started = std::chrono::steady_clock::now();
     if (!configured_) return error_result("native_challenge_not_configured");
     if (generation <= cancelled_through_generation_.load(
             std::memory_order_acquire)) {
@@ -446,6 +457,8 @@ Value ChallengeController::decide_action(
         catalog_, decks_, strategies_, actor, &information_set,
         bool_field(request, "use_strategy_optimization", true));
     ChallengeSearchProvider &provider = *provider_owner;
+    const auto time_budget = std::clamp<std::int64_t>(integer_field(request, "time_budget_ms", 0), 0, 60000);
+    if (time_budget > 0) provider.set_deadline(decision_started + std::chrono::milliseconds(time_budget));
     const std::int32_t opponent = 1 - actor;
     const std::size_t requested_belief_samples = static_cast<std::size_t>(
         std::max<std::int64_t>(1, std::min<std::int64_t>(
@@ -507,7 +520,24 @@ Value ChallengeController::decide_action(
     const bool strategic_engine = string_field(request, "engine", "turn_beam_v2")
         == planner_v3::STRATEGIC_INTENT_ENGINE_ID && strategic_planner_ != nullptr;
     PlanCacheUpdate legacy_update;
+    const auto budget_fallback = [&]() {
+        TraditionalSearchResult result;
+        result.success = true;
+        result.selected = filtered_actions.as_array().front();
+        for (const Value &action : filtered_actions.as_array()) {
+            if (string_field(action, "kind") == "DECLARE_ATTACK") {
+                result.selected = action;
+                break;
+            }
+        }
+        result.sequence = {result.selected};
+        result.completion_reason = "time_budget_exhausted";
+        Value output = search_result_value(result, 0, 0);
+        output["native_performance_counters"] = performance();
+        return output;
+    };
     const auto run_legacy = [&]() -> Value {
+        if (provider.time_budget_exhausted()) return budget_fallback();
         Value legacy_request = request;
         legacy_request["engine"] = Value("turn_beam_v2");
         const std::string cache_key = shadow_probe && !strategic_engine
@@ -648,6 +678,9 @@ Value ChallengeController::decide_action(
             &cancel_requested_);
         const double planner_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - planner_started).count();
+        if (!result.success && !result.cancelled && provider.time_budget_exhausted()) {
+            return budget_fallback();
+        }
 
         bool post_plan_guarded = false;
         if (result.success) {
@@ -675,7 +708,9 @@ Value ChallengeController::decide_action(
                 }
             }
         }
-        if (result.success) legacy_update = prepare_turn_plan(cache_key, revision, result);
+        if (result.success && !provider.time_budget_exhausted()) {
+            legacy_update = prepare_turn_plan(cache_key, revision, result);
+        }
 
         Value output = search_result_value(result, config.max_depth, config.reply_depth);
         output["planner_ms"] = Value(planner_ms);
@@ -888,6 +923,7 @@ Value ChallengeController::decide_choice(
     const Value &request,
     std::int64_t generation
 ) {
+    const auto decision_started = std::chrono::steady_clock::now();
     if (!configured_ || strategy_catalog_ == nullptr) {
         Value result = error_result("native_challenge_not_configured");
         result["kind"] = Value("choice");
@@ -978,6 +1014,8 @@ Value ChallengeController::decide_choice(
     auto provider = make_challenge_search_provider(
         catalog_, decks_, strategies_, actor, &information_set,
         bool_field(request, "use_strategy_optimization", true));
+    const auto time_budget = std::clamp<std::int64_t>(integer_field(request, "time_budget_ms", 0), 0, 60000);
+    if (time_budget > 0) provider->set_deadline(decision_started + std::chrono::milliseconds(time_budget));
     Value response;
     const Value *options = choice.find("options");
     if (options != nullptr && options->is_array() && options->as_array().empty()) {
@@ -1023,7 +1061,7 @@ Value ChallengeController::decide_choice(
     output["completion_reason"] = Value("forced_tactic");
     output["decision_origin"] = Value("choice_policy");
     output["failure_stage"] = Value("");
-    output["type_matchups"] = Value(false);
+    output["type_matchups"] = Value(bool_field(state, "apply_type_matchups"));
     output["revision"] = Value(revision);
     output["request_id"] = value_or(request, "request_id", Value(""));
     output["heuristic_variant"] = Value(
@@ -1155,7 +1193,7 @@ Value ChallengeController::decide(
         ? "" : strategy_catalog_->strategy_content_hash(deck_key));
     output["turn_goal"] = strategy_catalog_ == nullptr
         ? Value::make_object() : strategy_catalog_->turn_goals(state, actor);
-    output["type_matchups"] = Value(false);
+    output["type_matchups"] = Value(bool_field(state, "apply_type_matchups"));
     output["revision"] = value_or(request, "revision", Value(-1));
     output["request_id"] = value_or(request, "request_id", Value(""));
     output["elapsed_ms"] = Value(elapsed_ms);

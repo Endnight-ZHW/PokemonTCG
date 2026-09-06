@@ -56,7 +56,7 @@ using namespace challenge;
         output.reserve(actions.size());
         for (std::size_t index = 0; index < actions.size(); ++index) {
             std::int64_t score = evaluator_.default_action_score_milli(actions[index]);
-            const std::optional<double> trusted_score = actor == root_actor_
+            const std::optional<double> trusted_score = actor == root_actor_ && !time_budget_exhausted()
                 ? trusted_evaluator_.action_score(position, actor, actions[index])
                 : std::nullopt;
             if (trusted_score.has_value()) {
@@ -64,8 +64,8 @@ using namespace challenge;
                     *trusted_score);
                 ++native_trusted_action_scores_;
             }
-            const double native_strategy = strategy_catalog_.action_score(
-                position.search_state(), actor, actions[index]);
+            const double native_strategy = time_budget_exhausted() ? 0.0
+                : strategy_catalog_.action_score(position.search_state(), actor, actions[index]);
             score += std::max<std::int64_t>(-250000, std::min<std::int64_t>(
                 250000,
                 ptcg::ai::TraditionalPositionEvaluator::quantize(native_strategy)));
@@ -141,6 +141,7 @@ using namespace challenge;
         }
         const std::int64_t base_score = evaluator_.base_state_score_milli(
             position, root_actor);
+        if (time_budget_exhausted()) return base_score;
         std::int64_t score = base_score;
         const std::int64_t trusted_score = std::max<std::int64_t>(
             -210000, std::min<std::int64_t>(
@@ -154,7 +155,18 @@ using namespace challenge;
             -300000, std::min<std::int64_t>(
             300000,
             ptcg::ai::TraditionalPositionEvaluator::quantize(native_strategy)));
-        score += strategy_score;
+        if (strategy_optimization_) {
+            // Reuse the resource planner's attacker readiness. Prize routes
+            // are compared by complete-turn planning, rather than recomputed
+            // for every low-level leaf in the legacy search as well.
+            const double resources = resource_analyzer_.readiness_value(position, state, root_actor)
+                - resource_analyzer_.readiness_value(position, state, 1 - root_actor);
+            score += strategy_score / 2;
+            score += std::clamp<std::int64_t>(TraditionalPositionEvaluator::quantize(
+                resources * 0.10), -180000, 180000);
+        } else {
+            score += strategy_score;
+        }
         return score;
     }
 

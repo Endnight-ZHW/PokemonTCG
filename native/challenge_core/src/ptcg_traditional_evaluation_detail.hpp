@@ -111,7 +111,9 @@ std::int64_t reference_modified_attack_damage(
     const Value &defender,
     std::int64_t base_damage,
     const Value &cards,
-    bool ignore_defender_damage_effects
+    bool ignore_defender_damage_effects,
+    bool ignore_weakness = false,
+    bool ignore_resistance = false
 );
 
 std::int64_t estimated_attack_damage(

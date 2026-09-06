@@ -28,6 +28,7 @@ using namespace challenge;
         bool &changed
     ) {
         changed = false;
+        if (time_budget_exhausted()) return preferred;
         if (!preferred.is_object() || !actions.is_array()) return preferred;
         const std::string preferred_signature = value_action_signature(preferred);
         const auto has_belief_sampling = [&](const ptcg::ai::Value &action) {

@@ -81,6 +81,36 @@ void inspect_semantics(const Value &value, CardSemanticProfile &profile) {
         return;
     }
     if (!value.is_object()) return;
+    const std::string op = string_field(value, "op",
+        string_field(value, "effect_type"));
+    const Value *arguments = field(value, "args");
+    if (arguments == nullptr) arguments = field(value, "params");
+    static const Value empty = Value::make_object();
+    const Value &args = arguments == nullptr ? empty : *arguments;
+    if (op == "judge") {
+        profile.hand_disruption = true;
+        profile.draw = true;
+        profile.random = true;
+        profile.reveals_information = true;
+    }
+    if (op == "switch_pokemon") {
+        const bool opponent = string_field(args, "target") == "opponent";
+        profile.gust = profile.gust || opponent;
+        profile.self_switch = profile.self_switch || !opponent;
+    }
+    const std::string filter = lower_ascii(string_field(args, "filter", "any"));
+    if (op == "search_cards" || op == "search" || op == "look_top_deck") {
+        const bool energy_filter = filter == "any"
+            || filter.find("energy") != std::string::npos;
+        profile.energy_search = profile.energy_search || energy_filter;
+        profile.recovery = profile.recovery
+            || string_field(args, "from_zone", "deck") == "discard";
+    }
+    if (op == "attach_energy_from_discard" || op == "attach_from_discard"
+        || op == "recover_clara" || op == "clara") {
+        profile.discard_energy_source = true;
+        profile.recovery = true;
+    }
     for (const auto &[key, entry] : value.as_object()) {
         if ((key == "op" || key == "effect_type" || key == "kind")
             && entry.is_string()) {
@@ -165,15 +195,13 @@ std::size_t count_pool(
 double probability_for_role(
     const Value::Array &known,
     const Value::Array &pool,
-    std::size_t unknown_hand_count,
+    std::size_t looks,
     const std::function<bool(const std::string &)> &predicate
 ) {
     if (known_has(known, predicate)) return 1.0;
     const std::size_t outs = count_pool(pool, predicate);
     // Current unknown hand plus the normal next-turn draw. The pool also
     // includes hidden prizes, which intentionally makes this conservative.
-    const std::size_t looks = std::min(
-        pool.size(), unknown_hand_count + static_cast<std::size_t>(1));
     return at_least_one_out_probability(pool.size(), outs, looks);
 }
 
@@ -190,6 +218,13 @@ Value attacker_clock_value(const AttackerClock &clock) {
         {"missing_evolution_steps", Value(static_cast<std::int64_t>(
             clock.missing_evolution_steps))},
         {"readiness_probability", Value(clock.readiness_probability)},
+        {"planned_card_id", Value(clock.planned_card_id)},
+        {"attack_index", Value(static_cast<std::int64_t>(clock.attack_index))},
+        {"reload_turns", Value(clock.reload_turns)},
+        {"access_probability", Value(clock.access_probability)},
+        {"ready_ko_probability", Value(clock.ready_ko_probability)},
+        {"planned_ko_probability", Value(clock.planned_ko_probability)},
+        {"promotion_delay", Value(static_cast<std::int64_t>(clock.promotion_delay))},
         {"primary_role", Value(clock.primary_role)},
         {"secondary_role", Value(clock.secondary_role)},
         {"engine_role", Value(clock.engine_role)},
@@ -311,14 +346,25 @@ BeliefSummary BeliefTracker::summarize(
             public_state, opponent, card_id, role);
     };
     const auto gust = [&](const std::string &card_id) {
-        return semantics_.profile(card_id).gust;
+        return is_trainer(cards_, card_id) && semantics_.profile(card_id).gust;
     };
     const auto energy_out = [&](const std::string &card_id) {
         const CardSemanticProfile semantic = semantics_.profile(card_id);
-        return is_energy(cards_, card_id) || semantic.search
-            || semantic.acceleration || has_role(card_id, "energy")
-            || has_role(card_id, "search")
-            || has_role(card_id, "energy_acceleration");
+        if (is_energy(cards_, card_id)) {
+            return energy_improves_attack_readiness(
+                public_state, opponent, card_id, cards_);
+        }
+        if (!is_trainer(cards_, card_id)) return false;
+        if (semantic.discard_energy_source) {
+            const auto &discard = array_field(player(public_state, opponent), "discard");
+            return std::any_of(discard.begin(), discard.end(), [&](const Value &entry) {
+                return is_energy(cards_, entry.string_or())
+                    && energy_improves_attack_readiness(
+                        public_state, opponent, entry.string_or(), cards_);
+            });
+        }
+        return semantic.energy_search
+            && !array_field(player(public_state, opponent), "deck").empty();
     };
     const auto switch_out = [&](const std::string &card_id) {
         return semantics_.profile(card_id).self_switch
@@ -327,14 +373,17 @@ BeliefSummary BeliefTracker::summarize(
     const auto hand_disruption = [&](const std::string &card_id) {
         return semantics_.profile(card_id).hand_disruption;
     };
+    const std::size_t looks = result.unknown_hand_count
+        + static_cast<std::size_t>(!array_field(
+            player(public_state, opponent), "deck").empty());
     result.p_has_gust = probability_for_role(
-        known, pool, result.unknown_hand_count, gust);
+        known, pool, looks, gust);
     result.p_has_energy_out = probability_for_role(
-        known, pool, result.unknown_hand_count, energy_out);
+        known, pool, looks, energy_out);
     result.p_has_switch = probability_for_role(
-        known, pool, result.unknown_hand_count, switch_out);
+        known, pool, looks, switch_out);
     result.p_has_hand_disruption = probability_for_role(
-        known, pool, result.unknown_hand_count, hand_disruption);
+        known, pool, looks, hand_disruption);
     return result;
 }
 
@@ -343,11 +392,13 @@ StrategicAnalyzer::StrategicAnalyzer(
     Value decks,
     const TraditionalStrategyCatalog &strategies
 ) : catalog_(std::move(catalog)), decks_(std::move(decks)),
-    strategies_(strategies) {
+    strategies_(strategies), semantics_(catalog_) {
     const Value *cards = catalog_.find("cards");
     cards_ = cards != nullptr && cards->is_object() ? *cards : catalog_;
     for (const auto &[card_id, definition] : cards_.as_object()) {
-        (void)card_id;
+        // Fully populate immutable semantic facts before shared search workers
+        // use this analyzer. Const analysis must not race on lazy insertion.
+        (void)semantics_.profile(card_id);
         if (!definition.is_object()) continue;
         const std::string name = string_field(definition, "name");
         if (!name.empty()) {
@@ -355,6 +406,7 @@ StrategicAnalyzer::StrategicAnalyzer(
                 definition, "evolves_from");
         }
     }
+    (void)semantics_.profile("");
 }
 
 void StrategicAnalyzer::set_strategy_optimization(bool enabled) noexcept {
@@ -404,6 +456,7 @@ AttackerClock StrategicAnalyzer::attacker_clock(
     const Value &pokemon,
     const std::string &slot
 ) const {
+    if (strategy_optimization_) return combat_clock(position, state, actor, pokemon, slot);
     AttackerClock result;
     result.slot = slot;
     result.card_id = string_field(pokemon, "card_id");
@@ -476,7 +529,8 @@ AttackerPipeline StrategicAnalyzer::attacker_pipeline(
         const bool pure_engine = clock.engine_role
             && !clock.primary_role
             && !clock.secondary_role
-            && clock.missing_evolution_steps == 0;
+            && !strategies_.card_has_role(state, actor, clock.planned_card_id, "primary_attacker")
+            && !strategies_.card_has_role(state, actor, clock.planned_card_id, "secondary_attacker");
         if (!strategy_optimization_ || !pure_engine) {
             bench_candidates.push_back(&clock);
         }
@@ -523,7 +577,7 @@ StrategicFacts StrategicAnalyzer::analyze(
     // A support Pokemon still prevents an immediate board-out even though it
     // is intentionally absent from the combat attacker pipeline.
     result.has_backup = strategy_optimization_
-        ? !array_field(own, "bench").empty()
+        ? bench_count(own) > 0
         : !result.own_attackers.next_slot.empty();
     const Value *own_active = active(state, actor);
     const Value *opponent_active = active(state, opponent);
@@ -537,7 +591,6 @@ StrategicFacts StrategicAnalyzer::analyze(
     result.prize_race.own_active_prizes_exposed = static_cast<std::int64_t>(
         prize_value(cards_, own_active));
     result.active_can_attack = !result.own_attackers.attackers.empty()
-        && result.own_attackers.attackers.front().missing_energy == 0
         && result.own_attackers.attackers.front().expected_damage > 0;
     const std::int64_t opponent_hp = opponent_active == nullptr
         ? std::numeric_limits<std::int64_t>::max()
@@ -556,6 +609,16 @@ StrategicFacts StrategicAnalyzer::analyze(
         result.prize_race.opponent_prizes_remaining,
         result.prize_race.own_active_prizes_exposed,
         opponent_delay);
+    if (strategy_optimization_) {
+        const auto &hand = array_field(own, "hand");
+        const bool gust_in_hand = std::any_of(hand.begin(), hand.end(), [&](const Value &entry) {
+            return semantics_.profile(entry.string_or()).gust;
+        });
+        result.prize_race.own_turns_to_win = prize_route(position, state, actor,
+            result.own_attackers, gust_in_hand ? 0.5 : 0.0);
+        result.prize_race.opponent_turns_to_win = prize_route(position, state, opponent,
+            result.opponent_attackers, belief.p_has_gust);
+    }
     result.prize_race.clock_margin =
         result.prize_race.opponent_turns_to_win
         - result.prize_race.own_turns_to_win;
@@ -593,6 +656,9 @@ StrategicFacts StrategicAnalyzer::analyze(
         if (strategies_.card_has_role(state, actor, card_id, "recovery")) {
             ++result.resources.recovery_outs_visible;
         }
+        if (strategies_.card_has_role(state, actor, card_id, "disruption")) {
+            ++result.resources.disruption_outs_visible;
+        }
     }
     result.resources.flexibility = std::min(10.0,
         static_cast<double>(result.resources.hand_size) * 0.55
@@ -609,21 +675,21 @@ StrategicFacts StrategicAnalyzer::analyze(
         result.opponent_attackers.attackers.empty()
             ? nullptr : &result.opponent_attackers.attackers.front();
     double ko_probability = 0.0;
-    if (opponent_clock != nullptr
-        && result.threats.active_retaliation_damage
-            >= result.threats.own_active_hp
-        && result.threats.own_active_hp > 0) {
-        if (opponent_clock->missing_energy == 0) ko_probability = 1.0;
-        else if (opponent_clock->missing_energy == 1) {
-            ko_probability = result.belief.p_has_energy_out;
+    if (opponent_clock != nullptr && result.threats.own_active_hp > 0) {
+        if (strategy_optimization_) {
+            ko_probability = opponent_clock->ready_ko_probability;
+            if (opponent_clock->missing_energy == 1) ko_probability = std::max(
+                ko_probability, result.belief.p_has_energy_out * opponent_clock->planned_ko_probability);
+        } else if (result.threats.active_retaliation_damage >= result.threats.own_active_hp) {
+            ko_probability = opponent_clock->missing_energy == 0 ? 1.0
+                : (opponent_clock->missing_energy == 1 ? result.belief.p_has_energy_out : 0.0);
         }
     }
     result.belief.p_can_ko_active = ko_probability;
     result.belief.p_can_ko_bench_target = std::min(
         result.belief.p_has_gust, ko_probability);
     result.threats.active_ko_threat = ko_probability >= 0.5;
-    result.threats.board_loss_threat = !result.has_backup
-        && result.threats.active_ko_threat;
+    result.threats.board_loss_threat = !result.has_backup && ko_probability > 0.0;
     const bool prize_loss = result.prize_race.opponent_prizes_remaining
         <= result.prize_race.own_active_prizes_exposed;
     // Losing an ordinary active Pokemon is a prize-exchange/tempo event, not a
@@ -735,6 +801,8 @@ Value match_plan_value(const MatchPlan &plan) {
         {"primary_attacker_slot", Value(plan.primary_attacker_slot)},
         {"next_attacker_slot", Value(plan.next_attacker_slot)},
         {"backup_attacker_slot", Value(plan.backup_attacker_slot)},
+        {"next_attacker_card_id", Value(plan.next_attacker_card_id)},
+        {"backup_attacker_card_id", Value(plan.backup_attacker_card_id)},
         {"prize_route_target", Value(plan.prize_route_target)},
         {"reserved_switch_outs", Value(static_cast<std::int64_t>(
             plan.reserved_switch_outs))},

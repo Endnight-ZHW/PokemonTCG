@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import copy
+import json
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -171,7 +173,9 @@ class ChallengeControllerTests(unittest.TestCase):
         state["players"][1]["active"]["damage_counters"] = 0
         self.assertTrue(self.session.restore(state, 17)["success"])
         legacy = self.make_controller()
-        strategic = self.decide()
+        # Insufficient compilation work must fall back transactionally. The
+        # improved planner may now prove this line at its normal budget.
+        strategic = self.decide(node_budget=1)
         frozen = legacy.decide(self.request(engine="turn_beam_v2"), 1000)
         self.assertTrue(strategic["strategic_fallback"])
         self.assertEqual(strategic["action"], frozen["action"])
@@ -183,16 +187,243 @@ class ChallengeControllerTests(unittest.TestCase):
         state = self.session.snapshot()
         state["players"][1]["active"]["damage_counters"] = 0
         self.assertTrue(self.session.restore(state, 17)["success"])
-        first = self.decide(shadow_probe=True)
+        first = self.decide(shadow_probe=True, node_budget=1)
         self.assertTrue(first["strategic_fallback"])
         self.assertEqual(first["action"]["kind"], "ATTACH_ENERGY")
         # A newer revision with no board progress must block the same action,
         # including a fallback requested through the diagnostic shadow entry.
         state["revision"] += 1
         self.assertTrue(self.session.restore(state, 17)["success"])
-        second = self.decide(shadow_probe=True)
+        second = self.decide(shadow_probe=True, node_budget=1)
         self.assertEqual(second["action"]["kind"], "END_TURN")
         self.assertEqual(second["native_performance_counters"]["root_actions_filtered"], 1)
+
+    def known_opponent_card(self, card_id):
+        state = self.session.snapshot()
+        state["players"][1]["hand"] = [card_id]
+        state["players"][1]["deck"] = []
+        self.assertTrue(self.session.restore(state, 17)["success"])
+        return self.decide(public_history=[{
+            "event_type": "cards_selected", "visibility": "public", "actor": 1,
+            "source": {"player": 1, "zone": "deck"},
+            "target": {"player": 1, "zone": "hand"},
+            "data": {"player": 1, "card_ids": [card_id]},
+        }])["strategic_facts"]["belief"]
+
+    def test_empty_bench_does_not_prevent_board_out(self):
+        state = self.session.snapshot()
+        state["players"][0]["active"]["damage_counters"] = (
+            self.catalog["cards"]["svi-chim"]["hp"] // 10 - 1)
+        state["players"][1]["active"]["energy_card_ids"] = ["sv1-ener-2"]
+        for player in state["players"]:
+            player["prizes"] = ["sv1-ener-2"] * 6
+        self.assertTrue(self.session.restore(state, 17)["success"])
+        facts = self.decide()["strategic_facts"]
+        self.assertFalse(facts["has_backup"])
+        self.assertTrue(facts["threats"]["board_loss_threat"])
+        self.assertEqual(facts["threats"]["catastrophe_probability"], 1.0)
+
+    def test_known_judge_is_a_hand_disruption_out(self):
+        self.assertEqual(self.known_opponent_card("sv1-176")["p_has_hand_disruption"], 1.0)
+
+    def test_pokemon_only_search_is_not_an_energy_out(self):
+        self.assertEqual(self.known_opponent_card("sv1-151")["p_has_energy_out"], 0.0)
+
+    def combat_position(self, deck, active_id, *, energies=(), hand=(), bench=(), type_matchups=False):
+        state = copy.deepcopy(self.state)
+        state["apply_type_matchups"] = type_matchups
+        state["rules_options"]["apply_type_matchups"] = type_matchups
+        state["public_deck_keys"][0] = deck
+        owner = state["players"][0]
+        template = {**owner["active"], "damage_counters": 0,
+                    "energy_card_ids": [], "evolution_stack_ids": [],
+                    "placed_this_turn": False, "used_abilities": [],
+                    "status_conditions": [], "modifiers": []}
+        owner["active"] = {**copy.deepcopy(template), "card_id": active_id,
+                           "energy_card_ids": list(energies)}
+        owner["bench"] = [{**copy.deepcopy(template), "card_id": cid} for cid in bench]
+        owner["bench"] += [None] * (5 - len(bench))
+        owner["hand"] = list(hand)
+        owner["discard"] = []
+        pool = [row["card_id"] for row in self.decks[deck]["cards"] for _ in range(row["count"])]
+        for cid in [active_id, *energies, *hand, *bench]:
+            pool.remove(cid)
+        owner["prizes"] = [pool.pop() for _ in range(6)]
+        owner["deck"] = pool
+        state["players"][1]["prizes"] = ["sv1-ener-2"] * 6
+        self.assertTrue(self.session.restore(state, 17)["success"])
+        return self.decide()["strategic_facts"]
+
+    def test_small_attack_does_not_mean_burst_attack_is_ready(self):
+        facts = self.combat_position("lightning", "svl-pikaex", energies=["sv1-ener-4"])
+        attacker = facts["own_attackers"]["attackers"][0]
+        self.assertTrue(facts["active_can_attack"])
+        self.assertGreater(attacker["missing_energy"], 0)
+        self.assertGreater(attacker["max_relevant_damage"], attacker["expected_damage"])
+        self.assertLess(attacker["readiness_probability"], 1)
+
+    def test_time_budget_returns_a_legal_action_without_cancellation(self):
+        started = time.perf_counter()
+        result = self.decide(time_budget_ms=1)
+        self.assertLess(time.perf_counter() - started, 0.5)
+        self.assertFalse(result.get("cancelled", False))
+        self.assertTrue(result["native_performance_counters"]["time_budget_exhausted"])
+        self.assertTrue(self.session.apply_action({**result["action"], "action_id": "deadline"})["success"])
+
+    def test_xatu_cannot_attach_a_trainer_as_energy(self):
+        facts = self.combat_position("psychic", "sv1-113", energies=["sv1-ener-5"],
+                                     hand=["sv1-176"], bench=["sv1-108", "sv1-111"])
+        latios = next(row for row in facts["own_attackers"]["attackers"] if row["card_id"] == "sv1-111")
+        self.assertGreaterEqual(latios["earliest_ready_turn"], latios["missing_energy"])
+
+    def test_one_energy_is_not_spent_by_two_xatu_and_manual_attachment(self):
+        facts = self.combat_position("psychic", "sv1-113", energies=["sv1-ener-5"],
+                                     hand=["sv1-ener-5"], bench=["sv1-108", "sv1-108", "sv1-111"])
+        latios = next(row for row in facts["own_attackers"]["attackers"] if row["card_id"] == "sv1-111")
+        self.assertGreaterEqual(latios["earliest_ready_turn"], latios["missing_energy"] - 1)
+
+    def test_real_metal_transfer_cycle_reaches_turn_boundary(self):
+        path = RESEARCH_ROOT.parents[1] / "native/challenge_core/tests/fixtures/steel_transfer_cycle.json"
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        self.assertTrue(self.session.restore(fixture["snapshot"], fixture["rng_state"])["success"])
+        turn = self.session.snapshot()["turn_number"]
+        for step in range(40):
+            if self.session.snapshot()["turn_number"] != turn:
+                break
+            pending = self.session.pending_choice(0)
+            observation = self.session.ai_observation_for(0)
+            request = self.request(seed=fixture["rng_state"])
+            if pending:
+                request.update(kind="choice", choice=pending, state=observation,
+                               public_snapshot=observation)
+            result = self.controller.decide(request, step + 1)
+            self.assertTrue(result.get("success"), result)
+            applied = self.session.apply_choice(result["choice_response"]) if pending else self.session.apply_action(
+                {**result["action"], "action_id": f"transfer-cycle:{step}"})
+            self.assertTrue(applied["success"], applied)
+        self.assertGreater(self.session.snapshot()["turn_number"], turn)
+
+    def test_cycle_guard_blocks_a_return_to_an_earlier_position(self):
+        original = self.session.snapshot()
+        original["players"][1]["active"]["damage_counters"] = 0
+        self.assertTrue(self.session.restore(original, 17)["success"])
+        first = self.decide(node_budget=1)
+        self.assertEqual(first["action"]["kind"], "ATTACH_ENERGY")
+        intermediate = copy.deepcopy(original)
+        intermediate["revision"] += 1
+        intermediate["players"][0]["active"]["damage_counters"] += 1
+        self.assertTrue(self.session.restore(intermediate, 17)["success"])
+        self.decide(node_budget=1)
+        original["revision"] += 2
+        self.assertTrue(self.session.restore(original, 17)["success"])
+        returned = self.decide(node_budget=1)
+        self.assertNotEqual(returned["action"]["kind"], "ATTACH_ENERGY")
+        self.assertGreater(returned["native_performance_counters"]["root_actions_filtered"], 0)
+
+    def test_ultra_ball_cost_keeps_a_live_candy_evolution_pair(self):
+        self.combat_position("water", "sv2-tatsu", energies=["sv1-ener-3"],
+            hand=["sv1-153", "sv1-152", "sv2-grex", "sv2-young", "sv1-180"],
+            bench=["sv2-38"])
+        actions = _flatten_native_rows(self.session.legal_actions(0))
+        ball = next(action for action in actions if action["kind"] == "PLAY_TRAINER"
+                    and action["source"]["card_id"] == "sv1-153")
+        self.assertTrue(self.session.apply_action({**ball, "action_id": "combo-ball"})["success"])
+        pending = self.session.pending_choice(0)
+        self.assertIsNotNone(pending)
+        result = self.controller.decide(self.request(kind="choice", choice=pending), 2000)
+        self.assertTrue(result["success"], result)
+        ids = result["choice_response"]["option_ids"]
+        removed = [row["ref"]["card_id"] for row in pending["options"] if row["option_id"] in ids]
+        self.assertNotIn("sv1-152", removed)
+        self.assertNotIn("sv2-grex", removed)
+        self.assertTrue(self.session.apply_choice(result["choice_response"])["success"])
+
+    def test_coin_attack_is_not_a_certain_knockout(self):
+        state = self.session.snapshot()
+        state["players"][0]["active"]["damage_counters"] = self.catalog["cards"]["svi-chim"]["hp"] // 10 - 1
+        opponent = state["players"][1]
+        opponent["active"].update(card_id="sv2-38", energy_card_ids=["sv1-ener-3"], damage_counters=0)
+        state["public_deck_keys"][1] = "water"
+        self.assertTrue(self.session.restore(state, 17)["success"])
+        facts = self.decide()["strategic_facts"]
+        self.assertEqual(facts["belief"]["p_can_ko_active"], 0.5)
+
+    def test_damage_forecast_respects_the_match_type_option(self):
+        self.combat_position("lightning", "svl-pikaex", energies=["sv1-ener-4"])
+        state = self.session.snapshot()
+        state["players"][1]["active"].update(card_id="sv2-38", damage_counters=0, energy_card_ids=[])
+        state["public_deck_keys"][1] = "water"
+        damage = []
+        for enabled in (False, True):
+            state["apply_type_matchups"] = enabled
+            state["rules_options"]["apply_type_matchups"] = enabled
+            self.assertTrue(self.session.restore(state, 17)["success"])
+            self.controller = self.make_controller()
+            damage.append(self.decide()["strategic_facts"]["own_attackers"]["attackers"][0]["expected_damage"])
+        self.assertEqual(damage, [30, 60])
+
+    def test_support_evolution_is_not_the_next_combat_attacker(self):
+        facts = self.combat_position("psychic", "sv1-113", bench=["sv1-107"], hand=["sv1-108"])
+        self.assertTrue(facts["has_backup"])
+        self.assertEqual(facts["own_attackers"]["next_slot"], "")
+
+    def test_choices_remain_legal_with_type_matchups_enabled(self):
+        self.combat_position("water", "sv2-tatsu", hand=["sv1-153", "sv2-young", "sv1-180"], type_matchups=True)
+        ball = next(action for action in _flatten_native_rows(self.session.legal_actions(0))
+                    if action["kind"] == "PLAY_TRAINER" and action["source"]["card_id"] == "sv1-153")
+        self.assertTrue(self.session.apply_action({**ball, "action_id": "typed-ball"})["success"])
+        result = self.controller.decide(self.request(kind="choice", choice=self.session.pending_choice(0)), 2000)
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["type_matchups"])
+        self.assertTrue(self.session.apply_choice(result["choice_response"])["success"])
+
+    def test_candy_in_deck_does_not_make_a_hand_evolution_certain(self):
+        facts = self.combat_position("water", "sv2-tatsu", hand=["sv2-grex"], bench=["sv2-38"])
+        froakie = next(row for row in facts["own_attackers"]["attackers"] if row["card_id"] == "sv2-38")
+        self.assertLess(froakie["access_probability"], 1.0)
+
+    def test_special_energy_counts_units_and_its_damage_reduction(self):
+        facts = self.combat_position("colorless", "svi-maus", energies=["svi-dtur"])
+        attacker = facts["own_attackers"]["attackers"][0]
+        self.assertEqual(attacker["missing_energy"], 0)
+        self.assertEqual(attacker["expected_damage"], 100)
+        self.assertEqual(attacker["max_relevant_damage"], 100)
+
+    def test_replacing_a_slot_occupant_discards_its_attacker_commitment(self):
+        self.combat_position("psychic", "sv1-113", bench=["sv1-111"])
+        before = self.decide()["strategic_match_plan"]
+        self.assertEqual(before["next_attacker_slot"], "bench_0")
+        state = self.session.snapshot()
+        # The same slot now holds a support engine, not the previous attacker.
+        state["players"][0]["bench"][0]["card_id"] = "sv1-108"
+        state["revision"] += 1
+        self.assertTrue(self.session.restore(state, 17)["success"])
+        after = self.decide()["strategic_match_plan"]
+        self.assertEqual(after["next_attacker_slot"], "")
+        self.assertEqual(after["next_attacker_card_id"], "")
+
+    def test_legacy_replay_action_survives_replacing_its_rules_session(self):
+        path = RESEARCH_ROOT.parents[1] / "native/challenge_core/tests/fixtures/legacy_replay_lifetime.json"
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        self.assertTrue(self.session.restore(fixture["snapshot"], fixture["rng_state"])["success"])
+        self.assertEqual(self.session.state_hash, fixture["state_hash"])
+        self.controller.reset_match(fixture["request"]["match_instance_id"])
+        result = self.controller.decide(fixture["request"], fixture["request"]["revision"] + 1)
+        self.assertTrue(result.get("success"), result)
+        self.assertTrue(result["strategic_shadow_legacy"])
+        self.assertGreater(result["nodes_expanded"], 0)
+        self.assertTrue(self.session.apply_action({**result["action"], "action_id": "lifetime-regression"})["success"])
+
+    def test_mandatory_attack_keeps_its_catalog_definition_alive(self):
+        path = RESEARCH_ROOT.parents[1] / "native/challenge_core/tests/fixtures/mandatory_attack_lifetime.json"
+        request = json.loads(path.read_text(encoding="utf-8"))["request"]
+        self.controller.reset_match(request["match_instance_id"])
+        result = self.controller.decide(request, request["revision"] + 1)
+        self.assertTrue(result.get("success"), result)
+        self.assertTrue(result["strategic_shadow_legacy"])
+        self.assertGreater(result["strategic_shadow_nodes"], 0)
+        semantics = lambda action: {key: value for key, value in action.items() if key != "action_id"}
+        self.assertIn(semantics(result["action"]), [semantics(action) for action in request["actions"]])
 
 
 if __name__ == "__main__":

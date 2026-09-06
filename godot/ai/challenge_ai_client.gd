@@ -48,6 +48,8 @@ func decide(
 		return _failure(request, "native_challenge_controller_unavailable")
 	_generation += 1
 	var native_request := request.duplicate(true)
+	if not native_request.has("time_budget_ms"):
+		native_request["time_budget_ms"] = 5000
 	if not native_request.has("engine"):
 		native_request["engine"] = TRADITIONAL_ENGINE_ID
 	if not native_request.has("use_deck_inspection"):

@@ -486,6 +486,7 @@ SampleResult run_sample(
         ? "depth_complete" : std::string{};
 
     for (std::size_t depth = 2; depth <= config.max_depth; ++depth) {
+        if (provider.time_budget_exhausted()) break;
         if (frontier.empty()) {
             output.completion_reason = "frontier_exhausted";
             break;
@@ -661,7 +662,7 @@ void TraditionalSearchConfig::validate() const {
         || per_root_width == 0 || per_root_width > 2
         || max_depth == 0 || max_depth > 8
         || actions_per_node == 0 || actions_per_node > 8
-        || reply_depth == 0 || reply_depth > 3
+        || reply_depth == 0 || reply_depth > 8
         || reply_width == 0 || reply_width > 4
         || reply_actions_per_node == 0 || reply_actions_per_node > 4
         || belief_samples == 0 || belief_samples > 3

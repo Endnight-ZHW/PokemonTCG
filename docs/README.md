@@ -2,6 +2,7 @@
 
 - [`PROJECT_AUDIT.md`](PROJECT_AUDIT.md)：本轮职责拆分、去重、性能测量与回归证据。
 - [`RELEASE_NOTES.md`](RELEASE_NOTES.md)：0.8.0 当前发布边界与验证结果。
+- [`TRADITIONAL_AI_STRENGTH_REFACTOR.md`](TRADITIONAL_AI_STRENGTH_REFACTOR.md)：传统 AI 棋力重构、独立验收与收尾证据。
 - [`RULES.md`](RULES.md)：游戏规则说明。
 - [`GODOT_DEVELOPMENT_GUIDE.md`](GODOT_DEVELOPMENT_GUIDE.md)：Godot 4.7 场景、UI、内容、规则、AI、联机与发布实操。
 - [`../deploy/relay/README.md`](../deploy/relay/README.md)：独立 C++ Relay 部署边界。

@@ -1,0 +1,1582 @@
+{
+  "description": "Early request from the hash-verified steel/psychic failure journal. ASAN detected use-after-free when fixed-sequence replay replaced the owner of a borrowed legal action.",
+  "snapshot": {
+    "action_log": [
+      "Arena-Seat-0 抛掷硬币：0 次正面，1 次反面。",
+      "Arena-Seat-1 选择了先攻。",
+      "Arena-Seat-0 抽取了 7 张卡牌。",
+      "Arena-Seat-1 抽取了 7 张卡牌。",
+      "Arena-Seat-1 暗置宝可梦。",
+      "Arena-Seat-1 暗置宝可梦。",
+      "Arena-Seat-1 暗置宝可梦。",
+      "Arena-Seat-1 暗置宝可梦。",
+      "Arena-Seat-1 完成了开局宝可梦放置。",
+      "Arena-Seat-0 暗置宝可梦。",
+      "Arena-Seat-0 暗置宝可梦。",
+      "Arena-Seat-0 完成了开局宝可梦放置。",
+      "—— Arena-Seat-1 的回合 ——",
+      "Arena-Seat-1 抽取了 1 张卡牌。"
+    ],
+    "active_player_idx": 1,
+    "apply_type_matchups": false,
+    "choice_sequence": 1,
+    "extra_draws": [
+      0,
+      0
+    ],
+    "first_player_idx": 1,
+    "mulligan_bonus_max": 0,
+    "mulligan_count": [
+      0,
+      0
+    ],
+    "opening_coin_winner_idx": 1,
+    "pending_promotions": [],
+    "phase": "MAIN",
+    "players": [
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "",
+          "can_evolve_this_turn": true,
+          "card_id": "sv1-111",
+          "damage_counters": 0,
+          "damage_prevented": false,
+          "energy_card_ids": [],
+          "evolution_stack_ids": [],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": true,
+          "status_conditions": [],
+          "used_abilities": []
+        },
+        "bench": [
+          null,
+          null,
+          null,
+          null,
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "sv1-110",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          }
+        ],
+        "deck": [
+          "sv1-204",
+          "sv1-108",
+          "sv2-young",
+          "sv1-ener-5",
+          "sv1-153",
+          "sv2-young",
+          "sv1-104",
+          "sv1-150",
+          "sv1-189",
+          "sv1-ener-5",
+          "sv1-151",
+          "sv1-153",
+          "sv1-106",
+          "sv2-catch",
+          "sv1-171",
+          "sv1-202",
+          "sv1-107",
+          "sv1-111",
+          "sv1-ener-5",
+          "sv1-180",
+          "sv1-ener-5",
+          "sv1-153",
+          "sv1-112",
+          "sv1-ener-5",
+          "sv1-150",
+          "sv1-ener-5",
+          "sv2-catch",
+          "sv1-153",
+          "sv1-ener-5",
+          "sv1-203",
+          "sv1-ener-5",
+          "sv1-204",
+          "sv1-151",
+          "sv1-ener-5",
+          "sv1-176",
+          "sv1-150",
+          "sv1-107",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-189",
+          "sv1-113",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-107",
+          "sv1-ener-5",
+          "sv1-104",
+          "sv1-151"
+        ],
+        "discard": [],
+        "energy_attached_this_turn": false,
+        "hand": [
+          "sv1-180",
+          "sv1-201",
+          "sv1-108",
+          "sv2-young",
+          "sv1-ener-5"
+        ],
+        "healed_this_turn": false,
+        "name": "Arena-Seat-0",
+        "prizes": [
+          "sv1-114",
+          "sv1-180",
+          "sv1-109",
+          "sv1-202",
+          "sv1-180",
+          "sv1-150"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": false,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      },
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "",
+          "can_evolve_this_turn": true,
+          "card_id": "svm-zamazenta",
+          "damage_counters": 0,
+          "damage_prevented": false,
+          "energy_card_ids": [],
+          "evolution_stack_ids": [],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": true,
+          "status_conditions": [],
+          "used_abilities": []
+        },
+        "bench": [
+          null,
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-bronzor",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          null,
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-skarmory",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-cobalion",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          }
+        ],
+        "deck": [
+          "sv1-150",
+          "sv1-153",
+          "svm-zacian",
+          "sv1-189",
+          "sv1-ener-8",
+          "sv1-180",
+          "sv1-ener-8",
+          "sv3-134",
+          "sv1-ener-8",
+          "sv1-180",
+          "sv1-189",
+          "sv1-ener-8",
+          "sv1-ener-8",
+          "svm-bronzong",
+          "sv1-180",
+          "svm-orthworm",
+          "sv1-ener-8",
+          "sv1-153",
+          "svm-zacian",
+          "svm-bronzong",
+          "svm-zamazenta",
+          "svl-vitb",
+          "sv2-young",
+          "sv1-151",
+          "svm-klefki",
+          "sv1-ener-8",
+          "sv1-150",
+          "sv1-ener-8",
+          "svg2-exps",
+          "sv1-ener-8",
+          "sv1-ener-8",
+          "svm-bronzor",
+          "sv1-150",
+          "svm-smeargle",
+          "sv2-catch",
+          "sv2-catch",
+          "svm-dialga",
+          "sv1-151",
+          "sv1-ener-8",
+          "sv1-176",
+          "sv1-ener-8",
+          "sv1-180",
+          "sv1-153",
+          "svm-marnie-pride",
+          "sv2-young",
+          "svl-vitb"
+        ],
+        "discard": [],
+        "energy_attached_this_turn": false,
+        "hand": [
+          "sv1-ener-8",
+          "svm-marnie-pride",
+          "sv1-153",
+          "svm-bronzor"
+        ],
+        "healed_this_turn": false,
+        "name": "Arena-Seat-1",
+        "prizes": [
+          "sv2-young",
+          "sv1-ener-8",
+          "sv1-150",
+          "sv1-151",
+          "svm-smeargle",
+          "sv1-ener-8"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": false,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      }
+    ],
+    "processed_action_ids": [
+      "challenge-arena:focused:r0:steel-vs-psychic:c3:1",
+      "challenge-arena:focused:r0:steel-vs-psychic:c3:2",
+      "challenge-arena:focused:r0:steel-vs-psychic:c3:3",
+      "challenge-arena:focused:r0:steel-vs-psychic:c3:4",
+      "challenge-arena:focused:r0:steel-vs-psychic:c3:5",
+      "challenge-arena:focused:r0:steel-vs-psychic:c3:6",
+      "challenge-arena:focused:r0:steel-vs-psychic:c3:7",
+      "challenge-arena:focused:r0:steel-vs-psychic:c3:8"
+    ],
+    "public_deck_keys": [
+      "psychic",
+      "steel"
+    ],
+    "resolution_stack": {
+      "context": {},
+      "frames": [],
+      "pending_request": null,
+      "schema_version": 3,
+      "sequence": 0
+    },
+    "result_conditions": [
+      [],
+      []
+    ],
+    "result_reason": "",
+    "result_status": "ONGOING",
+    "revision": 9,
+    "rules_options": {
+      "apply_type_matchups": false
+    },
+    "rules_profile_id": "CN_MAINLAND_3_1_0",
+    "setup_actor_idx": -1,
+    "setup_bonus_card_ids": [
+      [],
+      []
+    ],
+    "setup_ready": [
+      true,
+      true
+    ],
+    "setup_stage": "COMPLETE",
+    "snapshot_version": 3,
+    "stadium_card_id": "",
+    "stadium_owner_idx": -1,
+    "turn_fact_book": {
+      "current_turn": {
+        "knockouts": []
+      },
+      "previous_turn": {
+        "knockouts": []
+      }
+    },
+    "turn_number": 1,
+    "winner": -1
+  },
+  "rng_state": 1009226151,
+  "state_hash": "ef5e14f16631d8ec",
+  "request": {
+    "actor": 1,
+    "belief_samples": 3,
+    "deck_key": "steel",
+    "engine": "strategic_intent_v3",
+    "internal_evaluation_batch": true,
+    "kind": "action",
+    "match_instance_id": "challenge-arena:focused:r0:steel-vs-psychic:c3",
+    "match_seed": 2179964880,
+    "node_budget": 192,
+    "public_history": [
+      {
+        "actor": 0,
+        "card_id": "",
+        "data": {
+          "coin_winner": 1,
+          "purpose": "setup_turn_order",
+          "results": [
+            false
+          ]
+        },
+        "event_type": "coin_flip",
+        "source": {
+          "index": -1,
+          "player": 0,
+          "slot": "",
+          "zone": ""
+        },
+        "target": {
+          "index": -1,
+          "player": 0,
+          "slot": "",
+          "zone": ""
+        },
+        "visibility": "public"
+      },
+      {
+        "actor": 1,
+        "card_id": "",
+        "data": {
+          "coin_winner": 1,
+          "first_player": 1
+        },
+        "event_type": "turn_order_chosen",
+        "source": {
+          "index": -1,
+          "player": 1,
+          "slot": "",
+          "zone": ""
+        },
+        "target": {
+          "index": -1,
+          "player": 1,
+          "slot": "",
+          "zone": ""
+        },
+        "visibility": "public"
+      },
+      {
+        "actor": 0,
+        "card_id": "",
+        "data": {
+          "card_ids": [],
+          "count": 7,
+          "final_opening_hand": true,
+          "player": 0,
+          "purpose": "opening_hand",
+          "round": 0,
+          "visibility_owner": 0
+        },
+        "event_type": "cards_drawn",
+        "source": {
+          "index": -1,
+          "player": 0,
+          "slot": "",
+          "zone": ""
+        },
+        "target": {
+          "index": -1,
+          "player": 0,
+          "slot": "",
+          "zone": ""
+        },
+        "visibility": "owner"
+      },
+      {
+        "actor": 1,
+        "card_id": "",
+        "data": {
+          "card_ids": [
+            "sv1-ener-8",
+            "svm-skarmory",
+            "svm-zamazenta",
+            "svm-marnie-pride",
+            "sv1-153",
+            "svm-cobalion",
+            "svm-bronzor"
+          ],
+          "count": 7,
+          "final_opening_hand": true,
+          "player": 1,
+          "purpose": "opening_hand",
+          "round": 0,
+          "visibility_owner": 1
+        },
+        "event_type": "cards_drawn",
+        "source": {
+          "index": -1,
+          "player": 1,
+          "slot": "",
+          "zone": ""
+        },
+        "target": {
+          "index": -1,
+          "player": 1,
+          "slot": "",
+          "zone": ""
+        },
+        "visibility": "owner"
+      },
+      {
+        "actor": 1,
+        "amount": 1,
+        "card_id": "svm-zamazenta",
+        "data": {
+          "card_id": "svm-zamazenta",
+          "card_ids": [
+            "svm-zamazenta"
+          ],
+          "count": 1,
+          "player": 1,
+          "slot": "active",
+          "source_index": 2,
+          "source_player": 1,
+          "source_slot": "",
+          "source_zone": "hand",
+          "target_player": 1,
+          "target_slot": "active",
+          "target_zone": "",
+          "visibility_owner": 1
+        },
+        "event_type": "pokemon_played",
+        "source": {
+          "index": 2,
+          "player": 1,
+          "slot": "",
+          "zone": "hand"
+        },
+        "target": {
+          "index": -1,
+          "player": 1,
+          "slot": "active",
+          "zone": ""
+        },
+        "visibility": "owner"
+      },
+      {
+        "actor": 1,
+        "amount": 1,
+        "card_id": "svm-bronzor",
+        "data": {
+          "card_id": "svm-bronzor",
+          "card_ids": [
+            "svm-bronzor"
+          ],
+          "count": 1,
+          "player": 1,
+          "slot": "bench_1",
+          "source_index": 5,
+          "source_player": 1,
+          "source_slot": "",
+          "source_zone": "hand",
+          "target_player": 1,
+          "target_slot": "bench_1",
+          "target_zone": "",
+          "visibility_owner": 1
+        },
+        "event_type": "pokemon_played",
+        "source": {
+          "index": 5,
+          "player": 1,
+          "slot": "",
+          "zone": "hand"
+        },
+        "target": {
+          "index": -1,
+          "player": 1,
+          "slot": "bench_1",
+          "zone": ""
+        },
+        "visibility": "owner"
+      },
+      {
+        "actor": 1,
+        "amount": 1,
+        "card_id": "svm-cobalion",
+        "data": {
+          "card_id": "svm-cobalion",
+          "card_ids": [
+            "svm-cobalion"
+          ],
+          "count": 1,
+          "player": 1,
+          "slot": "bench_4",
+          "source_index": 4,
+          "source_player": 1,
+          "source_slot": "",
+          "source_zone": "hand",
+          "target_player": 1,
+          "target_slot": "bench_4",
+          "target_zone": "",
+          "visibility_owner": 1
+        },
+        "event_type": "pokemon_played",
+        "source": {
+          "index": 4,
+          "player": 1,
+          "slot": "",
+          "zone": "hand"
+        },
+        "target": {
+          "index": -1,
+          "player": 1,
+          "slot": "bench_4",
+          "zone": ""
+        },
+        "visibility": "owner"
+      },
+      {
+        "actor": 1,
+        "amount": 1,
+        "card_id": "svm-skarmory",
+        "data": {
+          "card_id": "svm-skarmory",
+          "card_ids": [
+            "svm-skarmory"
+          ],
+          "count": 1,
+          "player": 1,
+          "slot": "bench_3",
+          "source_index": 1,
+          "source_player": 1,
+          "source_slot": "",
+          "source_zone": "hand",
+          "target_player": 1,
+          "target_slot": "bench_3",
+          "target_zone": "",
+          "visibility_owner": 1
+        },
+        "event_type": "pokemon_played",
+        "source": {
+          "index": 1,
+          "player": 1,
+          "slot": "",
+          "zone": "hand"
+        },
+        "target": {
+          "index": -1,
+          "player": 1,
+          "slot": "bench_3",
+          "zone": ""
+        },
+        "visibility": "owner"
+      },
+      {
+        "actor": 0,
+        "amount": 1,
+        "card_id": "",
+        "data": {
+          "card_id": "",
+          "card_ids": [],
+          "count": 1,
+          "player": 0,
+          "slot": "active",
+          "source_index": -1,
+          "source_player": 0,
+          "source_slot": "",
+          "source_zone": "hand",
+          "target_player": 0,
+          "target_slot": "active",
+          "target_zone": "",
+          "visibility_owner": 0
+        },
+        "event_type": "pokemon_played",
+        "source": {
+          "index": -1,
+          "player": 0,
+          "slot": "",
+          "zone": "hand"
+        },
+        "target": {
+          "index": -1,
+          "player": 0,
+          "slot": "active",
+          "zone": ""
+        },
+        "visibility": "owner"
+      },
+      {
+        "actor": 0,
+        "amount": 1,
+        "card_id": "",
+        "data": {
+          "card_id": "",
+          "card_ids": [],
+          "count": 1,
+          "player": 0,
+          "slot": "bench_4",
+          "source_index": -1,
+          "source_player": 0,
+          "source_slot": "",
+          "source_zone": "hand",
+          "target_player": 0,
+          "target_slot": "bench_4",
+          "target_zone": "",
+          "visibility_owner": 0
+        },
+        "event_type": "pokemon_played",
+        "source": {
+          "index": -1,
+          "player": 0,
+          "slot": "",
+          "zone": "hand"
+        },
+        "target": {
+          "index": -1,
+          "player": 0,
+          "slot": "bench_4",
+          "zone": ""
+        },
+        "visibility": "owner"
+      },
+      {
+        "actor": -1,
+        "card_id": "",
+        "data": {
+          "first_player": 1,
+          "players": [
+            {
+              "active": "sv1-111",
+              "bench": [
+                "sv1-110"
+              ]
+            },
+            {
+              "active": "svm-zamazenta",
+              "bench": [
+                "svm-bronzor",
+                "svm-skarmory",
+                "svm-cobalion"
+              ]
+            }
+          ]
+        },
+        "event_type": "setup_revealed",
+        "source": {
+          "index": -1,
+          "player": -1,
+          "slot": "",
+          "zone": ""
+        },
+        "target": {
+          "index": -1,
+          "player": -1,
+          "slot": "",
+          "zone": ""
+        },
+        "visibility": "public"
+      },
+      {
+        "actor": 1,
+        "card_id": "",
+        "data": {
+          "player": 1,
+          "turn": 1
+        },
+        "event_type": "turn_start",
+        "source": {
+          "index": -1,
+          "player": 1,
+          "slot": "",
+          "zone": ""
+        },
+        "target": {
+          "index": -1,
+          "player": 1,
+          "slot": "",
+          "zone": ""
+        },
+        "visibility": "public"
+      },
+      {
+        "actor": 1,
+        "card_id": "",
+        "data": {
+          "card_ids": [
+            "svm-bronzor"
+          ],
+          "count": 1,
+          "player": 1,
+          "purpose": "turn_draw",
+          "turn": 1,
+          "visibility_owner": 1
+        },
+        "event_type": "cards_drawn",
+        "source": {
+          "index": -1,
+          "player": 1,
+          "slot": "",
+          "zone": ""
+        },
+        "target": {
+          "index": -1,
+          "player": 1,
+          "slot": "",
+          "zone": ""
+        },
+        "visibility": "owner"
+      }
+    ],
+    "public_snapshot": {
+      "action_log": [
+        "Arena-Seat-0 抛掷硬币：0 次正面，1 次反面。",
+        "Arena-Seat-1 选择了先攻。",
+        "Arena-Seat-0 抽取了 7 张卡牌。",
+        "Arena-Seat-1 抽取了 7 张卡牌。",
+        "Arena-Seat-1 暗置宝可梦。",
+        "Arena-Seat-1 暗置宝可梦。",
+        "Arena-Seat-1 暗置宝可梦。",
+        "Arena-Seat-1 暗置宝可梦。",
+        "Arena-Seat-1 完成了开局宝可梦放置。",
+        "Arena-Seat-0 暗置宝可梦。",
+        "Arena-Seat-0 暗置宝可梦。",
+        "Arena-Seat-0 完成了开局宝可梦放置。",
+        "—— Arena-Seat-1 的回合 ——",
+        "Arena-Seat-1 抽取了 1 张卡牌。"
+      ],
+      "active_player_idx": 1,
+      "ai_runtime_projection": "ai_public_state_v1",
+      "apply_type_matchups": false,
+      "extra_draws": [
+        0,
+        0
+      ],
+      "first_player_idx": 1,
+      "mulligan_bonus_max": 0,
+      "mulligan_count": [
+        0,
+        0
+      ],
+      "opening_coin_winner_idx": 1,
+      "pending_promotions": [],
+      "phase": "MAIN",
+      "players": [
+        {
+          "active": {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "sv1-111",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          "bench": [
+            null,
+            null,
+            null,
+            null,
+            {
+              "all_prevented": false,
+              "attached_tool_id": "",
+              "can_evolve_this_turn": true,
+              "card_id": "sv1-110",
+              "damage_counters": 0,
+              "damage_prevented": false,
+              "energy_card_ids": [],
+              "evolution_stack_ids": [],
+              "healed_this_turn": false,
+              "outgoing_damage_reduction": 0,
+              "paralyzed_since_turn": 0,
+              "placed_this_turn": true,
+              "status_conditions": [],
+              "used_abilities": []
+            }
+          ],
+          "deck": [
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__"
+          ],
+          "discard": [],
+          "energy_attached_this_turn": false,
+          "hand": [
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__"
+          ],
+          "healed_this_turn": false,
+          "name": "Arena-Seat-0",
+          "prizes": [
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__"
+          ],
+          "retreated_this_turn": false,
+          "stadium_played_this_turn": false,
+          "stadium_used_this_turn": false,
+          "supporter_played_this_turn": false,
+          "vstar_power_used": false,
+          "was_ko_by_attack": false
+        },
+        {
+          "active": {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-zamazenta",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          "bench": [
+            null,
+            {
+              "all_prevented": false,
+              "attached_tool_id": "",
+              "can_evolve_this_turn": true,
+              "card_id": "svm-bronzor",
+              "damage_counters": 0,
+              "damage_prevented": false,
+              "energy_card_ids": [],
+              "evolution_stack_ids": [],
+              "healed_this_turn": false,
+              "outgoing_damage_reduction": 0,
+              "paralyzed_since_turn": 0,
+              "placed_this_turn": true,
+              "status_conditions": [],
+              "used_abilities": []
+            },
+            null,
+            {
+              "all_prevented": false,
+              "attached_tool_id": "",
+              "can_evolve_this_turn": true,
+              "card_id": "svm-skarmory",
+              "damage_counters": 0,
+              "damage_prevented": false,
+              "energy_card_ids": [],
+              "evolution_stack_ids": [],
+              "healed_this_turn": false,
+              "outgoing_damage_reduction": 0,
+              "paralyzed_since_turn": 0,
+              "placed_this_turn": true,
+              "status_conditions": [],
+              "used_abilities": []
+            },
+            {
+              "all_prevented": false,
+              "attached_tool_id": "",
+              "can_evolve_this_turn": true,
+              "card_id": "svm-cobalion",
+              "damage_counters": 0,
+              "damage_prevented": false,
+              "energy_card_ids": [],
+              "evolution_stack_ids": [],
+              "healed_this_turn": false,
+              "outgoing_damage_reduction": 0,
+              "paralyzed_since_turn": 0,
+              "placed_this_turn": true,
+              "status_conditions": [],
+              "used_abilities": []
+            }
+          ],
+          "deck": [
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__"
+          ],
+          "discard": [],
+          "energy_attached_this_turn": false,
+          "hand": [
+            "sv1-ener-8",
+            "svm-marnie-pride",
+            "sv1-153",
+            "svm-bronzor"
+          ],
+          "healed_this_turn": false,
+          "name": "Arena-Seat-1",
+          "prizes": [
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__"
+          ],
+          "retreated_this_turn": false,
+          "stadium_played_this_turn": false,
+          "stadium_used_this_turn": false,
+          "supporter_played_this_turn": false,
+          "vstar_power_used": false,
+          "was_ko_by_attack": false
+        }
+      ],
+      "public_deck_keys": [
+        "psychic",
+        "steel"
+      ],
+      "result_conditions": [
+        [],
+        []
+      ],
+      "result_reason": "",
+      "result_status": "ONGOING",
+      "revision": 9,
+      "rules_options": {
+        "apply_type_matchups": false
+      },
+      "rules_profile_id": "CN_MAINLAND_3_1_0",
+      "setup_actor_idx": -1,
+      "setup_ready": [
+        true,
+        true
+      ],
+      "setup_stage": "COMPLETE",
+      "snapshot_version": 3,
+      "stadium_card_id": "",
+      "stadium_owner_idx": -1,
+      "turn_fact_book": {
+        "current_turn": {
+          "knockouts": []
+        },
+        "previous_turn": {
+          "knockouts": []
+        }
+      },
+      "turn_number": 1,
+      "winner": -1
+    },
+    "request_id": "challenge-arena:focused:r0:steel-vs-psychic:c3:9:action",
+    "revision": 9,
+    "seed": 3495419561,
+    "state": {
+      "action_log": [
+        "Arena-Seat-0 抛掷硬币：0 次正面，1 次反面。",
+        "Arena-Seat-1 选择了先攻。",
+        "Arena-Seat-0 抽取了 7 张卡牌。",
+        "Arena-Seat-1 抽取了 7 张卡牌。",
+        "Arena-Seat-1 暗置宝可梦。",
+        "Arena-Seat-1 暗置宝可梦。",
+        "Arena-Seat-1 暗置宝可梦。",
+        "Arena-Seat-1 暗置宝可梦。",
+        "Arena-Seat-1 完成了开局宝可梦放置。",
+        "Arena-Seat-0 暗置宝可梦。",
+        "Arena-Seat-0 暗置宝可梦。",
+        "Arena-Seat-0 完成了开局宝可梦放置。",
+        "—— Arena-Seat-1 的回合 ——",
+        "Arena-Seat-1 抽取了 1 张卡牌。"
+      ],
+      "active_player_idx": 1,
+      "ai_runtime_projection": "ai_public_state_v1",
+      "apply_type_matchups": false,
+      "extra_draws": [
+        0,
+        0
+      ],
+      "first_player_idx": 1,
+      "mulligan_bonus_max": 0,
+      "mulligan_count": [
+        0,
+        0
+      ],
+      "opening_coin_winner_idx": 1,
+      "pending_promotions": [],
+      "phase": "MAIN",
+      "players": [
+        {
+          "active": {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "sv1-111",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          "bench": [
+            null,
+            null,
+            null,
+            null,
+            {
+              "all_prevented": false,
+              "attached_tool_id": "",
+              "can_evolve_this_turn": true,
+              "card_id": "sv1-110",
+              "damage_counters": 0,
+              "damage_prevented": false,
+              "energy_card_ids": [],
+              "evolution_stack_ids": [],
+              "healed_this_turn": false,
+              "outgoing_damage_reduction": 0,
+              "paralyzed_since_turn": 0,
+              "placed_this_turn": true,
+              "status_conditions": [],
+              "used_abilities": []
+            }
+          ],
+          "deck": [
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__"
+          ],
+          "discard": [],
+          "energy_attached_this_turn": false,
+          "hand": [
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__"
+          ],
+          "healed_this_turn": false,
+          "name": "Arena-Seat-0",
+          "prizes": [
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__"
+          ],
+          "retreated_this_turn": false,
+          "stadium_played_this_turn": false,
+          "stadium_used_this_turn": false,
+          "supporter_played_this_turn": false,
+          "vstar_power_used": false,
+          "was_ko_by_attack": false
+        },
+        {
+          "active": {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-zamazenta",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          "bench": [
+            null,
+            {
+              "all_prevented": false,
+              "attached_tool_id": "",
+              "can_evolve_this_turn": true,
+              "card_id": "svm-bronzor",
+              "damage_counters": 0,
+              "damage_prevented": false,
+              "energy_card_ids": [],
+              "evolution_stack_ids": [],
+              "healed_this_turn": false,
+              "outgoing_damage_reduction": 0,
+              "paralyzed_since_turn": 0,
+              "placed_this_turn": true,
+              "status_conditions": [],
+              "used_abilities": []
+            },
+            null,
+            {
+              "all_prevented": false,
+              "attached_tool_id": "",
+              "can_evolve_this_turn": true,
+              "card_id": "svm-skarmory",
+              "damage_counters": 0,
+              "damage_prevented": false,
+              "energy_card_ids": [],
+              "evolution_stack_ids": [],
+              "healed_this_turn": false,
+              "outgoing_damage_reduction": 0,
+              "paralyzed_since_turn": 0,
+              "placed_this_turn": true,
+              "status_conditions": [],
+              "used_abilities": []
+            },
+            {
+              "all_prevented": false,
+              "attached_tool_id": "",
+              "can_evolve_this_turn": true,
+              "card_id": "svm-cobalion",
+              "damage_counters": 0,
+              "damage_prevented": false,
+              "energy_card_ids": [],
+              "evolution_stack_ids": [],
+              "healed_this_turn": false,
+              "outgoing_damage_reduction": 0,
+              "paralyzed_since_turn": 0,
+              "placed_this_turn": true,
+              "status_conditions": [],
+              "used_abilities": []
+            }
+          ],
+          "deck": [
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__",
+            "__hidden_card__"
+          ],
+          "discard": [],
+          "energy_attached_this_turn": false,
+          "hand": [
+            "sv1-ener-8",
+            "svm-marnie-pride",
+            "sv1-153",
+            "svm-bronzor"
+          ],
+          "healed_this_turn": false,
+          "name": "Arena-Seat-1",
+          "prizes": [
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__",
+            "__hidden_prize__"
+          ],
+          "retreated_this_turn": false,
+          "stadium_played_this_turn": false,
+          "stadium_used_this_turn": false,
+          "supporter_played_this_turn": false,
+          "vstar_power_used": false,
+          "was_ko_by_attack": false
+        }
+      ],
+      "public_deck_keys": [
+        "psychic",
+        "steel"
+      ],
+      "result_conditions": [
+        [],
+        []
+      ],
+      "result_reason": "",
+      "result_status": "ONGOING",
+      "revision": 9,
+      "rules_options": {
+        "apply_type_matchups": false
+      },
+      "rules_profile_id": "CN_MAINLAND_3_1_0",
+      "setup_actor_idx": -1,
+      "setup_ready": [
+        true,
+        true
+      ],
+      "setup_stage": "COMPLETE",
+      "snapshot_version": 3,
+      "stadium_card_id": "",
+      "stadium_owner_idx": -1,
+      "turn_fact_book": {
+        "current_turn": {
+          "knockouts": []
+        },
+        "previous_turn": {
+          "knockouts": []
+        }
+      },
+      "turn_number": 1,
+      "winner": -1
+    },
+    "use_deck_inspection": true,
+    "use_strategy_optimization": true,
+    "actions": [
+      {
+        "schema_version": 4,
+        "action_id": "",
+        "base_revision": 9,
+        "actor": 1,
+        "kind": "ATTACH_ENERGY",
+        "source": {
+          "card_id": "sv1-ener-8",
+          "index": 0,
+          "kind": "card",
+          "player": 1,
+          "zone": "hand"
+        },
+        "target": {
+          "card_id": "svm-zamazenta",
+          "kind": "pokemon",
+          "player": 1,
+          "slot": "active"
+        },
+        "payload": {}
+      },
+      {
+        "schema_version": 4,
+        "action_id": "",
+        "base_revision": 9,
+        "actor": 1,
+        "kind": "ATTACH_ENERGY",
+        "source": {
+          "card_id": "sv1-ener-8",
+          "index": 0,
+          "kind": "card",
+          "player": 1,
+          "zone": "hand"
+        },
+        "target": {
+          "card_id": "svm-bronzor",
+          "kind": "pokemon",
+          "player": 1,
+          "slot": "bench_1"
+        },
+        "payload": {}
+      },
+      {
+        "schema_version": 4,
+        "action_id": "",
+        "base_revision": 9,
+        "actor": 1,
+        "kind": "ATTACH_ENERGY",
+        "source": {
+          "card_id": "sv1-ener-8",
+          "index": 0,
+          "kind": "card",
+          "player": 1,
+          "zone": "hand"
+        },
+        "target": {
+          "card_id": "svm-skarmory",
+          "kind": "pokemon",
+          "player": 1,
+          "slot": "bench_3"
+        },
+        "payload": {}
+      },
+      {
+        "schema_version": 4,
+        "action_id": "",
+        "base_revision": 9,
+        "actor": 1,
+        "kind": "ATTACH_ENERGY",
+        "source": {
+          "card_id": "sv1-ener-8",
+          "index": 0,
+          "kind": "card",
+          "player": 1,
+          "zone": "hand"
+        },
+        "target": {
+          "card_id": "svm-cobalion",
+          "kind": "pokemon",
+          "player": 1,
+          "slot": "bench_4"
+        },
+        "payload": {}
+      },
+      {
+        "schema_version": 4,
+        "action_id": "",
+        "base_revision": 9,
+        "actor": 1,
+        "kind": "PLAY_TRAINER",
+        "source": {
+          "card_id": "sv1-153",
+          "index": 2,
+          "kind": "card",
+          "player": 1,
+          "zone": "hand"
+        },
+        "target": null,
+        "payload": {}
+      },
+      {
+        "schema_version": 4,
+        "action_id": "",
+        "base_revision": 9,
+        "actor": 1,
+        "kind": "PLAY_BASIC",
+        "source": {
+          "card_id": "svm-bronzor",
+          "index": 3,
+          "kind": "card",
+          "player": 1,
+          "zone": "hand"
+        },
+        "target": {
+          "kind": "slot",
+          "player": 1,
+          "slot": "bench_0"
+        },
+        "payload": {}
+      },
+      {
+        "schema_version": 4,
+        "action_id": "",
+        "base_revision": 9,
+        "actor": 1,
+        "kind": "PLAY_BASIC",
+        "source": {
+          "card_id": "svm-bronzor",
+          "index": 3,
+          "kind": "card",
+          "player": 1,
+          "zone": "hand"
+        },
+        "target": {
+          "kind": "slot",
+          "player": 1,
+          "slot": "bench_2"
+        },
+        "payload": {}
+      },
+      {
+        "schema_version": 4,
+        "action_id": "",
+        "base_revision": 9,
+        "actor": 1,
+        "kind": "END_TURN",
+        "source": null,
+        "target": null,
+        "payload": {}
+      }
+    ]
+  }
+}

@@ -23,6 +23,8 @@ struct CardSemanticProfile {
     bool bench_damage = false;
     bool recovery = false;
     bool acceleration = false;
+    bool energy_search = false;
+    bool discard_energy_source = false;
     bool random = false;
     bool reveals_information = false;
     bool irreversible = false;
@@ -74,6 +76,12 @@ public:
     ) const;
 
     void set_strategy_optimization(bool enabled) noexcept;
+    // A choice changes accessible zones, not board rules. Score that resource
+    // projection without repeatedly rebuilding the same RulesSession.
+    double resource_value(const RulesSession &position, const Value &state,
+        std::int32_t actor) const;
+    double readiness_value(const RulesSession &position, const Value &state,
+        std::int32_t actor) const;
 
 private:
     AttackerPipeline attacker_pipeline(
@@ -81,6 +89,10 @@ private:
         const Value &state,
         std::int32_t actor
     ) const;
+    AttackerClock combat_clock(const RulesSession &position, const Value &state,
+        std::int32_t actor, const Value &pokemon, const std::string &slot) const;
+    double prize_route(const RulesSession &position, const Value &state,
+        std::int32_t actor, const AttackerPipeline &pipeline, double gust_probability) const;
     AttackerClock attacker_clock(
         const RulesSession &position,
         const Value &state,
@@ -99,6 +111,7 @@ private:
     Value decks_ = Value::make_object();
     const TraditionalStrategyCatalog &strategies_;
     std::map<std::string, std::string> evolves_from_by_name_;
+    CardSemanticModel semantics_;
     bool strategy_optimization_ = true;
 };
 

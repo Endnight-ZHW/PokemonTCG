@@ -30,6 +30,7 @@ using namespace challenge;
         decks_(std::move(decks)), evaluator_(catalog_),
         strategy_catalog_(std::move(strategies), catalog_),
         trusted_evaluator_(catalog_, decks_, strategy_catalog_),
+        resource_analyzer_(catalog_, decks_, strategy_catalog_),
         information_set_(information_set), root_actor_(root_actor),
         strategy_optimization_(strategy_optimization) {
         const ptcg::ai::Value *cards = catalog_.find("cards");
@@ -60,6 +61,10 @@ using namespace challenge;
         counters["prize_aware_choice_adjustments"] = static_cast<int64_t>(
             prize_aware_choice_adjustments_.load(std::memory_order_relaxed));
         counters["strategy_optimization_enabled"] = strategy_optimization_;
+        counters["time_budget_exhausted"] = time_budget_exhausted();
+        counters["choice_bundle_evaluations"] = static_cast<int64_t>(choice_bundle_evaluations_.load());
+        counters["choice_bundle_changes"] = static_cast<int64_t>(choice_bundle_changes_.load());
+        counters["choice_bundle_cache_hits"] = static_cast<int64_t>(choice_bundle_cache_hits_.load());
         return counters;
     }
 
@@ -91,6 +96,9 @@ using namespace challenge;
                 position, pending, typed_pending, response)
             || single_choice_response(position, pending, typed_pending, response)) {
             ++native_choice_resolutions_;
+            if (strategy_optimization_ && !time_budget_exhausted()) {
+                improve_choice_bundle(position, pending, typed_pending, response);
+            }
             return true;
         }
         if (forced_choice_response(

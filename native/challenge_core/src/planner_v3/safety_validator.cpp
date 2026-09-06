@@ -34,6 +34,7 @@ struct ReplayResult {
     bool attacked = false;
     bool ended = false;
     bool terminal = false;
+    bool unpredictable = false;
     std::int32_t winner = -1;
     std::size_t prizes = 0;
     std::string reason;
@@ -88,6 +89,8 @@ ReplayResult replay_sequence(
             actor,
             "strategic-intent-safety-" + std::to_string(index));
         const RulesSessionResult applied = branch->apply_action_for_search(bound);
+        output.unpredictable = output.unpredictable || std::any_of(
+            applied.events.begin(), applied.events.end(), challenge::event_is_unpredictable);
         if (!applied.success) {
             output.reason = "rules_rejected_plan_step";
             return output;
@@ -99,6 +102,7 @@ ReplayResult replay_sequence(
             return output;
         }
         const bool terminal = provider.terminal(*branch);
+        output.unpredictable = output.unpredictable || trace.unpredictable;
         const bool ended = terminal || provider.action_ends_turn(*matched)
             || provider.decision_actor(*branch) != actor;
         if (ended) {
@@ -181,13 +185,10 @@ ValidationResult SafetyValidator::validate(
             provider,
             false);
         if (!legacy.valid) return {false, "legacy_shadow_replay_failed"};
-        if (legacy.attacked && !selected.attacked) {
-            return {false, "sacrificed_legacy_attack"};
-        }
-        if (legacy.prizes > selected.prizes) {
-            return {false, "missed_deterministic_prize"};
-        }
-        if (legacy.terminal && legacy.winner == actor
+        // Taking fewer prizes now or using a setup turn is a strategy choice.
+        // The planner compares complete reply/recovery outcomes before this
+        // validator checks legality; only a proven win remains inviolable.
+        if (legacy.terminal && legacy.winner == actor && !legacy.unpredictable
             && (!selected.terminal || selected.winner != actor)) {
             return {false, "sacrificed_legacy_win"};
         }

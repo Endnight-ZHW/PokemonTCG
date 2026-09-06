@@ -1,4 +1,5 @@
 #include "ptcg_traditional_evaluation_detail.hpp"
+#include "ptcg_game_internal.hpp"
 
 namespace ptcg::ai::traditional_trusted_detail {
 
@@ -298,7 +299,9 @@ std::int64_t reference_modified_attack_damage(
     const Value &defender,
     std::int64_t base_damage,
     const Value &cards,
-    bool ignore_defender_damage_effects
+    bool ignore_defender_damage_effects,
+    bool ignore_weakness,
+    bool ignore_resistance
 ){
     if (base_damage <= 0) return std::max<std::int64_t>(0, base_damage);
     std::int64_t damage = base_damage;
@@ -429,9 +432,10 @@ std::int64_t reference_modified_attack_damage(
     };
     if (!ignore_defender_damage_effects) damage -= aura_reduction(true);
     if (damage <= 0) return 0;
-    // Challenge/Deep normalize apply_type_matchups=false before trusted
-    // evaluation, so Weakness and Resistance deliberately do not enter this
-    // frozen projection.
+    const Value *card_rows = field(cards, "cards");
+    damage = game_detail::apply_active_type_matchups(
+        card_rows == nullptr ? cards : *card_rows, state, attacker, defender,
+        damage, ignore_weakness, ignore_resistance);
     if (!ignore_defender_damage_effects) {
         damage -= aura_reduction(false);
         const std::string defender_tool_id = string_field(
@@ -477,6 +481,8 @@ std::int64_t estimated_attack_damage(
     const auto flattened = flatten_effects(array_field(attack, "effects"));
     bool full_damage = false;
     bool ignore_defender = false;
+    bool ignore_weakness = false;
+    bool ignore_resistance = false;
     static const std::set<std::string> full_kinds{
         "attack_damage_formula", "damage_per_self_damage", "damage_per_self_energy",
         "damage_per_self_energy_type", "damage_plus_bench", "damage_per_hand_size",
@@ -495,6 +501,8 @@ std::int64_t estimated_attack_damage(
                 || bool_field(*params, "ignore_defender_damage_effects")
                 || bool_field(*params, "ignore_defender_effects")
                 || bool_field(*params, "ignore_effects");
+            ignore_weakness = ignore_weakness || bool_field(*params, "ignore_weakness");
+            ignore_resistance = ignore_resistance || bool_field(*params, "ignore_resistance");
         }
     }
     std::int64_t damage = full_damage ? 0 : integer_field(attack, "damage");
@@ -515,7 +523,8 @@ std::int64_t estimated_attack_damage(
     }
     if (damage <= 0 || defender == nullptr) return std::max<std::int64_t>(0, damage);
     return reference_modified_attack_damage(
-        state, actor, *attacker, *defender, damage, cards, ignore_defender);
+        state, actor, *attacker, *defender, damage, cards, ignore_defender,
+        ignore_weakness, ignore_resistance);
 }
 
 std::int64_t best_available_damage(

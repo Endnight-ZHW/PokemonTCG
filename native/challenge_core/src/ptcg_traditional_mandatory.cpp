@@ -263,11 +263,13 @@ const Value *attack_definition(
     const Value &action
 ) {
     const Value *definition = card(cards, action_card_id(action));
+    if (definition == nullptr) return nullptr;
     const std::int64_t index = integer_field(
         action_payload(action), "attack_index",
         integer_field(action_payload(action), "attack_idx", -1));
-    const Value::Array &attacks = definition == nullptr
-        ? Value::Array{} : array_field(*definition, "attacks");
+    // Keep the returned attack owned by cards. Mixing an empty temporary with
+    // array_field in a conditional expression would copy and then free it.
+    const Value::Array &attacks = array_field(*definition, "attacks");
     return index >= 0 && static_cast<std::size_t>(index) < attacks.size()
         ? &attacks[static_cast<std::size_t>(index)] : nullptr;
 }

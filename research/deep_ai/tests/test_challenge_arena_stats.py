@@ -6,6 +6,7 @@ from deep_ai.challenge_arena_stats import (
     gate_status,
     paired_bootstrap_interval,
     summarize_games,
+    strength_acceptance_status,
 )
 
 
@@ -58,6 +59,37 @@ def _game(
 
 
 class ChallengeArenaStatsTests(unittest.TestCase):
+    def test_acceptance_requires_complete_deck_coverage_and_zero_truncation(self):
+        games = [_game(f"win-{index}", f"block-{index // 4}", 2,
+                       candidate_deck="fire", baseline_deck="fire", block_size=4) for index in range(40)]
+        summary = summarize_games(games, bootstrap_samples=100, min_deck_games=1)
+        self.assertEqual(strength_acceptance_status(summary, {"fire"}), "pass")
+        self.assertEqual(strength_acceptance_status(summary, {"fire", "water"}), "inconclusive")
+        games[-1].update(truncated=True, terminal=False, strength_eligible=False)
+        summary = summarize_games(games, bootstrap_samples=100, min_deck_games=1)
+        self.assertEqual(strength_acceptance_status(summary, {"fire"}), "fail")
+
+    def test_weak_deck_is_not_mistaken_for_controller_regression(self):
+        games = []
+        for index in range(4):
+            games.append(_game(f"weak-{index}", "pair", 0, block_size=8,
+                               candidate_deck="fire", baseline_deck="water"))
+            games.append(_game(f"strong-{index}", "pair", 2, block_size=8,
+                               candidate_deck="water", baseline_deck="fire"))
+        summary = summarize_games(games, bootstrap_samples=100, min_deck_games=1)
+        effect = summary["breakdowns"]["paired_deck_effects"]["fire"]
+        self.assertEqual(effect["candidate_score_rate"], 0)
+        self.assertEqual(effect["baseline_score_rate"], 0)
+        self.assertEqual(effect["score_delta"], 0)
+        self.assertFalse(summary["gates"]["promotion"]["candidate_deck_regressions"])
+
+    def test_paired_deck_gate_detects_actual_regression(self):
+        games = [_game(f"loss-{index}", "pair", 0, block_size=4,
+                       candidate_deck="fire", baseline_deck="fire") for index in range(4)]
+        summary = summarize_games(games, bootstrap_samples=100, min_deck_games=1)
+        self.assertEqual(summary["breakdowns"]["paired_deck_effects"]["fire"]["score_delta"], -1)
+        self.assertIn("fire", summary["gates"]["promotion"]["candidate_deck_regressions"])
+
     def test_paired_bootstrap_is_deterministic_and_block_weighted(self) -> None:
         games = [
             *[_game(f"win-{index}", "large", 2, block_size=8) for index in range(8)],

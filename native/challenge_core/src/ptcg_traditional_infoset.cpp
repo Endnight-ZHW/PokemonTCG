@@ -364,7 +364,9 @@ Value normalize_public_snapshot(
         source, "setup_stage", "INITIAL_PLACEMENT");
     Value rules_options = object_field_or(
         source, "rules_options", Value::make_object());
-    rules_options["apply_type_matchups"] = Value(false);
+    const bool type_matchups = bool_field(rules_options, "apply_type_matchups",
+        bool_field(source, "apply_type_matchups"));
+    rules_options["apply_type_matchups"] = Value(type_matchups);
     Value result(Object{
         {"players", Value(std::move(players))},
         {"active_player_idx", Value(integer_field(source, "active_player_idx"))},
@@ -385,7 +387,7 @@ Value normalize_public_snapshot(
         {"choice_sequence", Value(integer_field(source, "choice_sequence"))},
         {"public_deck_keys", pair_array(array_field_or(
             source, "public_deck_keys", Value::make_array()), Value(""), Value(""))},
-        {"apply_type_matchups", Value(false)},
+        {"apply_type_matchups", Value(type_matchups)},
         {"rules_profile_id", Value(string_field(
             source, "rules_profile_id", "CN_MAINLAND_3_1_0"))},
         {"rules_options", std::move(rules_options)},
@@ -940,8 +942,6 @@ Value TraditionalInformationSet::sample_state(std::uint32_t seed) const {
         cursor += deck_count;
         row["prizes"] = Value(slice(pool, cursor, cursor + prize_count));
     }
-    result["apply_type_matchups"] = Value(false);
-    result["rules_options"]["apply_type_matchups"] = Value(false);
     result["resolution_stack"] = empty_resolution_stack();
     result["snapshot_version"] = Value(3);
     for (const char *annotation : {

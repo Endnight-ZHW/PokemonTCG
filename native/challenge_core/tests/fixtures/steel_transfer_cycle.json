@@ -1,0 +1,540 @@
+{
+  "description": "Verified journal replay from the late game of a steel mirror truncated by repeated Metal Transfer; resume at turn 31.",
+  "rng_state": 1545675533,
+  "snapshot": {
+    "action_log": [
+      "Arena-Seat-0 使用了特性「金属转移」。",
+      "Arena-Seat-0 完成了一项效果选择。",
+      "Arena-Seat-0 选择了 1 张要转附的能量。",
+      "Arena-Seat-0 将 钢能量 附着到了 拖拖蚓。",
+      "Arena-Seat-0 使用了特性「金属转移」。",
+      "Arena-Seat-0 完成了一项效果选择。",
+      "Arena-Seat-0 选择了 1 张要转附的能量。",
+      "Arena-Seat-0 将 钢能量 附着到了 苍响。",
+      "Arena-Seat-0 使用了特性「金属转移」。",
+      "Arena-Seat-0 完成了一项效果选择。",
+      "Arena-Seat-0 选择了 1 张要转附的能量。",
+      "Arena-Seat-0 将 钢能量 附着到了 拖拖蚓。",
+      "Arena-Seat-0 使用了特性「金属转移」。",
+      "Arena-Seat-0 完成了一项效果选择。",
+      "Arena-Seat-0 选择了 1 张要转附的能量。",
+      "Arena-Seat-0 将 钢能量 附着到了 苍响。",
+      "Arena-Seat-0 使用了特性「金属转移」。",
+      "Arena-Seat-0 完成了一项效果选择。",
+      "Arena-Seat-0 选择了 1 张要转附的能量。",
+      "Arena-Seat-0 将 钢能量 附着到了 拖拖蚓。"
+    ],
+    "active_player_idx": 0,
+    "apply_type_matchups": false,
+    "choice_sequence": 539,
+    "extra_draws": [
+      0,
+      0
+    ],
+    "first_player_idx": 0,
+    "mulligan_bonus_max": 0,
+    "mulligan_count": [
+      0,
+      0
+    ],
+    "opening_coin_winner_idx": 1,
+    "pending_promotions": [],
+    "phase": "MAIN",
+    "players": [
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "",
+          "can_evolve_this_turn": true,
+          "card_id": "svm-zamazenta",
+          "damage_counters": 10,
+          "damage_prevented": false,
+          "energy_card_ids": [],
+          "evolution_stack_ids": [],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": false,
+          "status_conditions": [],
+          "used_abilities": []
+        },
+        "bench": [
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-klefki",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-8"
+            ],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "svg2-exps",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-zacian",
+            "damage_counters": 10,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-8"
+            ],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "svl-vitb",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-smeargle",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-8"
+            ],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "modifiers": [
+              {
+                "condition": {
+                  "target_active": true
+                },
+                "conflict_policy": "commutative",
+                "controller": 0,
+                "duration": "until_leave_play",
+                "hook": "MODIFY_DAMAGE",
+                "layer": "attacker_adjust",
+                "operation": {
+                  "amount": 10,
+                  "kind": "damage_delta"
+                },
+                "priority": 0,
+                "scope": "attached_attacker",
+                "source_ref": {
+                  "card_id": "svm-smeargle",
+                  "kind": "pokemon",
+                  "player": 0,
+                  "slot": "bench_2"
+                },
+                "stacking": "replace_same_source"
+              }
+            ],
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "svl-vitb",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-orthworm",
+            "damage_counters": 10,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-8",
+              "sv1-ener-8"
+            ],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "modifiers": [
+              {
+                "condition": {
+                  "target_active": true
+                },
+                "conflict_policy": "commutative",
+                "controller": 0,
+                "duration": "until_leave_play",
+                "hook": "MODIFY_DAMAGE",
+                "layer": "attacker_adjust",
+                "operation": {
+                  "amount": 10,
+                  "kind": "damage_delta"
+                },
+                "priority": 0,
+                "scope": "attached_attacker",
+                "source_ref": {
+                  "card_id": "svm-orthworm",
+                  "kind": "pokemon",
+                  "player": 0,
+                  "slot": "bench_1"
+                },
+                "stacking": "replace_same_source"
+              }
+            ],
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": false,
+            "card_id": "svm-bronzong",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [
+              "svm-bronzor"
+            ],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          }
+        ],
+        "deck": [
+          "sv1-180",
+          "svm-cobalion",
+          "sv1-ener-8",
+          "sv1-ener-8",
+          "sv1-ener-8",
+          "svm-smeargle"
+        ],
+        "discard": [
+          "sv2-young",
+          "sv2-catch",
+          "sv1-153",
+          "sv1-150",
+          "sv1-180",
+          "sv1-150",
+          "svm-marnie-pride",
+          "sv3-134",
+          "sv1-153",
+          "sv1-189",
+          "sv1-151",
+          "sv1-ener-8",
+          "sv1-ener-8",
+          "svm-zamazenta",
+          "sv1-189",
+          "sv1-150",
+          "sv1-153",
+          "sv1-ener-8",
+          "sv1-180",
+          "sv2-young",
+          "sv1-150",
+          "sv1-ener-8",
+          "sv1-ener-8",
+          "svm-bronzor",
+          "sv1-ener-8",
+          "svm-dialga",
+          "sv1-151",
+          "svm-skarmory",
+          "sv1-151"
+        ],
+        "energy_attached_this_turn": false,
+        "hand": [
+          "svm-bronzor",
+          "svm-bronzong",
+          "sv2-young",
+          "sv1-153"
+        ],
+        "healed_this_turn": false,
+        "name": "Arena-Seat-0",
+        "prizes": [
+          "sv2-catch",
+          "sv1-180",
+          "svm-marnie-pride",
+          "sv1-ener-8",
+          "svm-zacian",
+          "sv1-176"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": false,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      },
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "",
+          "can_evolve_this_turn": true,
+          "card_id": "svm-zacian",
+          "damage_counters": 0,
+          "damage_prevented": false,
+          "energy_card_ids": [
+            "sv1-ener-8",
+            "sv1-ener-8",
+            "sv1-ener-8"
+          ],
+          "evolution_stack_ids": [],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": false,
+          "status_conditions": [],
+          "used_abilities": []
+        },
+        "bench": [
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-smeargle",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-8"
+            ],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "svl-vitb",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-zamazenta",
+            "damage_counters": 7,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-8",
+              "sv1-ener-8",
+              "sv1-ener-8"
+            ],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "modifiers": [
+              {
+                "condition": {
+                  "target_active": true
+                },
+                "conflict_policy": "commutative",
+                "controller": 1,
+                "duration": "until_leave_play",
+                "hook": "MODIFY_DAMAGE",
+                "layer": "attacker_adjust",
+                "operation": {
+                  "amount": 10,
+                  "kind": "damage_delta"
+                },
+                "priority": 0,
+                "scope": "attached_attacker",
+                "source_ref": {
+                  "card_id": "svm-zamazenta",
+                  "kind": "pokemon",
+                  "player": 1,
+                  "slot": "active"
+                },
+                "stacking": "replace_same_source"
+              }
+            ],
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "svl-vitb",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-skarmory",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-8"
+            ],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "modifiers": [
+              {
+                "condition": {
+                  "target_active": true
+                },
+                "conflict_policy": "commutative",
+                "controller": 1,
+                "duration": "until_leave_play",
+                "hook": "MODIFY_DAMAGE",
+                "layer": "attacker_adjust",
+                "operation": {
+                  "amount": 10,
+                  "kind": "damage_delta"
+                },
+                "priority": 0,
+                "scope": "attached_attacker",
+                "source_ref": {
+                  "card_id": "svm-skarmory",
+                  "kind": "pokemon",
+                  "player": 1,
+                  "slot": "bench_2"
+                },
+                "stacking": "replace_same_source"
+              }
+            ],
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-dialga",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-8"
+            ],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "svg2-exps",
+            "can_evolve_this_turn": true,
+            "card_id": "svm-bronzong",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-8"
+            ],
+            "evolution_stack_ids": [
+              "svm-bronzor"
+            ],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          }
+        ],
+        "deck": [
+          "sv1-150",
+          "sv1-ener-8",
+          "sv1-ener-8",
+          "svm-smeargle",
+          "svm-cobalion",
+          "svm-bronzong",
+          "svm-bronzor",
+          "sv1-180",
+          "sv1-ener-8",
+          "sv1-180",
+          "sv1-ener-8"
+        ],
+        "discard": [
+          "sv2-catch",
+          "sv2-young",
+          "sv1-151",
+          "sv1-180",
+          "sv2-catch",
+          "sv1-153",
+          "sv1-176",
+          "svm-marnie-pride",
+          "sv1-151",
+          "sv1-189",
+          "sv1-150",
+          "sv2-young",
+          "sv1-150",
+          "sv1-180"
+        ],
+        "energy_attached_this_turn": true,
+        "hand": [
+          "sv1-153",
+          "sv1-151",
+          "sv1-153",
+          "sv1-153",
+          "svm-bronzor",
+          "sv2-young",
+          "svm-marnie-pride",
+          "sv1-ener-8",
+          "svm-zacian",
+          "svm-klefki",
+          "sv3-134",
+          "sv1-189"
+        ],
+        "healed_this_turn": false,
+        "name": "Arena-Seat-1",
+        "prizes": [
+          "svm-orthworm",
+          "sv1-150",
+          "svm-zamazenta"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": false,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      }
+    ],
+    "processed_action_ids": [],
+    "public_deck_keys": [
+      "steel",
+      "steel"
+    ],
+    "resolution_stack": {
+      "context": {},
+      "frames": [],
+      "pending_request": null,
+      "schema_version": 3,
+      "sequence": 0
+    },
+    "result_conditions": [
+      [],
+      []
+    ],
+    "result_reason": "",
+    "result_status": "ONGOING",
+    "revision": 481,
+    "rules_options": {
+      "apply_type_matchups": false
+    },
+    "rules_profile_id": "CN_MAINLAND_3_1_0",
+    "setup_actor_idx": -1,
+    "setup_bonus_card_ids": [
+      [],
+      []
+    ],
+    "setup_ready": [
+      true,
+      true
+    ],
+    "setup_stage": "COMPLETE",
+    "snapshot_version": 3,
+    "stadium_card_id": "",
+    "stadium_owner_idx": -1,
+    "turn_fact_book": {
+      "current_turn": {
+        "knockouts": []
+      },
+      "previous_turn": {
+        "knockouts": []
+      }
+    },
+    "turn_number": 31,
+    "winner": -1
+  }
+}

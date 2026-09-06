@@ -47,7 +47,6 @@ std::optional<double> TraditionalTrustedEvaluator::action_score(
 ) const {
     if (actor != 0 && actor != 1) return std::nullopt;
     const Value &state = position.search_state();
-    if (bool_field(state, "apply_type_matchups")) return std::nullopt;
     const std::string kind = string_field(action, "kind");
     const Value &owner = player(state, actor);
     if (kind == "END_TURN") return -220.0;
@@ -693,9 +692,6 @@ std::optional<double> TraditionalTrustedEvaluator::choice_option_score(
     const Value &choice_view,
     const Value &option
 ) const {
-    if (bool_field(position.search_state(), "apply_type_matchups")) {
-        return std::nullopt;
-    }
     return base_choice_option_score(
         position, position.search_state(), actor,
         choice_view, option, cards_, decks_);

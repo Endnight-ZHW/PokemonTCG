@@ -33,6 +33,7 @@ private:
         std::string last_action_signature;
         std::int64_t last_revision = -1;
         std::map<std::string, std::set<std::string>> blocked_by_state;
+        std::map<std::string, std::set<std::string>> chosen_by_state;
     };
     struct CachedPlanStep {
         Value action = Value::make_object();

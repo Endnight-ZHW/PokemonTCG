@@ -52,7 +52,7 @@ scheduling, persistent match plans, intent selection, goal-directed complete-
 turn compilation, partial-order pruning, opponent worst-response plus recovery
 scenarios, and full-sequence safety validation. The engine id is
 `strategic_intent_v3`; low-confidence plans fall back transactionally to the
-frozen `turn_beam_v2` path.
+compatibility `turn_beam_v2` path.
 
 The optimized attacker pipeline excludes a pure support engine with no
 attacker evolution from `next_slot`/`backup_slot`, while still counting every
@@ -60,10 +60,44 @@ Benched Pokemon as protection against an immediate board-out. The behavior and
 the prize-aware choice adjustments are controlled by the evaluation-only
 `use_strategy_optimization` treatment (enabled by the game client).
 
-`strategic_intent_v3` is the product default after passing the all-ten-deck
-paired mirror promotion gate at 0.575 [0.525, 0.650], with zero structural
-errors and an acceptable 1.115 search-P95 ratio. `turn_beam_v2` remains the
-explicit compatibility/fallback engine and the frozen Arena baseline.
+`strategic_intent_v3` remains the product default. The strength refactor compares
+against the actual v3 product controller at commit `a1d0f452`, pinned by the
+`challenge_pre_strength_refactor` Arena specification. `turn_beam_v2` remains
+the compatibility/fallback engine; its internal scoring also uses the corrected
+facts. Historical v2-to-v3 promotion measurements are not evidence for this
+new implementation. See `docs/TRADITIONAL_AI_STRENGTH_REFACTOR.md` at the
+repository root for this refactor's separate acceptance results.
+
+`strategic_combat.cpp` centralizes per-attack energy/evolution access, expected
+damage, coin/mill knockout odds, reload costs and a bounded three-attack prize
+route. Readiness and deck-access factors are heuristics, while selected action
+sequences are settled by the authoritative rules engine. Shared readiness feeds
+frequent leaf evaluation; the more expensive prize route belongs to strategic
+comparison and bounded card-bundle evaluation. Choice priors order candidates
+but complete resource combinations can change the selection.
+
+Reply and recovery comparisons each allow six atomic actions and require a
+completed exchange before approving a general replacement. Immediate prizes
+are a preference rather than a blanket veto on setup or sacrifice lines.
+Rules legality, proven wins, public-information boundaries and cycle protection
+remain mandatory. Attacker commitments are re-evaluated when occupants or
+resources change instead of treating a board slot as a Pokemon identity.
+
+The optional request field `time_budget_ms` is a cooperative per-decision
+deadline covering planning, replies and choice bundles. Native default `0`
+disables it for reproducible fixed-work Arena runs; the Godot client supplies
+`5000` when omitted. Expiry returns the best verified available action and
+does not act as generation cancellation or commit an incomplete continuation.
+Actual work and deadline expiry are exposed through incremental
+`native_performance_counters` fields. This is not an OS-enforced hard deadline.
+
+Lifetime regressions are captured in `tests/fixtures/legacy_replay_lifetime.json`
+and `tests/fixtures/mandatory_attack_lifetime.json`. Sequence replay owns an
+action value before replacing its rules session, and mandatory tactics borrow
+attack definitions directly from the catalog rather than a temporary array.
+The standalone research agent supports `sanitizer=address` in its SCons build;
+`research/deep_ai/scripts/check_challenge_memory.py` replays both real requests
+through IPC, checks legal responses and saves sanitizer output and fixture hashes.
 
 ## Decision execution and regression checks
 

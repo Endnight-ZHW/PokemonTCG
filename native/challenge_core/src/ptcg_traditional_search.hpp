@@ -4,6 +4,7 @@
 #include "ptcg_value.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -89,6 +90,13 @@ struct TraditionalReplyEvaluation {
 class TraditionalSearchProvider {
 public:
     virtual ~TraditionalSearchProvider() = default;
+    void set_deadline(std::chrono::steady_clock::time_point deadline) noexcept {
+        deadline_ = deadline;
+    }
+    bool time_budget_exhausted() const noexcept {
+        return deadline_ != std::chrono::steady_clock::time_point{}
+            && std::chrono::steady_clock::now() >= deadline_;
+    }
 
     virtual std::unique_ptr<RulesSession> determinize(
         std::size_t sample_index,
@@ -145,6 +153,8 @@ public:
         const RulesSession &position,
         std::int32_t actor
     ) = 0;
+private:
+    std::chrono::steady_clock::time_point deadline_{};
 };
 
 class TraditionalTurnBeamSearch {

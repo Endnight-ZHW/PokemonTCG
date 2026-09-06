@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
+from collections import defaultdict
+import hashlib
+import random
 
 from .evaluation_fairness import (
     complete_strength_blocks,
@@ -12,6 +15,61 @@ from .evaluation_fairness import (
 )
 
 SUMMARY_SCHEMA = "ptcg.challenge_arena.summary/3"
+
+
+def paired_deck_effects(games: Sequence[Mapping[str, Any]], *, seed: int,
+                        samples: int, alpha: float) -> dict[str, dict[str, Any]]:
+    """Compare each deck in both agent roles within the same complete block.
+
+    Raw cross-deck win rates measure deck strength as well as controller skill.
+    Incomplete or one-direction-only matchups cannot estimate this difference.
+    """
+    blocks: dict[tuple[str, str], dict[str, list[float]]] = defaultdict(
+        lambda: {"candidate": [], "baseline": []})
+    for row in games:
+        block = str(row["block_id"])
+        score = float(row["candidate_score_x2"]) / 2
+        blocks[(block, str(row["candidate_deck"]))]["candidate"].append(score)
+        blocks[(block, str(row["baseline_deck"]))]["baseline"].append(1 - score)
+    by_deck: dict[str, list[tuple[int, float, float]]] = defaultdict(list)
+    for (_, deck), roles in sorted(blocks.items()):
+        candidate, baseline = roles["candidate"], roles["baseline"]
+        if not candidate or len(candidate) != len(baseline):
+            continue
+        by_deck[deck].append((len(candidate), sum(candidate), sum(baseline)))
+    result = {}
+    for deck, rows in sorted(by_deck.items()):
+        count = sum(row[0] for row in rows)
+        candidate = sum(row[1] for row in rows) / count
+        baseline = sum(row[2] for row in rows) / count
+        rng = random.Random(seed ^ int.from_bytes(hashlib.sha256(deck.encode()).digest()[:8], "big"))
+        distribution = []
+        for _ in range(samples):
+            selected = [rows[rng.randrange(len(rows))] for _ in rows]
+            distribution.append(sum(row[1] - row[2] for row in selected)
+                                / sum(row[0] for row in selected))
+        result[deck] = {"games": count, "paired_blocks": len(rows),
+                        "candidate_score_rate": candidate, "baseline_score_rate": baseline,
+                        "score_delta": candidate - baseline,
+                        "score_delta_ci": [_percentile(distribution, alpha / 2),
+                                           _percentile(distribution, 1 - alpha / 2)],
+                        "confidence_level": 1 - alpha}
+    return result
+
+
+def strength_acceptance_status(summary: Mapping[str, Any], expected_decks: set[str]) -> str:
+    """Strict complete-matrix acceptance, separate from smoke/PR diagnostics."""
+    integrity = summary["integrity"]
+    if (integrity["structural_errors"] or integrity["truncated_games"]
+            or not summary["reliability"]["passed"]):
+        return "fail"
+    effects = summary["breakdowns"]["paired_deck_effects"]
+    if set(effects) != expected_decks or any(row["games"] < 40 for row in effects.values()):
+        return "inconclusive"
+    if summary["gates"]["promotion"]["passed"]:
+        return "pass"
+    upper = summary["paired_statistics"]["score_rate_ci"][1]
+    return "fail" if upper is not None and upper < 0.5 else "inconclusive"
 
 
 def paired_bootstrap_interval(
@@ -154,7 +212,7 @@ def _gates(
         key: value
         for key, value in candidate_decks.items()
         if int(value.get("games", 0)) >= int(min_deck_games)
-        and float(value.get("score_rate", 0.0)) < 0.45
+        and float(value.get("score_delta", 0.0)) < -0.05 - 1e-12
     }
     regression_checks = {
         "structural_errors_zero": structural_errors == 0,
@@ -178,6 +236,8 @@ def _gates(
         "configuration": {
             "truncated_rate_limit": truncated_rate_limit,
             "minimum_deck_games": int(min_deck_games),
+            "deck_regression_metric": "within_block_candidate_minus_baseline",
+            "deck_regression_floor": -0.05,
         },
         "regression": {
             "passed": all(regression_checks.values()),
@@ -295,7 +355,9 @@ def summarize_games(
         + counts["unclassified_failures"]
     )
     breakdowns = standard_breakdowns(strength)
-    candidate_decks = breakdowns["candidate_deck"]
+    candidate_decks = paired_deck_effects(strength, seed=bootstrap_seed,
+        samples=bootstrap_samples, alpha=confidence_alpha)
+    breakdowns["paired_deck_effects"] = candidate_decks
     candidate_performance = _agent_performance(rows, "candidate")
     baseline_performance = _agent_performance(rows, "baseline")
     total = len(rows)

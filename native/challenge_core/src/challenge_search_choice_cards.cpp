@@ -444,7 +444,6 @@ using namespace challenge;
                 choice.max_select, static_cast<std::int64_t>(options.size()))));
         if (maximum <= 1 || choice.allow_duplicates) return false;
         ptcg::ai::Value virtual_state = position.snapshot();
-        virtual_state["apply_type_matchups"] = ptcg::ai::Value(false);
         std::vector<std::size_t> selected_indices;
         ptcg::ai::Value::Array selected_ids;
         selected_indices.reserve(maximum);

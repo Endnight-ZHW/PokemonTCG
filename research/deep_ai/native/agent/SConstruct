@@ -16,6 +16,9 @@ source_root = path_argument("source_root", repository_root)
 output_root = path_argument("output_root", os.path.join("..", "..", "build", "arena-agent"))
 implementation_hash = ARGUMENTS.pop("implementation_hash", "unversioned")
 build_id = ARGUMENTS.pop("build_id", "working-tree")
+sanitizer = ARGUMENTS.pop("sanitizer", "none")
+if sanitizer not in ("none", "address"):
+    raise ValueError("sanitizer must be none or address")
 core_root = os.path.join(source_root, "native", "ptcg_core", "src")
 challenge_root = os.path.join(source_root, "native", "challenge_core", "src")
 common_root = os.path.join(repository_root, "native", "common")
@@ -30,9 +33,15 @@ env.Append(CPPDEFINES=[
 ])
 if sys.platform == "win32":
     env.Append(CXXFLAGS=["/EHsc", "/std:c++17", "/O2", "/utf-8"])
+    if sanitizer == "address":
+        env.Append(CXXFLAGS=["/fsanitize=address", "/Z7"])
+        env.Append(LINKFLAGS=["/DEBUG", "/INCREMENTAL:NO"])
 else:
     env.Append(CXXFLAGS=["-std=c++17", "-O3", "-pthread"])
     env.Append(LINKFLAGS=["-pthread"])
+    if sanitizer == "address":
+        env.Append(CXXFLAGS=["-fsanitize=address", "-g", "-fno-omit-frame-pointer"])
+        env.Append(LINKFLAGS=["-fsanitize=address"])
 
 with open(os.path.join(source_root, "native", "ptcg_core", "source_manifest.json"), encoding="utf-8") as handle:
     core_manifest = json.load(handle)

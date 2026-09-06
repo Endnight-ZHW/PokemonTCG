@@ -371,8 +371,11 @@ std::optional<PlanNode> evaluate_fixed_sequence(
         const Value &legal = root->search_legal_action_candidates(actor);
         const Value *matched = challenge::find_action_by_signature(legal, expected);
         if (matched == nullptr) return std::nullopt;
+        // The next state replaces root and destroys its legal-action cache.
+        // Keep a value before advancing so the turn-boundary check stays valid.
+        const Value action = *matched;
         if (depth == 0) {
-            node.root_action = *matched;
+            node.root_action = action;
             node.root_signature = expected;
             node.sequence_signature = expected;
         } else {
@@ -383,7 +386,7 @@ std::optional<PlanNode> evaluate_fixed_sequence(
             provider,
             *root,
             actor,
-            *matched,
+            action,
             provider.branch_seed(
                 seed,
                 depth + 1,
@@ -393,13 +396,13 @@ std::optional<PlanNode> evaluate_fixed_sequence(
             "strategic-legacy-shadow-" + std::to_string(depth),
             nodes_expanded);
         if (!expanded.state) return std::nullopt;
-        node.sequence.push_back(*matched);
+        node.sequence.push_back(action);
         node.unpredictable = node.unpredictable || expanded.trace.unpredictable;
         node.cacheable = node.cacheable && !expanded.trace.unpredictable;
         root = std::move(expanded.state);
         node.depth = depth + 1;
         node.ended = provider.terminal(*root)
-            || provider.action_ends_turn(*matched)
+            || provider.action_ends_turn(action)
             || provider.decision_actor(*root) != actor;
         if (node.ended && depth + 1 != sequence.size()) return std::nullopt;
     }
@@ -449,7 +452,7 @@ RecoveryEvaluation evaluate_recovery_turn(
         std::int64_t score_milli = 0;
         std::string sequence_signature;
     };
-    constexpr std::size_t max_depth = 3;
+    constexpr std::size_t max_depth = 6;
     constexpr std::size_t beam_width = 2;
     constexpr std::size_t actions_per_node = 3;
     std::vector<RecoveryNode> frontier{
@@ -560,36 +563,7 @@ bool deterministic_extension_of_legacy(
     return true;
 }
 
-bool reallocates_legacy_energy(
-    const PlanNode &candidate,
-    const PlanNode &legacy
-) {
-    const Value *candidate_attachment = nullptr;
-    const Value *legacy_attachment = nullptr;
-    for (const Value &action : candidate.sequence) {
-        if (string_field(action, "kind") == "ATTACH_ENERGY") {
-            candidate_attachment = &action;
-            break;
-        }
-    }
-    for (const Value &action : legacy.sequence) {
-        if (string_field(action, "kind") == "ATTACH_ENERGY") {
-            legacy_attachment = &action;
-            break;
-        }
-    }
-    if (candidate_attachment == nullptr || legacy_attachment == nullptr) {
-        return false;
-    }
-    // This authority is specifically for allocating the same scarce energy
-    // to a different attacker, not for approving an unrelated line that also
-    // happens to attach another energy card.
-    return action_card_id(*candidate_attachment)
-            == action_card_id(*legacy_attachment)
-        && action_slot(*candidate_attachment) != action_slot(*legacy_attachment);
-}
-
-constexpr std::size_t threat_scenario_samples = 5;
+constexpr std::size_t threat_scenario_samples = 3;
 using LegacyScenarioCache = std::array<
     std::optional<RecoveryEvaluation>, threat_scenario_samples>;
 
@@ -649,7 +623,7 @@ ThreatScenarioComparison compare_threat_scenarios(
         return output;
     }
     TraditionalSearchConfig reply_config;
-    reply_config.reply_depth = 2;
+    reply_config.reply_depth = 6;
     reply_config.reply_width = 3;
     reply_config.reply_actions_per_node = 3;
     reply_config.belief_samples = 1;
@@ -657,6 +631,7 @@ ThreatScenarioComparison compare_threat_scenarios(
     TraditionalTurnBeamSearch reply_search(provider, reply_config);
     long double total_gain = 0.0L;
     for (std::size_t sample = 0; sample < threat_scenario_samples; ++sample) {
+        if (provider.time_budget_exhausted()) return output;
         if (cancelled(cancel_requested)) {
             output.cancelled = true;
             return output;
@@ -872,6 +847,7 @@ CompilationResult compile_turn_plans(
     if (frontier.size() > beam_width) frontier.resize(beam_width);
 
     for (std::size_t depth = 2; depth <= max_depth; ++depth) {
+        if (provider.time_budget_exhausted()) break;
         if (frontier.empty() || output.nodes_expanded >= node_budget
             || cancelled(cancel_requested)) break;
         std::vector<PlanNode> next;
@@ -988,11 +964,12 @@ std::optional<PlanScore> replay_plan_score(
         const Value &legal = root->search_legal_action_candidates(actor);
         const Value *matched = challenge::find_action_by_signature(legal, expected);
         if (matched == nullptr) break;
+        const Value action = *matched;
         ExpandedAction expanded = apply_action(
             provider,
             *root,
             actor,
-            *matched,
+            action,
             provider.branch_seed(
                 seed, depth + 1, candidate.root_signature,
                 candidate.sequence_signature, depth),
@@ -1002,7 +979,7 @@ std::optional<PlanScore> replay_plan_score(
         unpredictable = unpredictable || expanded.trace.unpredictable;
         root.reset(new RulesSession(*expanded.state));
         if (provider.terminal(*root)
-            || provider.action_ends_turn(*matched)
+            || provider.action_ends_turn(action)
             || provider.decision_actor(*root) != actor) break;
     }
     const StrategicFacts facts = analyzer.analyze(*root, belief, actor);
@@ -1024,6 +1001,7 @@ void evaluate_scenarios(
     if (belief_samples <= 1 || compiled.candidates.empty()) return;
     const std::size_t evaluated = compiled.candidates.size();
     for (std::size_t index = 0; index < evaluated; ++index) {
+        if (provider.time_budget_exhausted()) return;
         if (cancelled(cancel_requested)) return;
         PlanNode &candidate = compiled.candidates[index];
         std::vector<double> utilities{plan_score_utility(candidate.score)};
@@ -1094,20 +1072,15 @@ MatchPlan HorizonPlanner::update_plan(
     plan.match_id = match_id;
     plan.actor = facts.actor;
     plan.primary_attacker_slot = facts.own_attackers.current_slot;
-    const auto slot_still_present = [&](const std::string &slot) {
-        return !slot.empty() && std::any_of(
-            facts.own_attackers.attackers.begin(),
-            facts.own_attackers.attackers.end(),
-            [&slot](const AttackerClock &clock) {
-                return clock.slot == slot;
-            });
-    };
-    if (!slot_still_present(plan.next_attacker_slot)) {
-        plan.next_attacker_slot = facts.own_attackers.next_slot;
-    }
-    if (!slot_still_present(plan.backup_attacker_slot)
-        || plan.backup_attacker_slot == plan.next_attacker_slot) {
-        plan.backup_attacker_slot = facts.own_attackers.backup_slot;
+    // Slots are locations, not Pokemon identities. Re-evaluate commitments
+    // after a promotion, evolution, loss, or a newly accessible resource.
+    plan.next_attacker_slot = facts.own_attackers.next_slot;
+    plan.backup_attacker_slot = facts.own_attackers.backup_slot;
+    plan.next_attacker_card_id.clear();
+    plan.backup_attacker_card_id.clear();
+    for (const AttackerClock &clock : facts.own_attackers.attackers) {
+        if (clock.slot == plan.next_attacker_slot) plan.next_attacker_card_id = clock.card_id;
+        if (clock.slot == plan.backup_attacker_slot) plan.backup_attacker_card_id = clock.card_id;
     }
     plan.risk_mode = facts.risk_mode;
     plan.updated_turn = facts.turn_number;
@@ -1205,6 +1178,16 @@ std::vector<TurnIntent> HorizonPlanner::propose_intents(
             90,
         });
     }
+    if (facts.resources.disruption_outs_visible > 0) {
+        result.push_back(TurnIntent{IntentKind::DisruptOpponent, "opponent", 0,
+            0.0, true, facts.threats.active_ko_threat ? 200 : 100});
+    }
+    if (facts.resources.recovery_outs_visible > 0
+        && (facts.energy_schedule.total_missing_energy > 0
+            || facts.own_attackers.next_readiness < 0.75)) {
+        result.push_back(TurnIntent{IntentKind::RecoverResources,
+            plan.next_attacker_slot, 0, 0.0, true, 160});
+    }
     result.push_back(TurnIntent{
         IntentKind::EndTurnSafely,
         "active",
@@ -1221,8 +1204,7 @@ DeliberationLevel DeliberationGate::select(
     const std::vector<TurnIntent> &intents,
     std::size_t legal_action_count
 ) const {
-    if (legal_action_count <= 1 || (!intents.empty()
-            && intents.front().kind == IntentKind::WinNow)) {
+    if (legal_action_count <= 1) {
         return DeliberationLevel::D0;
     }
     const double uncertainty = std::max({
@@ -1271,6 +1253,11 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
     const std::atomic<bool> *cancel_requested
 ) {
     StrategicPlannerResult output;
+    if (provider.time_budget_exhausted()) {
+        output.fallback_requested = true;
+        output.fallback_reason = "time_budget_exhausted";
+        return output;
+    }
     if (actor < 0 || actor > 1 || !root_actions.is_array()
         || root_actions.as_array().empty() || !information.valid()) {
         output.fallback_requested = true;
@@ -1414,6 +1401,11 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
         if (action != nullptr) config.legacy_action = *action;
         config.legacy_sequence = array_field(legacy, "sequence");
     }
+    if (provider.time_budget_exhausted()) {
+        output.fallback_requested = true;
+        output.fallback_reason = "time_budget_exhausted";
+        return output;
+    }
     const std::string legacy_signature = config.legacy_action.is_object()
             && !config.legacy_action.as_object().empty()
         ? challenge::value_action_signature(config.legacy_action)
@@ -1433,8 +1425,10 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
     const bool turn_opening_window = shadow_kind == "ATTACH_ENERGY"
         && (attempted_turn == turn_compilation_attempts_.end()
             || attempted_turn->second != initial.turn_number);
+    const bool resource_window = shadow_kind == "PLAY_TRAINER"
+        || shadow_kind == "USE_ABILITY" || shadow_kind == "RETREAT";
     if (!terminal_window && !reply_comparison_window
-        && !turn_opening_window) {
+        && !turn_opening_window && !resource_window) {
         output.fallback_requested = true;
         output.fallback_reason = "no_proof_obligation";
         output.explanation = Value(Value::Object{
@@ -1467,6 +1461,7 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
         config.node_budget,
         config.evaluation_smoke,
         cancel_requested);
+    output.plan.nodes_expanded = compiled.nodes_expanded;
     if (cancelled(cancel_requested)) {
         output.plan.cancelled = true;
         output.plan.error = "cancelled";
@@ -1538,8 +1533,8 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
     bool selected_extension_dominance = false;
     bool selected_direct_attack_dominance = false;
     bool selected_general_plan_dominance = false;
-    if (best_ptr->score.terminal_rank != 3 && legacy != nullptr) {
-        constexpr std::size_t scenario_candidate_limit = 2;
+    if ((best_ptr->score.terminal_rank != 3 || best_ptr->unpredictable) && legacy != nullptr) {
+        constexpr std::size_t scenario_candidate_limit = 3;
         const std::size_t evaluated = std::min(
             scenario_candidate_limit, compiled.candidates.size());
         const PlanNode *scenario_choice = nullptr;
@@ -1549,13 +1544,7 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
         bool scenario_choice_general_plan = false;
         for (std::size_t index = 0; index < evaluated; ++index) {
             const PlanNode &candidate = compiled.candidates[index];
-            if (candidate.root_signature == legacy_signature
-                || candidate.score.guaranteed_prize_value
-                    < legacy->score.guaranteed_prize_value
-                || candidate.score.catastrophe_probability
-                    > legacy->score.catastrophe_probability + 1e-9
-                || candidate.score.prize_clock_margin
-                    < legacy->score.prize_clock_margin - 1e-9) {
+            if (candidate.root_signature == legacy_signature || !candidate.ended) {
                 continue;
             }
             const bool extension_shape = deterministic_extension_of_legacy(
@@ -1568,12 +1557,8 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
                     == "DECLARE_ATTACK"
                 && action_card_id(candidate.root_action)
                     == action_card_id(legacy->root_action);
-            const bool energy_reallocation_shape = reallocates_legacy_energy(
-                candidate, *legacy);
-            if (!extension_shape && !direct_attack_shape
-                && !energy_reallocation_shape) {
-                continue;
-            }
+            const bool whole_turn_shape = candidate.ended && legacy->ended;
+            if (!whole_turn_shape) continue;
             ThreatScenarioComparison comparison = compare_threat_scenarios(
                 provider,
                 candidate,
@@ -1584,24 +1569,22 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
                 belief,
                 actor,
                 seed,
-                direct_attack_shape ? 50000 : 100000,
+                initial.risk_mode == RiskMode::SeekUpside ? -30000 : 0,
                 cancel_requested);
             compiled.nodes_expanded += comparison.nodes_expanded;
             if (index == 0) threat_comparison = comparison;
             if (!comparison.valid) continue;
-            const bool extension = extension_shape
-                && comparison.minimum_gain_milli >= 100000
-                && comparison.mean_gain_milli >= 120000;
+            const bool robust_improvement = comparison.minimum_gain_milli
+                    >= (initial.risk_mode == RiskMode::SeekUpside ? -30000 : 0)
+                && comparison.mean_gain_milli >= 30000;
+            const bool extension = extension_shape && robust_improvement;
             const bool direct_attack = direct_attack_shape
-                && comparison.minimum_gain_milli >= 50000
-                && comparison.mean_gain_milli >= 50000;
-            // Permit a whole-line replacement when it reallocates the turn's
-            // single energy commitment to another attacker.  Every sampled
-            // worst reply plus recovery turn must still dominate materially,
-            // after the immediate prize/clock/risk non-regression checks.
-            const bool general_plan = energy_reallocation_shape
-                && comparison.minimum_gain_milli >= 100000
-                && comparison.mean_gain_milli >= 120000;
+                && robust_improvement;
+            // Compare complete exchanges, including setup turns and resource
+            // preservation. A losing position may accept bounded downside;
+            // sampled terminal losses still exceed that tolerance by orders
+            // of magnitude and a proven legacy win remains protected.
+            const bool general_plan = whole_turn_shape && robust_improvement;
             if (!extension && !direct_attack && !general_plan) continue;
             if (scenario_choice == nullptr
                 || comparison.minimum_gain_milli
@@ -1628,7 +1611,7 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
     }
     const PlanNode &best = *best_ptr;
     const bool best_finishes_turn = best.ended;
-    bool confident = best.score.terminal_rank == 3 && best_finishes_turn;
+    bool confident = best.score.terminal_rank == 3 && best_finishes_turn && !best.unpredictable;
     std::string confidence_reason = confident ? "terminal_win"
         : (best.root_signature == legacy_signature
             ? "no_strategic_root_delta" : "strategic_override_ambiguous");

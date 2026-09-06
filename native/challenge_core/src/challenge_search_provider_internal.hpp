@@ -8,6 +8,7 @@
 #include "ptcg_traditional_policy.hpp"
 #include "ptcg_traditional_strategy.hpp"
 #include "ptcg_traditional_trusted.hpp"
+#include "planner_v3/strategic_facts.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -54,6 +55,7 @@ std::string deck_key_for_actor( const ptcg::ai::RulesSession &position, std::int
 std::string strategy_id_for_actor( const ptcg::ai::RulesSession &position, std::int32_t actor ) override;
 ptcg::ai::Value cache_precondition( const ptcg::ai::RulesSession &position, std::int32_t actor ) override;
 private:
+void improve_choice_bundle(const RulesSession &position, const Value &pending, const typed::ChoiceView &choice, Value &response);
 bool select_choice(const RulesSession &position, const Value &pending, const typed::ChoiceView &choice, Value &response);
 bool duplicate_energy_choice_response( const ptcg::ai::RulesSession &position, const ptcg::ai::Value &pending, const ptcg::ai::typed::ChoiceView &choice, ptcg::ai::Value &response ) const;
 bool confirm_choice_response( const ptcg::ai::RulesSession &position, const ptcg::ai::Value &pending, const ptcg::ai::typed::ChoiceView &choice, ptcg::ai::Value &response ) const;
@@ -71,6 +73,7 @@ ptcg::ai::Value decks_;
 ptcg::ai::TraditionalPositionEvaluator evaluator_;
 ptcg::ai::TraditionalStrategyCatalog strategy_catalog_;
 ptcg::ai::TraditionalTrustedEvaluator trusted_evaluator_;
+planner_v3::StrategicAnalyzer resource_analyzer_;
 const ptcg::ai::TraditionalInformationSet *information_set_ = nullptr;
 std::int32_t root_actor_ = -1;
 bool strategy_optimization_ = true;
@@ -84,6 +87,11 @@ std::atomic<std::uint64_t> native_choice_resolutions_{0};
     std::atomic<std::uint64_t> known_reply_actions_promoted_{0};
     std::atomic<std::uint64_t> simulated_action_score_calls_{0};
     mutable std::atomic<std::uint64_t> prize_aware_choice_adjustments_{0};
+    std::atomic<std::uint64_t> choice_bundle_evaluations_{0};
+    std::atomic<std::uint64_t> choice_bundle_changes_{0};
+    std::atomic<std::uint64_t> choice_bundle_cache_hits_{0};
+    std::mutex choice_bundle_cache_mutex_;
+    std::map<std::string, Value::Array> choice_bundle_cache_;
 };
 
 } // namespace ptcg::ai::challenge_detail

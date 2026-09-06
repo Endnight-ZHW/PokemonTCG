@@ -109,6 +109,15 @@ struct AttackerClock {
     std::size_t prizes_exposed = 1;
     std::size_t missing_energy = 0;
     std::size_t missing_evolution_steps = 0;
+    std::size_t attack_index = 0;
+    std::string planned_card_id;
+    double reload_turns = 0.0;
+    double access_probability = 1.0;
+    double ready_ko_probability = 0.0;
+    double planned_ko_probability = 0.0;
+    std::size_t promotion_delay = 0;
+    Value forecast_pokemon;
+    Value forecast_owner;
     double readiness_probability = 0.0;
     bool primary_role = false;
     bool secondary_role = false;
@@ -149,6 +158,7 @@ struct ResourceLedger {
     std::size_t energy_in_hand = 0;
     std::size_t switch_outs_visible = 0;
     std::size_t recovery_outs_visible = 0;
+    std::size_t disruption_outs_visible = 0;
     double flexibility = 0.0;
 };
 
@@ -178,6 +188,8 @@ struct MatchPlan {
     std::string primary_attacker_slot;
     std::string next_attacker_slot;
     std::string backup_attacker_slot;
+    std::string next_attacker_card_id;
+    std::string backup_attacker_card_id;
     std::string prize_route_target = "opponent_active";
     std::size_t reserved_switch_outs = 1;
     std::size_t reserved_recovery_outs = 1;
