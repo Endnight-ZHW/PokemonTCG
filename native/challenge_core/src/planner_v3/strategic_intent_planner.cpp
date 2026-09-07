@@ -1000,7 +1000,10 @@ std::vector<std::pair<std::size_t, bool>> comparison_candidates(
         return selected;
     }
     const auto eligible = [&](std::size_t i) {
-        return candidates[i].ended && (!anchor || candidates[i].sequence_signature != anchor->sequence_signature)
+        // A proven win still needs validation/publication when the bootstrap
+        // already found it; only ordinary self-comparisons are redundant.
+        const bool win = candidates[i].score.terminal_rank == 3 && !candidates[i].unpredictable;
+        return candidates[i].ended && (win || !anchor || candidates[i].sequence_signature != anchor->sequence_signature)
             && std::none_of(selected.begin(), selected.end(), [&](const auto &entry) { return entry.first == i; });
     };
     const auto retain_primary = [&](bool new_root) {
