@@ -175,4 +175,5 @@ guided-02 的实现哈希为 `2ce1fdf9b0c4e1e4359d8aa3a7e7cc199b561773a248d6f2d1
 分配；该样例的因果棋力收益尚未验证，不能用单个决策变化代替对局验收。
 
 证据位于 `build/traditional-ai-efficiency/guided-development/traditional-efficiency-guided-02/`。
-新候选单／三线程的固定工作一致性及独立 v2 的完整轨迹兼容回放继续执行。
+新候选在这 47 条请求上的单／三线程固定工作回放也完全一致。
+独立 v2 的 313 条完整轨迹兼容回放继续执行；本任务已设置每 30 分钟自动跟进后续验证。
