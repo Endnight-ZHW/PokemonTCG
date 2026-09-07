@@ -303,7 +303,8 @@ std::string ChallengeController::turn_plan_cache_key(
         + "|" + deck_key
         + "|policy=" + (bool_field(request, "use_strategy_optimization", true) ? "1" : "0")
         + (bool_field(request, "use_deck_inspection", true) ? "1" : "0")
-        + (bool_field(request, "internal_anytime_search", true) ? "1" : "0");
+        + (bool_field(request, "internal_anytime_search", true) ? "1" : "0")
+        + (bool_field(request, "internal_dual_guidance", true) ? "1" : "0");
 }
 
 Value ChallengeController::probe_cached_turn_action(
@@ -897,6 +898,7 @@ Value ChallengeController::decide_action(
             request, "use_strategy_optimization", true);
         strategic_config.legacy_decision = get_legacy;
         strategic_config.anytime_search = anytime_search;
+        strategic_config.dual_guidance = anytime_search && bool_field(request, "internal_dual_guidance", true);
         strategic_config.full_diagnostics = bool_field(request, "internal_full_diagnostics");
         planner_v3::StrategicPlannerResult strategic = strategic_planner_->decide(
             string_field(request, "match_instance_id"),

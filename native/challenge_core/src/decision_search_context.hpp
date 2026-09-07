@@ -51,6 +51,7 @@ public:
     std::atomic<std::uint64_t> completed_comparisons{0}, candidate_batches{0};
     std::atomic<std::uint64_t> replay_cache_hits{0}, exchange_cache_hits{0};
     std::atomic<std::uint64_t> reused_initial_plans{0};
+    std::atomic<std::uint64_t> classic_routes_retained{0}, classic_candidates_compared{0};
     std::size_t worker_count = 1;
 
     template<class T> std::optional<T> find_result(const std::string &key) {
@@ -140,6 +141,8 @@ public:
         result["plan_replay_cache_hits"] = Value(static_cast<std::int64_t>(replay_cache_hits.load()));
         result["exchange_cache_hits"] = Value(static_cast<std::int64_t>(exchange_cache_hits.load()));
         result["reused_initial_plans"] = Value(static_cast<std::int64_t>(reused_initial_plans.load()));
+        result["classic_routes_retained"] = Value(static_cast<std::int64_t>(classic_routes_retained.load()));
+        result["classic_candidates_compared"] = Value(static_cast<std::int64_t>(classic_candidates_compared.load()));
         if (budget) {
             const auto status = budget->status();
             result["budget_status"] = Value(status == EvaluationStatus::Complete ? "available"

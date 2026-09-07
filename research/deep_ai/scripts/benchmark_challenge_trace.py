@@ -48,6 +48,7 @@ def main():
     for role in ("baseline", "candidate"):
         parser.add_argument(f"--{role}-search-workers", type=int, choices=(1, 3))
         parser.add_argument(f"--{role}-anytime-search", choices=("enabled", "disabled"))
+        parser.add_argument(f"--{role}-dual-guidance", choices=("enabled", "disabled"))
         parser.add_argument(f"--{role}-search-memoization", choices=("enabled", "disabled"))
     args = parser.parse_args()
     if args.rounds < 1 or args.warmups < 0 or args.time_budget_ms < 0:
@@ -59,7 +60,7 @@ def main():
     totals = {role: defaultdict(float) for role in timings}
     changed = set()
     overrides = {role: {f"internal_{feature}": getattr(args, f"{role}_{feature}") == "enabled"
-        for feature in ("anytime_search", "search_memoization")
+        for feature in ("anytime_search", "search_memoization", "dual_guidance")
         if getattr(args, f"{role}_{feature}") is not None} for role in timings}
     for role in timings:
         if getattr(args, f"{role}_search_workers") is not None:
