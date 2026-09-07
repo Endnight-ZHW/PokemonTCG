@@ -34,13 +34,20 @@ def main() -> int:
     parser.add_argument("--controls-dir", type=Path,
                         help="Frozen-baseline self-play controls; defaults to OUTPUT/fixed-opponent-controls")
     parser.add_argument("--control-workers", type=int, default=8)
+    parser.add_argument("--time-budget-ms", type=int, default=0)
+    parser.add_argument("--search-worker-mode", choices=("single", "gameplay"), default="single")
     parser.add_argument("--declare-only", action="store_true",
                         help="Write immutable strength and fixed-opponent protocols without playing")
     args = parser.parse_args()
+    if not 0 <= args.time_budget_ms <= 60000:
+        parser.error("time budget must be between 0 and 60000 milliseconds")
+    if args.search_worker_mode == "gameplay" and max(args.workers, args.control_workers) > 4:
+        parser.error("gameplay search requires at most four concurrent games")
     candidate = load_agent_spec("strength_candidate", build_manifest=args.candidate_manifest)
-    baseline = load_agent_spec("challenge_pre_strength_refactor", build_manifest=args.baseline_manifest)
+    baseline = load_agent_spec("strength_baseline", build_manifest=args.baseline_manifest)
     options = {"engine": "strategic_intent_v3", "node_budget": 192, "belief_samples": 3,
-               "use_deck_inspection": True, "use_strategy_optimization": True}
+               "use_deck_inspection": True, "use_strategy_optimization": True,
+               "time_budget_ms": args.time_budget_ms, "search_worker_mode": args.search_worker_mode}
     candidate = replace(candidate, evaluation_options=options)
     baseline = replace(baseline, evaluation_options=options)
     deck_keys = set(json.loads((RESEARCH.parents[1] / "godot/data/release_manifest.json").read_text(encoding="utf-8"))["release_decks"])

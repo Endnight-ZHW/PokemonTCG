@@ -15,6 +15,7 @@ from compare_challenge_decisions import (
     ExternalController, RESEARCH_ROOT, append_history, load_product_payloads,
     mix32, native, _flatten_native_rows,
 )
+from deep_ai.challenge_arena_build import sha256_file
 
 
 def main() -> None:
@@ -24,23 +25,32 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=170101)
     parser.add_argument("--max-turn", type=int, default=8)
     parser.add_argument("--max-decisions", type=int, default=100)
+    parser.add_argument("--snapshot-fixture", type=Path,
+                        help="Resume one verified rules snapshot, for late-game latency coverage")
+    parser.add_argument("--time-budget-ms", type=int, default=0)
+    parser.add_argument("--search-workers", type=int, choices=(1, 3), default=1)
     args = parser.parse_args()
     catalog, decks, _ = load_product_payloads()
     keys = json.loads((RESEARCH_ROOT.parents[1] / "godot/data/release_manifest.json").read_text(encoding="utf-8"))["release_decks"]
     args.output.mkdir(parents=True, exist_ok=True)
     captured = []
-    for game, offset in enumerate(range(0, len(keys), 2)):
-        pair = keys[offset:offset + 2]
+    fixture = json.loads(args.snapshot_fixture.read_text(encoding="utf-8")) if args.snapshot_fixture else None
+    pairs = [fixture["snapshot"]["public_deck_keys"]] if fixture else [keys[offset:offset + 2] for offset in range(0, len(keys), 2)]
+    for game, pair in enumerate(pairs):
         if len(pair) != 2:
             raise ValueError("Trace capture requires an even product deck count")
         seed = args.seed + game * 104729
         match_id = f"latency-prefix-{seed}-{game}"
         expand = lambda key: [row["card_id"] for row in decks[key]["cards"] for _ in range(row["count"])]
         session = native.NativeRulesSession()
-        created = session.create(catalog, [expand(key) for key in pair], {"public_deck_keys": pair}, seed)
+        if fixture:
+            session.set_catalog(catalog)
+            created = session.restore(fixture["snapshot"], fixture["rng_state"])
+        else:
+            created = session.create(catalog, [expand(key) for key in pair], {"public_deck_keys": pair}, seed)
         assert created["success"], created
         histories = [[], []]
-        append_history(histories, created["events"])
+        append_history(histories, created.get("events", []))
         requests = []
         agent = ExternalController(args.agent, catalog, decks, args.output / f"game-{game:02d}")
         try:
@@ -60,7 +70,8 @@ def main() -> None:
                     "public_history": copy.deepcopy(histories[actor]), "deck_key": pair[actor],
                     "match_seed": seed, "seed": mix32(seed ^ session.revision ^ actor) or 17,
                     "match_instance_id": match_id, "engine": "strategic_intent_v3", "node_budget": 192,
-                    "belief_samples": 3, "internal_evaluation_batch": True,
+                    "belief_samples": 3, "internal_evaluation_batch": args.search_workers == 1,
+                    "time_budget_ms": args.time_budget_ms,
                     "use_deck_inspection": True, "use_strategy_optimization": True}
                 request.update({"choice": pending} if pending else {"actions": _flatten_native_rows(session.legal_actions(actor))})
                 result = agent.call("decide", request=request, generation=step + 1)
@@ -79,7 +90,10 @@ def main() -> None:
     (args.output / "capture-manifest.json").write_text(json.dumps({
         "schema": "ptcg.challenge_trace_capture/1", "agent_manifest": str(args.agent.resolve()),
         "seed": args.seed, "max_turn": args.max_turn, "max_decisions": args.max_decisions,
-        "requests": len(captured), "decks": keys}, indent=2), encoding="utf-8")
+        "requests": len(captured), "decks": keys, "pairs": pairs,
+        "snapshot_fixture": str(args.snapshot_fixture) if args.snapshot_fixture else None,
+        "snapshot_fixture_sha256": sha256_file(args.snapshot_fixture) if args.snapshot_fixture else None,
+        "time_budget_ms": args.time_budget_ms, "search_workers": args.search_workers}, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

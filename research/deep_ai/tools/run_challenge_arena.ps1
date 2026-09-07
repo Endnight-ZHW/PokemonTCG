@@ -26,6 +26,10 @@ param(
     [int]$MaxDecisions = 512,
     [ValidateRange(1, 600000)]
     [int]$DecisionTimeoutMilliseconds = 120000,
+    [ValidateRange(0, 60000)]
+    [int]$TimeBudgetMilliseconds = 0,
+    [ValidateSet('single', 'gameplay')]
+    [string]$SearchWorkerMode = 'single',
     [ValidateSet('auto', 'none', 'structural', 'regression', 'promotion')]
     [string]$Gate = 'auto',
     [ValidateSet('release-bundle', 'implementation-only', 'same-binary-strategy')]
@@ -104,6 +108,8 @@ $arguments = @(
     '--seed', [string]$Seed,
     '--max-decisions', [string]$MaxDecisions,
     '--decision-timeout-milliseconds', [string]$DecisionTimeoutMilliseconds,
+    '--time-budget-ms', [string]$TimeBudgetMilliseconds,
+    '--search-worker-mode', $SearchWorkerMode,
     '--comparison-mode', $ComparisonMode,
     '--gate', $Gate,
     '--output', $Output

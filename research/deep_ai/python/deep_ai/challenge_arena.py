@@ -422,6 +422,12 @@ def validate_equal_search_contract(
     candidate: ArenaAgentSpec,
     baseline: ArenaAgentSpec,
 ) -> None:
+    for spec in (candidate, baseline):
+        time_budget = spec.evaluation_options.get("time_budget_ms", 0)
+        if isinstance(time_budget, bool) or not isinstance(time_budget, int) or not 0 <= time_budget <= 60000:
+            raise ValueError("challenge_arena_invalid_time_budget")
+        if spec.evaluation_options.get("search_worker_mode", "single") not in {"single", "gameplay"}:
+            raise ValueError("challenge_arena_invalid_search_worker_mode")
     candidate_budget = dict(candidate.evaluation_options)
     baseline_budget = dict(baseline.evaluation_options)
     # Engine identity and owner deck-inspection knowledge are explicit A/B
@@ -532,6 +538,18 @@ def validate_agent_identity(
         raise ValueError("arena_agents_are_identical")
 
 
+def candidate_time_budget(spec: ArenaAgentSpec) -> int:
+    return int(spec.evaluation_options.get("time_budget_ms", 0))
+
+
+def _inner_search_workers(spec: ArenaAgentSpec) -> int:
+    if (spec.evaluation_options.get("search_worker_mode", "single") != "gameplay"
+            or spec.evaluation_options.get("internal_evaluation_smoke", False)):
+        return 1
+    import ptcg_ai_core
+    return int(ptcg_ai_core.ChallengeController().get_contract()["search_worker_count"])
+
+
 class NativeChallengeArena:
     def __init__(
         self,
@@ -549,6 +567,8 @@ class NativeChallengeArena:
         candidate.validate()
         baseline.validate()
         validate_equal_search_contract(candidate, baseline)
+        if candidate.evaluation_options.get("search_worker_mode") == "gameplay" and int(workers) > 4:
+            raise ValueError("gameplay_search_requires_at_most_four_concurrent_games")
         self.catalog = dict(catalog)
         self.decks = dict(decks)
         self.candidate = candidate
@@ -592,10 +612,10 @@ class NativeChallengeArena:
             self.baseline.native_payload(),
             {
                 "concurrent_games": self.workers,
-                "deterministic": True,
+                "deterministic": candidate_time_budget(self.candidate) == 0,
                 "capture_failure_trace": self.capture_failure_trace,
                 "capture_all_decisions": self.trace_all,
-                "inner_search_workers": 1,
+                "inner_search_workers": _inner_search_workers(self.candidate),
             },
         )
         started = time.perf_counter()
@@ -683,8 +703,8 @@ def aggregate_native_metrics(
         "baseline_build_id": baseline.build_id,
         "baseline_backend": baseline.backend,
         "baseline_implementation_hash": baseline.implementation_hash,
-        "deterministic": True,
-        "inner_search_workers": 1,
+        "deterministic": candidate_time_budget(candidate) == 0,
+        "inner_search_workers": _inner_search_workers(candidate),
         "running": False,
         "finished": True,
         "paused": False,
@@ -763,7 +783,7 @@ def build_manifest(
             "decks_hash": canonical_hash(decks),
         },
         "search_contract": {
-            "mode": "fixed_contract",
+            "mode": "wall_clock" if candidate_time_budget(candidate) else "fixed_contract",
             "evaluation_options": dict(candidate.evaluation_options),
             "candidate_evaluation_options": dict(candidate.evaluation_options),
             "baseline_evaluation_options": dict(baseline.evaluation_options),
@@ -789,7 +809,7 @@ def build_manifest(
                     ),
                 },
             },
-            "inner_search_workers": 1,
+            "inner_search_workers": _inner_search_workers(candidate),
         },
         "runtime": {
             "workers": int(workers),

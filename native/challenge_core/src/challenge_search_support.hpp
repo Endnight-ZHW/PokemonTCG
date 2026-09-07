@@ -42,17 +42,19 @@ inline ExpandedAction apply_action(
     const std::string &action_id,
     std::uint64_t &nodes_expanded
 ) {
-    if (provider.time_budget_exhausted()) return {};
+    if (provider.search_stopped()) return {};
     auto branch = parent.fork_for_search(seed);
     if (!branch) return {};
     const Value bound = provider.bind_action(candidate, *branch, actor, action_id);
     const RulesSessionResult applied = branch->apply_action_for_search(bound);
     ++nodes_expanded;
+    ++provider.search_context()->rule_actions;
     if (!applied.success) return {};
     TraditionalChoiceTrace trace;
     trace.unpredictable = std::any_of(
         applied.events.begin(), applied.events.end(), event_is_unpredictable);
     if (!provider.resolve_pending(*branch, actor, nodes_expanded, trace)) return {};
+    if (provider.search_stopped()) return {};
     return {std::shared_ptr<RulesSession>(branch.release()), trace};
 }
 

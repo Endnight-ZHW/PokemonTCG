@@ -19,6 +19,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--fixture", type=Path, action="append", default=[],
+                        help="Additional captured public request to replay under the sanitizer")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     catalog, decks, strategies = load_product_payloads()
@@ -32,6 +34,7 @@ def main() -> None:
     write_json_atomic(config_path, config)
     fixtures = RESEARCH.parents[1] / "native/challenge_core/tests/fixtures"
     paths = [fixtures / name for name in ("legacy_replay_lifetime.json", "mandatory_attack_lifetime.json")]
+    paths.extend(args.fixture)
     requests = [json.loads(path.read_text(encoding="utf-8"))["request"] for path in paths]
     commands = []
     for request in requests:

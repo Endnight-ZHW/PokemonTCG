@@ -50,6 +50,10 @@ ReplayResult replay_sequence(
     bool require_turn_boundary
 ) {
     ReplayResult output;
+    if (provider.search_stopped()) {
+        output.reason = "validation_budget_exhausted";
+        return output;
+    }
     if (sequence.empty() || !authoritative_actions.is_array()) {
         output.reason = "empty_or_invalid_plan";
         return output;
@@ -61,6 +65,10 @@ ReplayResult replay_sequence(
     }
     const std::size_t before = prizes_remaining(position, actor);
     for (std::size_t index = 0; index < sequence.size(); ++index) {
+        if (provider.search_stopped()) {
+            output.reason = "validation_budget_exhausted";
+            return output;
+        }
         const Value &planned = sequence[index];
         if (!planned.is_object()) {
             output.reason = "invalid_action_shape";
@@ -89,6 +97,7 @@ ReplayResult replay_sequence(
             actor,
             "strategic-intent-safety-" + std::to_string(index));
         const RulesSessionResult applied = branch->apply_action_for_search(bound);
+        ++provider.search_context()->rule_actions;
         output.unpredictable = output.unpredictable || std::any_of(
             applied.events.begin(), applied.events.end(), challenge::event_is_unpredictable);
         if (!applied.success) {
@@ -103,7 +112,9 @@ ReplayResult replay_sequence(
         }
         const bool terminal = provider.terminal(*branch);
         output.unpredictable = output.unpredictable || trace.unpredictable;
-        const bool ended = terminal || provider.action_ends_turn(*matched)
+        // Applying an action invalidates the session's legal-action cache.
+        // The bound value remains owned after the transition.
+        const bool ended = terminal || provider.action_ends_turn(bound)
             || provider.decision_actor(*branch) != actor;
         if (ended) {
             output.ended = true;
@@ -122,6 +133,10 @@ ReplayResult replay_sequence(
     output.terminal = provider.terminal(*branch);
     output.winner = static_cast<std::int32_t>(traditional_value::integer_field(
         branch->search_state(), "winner", -1));
+    if (provider.search_stopped()) {
+        output.reason = "validation_budget_exhausted";
+        return output;
+    }
     output.valid = true;
     output.reason = "validated";
     return output;
@@ -193,6 +208,7 @@ ValidationResult SafetyValidator::validate(
             return {false, "sacrificed_legacy_win"};
         }
     }
+    if (provider.search_stopped()) return {false, "validation_budget_exhausted"};
     return {true, require_terminal_win
         ? "validated_terminal_scenarios" : "validated"};
 }

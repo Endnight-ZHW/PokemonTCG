@@ -40,7 +40,7 @@ using namespace challenge;
             const std::int64_t attack_index = payload != nullptr
                 && payload->is_object()
                 ? integer_field(*payload, "attack_index", -1) : -1;
-            const ptcg::ai::Value *definition = cards_.find(card_id);
+            const ptcg::ai::Value *definition = std::as_const(cards_).find(card_id);
             const ptcg::ai::Value *attacks = definition != nullptr
                 ? definition->find("attacks") : nullptr;
             if (attacks == nullptr || !attacks->is_array() || attack_index < 0
@@ -85,7 +85,9 @@ using namespace challenge;
             const ptcg::ai::Value bound = bind_action(
                 action, *simulation, actor,
                 "tactical_guard_" + std::to_string(action_seed));
+            if (search_stopped()) return false;
             const ptcg::ai::RulesSessionResult step = simulation->apply_action(bound);
+            ++search_context()->rule_actions;
             if (!step.success) return false;
             std::uint64_t ignored_nodes = 0;
             ptcg::ai::TraditionalChoiceTrace trace;
@@ -113,7 +115,9 @@ using namespace challenge;
             const ptcg::ai::Value bound = bind_action(
                 action, *simulation, actor,
                 "tactical_first_choice_" + std::to_string(action_seed));
+            if (search_stopped()) return false;
             const ptcg::ai::RulesSessionResult step = simulation->apply_action(bound);
+            ++search_context()->rule_actions;
             if (!step.success) return false;
             const ptcg::ai::Value &pending = simulation->search_pending_choice(actor);
             const ptcg::ai::typed::ChoiceView *typed_pending =
@@ -156,7 +160,7 @@ using namespace challenge;
             const ptcg::ai::Value *source = action.find("source");
             const ptcg::ai::Value *definition = source != nullptr
                 && source->is_object()
-                ? cards_.find(string_field(*source, "card_id")) : nullptr;
+                ? std::as_const(cards_).find(string_field(*source, "card_id")) : nullptr;
             const ptcg::ai::Value *effects = definition != nullptr
                 ? definition->find("trainer_effects") : nullptr;
             static const std::set<std::string> refresh_types{
@@ -482,7 +486,7 @@ using namespace challenge;
                     }
                 } else if (candidate_kind == "EVOLVE") {
                     if (target_slot.rfind("bench_", 0) != 0) continue;
-                    const ptcg::ai::Value *definition = cards_.find(card_id);
+                    const ptcg::ai::Value *definition = std::as_const(cards_).find(card_id);
                     bool on_enter = false;
                     const ptcg::ai::Value *abilities = definition != nullptr
                         ? definition->find("abilities") : nullptr;

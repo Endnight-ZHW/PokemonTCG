@@ -1,6 +1,7 @@
 #include "ptcg_challenge_arena.hpp"
 
 #include "challenge_support.hpp"
+#include "challenge_controller.hpp"
 #include "ptcg_rules_session.hpp"
 
 #include <algorithm>
@@ -532,6 +533,7 @@ void add_evaluation_options(Value &request, const Value &options) {
             "engine", "node_budget", "belief_samples", "skip_mandatory",
             "internal_evaluation_smoke", "use_deck_inspection",
             "use_strategy_optimization",
+            "time_budget_ms", "internal_anytime_search", "internal_search_memoization",
         }) {
             const Value *entry = options.find(key);
             if (entry != nullptr) request[key] = *entry;
@@ -540,9 +542,10 @@ void add_evaluation_options(Value &request, const Value &options) {
     if (field(request, "engine") == nullptr) {
         request["engine"] = Value("turn_beam_v2");
     }
-    // This flag is not caller-overridable: it is the native contract that
-    // prevents nested Challenge search pools from oversubscribing the host.
-    request["internal_evaluation_batch"] = Value(true);
+    // Default remains serial and deterministic. The explicit gameplay mode
+    // is paired by the driver and uses its bounded game concurrency contract.
+    request["internal_evaluation_batch"] = Value(
+        string_field(options, "search_worker_mode", "single") != "gameplay");
 }
 
 void add_agent_metrics(
@@ -722,6 +725,11 @@ NativeChallengeArenaPool::NativeChallengeArenaPool(
     candidate_(std::move(candidate)),
     baseline_(std::move(baseline)),
     config_(config) {
+    const auto time_budget = integer_field(candidate_.evaluation_options, "time_budget_ms", 0);
+    const auto worker_mode = string_field(candidate_.evaluation_options, "search_worker_mode", "single");
+    const bool gameplay = worker_mode == "gameplay";
+    const auto expected_workers = gameplay && !bool_field(candidate_.evaluation_options, "internal_evaluation_smoke")
+        ? integer_field(ChallengeController{}.get_contract(), "search_worker_count", 1) : 1;
     if (!catalog_.is_object() || catalog_.as_object().empty()
         || !decks_.is_object() || decks_.as_object().empty()
         || candidate_.agent_id.empty() || baseline_.agent_id.empty()
@@ -736,8 +744,13 @@ NativeChallengeArenaPool::NativeChallengeArenaPool(
         || candidate_.decision_timeout_milliseconds == 0
         || baseline_.decision_timeout_milliseconds == 0
         || config_.concurrent_games == 0
-        || config_.inner_search_workers != 1
-        || !config_.deterministic) {
+        || time_budget < 0 || time_budget > 60000
+        || time_budget != integer_field(baseline_.evaluation_options, "time_budget_ms", 0)
+        || (worker_mode != "single" && worker_mode != "gameplay")
+        || worker_mode != string_field(baseline_.evaluation_options, "search_worker_mode", "single")
+        || config_.inner_search_workers != expected_workers
+        || (gameplay && config_.concurrent_games > 4)
+        || config_.deterministic != (time_budget == 0)) {
         throw std::invalid_argument("invalid_challenge_arena_configuration");
     }
 }
@@ -1338,7 +1351,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
             const Value *performance = field(
                 decision, "native_performance_counters");
             if (performance == nullptr || !performance->is_object()
-                || integer_field(*performance, "search_worker_count", -1) != 1) {
+                || integer_field(*performance, "search_worker_count", -1) != config_.inner_search_workers) {
                 infrastructure_failure(
                     summary, "search_contract",
                     "challenge_arena_inner_search_worker_contract_failed");
@@ -1362,6 +1375,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
             {"kind", Value(choice ? "choice" : "action")},
             {"decision_seed", Value(static_cast<std::int64_t>(seed))},
             {"decision_us", Value(static_cast<std::int64_t>(decide_us))},
+            {"time_budget_ms", Value(integer_field(request, "time_budget_ms", 0))},
             {"nodes", Value(integer_field(
                 decision, "nodes_expanded",
                 integer_field(decision, "simulations", 0)))},

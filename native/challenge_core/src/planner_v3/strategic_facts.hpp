@@ -13,6 +13,7 @@
 namespace ptcg::ai::planner_v3 {
 
 struct CardSemanticProfile {
+    bool supporter = false;
     bool search = false;
     bool draw = false;
     bool gust = false;
@@ -33,14 +34,15 @@ struct CardSemanticProfile {
 
 class CardSemanticModel {
 public:
-    explicit CardSemanticModel(Value catalog);
+    using Profiles = std::map<std::string, CardSemanticProfile>;
+    explicit CardSemanticModel(Value catalog, std::shared_ptr<const Profiles> profiles = {});
+    const std::shared_ptr<const Profiles> &profiles() const { return profiles_; }
 
     CardSemanticProfile profile(const std::string &card_id) const;
     ActionFootprint action_footprint(const Value &action) const;
 
 private:
-    Value cards_ = Value::make_object();
-    mutable std::map<std::string, CardSemanticProfile> profile_cache_;
+    std::shared_ptr<const Profiles> profiles_;
 };
 
 class BeliefTracker {
@@ -74,6 +76,7 @@ public:
         std::map<std::string, std::string> evolves_from_by_name;
         std::map<std::string, std::vector<std::string>> cards_by_name;
         std::map<std::string, std::vector<EvolutionOption>> evolutions;
+        std::shared_ptr<const CardSemanticModel::Profiles> semantic_profiles;
     };
 
     StrategicAnalyzer(

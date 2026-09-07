@@ -6,6 +6,7 @@
 #include "ptcg_traditional_infoset.hpp"
 #include "ptcg_traditional_mandatory.hpp"
 #include "ptcg_traditional_policy.hpp"
+#include "ptcg_traditional_evaluator.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -299,7 +300,10 @@ std::string ChallengeController::turn_plan_cache_key(
     return match_id + "|" + string_field(request, "engine", "turn_beam_v2")
         + "|" + std::to_string(actor) + "|"
         + std::to_string(value_integer_field(state, "turn_number", 0))
-        + "|" + deck_key;
+        + "|" + deck_key
+        + "|policy=" + (bool_field(request, "use_strategy_optimization", true) ? "1" : "0")
+        + (bool_field(request, "use_deck_inspection", true) ? "1" : "0")
+        + (bool_field(request, "internal_anytime_search", true) ? "1" : "0");
 }
 
 Value ChallengeController::probe_cached_turn_action(
@@ -459,7 +463,7 @@ Value ChallengeController::decide_action(
     ChallengeSearchProvider &provider = *provider_owner;
     provider.search_context()->memoization_enabled = bool_field(request, "internal_search_memoization", true);
     const auto time_budget = std::clamp<std::int64_t>(integer_field(request, "time_budget_ms", 0), 0, 60000);
-    if (time_budget > 0) provider.set_deadline(decision_started + std::chrono::milliseconds(time_budget));
+    provider.search_context()->budget = std::make_shared<DecisionBudget>(decision_started, time_budget, &cancel_requested_);
     const std::int32_t opponent = 1 - actor;
     const std::size_t requested_belief_samples = static_cast<std::size_t>(
         std::max<std::int64_t>(1, std::min<std::int64_t>(
@@ -478,6 +482,7 @@ Value ChallengeController::decide_action(
         || bool_field(request, "internal_evaluation_smoke");
     const std::size_t search_worker_count = evaluation_request
         ? 1 : platform_search_workers;
+    provider.search_context()->worker_count = search_worker_count;
     const auto performance = [&]() {
         Value counters = provider.performance_counters();
         counters["root_actions_input"] = Value(static_cast<std::int64_t>(
@@ -486,8 +491,9 @@ Value ChallengeController::decide_action(
             filtered_actions.as_array().size()));
         counters["root_actions_filtered"] = Value(static_cast<std::int64_t>(
             actions.as_array().size() - filtered_actions.as_array().size()));
-        counters["search_worker_count"] = Value(static_cast<std::int64_t>(
-            search_worker_count));
+        counters["search_worker_count"] = Value(static_cast<std::int64_t>(search_worker_count));
+        counters["anytime_search"] = Value(bool_field(request, "internal_anytime_search", true)
+            && string_field(request, "engine") == "strategic_intent_v3");
         counters["known_opponent_hand_count"] = Value(
             static_cast<std::int64_t>(information_set.known_hand(opponent).size()));
         counters["unknown_opponent_hand_count"] = Value(
@@ -520,17 +526,25 @@ Value ChallengeController::decide_action(
 
     const bool strategic_engine = string_field(request, "engine", "turn_beam_v2")
         == planner_v3::STRATEGIC_INTENT_ENGINE_ID && strategic_planner_ != nullptr;
+    const bool anytime_search = strategic_engine && bool_field(request, "internal_anytime_search", true);
+    provider.search_context()->shortlist_enabled = anytime_search;
+    // A cheap, stable legal incumbent exists before any optional search work.
+    TraditionalPositionEvaluator seed_evaluator(catalog_);
+    Value seed_action = filtered_actions.as_array().front();
+    auto seed_score = seed_evaluator.default_action_score_milli(seed_action);
+    for (const Value &action : filtered_actions.as_array()) {
+        const auto score = seed_evaluator.default_action_score_milli(action);
+        if (score > seed_score || (score == seed_score
+                && value_action_signature(action) < value_action_signature(seed_action))) {
+            seed_action = action; seed_score = score;
+        }
+    }
+    provider.search_context()->set_incumbent(seed_action);
     PlanCacheUpdate legacy_update;
     const auto budget_fallback = [&]() {
         TraditionalSearchResult result;
         result.success = true;
-        result.selected = filtered_actions.as_array().front();
-        for (const Value &action : filtered_actions.as_array()) {
-            if (string_field(action, "kind") == "DECLARE_ATTACK") {
-                result.selected = action;
-                break;
-            }
-        }
+        result.selected = provider.search_context()->incumbent_action();
         result.sequence = {result.selected};
         result.completion_reason = "time_budget_exhausted";
         Value output = search_result_value(result, 0, 0);
@@ -541,6 +555,7 @@ Value ChallengeController::decide_action(
         if (provider.time_budget_exhausted()) return budget_fallback();
         Value legacy_request = request;
         legacy_request["engine"] = Value("turn_beam_v2");
+        legacy_request["internal_anytime_search"] = Value(anytime_search);
         const std::string cache_key = shadow_probe && !strategic_engine
             ? std::string{} : turn_plan_cache_key(legacy_request, information_set);
         if (!bool_field(request, "skip_mandatory")
@@ -638,6 +653,12 @@ Value ChallengeController::decide_action(
             result.selected = forced.action;
             result.sequence = {forced.action};
             result.cache_preconditions = {provider.cache_precondition(mandatory_position, actor)};
+            if (anytime_search && cache_hit && !cache_guarded && legacy_update.entry) {
+                for (const auto &step : legacy_update.entry->steps) {
+                    result.sequence.push_back(step.action);
+                    result.cache_preconditions.push_back(step.precondition);
+                }
+            }
             result.nodes_expanded = forced.nodes_expanded;
             result.completion_reason = completion;
             result.trajectory_hash = trajectory;
@@ -660,6 +681,17 @@ Value ChallengeController::decide_action(
         TraditionalSearchConfig config;
         config.worker_count = search_worker_count;
         config.belief_samples = adaptive_belief_samples;
+        if (anytime_search) {
+            config.root_actions = 8;
+            config.per_root_width = 1;
+            config.max_depth = 6;
+            config.actions_per_node = 4;
+            config.reply_depth = 2;
+            config.reply_width = 2;
+            config.reply_actions_per_node = 2;
+            config.belief_samples = adaptive_belief_samples;
+            config.worker_count = search_worker_count;
+        }
         if (bool_field(request, "internal_evaluation_smoke")) {
             config.root_actions = 2;
             config.per_root_width = 1;
@@ -748,7 +780,15 @@ Value ChallengeController::decide_action(
         const auto get_legacy = [&]() -> const Value & {
             if (!legacy_shadow.has_value()) {
                 const auto started = std::chrono::steady_clock::now();
-                legacy_shadow = run_legacy();
+                if (anytime_search) {
+                    DecisionPhaseScope phase(provider.search_context()->budget.get(), DecisionPhase::Initial);
+                    legacy_shadow = run_legacy();
+                } else {
+                    legacy_shadow = run_legacy();
+                }
+                if (bool_field(*legacy_shadow, "success")) {
+                    provider.search_context()->set_incumbent(value_or(*legacy_shadow, "action", seed_action));
+                }
                 legacy_ms = std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - started).count();
             }
@@ -763,18 +803,14 @@ Value ChallengeController::decide_action(
                 ? value_or(*legacy_shadow, "action", Value::make_object())
                 : Value::make_object();
             const bool forced = row.dominance_resolved;
-            const std::size_t requested_depth = row.deliberation
-                    == planner_v3::DeliberationLevel::D0
-                ? 0 : (row.deliberation == planner_v3::DeliberationLevel::D1
-                    ? 2 : (row.deliberation
-                            == planner_v3::DeliberationLevel::D2 ? 4 : 5));
+            const std::size_t requested_depth = result.requested_depth;
             Value counters = performance();
             counters["strategic_intent_decisions"] = Value(1);
             counters["strategic_deliberation_level"] = Value(
                 planner_v3::deliberation_name(row.deliberation));
             counters["strategic_fallback"] = Value(false);
             counters["strategic_shadow_nodes"] = Value(legacy_shadow_nodes);
-            Value output = search_result_value(result, requested_depth, 0);
+            Value output = search_result_value(result, requested_depth, result.reply_depth_applicable ? 6 : 0);
             output["nodes_expanded"] = Value(static_cast<std::int64_t>(
                 result.nodes_expanded) + legacy_shadow_nodes);
             output["completion_reason"] = Value(cache_hit
@@ -788,7 +824,7 @@ Value ChallengeController::decide_action(
                 ? "plan_memory" : (forced ? "dominance_solver"
                     : "intent_compiled"));
             output["reply_completion_reason"] = Value(
-                row.deliberation == planner_v3::DeliberationLevel::D3
+                result.reply_depth_applicable
                     ? "threat_scenarios" : "not_applicable");
             output["search_depth_applicable"] = Value(!forced && !cache_hit);
             output["search_depth_stop_reason"] = Value(cache_hit
@@ -860,6 +896,8 @@ Value ChallengeController::decide_action(
         strategic_config.strategy_optimization = bool_field(
             request, "use_strategy_optimization", true);
         strategic_config.legacy_decision = get_legacy;
+        strategic_config.anytime_search = anytime_search;
+        strategic_config.full_diagnostics = bool_field(request, "internal_full_diagnostics");
         planner_v3::StrategicPlannerResult strategic = strategic_planner_->decide(
             string_field(request, "match_instance_id"),
             information_set,
@@ -1016,7 +1054,8 @@ Value ChallengeController::decide_choice(
         catalog_, decks_, strategies_, actor, &information_set,
         bool_field(request, "use_strategy_optimization", true), strategic_planner_->knowledge());
     const auto time_budget = std::clamp<std::int64_t>(integer_field(request, "time_budget_ms", 0), 0, 60000);
-    if (time_budget > 0) provider->set_deadline(decision_started + std::chrono::milliseconds(time_budget));
+    provider->search_context()->budget = std::make_shared<DecisionBudget>(decision_started, time_budget, &cancel_requested_);
+    provider->search_context()->memoization_enabled = bool_field(request, "internal_search_memoization", true);
     Value response;
     const Value *options = choice.find("options");
     if (options != nullptr && options->is_array() && options->as_array().empty()) {
@@ -1276,6 +1315,9 @@ Value ChallengeController::get_contract() const {
         {"strategic_facts", Value(true)},
         {"strategic_match_plan", Value(true)},
         {"strategic_intent_compiler", Value(true)},
+        {"strategic_max_depth", Value(10)},
+        {"shared_decision_budget", Value(true)},
+        {"progressive_turn_search", Value(true)},
         {"strategic_threat_scenarios", Value(true)},
         {"strategic_partial_order_reduction", Value(true)},
         {"strategic_safety_validator", Value(true)},

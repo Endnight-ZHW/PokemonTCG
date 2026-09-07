@@ -32,3 +32,5 @@ if ($LASTEXITCODE -ne 0) {
 
 & (Join-Path $sourceRoot 'bin\search_context_tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Challenge search context tests failed.' }
+& (Join-Path $sourceRoot 'bin\decision_budget_tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Challenge decision budget tests failed.' }

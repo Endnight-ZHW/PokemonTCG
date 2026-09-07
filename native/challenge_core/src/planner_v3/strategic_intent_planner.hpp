@@ -20,6 +20,8 @@ struct StrategicPlannerConfig {
     std::uint64_t node_budget = 192;
     bool evaluation_smoke = false;
     bool strategy_optimization = true;
+    bool anytime_search = true;
+    bool full_diagnostics = false;
     // Full turn_beam_v2 output for this exact public state.  During migration
     // a strategic plan may only take control after it dominates this action,
     // rather than the much weaker ranked_actions().front() proxy.

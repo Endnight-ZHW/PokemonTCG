@@ -29,6 +29,9 @@ struct TraditionalSearchConfig {
     // One keeps evaluation batches single-threaded. Gameplay may raise this
     // to the platform default while result reduction remains sample-ordered.
     std::size_t worker_count = 1;
+    // Paired strategic comparisons must reach an actual turn boundary before
+    // starting recovery. Standalone v2 retains its historical reply contract.
+    bool complete_turn_replies = false;
 
     void validate() const;
 };
@@ -53,6 +56,7 @@ struct TraditionalSearchResult {
     std::int64_t score_milli = 0;
     std::int64_t worst_score_milli = 0;
     std::uint64_t nodes_expanded = 0;
+    std::size_t requested_depth = 0;
     std::size_t completed_depth = 0;
     std::size_t max_path_depth = 0;
     std::size_t reply_completed_depth = 0;
@@ -98,8 +102,22 @@ public:
         deadline_ = deadline;
     }
     bool time_budget_exhausted() const noexcept {
+        if (context_->budget) return context_->budget->status() == EvaluationStatus::BudgetExhausted;
         return deadline_ != std::chrono::steady_clock::time_point{}
             && std::chrono::steady_clock::now() >= deadline_;
+    }
+    bool search_stopped() const {
+        return context_->budget ? context_->budget->status() != EvaluationStatus::Complete
+            : time_budget_exhausted();
+    }
+    template<class Compute>
+    auto evaluate(Compute &&compute) -> SearchEvaluation<decltype(compute())> {
+        if (context_->budget) return context_->budget->evaluate(std::forward<Compute>(compute));
+        if (time_budget_exhausted()) return {EvaluationStatus::BudgetExhausted, std::nullopt};
+        return {EvaluationStatus::Complete, compute()};
+    }
+    SearchEvaluation<std::int64_t> evaluate_state(const RulesSession &position, std::int32_t actor) {
+        return evaluate([&] { return state_score_milli(position, actor); });
     }
 
     virtual std::unique_ptr<RulesSession> determinize(

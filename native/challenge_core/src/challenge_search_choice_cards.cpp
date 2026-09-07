@@ -61,7 +61,7 @@ using namespace challenge;
             return {};
         }
         const std::string candidate = option_id.substr(separator + 1);
-        return cards_.find(candidate) != nullptr ? candidate : std::string{};
+        return std::as_const(cards_).find(candidate) != nullptr ? candidate : std::string{};
     }
 
 
@@ -119,7 +119,7 @@ using namespace challenge;
                 }));
 
         double dead_evolution_line_penalty = 0.0;
-        const ptcg::ai::Value *definition = cards_.find(card_id);
+        const ptcg::ai::Value *definition = std::as_const(cards_).find(card_id);
         const auto has_role = [&](const std::string &candidate_id,
                                   const char *name) {
             return strategy_catalog_.card_has_role(
@@ -277,7 +277,7 @@ using namespace challenge;
         const auto &options = options_value->as_array();
         const auto has_subtype = [this](const std::string &card_id,
                                         const std::string &subtype) {
-            const ptcg::ai::Value *definition = cards_.find(card_id);
+            const ptcg::ai::Value *definition = std::as_const(cards_).find(card_id);
             const ptcg::ai::Value *subtypes = definition != nullptr
                 && definition->is_object() ? definition->find("subtypes") : nullptr;
             return subtypes != nullptr && subtypes->is_array()
@@ -632,7 +632,7 @@ using namespace challenge;
                 && reference->is_object()
                 ? string_field(*reference, "card_id") : std::string{};
             if (card_id.empty()) return std::string{};
-            const ptcg::ai::Value *definition = cards_.find(card_id);
+            const ptcg::ai::Value *definition = std::as_const(cards_).find(card_id);
             if (definition == nullptr || !definition->is_object()) return std::string{};
             const std::string supertype = string_field(*definition, "supertype");
             const ptcg::ai::Value *subtypes = definition->find("subtypes");

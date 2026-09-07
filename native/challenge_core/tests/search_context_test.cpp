@@ -39,6 +39,36 @@ int main() {
         context.memoization_enabled = false;
         require(read(state) == 8 && read(state) == 9, "ablation did not bypass cache");
 
+        DecisionSearchContext ranking;
+        Value actions(Value::Array{Value("attach"), Value("end")});
+        int ranked = 0;
+        const auto rank = [&](const Value &legal) {
+            return ranking.memoize_values<int>(SearchMemo::Ranking, legal, state, 17, 0,
+                ranking.ranking_policy(true), [&] { return ++ranked; });
+        };
+        ranking.set_incumbent(Value("attach"));
+        require(rank(actions) == 1 && rank(actions) == 1, "ranking did not reuse the same legal set");
+        ranking.set_incumbent(Value("end"));
+        require(rank(actions) == 2, "protected incumbent did not invalidate ranking");
+        ranking.set_incumbent(Value("end"));
+        require(rank(actions) == 2, "unchanged incumbent invalidated ranking");
+        Value filtered(Value::Array{Value("end")});
+        require(rank(filtered) == 3, "filtered actions reused an unfiltered ranking");
+
+        DecisionSearchContext interrupted;
+        auto now = DecisionBudget::TimePoint{};
+        interrupted.budget = std::make_shared<DecisionBudget>(now, 10, nullptr, [&] { return now; });
+        const auto late = interrupted.budget->evaluate([&] {
+            return interrupted.memoize_values<int>(SearchMemo::StateScore, basis, state, 17, 0, 0, [&] {
+                now += std::chrono::milliseconds(11);
+                return 123;
+            });
+        });
+        require(!late, "late result escaped its evaluation status");
+        interrupted.budget.reset();
+        require(interrupted.memoize_values<int>(SearchMemo::StateScore, basis, state, 17, 0, 0,
+            [] { return 456; }) == 456, "interrupted evaluation polluted a later phase");
+
         DecisionSearchContext parallel;
         std::atomic<bool> valid{true};
         std::vector<std::thread> workers;

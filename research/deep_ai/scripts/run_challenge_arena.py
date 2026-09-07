@@ -79,6 +79,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--replicates", type=int)
     parser.add_argument("--max-decisions", type=int, default=512)
+    parser.add_argument("--time-budget-ms", type=int, default=0)
+    parser.add_argument("--search-worker-mode", choices=("single", "gameplay"), default="single")
     parser.add_argument(
         "--decision-timeout-milliseconds",
         type=int,
@@ -214,6 +216,13 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.decision_timeout_milliseconds <= 0:
         raise ValueError("decision_timeout_milliseconds_must_be_positive")
+    if not 0 <= args.time_budget_ms <= 60000:
+        raise ValueError("invalid_time_budget_ms")
+    if args.search_worker_mode == "gameplay" and args.workers > 4:
+        raise ValueError("gameplay_search_requires_at_most_four_concurrent_games")
+    paired_options = {"time_budget_ms": args.time_budget_ms, "search_worker_mode": args.search_worker_mode}
+    candidate = replace(candidate, evaluation_options={**dict(candidate.evaluation_options), **paired_options})
+    baseline = replace(baseline, evaluation_options={**dict(baseline.evaluation_options), **paired_options})
     candidate = replace(
         candidate,
         decision_timeout_milliseconds=args.decision_timeout_milliseconds,

@@ -44,4 +44,9 @@ context_tests = env.Program(
     source=env.Object(os.path.join("build", "search_context_test"),
                       "tests/search_context_test.cpp"),
 )
-Default(program, context_tests)
+budget_tests = env.Program(
+    os.path.join("bin", "decision_budget_tests"),
+    source=env.Object(os.path.join("build", "decision_budget_test"),
+                      "tests/decision_budget_test.cpp"),
+)
+Default(program, context_tests, budget_tests)

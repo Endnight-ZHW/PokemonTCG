@@ -464,7 +464,7 @@ DevelopmentResult safe_pre_knockout_development_action(
         return left.score > right.score;
     });
     for (std::size_t index = 0; index < candidates.size(); ++index) {
-        if (is_cancelled(cancel_requested) || result.nodes + 2 > node_budget) break;
+        if (is_cancelled(cancel_requested) || provider.search_stopped() || result.nodes + 2 > node_budget) break;
         std::unique_ptr<RulesSession> simulation = position.fork_for_search(
             seed + static_cast<std::uint32_t>(index * 104729U));
         if (!simulation) continue;
@@ -476,6 +476,7 @@ DevelopmentResult safe_pre_knockout_development_action(
             "mandatory_development_" + std::to_string(index));
         const RulesSessionResult development = simulation->apply_action(
             bound_development);
+        ++provider.search_context()->rule_actions;
         if (!development.success || is_terminal(*simulation)
             || has_hidden_or_random_event(development)
             || !simulation->search_pending_choice(0).is_null()
@@ -494,6 +495,7 @@ DevelopmentResult safe_pre_knockout_development_action(
             "mandatory_followup_" + std::to_string(index));
         const RulesSessionResult attack = simulation->apply_action_for_search(
             bound_followup);
+        ++provider.search_context()->rule_actions;
         if (!attack.success || !resolve_choices(*simulation, actor, provider)) continue;
         if ((is_terminal(*simulation) && winner(*simulation) == actor)
             || (!is_terminal(*simulation)
@@ -762,6 +764,7 @@ TraditionalMandatoryResult TraditionalMandatoryTactics::resolve(
         if (is_cancelled(cancel_requested)) {
             return unresolved("cancelled", expanded, true);
         }
+        if (provider.search_stopped()) return unresolved("time_budget_exhausted", expanded);
         const Value &action = actions[index];
         if (action_kind(action) != "DECLARE_ATTACK"
             || attack_has_random_effect(cards_, action)) continue;
@@ -782,6 +785,7 @@ TraditionalMandatoryResult TraditionalMandatoryTactics::resolve(
             actor,
             "mandatory_attack_" + std::to_string(index));
         const RulesSessionResult step = simulation->apply_action(bound_action);
+        ++provider.search_context()->rule_actions;
         if (!step.success) {
             debug_last_step_error = step.error_code;
             continue;

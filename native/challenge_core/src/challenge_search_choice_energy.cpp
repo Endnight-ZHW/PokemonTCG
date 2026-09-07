@@ -205,7 +205,7 @@ using namespace challenge;
         for (std::int64_t index = 0; index < maximum; ++index) {
             const std::string id = card_ids_value->as_array()[
                 static_cast<std::size_t>(index)].string_or();
-            const ptcg::ai::Value *definition = cards_.find(id);
+            const ptcg::ai::Value *definition = std::as_const(cards_).find(id);
             if (definition == nullptr || string_field(*definition, "supertype")
                 != "Energy") return false;
             energy_ids.push_back(id);
@@ -533,7 +533,7 @@ using namespace challenge;
         std::size_t index
     ) const {
         if (index >= attached.size()) return 0;
-        const ptcg::ai::Value *definition = cards_.find(
+        const ptcg::ai::Value *definition = std::as_const(cards_).find(
             attached[index].string_or());
         if (definition == nullptr || !definition->is_object()) return 0;
         const ptcg::ai::Value *provided = definition->find("provides_energy");

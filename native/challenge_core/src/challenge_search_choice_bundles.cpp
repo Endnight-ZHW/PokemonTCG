@@ -7,6 +7,7 @@ using namespace traditional_value;
 
 void ChallengeSearchProviderImpl::improve_choice_bundle(const RulesSession &position,
     const Value &pending, const typed::ChoiceView &choice, Value &response) {
+    if (search_stopped()) return;
     const std::string type = choice.request_type;
     const bool discard = type == "discard_cards" || type == "zinnia";
     if (!discard && type != "arven" && type != "clara" && type != "search_any_switch") return;
@@ -16,18 +17,10 @@ void ChallengeSearchProviderImpl::improve_choice_bundle(const RulesSession &posi
     if (options.size() != choice.options.size()) return;
     const Value *presentation_value = field(pending, "presentation");
     const Value presentation = presentation_value == nullptr ? Value::make_object() : *presentation_value;
-    Value key_state = position.search_state();
-    for (Value &owner : key_state["players"].as_array()) {
-        for (const char *zone : {"deck", "prizes"}) {
-            auto &cards = owner[zone].as_array();
-            std::sort(cards.begin(), cards.end(), [](const Value &a, const Value &b) { return a.string_or() < b.string_or(); });
-        }
-    }
     Value key_choice = pending;
-    key_choice.erase("request_id");
-    key_choice.erase("base_revision");
-    const std::string cache_key = action_cycle_state_fingerprint(std::move(key_state))
-        + stable_value_signature(key_choice);
+    key_choice.erase("request_id"); key_choice.erase("base_revision");
+    const std::string cache_key = sha256_text(information_value_signature(position.search_state())
+        + "|" + std::to_string(position.rng_state()) + "|" + information_value_signature(key_choice));
     {
         std::lock_guard<std::mutex> lock(choice_bundle_cache_mutex_);
         const auto cached = choice_bundle_cache_.find(cache_key);
@@ -41,11 +34,12 @@ void ChallengeSearchProviderImpl::improve_choice_bundle(const RulesSession &posi
     struct Candidate { std::size_t index; double prior; std::string id; std::string category; };
     std::vector<Candidate> candidates;
     for (std::size_t index = 0; index < options.size(); ++index) {
+        if (search_stopped()) return;
         const Value *reference = field(options[index], "ref");
         if (reference == nullptr || string_field(*reference, "kind") != "card"
             || integer_field(*reference, "player", -1) != choice.player) return;
         const std::string id = resolved_option_card_id(options[index]);
-        const Value *definition = cards_.find(id);
+        const Value *definition = std::as_const(cards_).find(id);
         if (definition == nullptr) return;
         std::string category = string_field(*definition, "supertype");
         if (type == "arven") category = string_field(*definition, "trainer_type");
@@ -70,9 +64,12 @@ void ChallengeSearchProviderImpl::improve_choice_bundle(const RulesSession &posi
     }
     if (shortlist.size() > 10) shortlist.resize(10);
     const auto &analyzer = resource_analyzer_;
-    const double initial_resources = analyzer.resource_value(position, position.search_state(), choice.player);
+    const auto initial = this->evaluate([&] { return analyzer.resource_value(position, position.search_state(), choice.player); });
+    if (!initial) return;
+    const double initial_resources = *initial.value;
+    const Value baseline_state = position.snapshot();
     const auto evaluate = [&](const std::vector<std::size_t> &indices) {
-        Value virtual_state = position.snapshot();
+        Value virtual_state = baseline_state;
         auto &owner = virtual_state["players"].as_array()[static_cast<std::size_t>(choice.player)];
         double prior = 0.0;
         for (const std::size_t index : indices) {
@@ -98,7 +95,9 @@ void ChallengeSearchProviderImpl::improve_choice_bundle(const RulesSession &posi
         }
     }
     struct Bundle { std::vector<std::size_t> indices; std::map<std::string, int> categories; double score; };
-    Bundle best{baseline, {}, evaluate(baseline)};
+    const auto baseline_score = this->evaluate([&] { return evaluate(baseline); });
+    if (!baseline_score) return;
+    Bundle best{baseline, {}, *baseline_score.value};
     std::vector<Bundle> frontier{{{}, {}, 0.0}};
     bool completed = true;
     for (std::int64_t depth = 1; depth <= choice.max_select && completed; ++depth) {
@@ -106,7 +105,7 @@ void ChallengeSearchProviderImpl::improve_choice_bundle(const RulesSession &posi
         for (const Bundle &parent : frontier) {
             if (!completed) break;
             for (const Candidate &candidate : shortlist) {
-                if (time_budget_exhausted()) { completed = false; break; }
+                if (search_stopped()) { completed = false; break; }
                 if (!parent.indices.empty() && candidate.index <= parent.indices.back()) continue;
                 auto categories = parent.categories;
                 const int limit = type == "arven" ? 1
@@ -115,8 +114,9 @@ void ChallengeSearchProviderImpl::improve_choice_bundle(const RulesSession &posi
                 if (++categories[candidate.category] > limit) continue;
                 auto indices = parent.indices;
                 indices.push_back(candidate.index);
-                const double score = evaluate(indices);
-                Bundle child{std::move(indices), std::move(categories), score};
+                const auto score = this->evaluate([&] { return evaluate(indices); });
+                if (!score) { completed = false; break; }
+                Bundle child{std::move(indices), std::move(categories), *score.value};
                 if (depth >= choice.min_select && child.score > best.score + 0.001) best = child;
                 next.push_back(std::move(child));
             }
@@ -131,7 +131,7 @@ void ChallengeSearchProviderImpl::improve_choice_bundle(const RulesSession &posi
     for (const auto index : best.indices) ids.emplace_back(string_field(options[index], "option_id"));
     {
         std::lock_guard<std::mutex> lock(choice_bundle_cache_mutex_);
-        if (completed && choice_bundle_cache_.size() < 256) choice_bundle_cache_.emplace(cache_key, ids);
+        if (completed && !search_stopped() && choice_bundle_cache_.size() < 256) choice_bundle_cache_.emplace(cache_key, ids);
     }
     if (best.indices == baseline) return;
     response["option_ids"] = Value(std::move(ids));

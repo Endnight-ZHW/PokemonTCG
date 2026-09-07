@@ -15,6 +15,19 @@ from deep_ai.challenge_arena_retry import final_retry_result
 
 
 class ChallengeArenaTaskTests(unittest.TestCase):
+    def test_time_budget_and_worker_mode_must_be_paired(self):
+        from dataclasses import replace
+        candidate = ArenaAgentSpec("candidate", "a", {"schema": "test"},
+            {"time_budget_ms": 5000, "search_worker_mode": "gameplay"})
+        baseline = replace(candidate, agent_id="baseline", build_id="b")
+        validate_equal_search_contract(candidate, baseline)
+        for changed in ({"time_budget_ms": 1000, "search_worker_mode": "gameplay"},
+                        {"time_budget_ms": 5000, "search_worker_mode": "single"}):
+            with self.assertRaisesRegex(ValueError, "search_contract_mismatch"):
+                validate_equal_search_contract(candidate, replace(baseline, evaluation_options=changed))
+        with self.assertRaisesRegex(ValueError, "invalid_time_budget"):
+            validate_equal_search_contract(candidate, replace(baseline, evaluation_options={"time_budget_ms": True}))
+
     def test_preset_task_counts(self) -> None:
         self.assertEqual(len(generate_tasks("smoke")), 16)
         self.assertEqual(len(generate_tasks("pr")), 160)

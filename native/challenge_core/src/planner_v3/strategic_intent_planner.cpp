@@ -5,6 +5,7 @@
 #include "ptcg_traditional_value.hpp"
 
 #include <algorithm>
+#include <future>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -325,6 +326,13 @@ std::vector<ExpansionChoice> expansion_choices(
             else result.back() = std::move(choice);
         }
     }
+    for (const auto &row : ranked) {
+        if (!provider.action_ends_turn(row.action)) continue;
+        if (std::none_of(result.begin(), result.end(), [&](const auto &entry) { return entry.row.signature == row.signature; })) {
+            result.push_back({row, intents.empty() ? IntentKind::EndTurnSafely : intents.front().kind,
+                -1.0e12, semantics.action_footprint(row.action)});
+        }
+    }
     return result;
 }
 
@@ -360,7 +368,20 @@ std::optional<PlanNode> evaluate_fixed_sequence(
     IntentKind intent,
     std::uint64_t &nodes_expanded
 ) {
-    if (!root_owner || sequence.empty()) return std::nullopt;
+    if (!root_owner || sequence.empty() || provider.search_stopped()) return std::nullopt;
+    const auto root_key = provider.search_context()->memoize<std::string>(SearchMemo::Fingerprint,
+        *root_owner, root_owner->search_state(), -1, 1, [&] {
+            return provider.sha256_text(challenge::information_value_signature(root_owner->search_state()));
+        });
+    // Include the complete root and RNG, not just the supplied scenario seed:
+    // another provider may produce different beliefs for the same seed.
+    std::string replay_key = "replay|" + root_key + "|" + std::to_string(root_owner->rng_state())
+        + "|" + std::to_string(seed) + "|" + intent_name(intent);
+    for (const auto &action : sequence) replay_key += "|" + challenge::value_action_signature(action);
+    if (const auto cached = provider.search_context()->find_result<PlanNode>(replay_key)) {
+        ++provider.search_context()->replay_cache_hits;
+        return *cached;
+    }
     std::shared_ptr<RulesSession> root(root_owner.release());
     PlanNode node;
     node.intent = intent;
@@ -408,10 +429,13 @@ std::optional<PlanNode> evaluate_fixed_sequence(
     }
     node.state = std::move(root);
     node.fingerprint = provider.state_fingerprint(*node.state);
-    node.facts = analyzer.analyze(*node.state, belief, actor);
+    const auto facts = provider.evaluate([&] { return analyzer.analyze(*node.state, belief, actor); });
+    if (!facts) return std::nullopt;
+    node.facts = *facts.value;
     node.score = score_plan(initial, node.facts, intent, node.unpredictable);
     node.scenario_utility = plan_score_utility(node.score);
     node.worst_scenario_utility = node.scenario_utility;
+    if (node.ended) provider.search_context()->remember_result(replay_key, node);
     return node;
 }
 
@@ -422,6 +446,7 @@ struct ThreatScenarioComparison {
     std::uint64_t nodes_expanded = 0;
     std::int64_t minimum_gain_milli = std::numeric_limits<std::int64_t>::max();
     std::int64_t mean_gain_milli = 0;
+    std::size_t reply_completed_depth = 6;
 };
 
 struct RecoveryEvaluation {
@@ -429,6 +454,7 @@ struct RecoveryEvaluation {
     bool cancelled = false;
     std::int64_t score_milli = 0;
     std::uint64_t nodes_expanded = 0;
+    std::size_t reply_completed_depth = 0;
 };
 
 RecoveryEvaluation evaluate_recovery_turn(
@@ -440,7 +466,9 @@ RecoveryEvaluation evaluate_recovery_turn(
 ) {
     RecoveryEvaluation output;
     if (!position) return output;
-    output.score_milli = provider.state_score_milli(*position, actor);
+    const auto initial_score = provider.evaluate_state(*position, actor);
+    if (!initial_score) return output;
+    output.score_milli = *initial_score.value;
     if (provider.terminal(*position)) {
         output.valid = true;
         return output;
@@ -463,10 +491,8 @@ RecoveryEvaluation evaluate_recovery_turn(
         if (frontier.empty()) break;
         std::vector<RecoveryNode> next;
         for (const RecoveryNode &parent : frontier) {
-            if (cancelled(cancel_requested)) {
-                output.cancelled = true;
-                return output;
-            }
+            if (cancelled(cancel_requested)) { output.cancelled = true; return output; }
+            if (provider.search_stopped()) return output;
             if (provider.terminal(*parent.state)
                 || provider.decision_actor(*parent.state) != actor) {
                 if (!have_complete
@@ -481,8 +507,14 @@ RecoveryEvaluation evaluate_recovery_turn(
             }
             const auto ranked = provider.ranked_actions(
                 *parent.state, actor, Value(), 16);
-            const auto candidates = traditional_diverse_top_actions(
+            auto candidates = traditional_diverse_top_actions(
                 ranked, actions_per_node);
+            for (const auto &row : ranked) {
+                if (provider.action_ends_turn(row.action)
+                    && std::none_of(candidates.begin(), candidates.end(), [&](const auto &other) {
+                        return other.signature == row.signature;
+                    })) candidates.push_back(row);
+            }
             for (std::size_t index = 0; index < candidates.size(); ++index) {
                 const TraditionalRankedAction &candidate = candidates[index];
                 const std::string sequence = parent.sequence_signature
@@ -500,8 +532,9 @@ RecoveryEvaluation evaluate_recovery_turn(
                 if (!expanded.state) continue;
                 RecoveryNode child{
                     std::move(expanded.state), 0, sequence};
-                child.score_milli = provider.state_score_milli(
-                    *child.state, actor);
+                const auto score = provider.evaluate_state(*child.state, actor);
+                if (!score) return output;
+                child.score_milli = *score.value;
                 const bool ended = provider.terminal(*child.state)
                     || provider.action_ends_turn(candidate.action)
                     || provider.decision_actor(*child.state) != actor;
@@ -529,7 +562,7 @@ RecoveryEvaluation evaluate_recovery_turn(
         if (next.size() > beam_width) next.resize(beam_width);
         frontier = std::move(next);
     }
-    if (!have_complete) return output;
+    if (!have_complete || provider.search_stopped()) return output;
     output.valid = true;
     output.score_milli = best_complete.score_milli;
     return output;
@@ -564,8 +597,6 @@ bool deterministic_extension_of_legacy(
 }
 
 constexpr std::size_t threat_scenario_samples = 3;
-using LegacyScenarioCache = std::array<
-    std::optional<RecoveryEvaluation>, threat_scenario_samples>;
 
 RecoveryEvaluation evaluate_threat_scenario(
     TraditionalSearchProvider &provider,
@@ -580,11 +611,27 @@ RecoveryEvaluation evaluate_threat_scenario(
     const std::atomic<bool> *cancel_requested
 ) {
     RecoveryEvaluation output;
+    if (provider.search_stopped()) return output;
+    auto sample_root = sample > 0 ? provider.determinize(sample, sample_seed) : std::unique_ptr<RulesSession>{};
+    const RulesSession *cache_root = sample == 0 ? plan.state.get() : sample_root.get();
+    if (!cache_root) return output;
+    const auto root_key = provider.search_context()->memoize<std::string>(SearchMemo::Fingerprint,
+        *cache_root, cache_root->search_state(), -1, 1, [&] {
+            return provider.sha256_text(challenge::information_value_signature(cache_root->search_state()));
+        });
+    const auto cache_key = "exchange|" + std::to_string(actor) + "|" + std::to_string(sample_seed)
+        + "|" + plan.sequence_signature + "|" + root_key + "|" + std::to_string(cache_root->rng_state())
+        + "|policy=" + std::to_string(provider.search_context()->ranking_policy(false));
+    if (auto cached = provider.search_context()->find_result<RecoveryEvaluation>(cache_key)) {
+        ++provider.search_context()->exchange_cache_hits;
+        cached->nodes_expanded = 0;
+        return *cached;
+    }
     std::optional<PlanNode> replay;
     const PlanNode *node = &plan;
     if (sample > 0) {
         replay = evaluate_fixed_sequence(
-            provider, provider.determinize(sample, sample_seed), plan.sequence,
+            provider, std::move(sample_root), plan.sequence,
             initial, analyzer, belief, actor, sample_seed, plan.intent,
             output.nodes_expanded);
         if (!replay.has_value() || !replay->ended) return output;
@@ -597,10 +644,11 @@ RecoveryEvaluation evaluate_threat_scenario(
         output.cancelled = true;
         return output;
     }
-    auto recovery = evaluate_recovery_turn(
-        provider, reply.resulting_position, actor, sample_seed + 101U,
-        cancel_requested);
+    if (provider.search_stopped() || reply.completion_reason == "time_budget_exhausted") return output;
+    auto recovery = evaluate_recovery_turn(provider, reply.resulting_position, actor, sample_seed + 101U, cancel_requested);
     recovery.nodes_expanded += output.nodes_expanded;
+    recovery.reply_completed_depth = reply.completed_depth;
+    if (recovery.valid && !recovery.cancelled) provider.search_context()->remember_result(cache_key, recovery);
     return recovery;
 }
 
@@ -608,7 +656,6 @@ ThreatScenarioComparison compare_threat_scenarios(
     TraditionalSearchProvider &provider,
     const PlanNode &candidate,
     const PlanNode &legacy,
-    LegacyScenarioCache &legacy_scenarios,
     const StrategicFacts &initial,
     const StrategicAnalyzer &analyzer,
     const BeliefSummary &belief,
@@ -622,63 +669,70 @@ ThreatScenarioComparison compare_threat_scenarios(
         || !candidate.state || !legacy.state) {
         return output;
     }
-    TraditionalSearchConfig reply_config;
-    reply_config.reply_depth = 6;
-    reply_config.reply_width = 3;
-    reply_config.reply_actions_per_node = 3;
-    reply_config.belief_samples = 1;
-    reply_config.worker_count = 1;
-    TraditionalTurnBeamSearch reply_search(provider, reply_config);
-    long double total_gain = 0.0L;
-    for (std::size_t sample = 0; sample < threat_scenario_samples; ++sample) {
-        if (provider.time_budget_exhausted()) return output;
-        if (cancelled(cancel_requested)) {
-            output.cancelled = true;
-            return output;
-        }
-        const std::uint32_t sample_seed = seed
-            + static_cast<std::uint32_t>(sample * 1000003ULL + 700001ULL);
-        const RecoveryEvaluation candidate_recovery = evaluate_threat_scenario(
-            provider, reply_search, candidate, initial, analyzer, belief,
-            actor, sample, sample_seed, cancel_requested);
-        output.nodes_expanded += candidate_recovery.nodes_expanded;
-        if (candidate_recovery.cancelled || cancelled(cancel_requested)) {
-            output.cancelled = true;
-            return output;
-        }
-        if (!candidate_recovery.valid) return output;
-        auto &cached = legacy_scenarios[sample];
-        if (!cached.has_value()) {
-            const auto recovery = evaluate_threat_scenario(
-                provider, reply_search, legacy, initial, analyzer, belief,
-                actor, sample, sample_seed, cancel_requested);
-            output.nodes_expanded += recovery.nodes_expanded;
-            if (recovery.cancelled || cancelled(cancel_requested)) {
-                output.cancelled = true;
-                return output;
-            }
-            cached = recovery;
-        }
-        const RecoveryEvaluation &legacy_recovery = *cached;
-        if (!legacy_recovery.valid) return output;
-        const std::int64_t gain = candidate_recovery.score_milli
-            - legacy_recovery.score_milli;
-        output.minimum_gain_milli = std::min(
-            output.minimum_gain_milli, gain);
-        total_gain += static_cast<long double>(gain);
+    struct Pair {
+        bool valid = false; bool cancelled = false;
+        std::int64_t gain = 0; std::uint64_t nodes = 0;
+        std::size_t reply_completed_depth = 0;
+    };
+    const auto evaluate_pair = [&](std::size_t sample, bool parallel_sides) {
+        Pair result;
+        TraditionalSearchConfig reply_config;
+        reply_config.reply_depth = 6; reply_config.reply_width = 3;
+        reply_config.reply_actions_per_node = 3; reply_config.belief_samples = 1;
+        reply_config.complete_turn_replies = true;
+        TraditionalTurnBeamSearch reply_search(provider, reply_config);
+        const auto sample_seed = seed + static_cast<std::uint32_t>(sample * 1000003ULL);
+        const auto run = [&](const PlanNode &plan) { return evaluate_threat_scenario(provider,
+            reply_search, plan, initial, analyzer, belief, actor, sample, sample_seed, cancel_requested); };
+        RecoveryEvaluation own, prior;
+        if (parallel_sides) {
+            auto future = std::async(std::launch::async, [&] { return run(candidate); });
+            prior = run(legacy); own = future.get();
+        } else { own = run(candidate); prior = run(legacy); }
+        result.nodes = own.nodes_expanded + prior.nodes_expanded;
+        result.cancelled = own.cancelled || prior.cancelled || cancelled(cancel_requested);
+        result.valid = own.valid && prior.valid && !result.cancelled && !provider.search_stopped();
+        result.gain = own.score_milli - prior.score_milli;
+        result.reply_completed_depth = std::min(own.reply_completed_depth, prior.reply_completed_depth);
+        return result;
+    };
+    std::int64_t total = 0;
+    const auto reduce = [&](const Pair &pair) {
+        output.nodes_expanded += pair.nodes;
+        output.cancelled = output.cancelled || pair.cancelled;
+        if (!pair.valid) return false;
         ++output.samples;
-        // The authority gate is defined by the worst paired sample.  Once a
-        // sample misses that floor, later samples cannot make the candidate
-        // eligible, so avoid spending reply/recovery search on them.
-        if (gain < minimum_required_gain_milli) return output;
+        output.reply_completed_depth = std::min(output.reply_completed_depth, pair.reply_completed_depth);
+        output.minimum_gain_milli = std::min(output.minimum_gain_milli, pair.gain);
+        total += pair.gain;
+        return pair.gain >= minimum_required_gain_milli;
+    };
+    const bool parallel = provider.search_context()->worker_count > 1;
+    if (!reduce(evaluate_pair(0, parallel))) return output;
+    // A bad first paired sample rejects cheaply. Remaining samples may run
+    // concurrently, but reductions and tie breaks always use sample order.
+    Pair second, third;
+    if (parallel) {
+        auto future = std::async(std::launch::async, [&] { return evaluate_pair(1, false); });
+        third = evaluate_pair(2, false); second = future.get();
+    } else {
+        second = evaluate_pair(1, false);
+        if (!reduce(second)) return output;
+        third = evaluate_pair(2, false);
     }
+    if (parallel) {
+        const bool second_ok = reduce(second);
+        const bool third_ok = reduce(third); // Count actual completed work even on rejection.
+        if (!second_ok || !third_ok) return output;
+    } else if (!reduce(third)) return output;
     output.valid = output.samples == threat_scenario_samples;
     if (output.valid) {
-        output.mean_gain_milli = static_cast<std::int64_t>(std::llround(
-            total_gain / static_cast<long double>(output.samples)));
+        output.mean_gain_milli = static_cast<std::int64_t>(std::llround(static_cast<double>(total) / output.samples));
+        ++provider.search_context()->completed_comparisons;
     }
     return output;
 }
+
 
 bool node_better(const PlanNode &left, const PlanNode &right) {
     if (left.scenario_count > 1 && right.scenario_count > 1
@@ -696,18 +750,26 @@ bool node_better(const PlanNode &left, const PlanNode &right) {
 
 struct CompilationResult {
     std::vector<PlanNode> candidates;
+    std::vector<PlanNode> prior_candidates;
     std::vector<std::string> root_order;
     std::uint64_t nodes_expanded = 0;
-    std::size_t completed_depth = 0;
-    std::size_t max_path_depth = 0;
-    std::size_t partial_order_pruned = 0;
+    std::size_t completed_depth = 0, max_path_depth = 0, partial_order_pruned = 0, requested_depth = 0;
     std::string trajectory_hash;
     std::uint64_t trajectory_events = 0;
+    // Continuation is retained between work batches, including an unfinished
+    // layer and its already-ranked next actions. No prefix is searched twice.
+    std::vector<PlanNode> frontier, next;
+    std::vector<ExpansionChoice> pending_choices;
+    std::map<std::string, PlanNode> best_by_root;
+    std::set<std::string> seen;
+    std::size_t parent_index = 0, action_index = 0, depth = 1;
+    bool initialized = false, done = false;
 };
 
-CompilationResult compile_turn_plans(
+void advance_turn_plans(
+    CompilationResult &output,
     TraditionalSearchProvider &provider,
-    std::unique_ptr<RulesSession> root_owner,
+    const std::shared_ptr<RulesSession> &root,
     const Value &root_actions,
     std::int32_t actor,
     std::uint32_t seed,
@@ -722,227 +784,141 @@ CompilationResult compile_turn_plans(
     const std::string &legacy_signature,
     std::uint64_t node_budget,
     bool smoke,
+    bool anytime,
     const std::atomic<bool> *cancel_requested
 ) {
-    CompilationResult output;
-    if (!root_owner) return output;
-    std::shared_ptr<RulesSession> root(root_owner.release());
-    const bool terminal_focus = initial.opponent_deck_size == 0
-        || initial.prize_race.own_prizes_remaining <= 4;
-    const std::size_t max_depth = smoke ? 1
-        : (terminal_focus ? 8
-            : (level == DeliberationLevel::D1 ? 2
-                : (level == DeliberationLevel::D2 ? 5 : 6)));
-    const std::size_t beam_width = smoke ? 2
-        : (terminal_focus ? 6
-            : (level == DeliberationLevel::D1 ? 3
-                : (level == DeliberationLevel::D2 ? 5 : 6)));
-    const std::size_t actions_per_node = smoke ? 2
-        : (terminal_focus ? 4
-            : (level == DeliberationLevel::D1 ? 3
-                : (level == DeliberationLevel::D2 ? 4 : 5)));
-    const std::size_t root_limit = smoke ? 2
-        : (terminal_focus ? 8
-            : (level == DeliberationLevel::D1 ? 4 : 6));
-    node_budget = std::max<std::uint64_t>(1, node_budget);
-    const std::string root_fingerprint = provider.state_fingerprint(*root);
-    const Value root_precondition = provider.cache_precondition(*root, actor);
-    std::vector<PlanNode> frontier;
-    std::unordered_map<std::string, PlanNode> best_by_root;
-    std::unordered_map<std::string, std::pair<PlanScore, std::string>> seen;
-    output.trajectory_hash = provider.sha256_text(
-        "strategic_intent_v3:trajectory:v1");
-    auto trace = [&](const std::string &event) {
-        output.trajectory_hash = provider.trace_event(
-            output.trajectory_hash, event);
+    if (!root || output.done) return;
+    ++provider.search_context()->candidate_batches;
+    const bool terminal_focus = initial.opponent_deck_size == 0 || initial.prize_race.own_prizes_remaining <= 4;
+    const std::size_t normal_depth = smoke ? 1 : terminal_focus ? 8
+        : level == DeliberationLevel::D1 ? 2 : level == DeliberationLevel::D2 ? 5 : 6;
+    const std::size_t max_depth = anytime && !smoke ? std::min<std::size_t>(10, normal_depth + 2) : normal_depth;
+    output.requested_depth = max_depth;
+    const std::size_t actions_per_node = smoke ? 2 : terminal_focus ? 4 : level == DeliberationLevel::D1 ? 3 : 5;
+    const std::size_t root_limit = smoke ? 2 : terminal_focus ? 8 : level == DeliberationLevel::D1 ? 4 : 6;
+    // Root coverage must not consume the entire beam. Keep the guaranteed
+    // route per root, then award a comparable amount of additional capacity
+    // to the best preparations; the shared deadline bounds the extra work.
+    const std::size_t beam_width = anytime && !smoke ? root_limit * 2
+        : smoke ? 2 : terminal_focus ? 6 : level == DeliberationLevel::D1 ? 3 : 6;
+    if (!output.initialized) {
+        PlanNode node;
+        node.state = root; node.facts = initial; node.fingerprint = provider.state_fingerprint(*root);
+        output.frontier.push_back(std::move(node));
+        output.trajectory_hash = provider.sha256_text("strategic_intent_v3:progressive:v1");
+        output.initialized = true;
+    }
+    const auto target_nodes = output.nodes_expanded + std::max<std::uint64_t>(1, node_budget);
+    const auto trace = [&](const std::string &event) {
+        output.trajectory_hash = provider.trace_event(output.trajectory_hash, event);
         ++output.trajectory_events;
     };
-    auto record = [&](const PlanNode &node) {
-        const auto previous = seen.find(node.fingerprint);
-        if (previous != seen.end()) {
-            const int compared = compare_plan_score(
-                node.score, previous->second.first);
-            if (compared < 0 || (compared == 0
-                    && previous->second.second <= node.sequence_signature)) {
-                ++output.partial_order_pruned;
-                return false;
-            }
-        }
-        seen[node.fingerprint] = {node.score, node.sequence_signature};
-        // A compiler candidate is an executable turn plan, not an attractive
-        // intermediate state.  Previously a high-scoring partial node could
-        // overwrite a completed line for the same root and was then rejected
-        // later by the safety gate, effectively hiding the valid plan.
-        if (node.ended) {
-            const auto current = best_by_root.find(node.root_signature);
-            if (current == best_by_root.end()
-                || node_better(node, current->second)) {
-                best_by_root[node.root_signature] = node;
-            }
-        }
-        return true;
+    const auto can_extend = [&](const PlanNode &parent) {
+        if (output.depth <= normal_depth) return true;
+        if (parent.sequence.empty()) return false;
+        const auto kind = string_field(parent.sequence.back(), "kind");
+        const bool resource = kind == "ATTACH_ENERGY" || kind == "EVOLVE"
+            || kind == "PLAY_TRAINER" || kind == "USE_ABILITY" || kind == "RETREAT";
+        return resource && (parent.facts.active_can_attack
+            || parent.facts.energy_schedule.priority_missing_energy <= 1);
     };
-
-    const auto roots = expansion_choices(
-        provider,
-        *root,
-        actor,
-        root_actions,
-        intents,
-        initial,
-        match_plan,
-        semantics,
-        strategies,
-        root_limit,
-        legacy_signature);
-    for (std::size_t index = 0; index < roots.size(); ++index) {
-        if (cancelled(cancel_requested) || output.nodes_expanded >= node_budget) {
-            break;
-        }
-        const ExpansionChoice &choice = roots[index];
-        output.root_order.push_back(choice.row.signature);
-        ExpandedAction expanded = apply_action(
-            provider,
-            *root,
-            actor,
-            choice.row.action,
-            provider.branch_seed(
-                seed, 1, choice.row.signature, choice.row.signature, index),
-            "strategic-intent-root-" + std::to_string(index),
-            output.nodes_expanded);
-        if (!expanded.state) {
-            trace("root|" + choice.row.signature + "|failed");
+    while (!output.frontier.empty() && output.depth <= max_depth
+        && output.nodes_expanded < target_nodes && !provider.search_stopped()
+        && !cancelled(cancel_requested)) {
+        if (output.parent_index >= output.frontier.size()) {
+            output.completed_depth = output.depth;
+            std::stable_sort(output.next.begin(), output.next.end(), node_better);
+            std::vector<PlanNode> frontier;
+            std::set<std::string> represented;
+            if (anytime) {
+                // Keep preparation routes alive across the first layers. Facts
+                // may be shared, but root/intent/path metadata remain distinct.
+                for (const auto &node : output.next) {
+                    if (represented.insert(node.root_signature).second) frontier.push_back(node);
+                }
+            }
+            const auto width = std::max(beam_width, frontier.size());
+            for (const auto &node : output.next) {
+                if (frontier.size() >= width) break;
+                if (std::none_of(frontier.begin(), frontier.end(), [&](const PlanNode &other) {
+                    return other.sequence_signature == node.sequence_signature;
+                })) frontier.push_back(node);
+            }
+            output.frontier = std::move(frontier);
+            output.next.clear(); output.parent_index = 0; output.action_index = 0;
+            output.pending_choices.clear(); ++output.depth;
             continue;
         }
-        const std::string fingerprint = provider.state_fingerprint(*expanded.state);
-        const bool ended = provider.terminal(*expanded.state)
-            || provider.action_ends_turn(choice.row.action)
+        const PlanNode &parent = output.frontier[output.parent_index];
+        if (!can_extend(parent)) { ++output.parent_index; output.pending_choices.clear(); output.action_index = 0; continue; }
+        if (output.pending_choices.empty()) {
+            output.pending_choices = expansion_choices(provider, *parent.state, actor,
+                output.depth == 1 ? root_actions : Value(), intents, parent.facts, match_plan,
+                semantics, strategies, output.depth == 1 ? root_limit : actions_per_node,
+                output.depth == 1 ? legacy_signature : std::string{});
+        }
+        if (output.action_index >= output.pending_choices.size()) {
+            ++output.parent_index; output.pending_choices.clear(); output.action_index = 0; continue;
+        }
+        const auto index = output.action_index++;
+        const ExpansionChoice choice = output.pending_choices[index];
+        if (parent.sequence.size() >= 2 && footprints_commute(
+                semantics.action_footprint(parent.sequence.back()), choice.footprint)
+            && choice.footprint.canonical_key < semantics.action_footprint(parent.sequence.back()).canonical_key) {
+            ++output.partial_order_pruned; continue;
+        }
+        const auto signature = parent.sequence_signature.empty() ? choice.row.signature
+            : parent.sequence_signature + "|" + choice.row.signature;
+        const auto root_signature = parent.root_signature.empty() ? choice.row.signature : parent.root_signature;
+        ExpandedAction expanded = apply_action(provider, *parent.state, actor, choice.row.action,
+            provider.branch_seed(seed, output.depth, root_signature, signature, index),
+            "strategic-intent-" + std::to_string(output.depth) + "-" + std::to_string(index), output.nodes_expanded);
+        if (!expanded.state) continue;
+        const auto fingerprint = provider.state_fingerprint(*expanded.state);
+        const bool ended = provider.terminal(*expanded.state) || provider.action_ends_turn(choice.row.action)
             || provider.decision_actor(*expanded.state) != actor;
-        if (!ended && fingerprint == root_fingerprint) continue;
-        PlanNode node;
+        if (!ended && fingerprint == parent.fingerprint) continue;
+        // Only deterministic paths are deduplicated, with the policy's complete
+        // action history retained. Cycle fingerprints alone omit that history.
+        const auto *history = field(expanded.state->search_state(), "action_log");
+        const auto history_key = history ? challenge::stable_value_signature(*history) : std::string{};
+        const auto seen_key = root_signature + "|" + fingerprint + "|" + history_key;
+        if (!parent.unpredictable && !expanded.trace.unpredictable && !output.seen.insert(seen_key).second) {
+            ++output.partial_order_pruned; continue;
+        }
+        const auto facts = provider.evaluate([&] { return analyzer.analyze(*expanded.state, belief, actor); });
+        if (!facts) break;
+        PlanNode node = parent;
         node.state = std::move(expanded.state);
-        node.root_action = choice.row.action;
-        node.sequence = Value::Array{choice.row.action};
-        node.preconditions = Value::Array{root_precondition};
-        node.root_signature = choice.row.signature;
-        node.sequence_signature = choice.row.signature;
-        node.fingerprint = fingerprint;
-        node.facts = analyzer.analyze(*node.state, belief, actor);
-        node.intent = choice.intent;
-        node.depth = 1;
-        node.ended = ended;
-        node.unpredictable = expanded.trace.unpredictable;
-        node.cacheable = !expanded.trace.unpredictable;
+        if (output.depth == 1) {
+            node.root_action = choice.row.action; node.root_signature = root_signature;
+            node.intent = choice.intent;
+            output.root_order.push_back(root_signature);
+        }
+        node.sequence.push_back(choice.row.action);
+        node.preconditions.push_back(provider.cache_precondition(*parent.state, actor));
+        node.sequence_signature = signature; node.fingerprint = fingerprint;
+        node.facts = *facts.value; node.depth = output.depth; node.ended = ended;
+        node.unpredictable = parent.unpredictable || expanded.trace.unpredictable;
+        node.cacheable = parent.cacheable && !expanded.trace.unpredictable;
         node.score = score_plan(initial, node.facts, node.intent, node.unpredictable);
-        node.scenario_utility = plan_score_utility(node.score);
-        node.worst_scenario_utility = node.scenario_utility;
-        trace("root|" + choice.row.signature + "|intent="
-            + intent_name(node.intent) + "|state=" + fingerprint);
-        record(node);
-        if (!ended && max_depth > 1) frontier.push_back(std::move(node));
-        output.max_path_depth = 1;
+        node.scenario_utility = node.worst_scenario_utility = plan_score_utility(node.score);
+        trace("depth=" + std::to_string(output.depth) + "|root=" + root_signature + "|state=" + fingerprint);
+        output.max_path_depth = std::max(output.max_path_depth, output.depth);
+        if (ended) {
+            const auto found = output.best_by_root.find(root_signature);
+            if (found == output.best_by_root.end() || node_better(node, found->second)) output.best_by_root[root_signature] = node;
+        } else if (output.depth < max_depth) output.next.push_back(std::move(node));
     }
-    output.completed_depth = roots.empty() ? 0 : 1;
-    std::stable_sort(frontier.begin(), frontier.end(), node_better);
-    if (frontier.size() > beam_width) frontier.resize(beam_width);
-
-    for (std::size_t depth = 2; depth <= max_depth; ++depth) {
-        if (provider.time_budget_exhausted()) break;
-        if (frontier.empty() || output.nodes_expanded >= node_budget
-            || cancelled(cancel_requested)) break;
-        std::vector<PlanNode> next;
-        for (const PlanNode &parent : frontier) {
-            if (output.nodes_expanded >= node_budget
-                || cancelled(cancel_requested)) break;
-            const auto choices = expansion_choices(
-                provider,
-                *parent.state,
-                actor,
-                Value(),
-                intents,
-                parent.facts,
-                match_plan,
-                semantics,
-                strategies,
-                actions_per_node);
-            for (std::size_t index = 0; index < choices.size(); ++index) {
-                if (output.nodes_expanded >= node_budget) break;
-                const ExpansionChoice &choice = choices[index];
-                if (parent.sequence.size() >= 2) {
-                    const ActionFootprint previous = semantics.action_footprint(
-                        parent.sequence.back());
-                    if (footprints_commute(previous, choice.footprint)
-                        && choice.footprint.canonical_key
-                            < previous.canonical_key) {
-                        ++output.partial_order_pruned;
-                        continue;
-                    }
-                }
-                const std::string sequence_signature =
-                    parent.sequence_signature + "|" + choice.row.signature;
-                ExpandedAction expanded = apply_action(
-                    provider,
-                    *parent.state,
-                    actor,
-                    choice.row.action,
-                    provider.branch_seed(
-                        seed,
-                        depth,
-                        parent.root_signature,
-                        sequence_signature,
-                        index),
-                    "strategic-intent-" + std::to_string(depth)
-                        + "-" + std::to_string(index),
-                    output.nodes_expanded);
-                if (!expanded.state) continue;
-                const std::string fingerprint = provider.state_fingerprint(
-                    *expanded.state);
-                const bool ended = provider.terminal(*expanded.state)
-                    || provider.action_ends_turn(choice.row.action)
-                    || provider.decision_actor(*expanded.state) != actor;
-                if (!ended && fingerprint == parent.fingerprint) continue;
-                PlanNode node = parent;
-                node.state = std::move(expanded.state);
-                node.sequence.push_back(choice.row.action);
-                node.preconditions.push_back(provider.cache_precondition(
-                    *parent.state, actor));
-                node.sequence_signature = sequence_signature;
-                node.fingerprint = fingerprint;
-                node.facts = analyzer.analyze(*node.state, belief, actor);
-                node.depth = depth;
-                node.ended = ended;
-                node.unpredictable = parent.unpredictable
-                    || expanded.trace.unpredictable;
-                node.cacheable = parent.cacheable
-                    && !expanded.trace.unpredictable;
-                node.score = score_plan(
-                    initial, node.facts, node.intent, node.unpredictable);
-                node.scenario_utility = plan_score_utility(node.score);
-                node.worst_scenario_utility = node.scenario_utility;
-                trace("depth=" + std::to_string(depth) + "|root="
-                    + node.root_signature + "|action=" + choice.row.signature
-                    + "|state=" + fingerprint);
-                if (record(node) && !ended && depth < max_depth) {
-                    next.push_back(std::move(node));
-                }
-                output.max_path_depth = std::max(
-                    output.max_path_depth, depth);
-            }
-        }
-        output.completed_depth = depth;
-        std::stable_sort(next.begin(), next.end(), node_better);
-        if (next.size() > beam_width) next.resize(beam_width);
-        frontier = std::move(next);
+    output.done = output.frontier.empty() || output.depth > max_depth;
+    output.candidates.clear();
+    for (const auto &[signature, node] : output.best_by_root) output.candidates.push_back(node);
+    for (const auto &node : output.prior_candidates) {
+        if (std::none_of(output.candidates.begin(), output.candidates.end(), [&](const PlanNode &other) {
+            return other.sequence_signature == node.sequence_signature;
+        })) output.candidates.push_back(node);
     }
-    for (const std::string &signature : output.root_order) {
-        const auto found = best_by_root.find(signature);
-        if (found != best_by_root.end()) {
-            output.candidates.push_back(found->second);
-        }
-    }
-    std::stable_sort(
-        output.candidates.begin(), output.candidates.end(), node_better);
-    return output;
+    std::stable_sort(output.candidates.begin(), output.candidates.end(), node_better);
 }
 
 std::optional<PlanScore> replay_plan_score(
@@ -957,33 +933,11 @@ std::optional<PlanScore> replay_plan_score(
     std::uint64_t &nodes_expanded,
     bool &unpredictable
 ) {
-    if (!root) return std::nullopt;
-    for (std::size_t depth = 0; depth < candidate.sequence.size(); ++depth) {
-        const std::string expected = challenge::value_action_signature(
-            candidate.sequence[depth]);
-        const Value &legal = root->search_legal_action_candidates(actor);
-        const Value *matched = challenge::find_action_by_signature(legal, expected);
-        if (matched == nullptr) break;
-        const Value action = *matched;
-        ExpandedAction expanded = apply_action(
-            provider,
-            *root,
-            actor,
-            action,
-            provider.branch_seed(
-                seed, depth + 1, candidate.root_signature,
-                candidate.sequence_signature, depth),
-            "strategic-scenario-" + std::to_string(depth),
-            nodes_expanded);
-        if (!expanded.state) return std::nullopt;
-        unpredictable = unpredictable || expanded.trace.unpredictable;
-        root.reset(new RulesSession(*expanded.state));
-        if (provider.terminal(*root)
-            || provider.action_ends_turn(action)
-            || provider.decision_actor(*root) != actor) break;
-    }
-    const StrategicFacts facts = analyzer.analyze(*root, belief, actor);
-    return score_plan(initial, facts, candidate.intent, unpredictable);
+    auto replay = evaluate_fixed_sequence(provider, std::move(root), candidate.sequence,
+        initial, analyzer, belief, actor, seed, candidate.intent, nodes_expanded);
+    if (!replay || !replay->ended) return std::nullopt;
+    unpredictable = replay->unpredictable;
+    return replay->score;
 }
 
 void evaluate_scenarios(
@@ -999,7 +953,7 @@ void evaluate_scenarios(
     const std::atomic<bool> *cancel_requested
 ) {
     if (belief_samples <= 1 || compiled.candidates.empty()) return;
-    const std::size_t evaluated = compiled.candidates.size();
+    const std::size_t evaluated = std::min<std::size_t>(4, compiled.candidates.size());
     for (std::size_t index = 0; index < evaluated; ++index) {
         if (provider.time_budget_exhausted()) return;
         if (cancelled(cancel_requested)) return;
@@ -1020,8 +974,8 @@ void evaluate_scenarios(
                 sample_seed,
                 compiled.nodes_expanded,
                 unpredictable);
-            utilities.push_back(score.has_value()
-                ? plan_score_utility(*score) : -1'000'000.0);
+            if (provider.search_stopped()) return;
+            utilities.push_back(score.has_value() ? plan_score_utility(*score) : -1'000'000.0);
         }
         const double total = std::accumulate(
             utilities.begin(), utilities.end(), 0.0);
@@ -1277,9 +1231,43 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
         output.fallback_reason = "strategic_determinization_failed";
         return output;
     }
+    // Dominance: unique legal action and a RulesSession-proven immediate win
+    // need no heuristic search.
+    const Value root_precondition = provider.cache_precondition(*root, actor);
+    const auto unique_action_result = [&]() {
+        output.plan.success = true;
+        output.plan.selected = root_actions.as_array().front();
+        output.plan.sequence = Value::Array{output.plan.selected};
+        output.plan.cache_preconditions = Value::Array{root_precondition};
+        output.plan.root_candidates = Value::Array{output.plan.selected};
+        output.plan.completion_reason = "dominance_unique_action";
+        output.plan.trajectory_hash = provider.sha256_text(
+            "strategic_intent_v3|dominance_unique_action|"
+            + challenge::value_action_signature(output.plan.selected));
+        output.plan.belief_samples = 1;
+        output.plan.belief_consensus = 1;
+        output.plan.root_signatures_attempted = {
+            challenge::value_action_signature(output.plan.selected)};
+        output.plan.root_sample_counts[
+            output.plan.root_signatures_attempted.front()] = 1;
+        output.dominance_resolved = true;
+        output.cacheable = false;
+        output.explanation = Value(Value::Object{
+            {"dominance", Value("unique_legal_action")},
+        });
+        return output;
+    };
+    if (root_actions.as_array().size() == 1 && !config.full_diagnostics) return unique_action_result();
+
     const BeliefSummary belief = belief_tracker_.summarize(
         information, information.public_snapshot(), actor);
-    const StrategicFacts initial = analyzer_.analyze(*root, belief, actor);
+    const auto initial_evaluation = provider.evaluate([&] { return analyzer_.analyze(*root, belief, actor); });
+    if (!initial_evaluation) {
+        output.fallback_requested = true;
+        output.fallback_reason = "time_budget_exhausted";
+        return output;
+    }
+    const StrategicFacts initial = *initial_evaluation.value;
     output.strategic_facts = strategic_facts_value(initial);
     const std::string key = memory_key(match_id, actor);
     const auto previous = match_plans_.find(key);
@@ -1302,34 +1290,8 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
     match_plan.current_intent = output.intent;
     match_plans_[key] = match_plan;
     output.match_plan = match_plan_value(match_plan);
+    if (root_actions.as_array().size() == 1) return unique_action_result();
 
-    // Dominance: unique legal action and a RulesSession-proven immediate win
-    // need no heuristic search.
-    const Value root_precondition = provider.cache_precondition(*root, actor);
-    if (root_actions.as_array().size() == 1) {
-        output.plan.success = true;
-        output.plan.selected = root_actions.as_array().front();
-        output.plan.sequence = Value::Array{output.plan.selected};
-        output.plan.cache_preconditions = Value::Array{root_precondition};
-        output.plan.root_candidates = Value::Array{output.plan.selected};
-        output.plan.completion_reason = "dominance_unique_action";
-        output.plan.trajectory_hash = provider.sha256_text(
-            "strategic_intent_v3|dominance_unique_action|"
-            + challenge::value_action_signature(output.plan.selected));
-        output.plan.belief_samples = 1;
-        output.plan.belief_consensus = 1;
-        output.plan.root_signatures_attempted = {
-            challenge::value_action_signature(output.plan.selected)};
-        output.plan.root_sample_counts[
-            output.plan.root_signatures_attempted.front()] = 1;
-        output.dominance_resolved = true;
-        output.cacheable = false;
-        output.explanation = Value(Value::Object{
-            {"dominance", Value("unique_legal_action")},
-            {"intents", intents_value(intents)},
-        });
-        return output;
-    }
     const auto ranked_roots = provider.ranked_actions(
         *root, actor, root_actions, root_actions.as_array().size());
     for (std::size_t index = 0; index < ranked_roots.size(); ++index) {
@@ -1347,10 +1309,14 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
             "strategic-dominance-win",
             nodes);
         if (!expanded.state) continue;
-        const StrategicFacts after = analyzer_.analyze(
-            *expanded.state, belief, actor);
-        if (after.terminal && after.winner == actor
+        if (provider.terminal(*expanded.state)
+            && integer_field(expanded.state->search_state(), "winner", -1) == actor
             && !expanded.trace.unpredictable) {
+            const auto after_evaluation = provider.evaluate([&] {
+                return analyzer_.analyze(*expanded.state, belief, actor);
+            });
+            if (!after_evaluation) break;
+            const auto &after = *after_evaluation.value;
             output.plan.success = true;
             output.plan.selected = ranked_roots[index].action;
             output.plan.sequence = Value::Array{output.plan.selected};
@@ -1428,7 +1394,7 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
             || attempted_turn->second != initial.turn_number);
     const bool resource_window = shadow_kind == "PLAY_TRAINER"
         || shadow_kind == "USE_ABILITY" || shadow_kind == "RETREAT";
-    if (!terminal_window && !reply_comparison_window
+    if (!config.anytime_search && !terminal_window && !reply_comparison_window
         && !turn_opening_window && !resource_window) {
         output.fallback_requested = true;
         output.fallback_reason = "no_proof_obligation";
@@ -1441,317 +1407,163 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
     }
     turn_compilation_attempts_[key] = initial.turn_number;
 
-    config.belief_samples = std::max<std::size_t>(1,
-        std::min<std::size_t>(3, config.belief_samples));
+    config.belief_samples = std::clamp<std::size_t>(config.belief_samples, 1, 3);
     config.node_budget = std::max<std::uint64_t>(1, config.node_budget);
-    CompilationResult compiled = compile_turn_plans(
-        provider,
-        std::move(root),
-        root_actions,
-        actor,
-        seed,
-        initial,
-        match_plan,
-        intents,
-        output.deliberation,
-        semantics_,
-        strategies_,
-        analyzer_,
-        belief,
-        legacy_signature,
-        config.node_budget,
-        config.evaluation_smoke,
-        cancel_requested);
-    output.plan.nodes_expanded = compiled.nodes_expanded;
-    if (cancelled(cancel_requested)) {
-        output.plan.cancelled = true;
-        output.plan.error = "cancelled";
-        return output;
+    std::shared_ptr<RulesSession> shared_root(root.release());
+    CompilationResult compiled;
+    std::optional<PlanNode> anchor;
+    // Import the initial policy's actual sampled terminal state. Legal guards
+    // may replace its sequence, in which case replay is required instead.
+    for (const auto &snapshot : provider.search_context()->initial_plans) {
+        if (snapshot.seed != seed || !snapshot.state || !snapshot.ended) continue;
+        PlanNode node;
+        node.state = snapshot.state; node.root_action = snapshot.action;
+        node.sequence = snapshot.sequence; node.preconditions = snapshot.preconditions;
+        node.root_signature = snapshot.root_signature;
+        for (const auto &action : node.sequence) {
+            if (!node.sequence_signature.empty()) node.sequence_signature += '|';
+            node.sequence_signature += challenge::value_action_signature(action);
+        }
+        node.depth = node.sequence.size(); node.ended = true;
+        node.unpredictable = snapshot.unpredictable; node.cacheable = !snapshot.unpredictable;
+        double priority = -std::numeric_limits<double>::infinity();
+        for (const auto &intent : intents) {
+            const auto value = intent_action_priority(intent, initial, match_plan,
+                shared_root->search_state(), actor, node.root_action, semantics_, strategies_);
+            if (value > priority) { priority = value; node.intent = intent.kind; }
+        }
+        const auto facts = provider.evaluate([&] { return analyzer_.analyze(*node.state, belief, actor); });
+        if (!facts) break;
+        node.facts = *facts.value; node.score = score_plan(initial, node.facts, node.intent, node.unpredictable);
+        node.scenario_utility = node.worst_scenario_utility = plan_score_utility(node.score);
+        if (snapshot.root_signature == legacy_signature && snapshot.sequence == config.legacy_sequence) anchor = node;
+        compiled.prior_candidates.push_back(std::move(node));
+        ++provider.search_context()->reused_initial_plans;
     }
-    if (compiled.candidates.empty()) {
-        output.fallback_requested = true;
-        output.fallback_reason = "no_compilable_intent_plan";
-        return output;
+    if (!anchor && !config.legacy_sequence.empty()) {
+        anchor = evaluate_fixed_sequence(provider, provider.determinize(0, seed), config.legacy_sequence,
+            initial, analyzer_, belief, actor, seed, IntentKind::EndTurnSafely, compiled.nodes_expanded);
     }
-    const std::size_t scenario_samples = output.deliberation
-            == DeliberationLevel::D3
+    std::optional<PlanNode> selected;
+    ThreatScenarioComparison selected_comparison;
+    std::string confidence_reason;
+    // Candidate ordering uses the same completed own-turn horizon. The new
+    // path spends its additional beliefs on paired reply + recovery directly,
+    // avoiding a separate replay stage over another set of hidden samples.
+    std::size_t scenario_samples = !config.anytime_search && output.deliberation == DeliberationLevel::D3
         ? config.belief_samples : 1;
-    evaluate_scenarios(
-        compiled,
-        provider,
-        analyzer_,
-        belief,
-        initial,
-        actor,
-        seed,
-        scenario_samples,
-        initial.risk_mode,
-        cancel_requested);
-    output.plan.nodes_expanded = compiled.nodes_expanded;
-    output.plan.completed_depth = compiled.completed_depth;
-    output.plan.max_path_depth = compiled.max_path_depth;
-    if (cancelled(cancel_requested)) {
-        output.plan.cancelled = true;
-        output.plan.error = "cancelled";
-        return output;
-    }
-    std::optional<PlanNode> actual_legacy;
-    if (!config.legacy_sequence.empty()) {
-        std::uint64_t legacy_nodes = 0;
-        actual_legacy = evaluate_fixed_sequence(
-            provider,
-            provider.determinize(0, seed),
-            config.legacy_sequence,
-            initial,
-            analyzer_,
-            belief,
-            actor,
-            seed,
-            IntentKind::EndTurnSafely,
-            legacy_nodes);
-        compiled.nodes_expanded += legacy_nodes;
-    }
-    const PlanNode *legacy = nullptr;
-    if (actual_legacy.has_value()) {
-        legacy = &*actual_legacy;
-    } else {
-        for (const PlanNode &candidate : compiled.candidates) {
-            if (candidate.root_signature == legacy_signature) {
-                legacy = &candidate;
-                break;
-            }
+    do {
+        if (provider.search_stopped() || cancelled(cancel_requested)) break;
+        advance_turn_plans(compiled, provider, shared_root, root_actions, actor, seed,
+            initial, match_plan, intents, output.deliberation, semantics_, strategies_, analyzer_, belief,
+            legacy_signature, config.node_budget, config.evaluation_smoke, config.anytime_search, cancel_requested);
+        if (compiled.candidates.empty()) continue;
+        if (!anchor || !anchor->ended) {
+            // Mature the incumbent's root in the shared candidate tree. A
+            // completed END_TURN from another root cannot defeat an unfinished
+            // development line just by being the first complete candidate.
+            const auto complete = std::find_if(compiled.candidates.begin(), compiled.candidates.end(),
+                [&](const PlanNode &node) { return node.root_signature == legacy_signature && node.ended; });
+            if (complete != compiled.candidates.end()) anchor = *complete;
         }
-    }
-    // Migration is shadow-gated against the complete legacy controller for
-    // this exact state.  A strategic root must finish the turn and prove a
-    // concrete outcome improvement; heuristic risk/readiness deltas alone are
-    // not sufficient authority to bypass mature mandatory/guard logic.
-    const bool have_actual_legacy = config.legacy_action.is_object()
-        && !config.legacy_action.as_object().empty();
-    const PlanNode *best_ptr = &compiled.candidates.front();
-    ThreatScenarioComparison threat_comparison;
-    LegacyScenarioCache legacy_scenarios;
-    bool selected_extension_dominance = false;
-    bool selected_direct_attack_dominance = false;
-    bool selected_general_plan_dominance = false;
-    if ((best_ptr->score.terminal_rank != 3 || best_ptr->unpredictable) && legacy != nullptr) {
-        constexpr std::size_t scenario_candidate_limit = 3;
-        const std::size_t evaluated = std::min(
-            scenario_candidate_limit, compiled.candidates.size());
-        const PlanNode *scenario_choice = nullptr;
-        ThreatScenarioComparison scenario_choice_comparison;
-        bool scenario_choice_extension = false;
-        bool scenario_choice_direct_attack = false;
-        bool scenario_choice_general_plan = false;
-        for (std::size_t index = 0; index < evaluated; ++index) {
-            const PlanNode &candidate = compiled.candidates[index];
-            if (candidate.root_signature == legacy_signature || !candidate.ended) {
-                continue;
-            }
-            const bool extension_shape = deterministic_extension_of_legacy(
-                candidate, *legacy, semantics_);
-            const bool direct_attack_shape = candidate.sequence.size() == 1
-                && legacy->sequence.size() == 1
-                && string_field(candidate.root_action, "kind")
-                    == "DECLARE_ATTACK"
-                && string_field(legacy->root_action, "kind")
-                    == "DECLARE_ATTACK"
-                && action_card_id(candidate.root_action)
-                    == action_card_id(legacy->root_action);
-            const bool whole_turn_shape = candidate.ended && legacy->ended;
-            if (!whole_turn_shape) continue;
-            ThreatScenarioComparison comparison = compare_threat_scenarios(
-                provider,
-                candidate,
-                *legacy,
-                legacy_scenarios,
-                initial,
-                analyzer_,
-                belief,
-                actor,
-                seed,
-                initial.risk_mode == RiskMode::SeekUpside ? -30000 : 0,
-                cancel_requested);
-            compiled.nodes_expanded += comparison.nodes_expanded;
-            if (index == 0) threat_comparison = comparison;
-            if (!comparison.valid) continue;
-            const bool robust_improvement = comparison.minimum_gain_milli
-                    >= (initial.risk_mode == RiskMode::SeekUpside ? -30000 : 0)
-                && comparison.mean_gain_milli >= 30000;
-            const bool extension = extension_shape && robust_improvement;
-            const bool direct_attack = direct_attack_shape
-                && robust_improvement;
-            // Compare complete exchanges, including setup turns and resource
-            // preservation. A losing position may accept bounded downside;
-            // sampled terminal losses still exceed that tolerance by orders
-            // of magnitude and a proven legacy win remains protected.
-            const bool general_plan = whole_turn_shape && robust_improvement;
-            if (!extension && !direct_attack && !general_plan) continue;
-            if (scenario_choice == nullptr
-                || comparison.minimum_gain_milli
-                    > scenario_choice_comparison.minimum_gain_milli
-                || (comparison.minimum_gain_milli
-                        == scenario_choice_comparison.minimum_gain_milli
-                    && comparison.mean_gain_milli
-                        > scenario_choice_comparison.mean_gain_milli)) {
-                scenario_choice = &candidate;
-                scenario_choice_comparison = comparison;
-                scenario_choice_extension = extension;
-                scenario_choice_direct_attack = direct_attack;
-                scenario_choice_general_plan = general_plan
-                    && !extension && !direct_attack;
-            }
+        evaluate_scenarios(compiled, provider, analyzer_, belief, initial, actor, seed,
+            scenario_samples, initial.risk_mode, cancel_requested);
+        const auto batch_anchor = anchor;
+        std::optional<PlanNode> batch_best;
+        ThreatScenarioComparison batch_comparison;
+        const auto candidate_count = std::min<std::size_t>(3, compiled.candidates.size());
+        for (std::size_t index = 0; index < candidate_count; ++index) {
+            const auto &candidate = compiled.candidates[index];
+            if (!candidate.ended) continue;
+            const bool win = candidate.score.terminal_rank == 3 && !candidate.unpredictable;
+            if (!win && (!batch_anchor || !batch_anchor->ended)) continue;
+            if (!win && batch_anchor && candidate.sequence_signature == batch_anchor->sequence_signature) continue;
+            ThreatScenarioComparison comparison;
+            std::string reason = win ? "terminal_win" : "reply_scenario_plan_dominance";
+            if (!win && batch_anchor && batch_anchor->ended) {
+                if (provider.search_stopped()) break;
+                comparison = compare_threat_scenarios(provider, candidate, *batch_anchor,
+                    initial, analyzer_, belief, actor, seed,
+                    initial.risk_mode == RiskMode::SeekUpside ? -30000 : 0, cancel_requested);
+                compiled.nodes_expanded += comparison.nodes_expanded;
+                if (!comparison.valid || comparison.mean_gain_milli < 30000) continue;
+                if (batch_best && (comparison.minimum_gain_milli < batch_comparison.minimum_gain_milli
+                    || (comparison.minimum_gain_milli == batch_comparison.minimum_gain_milli
+                        && comparison.mean_gain_milli <= batch_comparison.mean_gain_milli))) continue;
+                reason = deterministic_extension_of_legacy(candidate, *batch_anchor, semantics_)
+                    ? "reply_scenario_dominance" : candidate.sequence.size() == 1 && batch_anchor->sequence.size() == 1
+                    && string_field(candidate.root_action, "kind") == "DECLARE_ATTACK"
+                    && string_field(batch_anchor->root_action, "kind") == "DECLARE_ATTACK"
+                    ? "reply_scenario_attack_dominance" : "reply_scenario_plan_dominance";
+            } else if (!win && batch_best) continue;
+            // Validate each provisional improvement now. An interrupted later
+            // competitor must not erase the last fully validated incumbent.
+            DecisionPhaseScope validation_phase(provider.search_context()->budget.get(), DecisionPhase::Validation);
+            auto validation_root = provider.determinize(0, seed);
+            if (!validation_root) continue;
+            const auto validation = safety_validator_.validate(candidate.sequence,
+                batch_anchor ? batch_anchor->sequence : Value::Array{}, root_actions,
+                *validation_root, actor, provider.branch_seed(seed, 991, candidate.root_signature,
+                    candidate.sequence_signature, 0), provider, win);
+            if (!validation.valid) continue;
+            selected = candidate; selected_comparison = comparison; confidence_reason = reason;
+            batch_best = candidate; batch_comparison = comparison;
+            if (win) break;
         }
-        if (scenario_choice != nullptr) {
-            best_ptr = scenario_choice;
-            threat_comparison = scenario_choice_comparison;
-            selected_extension_dominance = scenario_choice_extension;
-            selected_direct_attack_dominance = scenario_choice_direct_attack;
-            selected_general_plan_dominance = scenario_choice_general_plan;
+        if (batch_best) {
+            anchor = *batch_best;
+            provider.search_context()->set_incumbent(batch_best->root_action);
         }
-    }
-    const PlanNode &best = *best_ptr;
-    const bool best_finishes_turn = best.ended;
-    bool confident = best.score.terminal_rank == 3 && best_finishes_turn && !best.unpredictable;
-    std::string confidence_reason = confident ? "terminal_win"
-        : (best.root_signature == legacy_signature
-            ? "no_strategic_root_delta" : "strategic_override_ambiguous");
-    const bool legacy_extension = legacy != nullptr
-        && deterministic_extension_of_legacy(best, *legacy, semantics_);
-    if (!confident && threat_comparison.valid && legacy != nullptr
-        && (selected_extension_dominance
-            || selected_direct_attack_dominance
-            || selected_general_plan_dominance)
-    ) {
-        confident = true;
-        confidence_reason = selected_direct_attack_dominance
-            ? "reply_scenario_attack_dominance"
-            : (selected_general_plan_dominance
-                ? "reply_scenario_plan_dominance"
-                : "reply_scenario_dominance");
-    }
-    if (!confident) {
-        output.plan.nodes_expanded = compiled.nodes_expanded;
-        output.fallback_requested = true;
-        output.fallback_reason = confidence_reason;
-        output.explanation = Value(Value::Object{
-            {"fallback", Value(output.fallback_reason)},
-            {"selected_root", Value(best.root_signature)},
-            {"legacy_root", Value(legacy_signature)},
-            {"actual_legacy", Value(have_actual_legacy)},
-            {"proposed_sequence", Value(best.sequence)},
-            {"proposed_score", plan_score_value(best.score)},
-            {"legacy_score", legacy == nullptr
-                ? Value::make_object() : plan_score_value(legacy->score)},
-            {"proposed_ended", Value(best.ended)},
-            {"proposed_unpredictable", Value(best.unpredictable)},
-            {"reply_scenarios_valid", Value(threat_comparison.valid)},
-            {"reply_scenario_samples", Value(static_cast<std::int64_t>(
-                threat_comparison.samples))},
-            {"reply_minimum_gain_milli", Value(
-                threat_comparison.minimum_gain_milli
-                    == std::numeric_limits<std::int64_t>::max()
-                ? 0 : threat_comparison.minimum_gain_milli)},
-            {"reply_mean_gain_milli", Value(
-                threat_comparison.mean_gain_milli)},
-            {"deterministic_legacy_extension", Value(legacy_extension)},
-            {"intents", intents_value(intents)},
-            {"partial_order_pruned", Value(static_cast<std::int64_t>(
-                compiled.partial_order_pruned))},
-        });
-        return output;
-    }
-    auto validation_root = provider.determinize(0, seed);
-    if (!validation_root) {
-        output.fallback_requested = true;
-        output.fallback_reason = "safety_determinization_failed";
-        return output;
-    }
-    Value::Array legacy_validation_sequence = config.legacy_sequence;
-    if (legacy_validation_sequence.empty() && have_actual_legacy) {
-        legacy_validation_sequence.push_back(config.legacy_action);
-    }
-    const ValidationResult validation = safety_validator_.validate(
-        best.sequence,
-        legacy_validation_sequence,
-        root_actions,
-        *validation_root,
-        actor,
-        provider.branch_seed(
-            seed, 991, best.root_signature, best.sequence_signature, 0),
-        provider,
-        confidence_reason == "terminal_win");
-    if (!validation.valid) {
-        output.fallback_requested = true;
-        output.fallback_reason = "safety_rejected:" + validation.reason;
-        return output;
-    }
+        if (confidence_reason == "terminal_win") break;
+    } while (config.anytime_search && !config.evaluation_smoke && provider.search_context()->budget
+        && provider.search_context()->budget->timed() && !compiled.done && !provider.search_stopped());
 
-    output.plan.success = true;
-    output.plan.selected = best.root_action;
-    output.plan.sequence = best.sequence;
-    output.plan.cache_preconditions = best.preconditions;
-    for (const PlanNode &candidate : compiled.candidates) {
-        output.plan.root_candidates.push_back(candidate.root_action);
-        output.plan.root_signatures_attempted.push_back(
-            candidate.root_signature);
-        output.plan.root_sample_counts[candidate.root_signature] =
-            candidate.scenario_count;
-    }
-    output.plan.score_milli = utility_milli(best.scenario_utility);
-    output.plan.worst_score_milli = utility_milli(
-        best.worst_scenario_utility);
     output.plan.nodes_expanded = compiled.nodes_expanded;
+    output.plan.requested_depth = compiled.requested_depth;
     output.plan.completed_depth = compiled.completed_depth;
     output.plan.max_path_depth = compiled.max_path_depth;
-    output.plan.reply_completed_depth = 0;
-    output.plan.reply_depth_applicable = false;
-    output.plan.completion_reason = "intent_compiled";
-    output.plan.trajectory_hash = compiled.trajectory_hash;
-    output.plan.trajectory_events = compiled.trajectory_events;
-    output.plan.belief_samples = scenario_samples;
-    output.plan.belief_consensus = best.scenario_count;
-    std::string seed_wire;
-    for (std::size_t sample = 0; sample < scenario_samples; ++sample) {
-        if (!seed_wire.empty()) seed_wire += ',';
-        seed_wire += std::to_string(
-            seed + static_cast<std::uint32_t>(sample * 1000003ULL));
+    if (cancelled(cancel_requested)) { output.plan.cancelled = true; output.plan.error = "cancelled"; return output; }
+    if (!selected) {
+        output.fallback_requested = true;
+        output.fallback_reason = provider.time_budget_exhausted() ? "time_budget_exhausted"
+            : compiled.candidates.empty() ? "no_compilable_intent_plan" : "strategic_override_ambiguous";
+        output.explanation = Value(Value::Object{{"fallback", Value(output.fallback_reason)},
+            {"legacy_root", Value(legacy_signature)}, {"intents", intents_value(intents)},
+            {"partial_order_pruned", Value(static_cast<std::int64_t>(compiled.partial_order_pruned))}});
+        return output;
     }
-    output.plan.belief_seed_hash = provider.sha256_text(seed_wire);
+    const auto &best = *selected;
+    output.plan.success = true;
+    output.plan.selected = best.root_action; output.plan.sequence = best.sequence;
+    output.plan.cache_preconditions = best.preconditions;
+    for (const auto &candidate : compiled.candidates) {
+        output.plan.root_candidates.push_back(candidate.root_action);
+        output.plan.root_signatures_attempted.push_back(candidate.root_signature);
+        output.plan.root_sample_counts[candidate.root_signature] = candidate.scenario_count;
+    }
+    output.plan.root_sample_counts[best.root_signature] = best.scenario_count;
+    output.plan.score_milli = utility_milli(best.scenario_utility);
+    output.plan.worst_score_milli = utility_milli(best.worst_scenario_utility);
+    output.plan.reply_completed_depth = selected_comparison.valid ? selected_comparison.reply_completed_depth : 0;
+    output.plan.reply_depth_applicable = selected_comparison.valid;
+    output.plan.completion_reason = provider.time_budget_exhausted() ? "budget_with_validated_plan" : "intent_compiled";
+    output.plan.trajectory_hash = compiled.trajectory_hash; output.plan.trajectory_events = compiled.trajectory_events;
+    output.plan.belief_samples = scenario_samples; output.plan.belief_consensus = best.scenario_count;
+    output.plan.belief_seed_hash = provider.sha256_text("progressive|" + std::to_string(seed) + "|" + std::to_string(scenario_samples));
     output.plan.layers_completed = compiled.completed_depth;
-    output.intent = best.intent;
-    match_plan.current_intent = best.intent;
-    match_plans_[key] = match_plan;
-    output.match_plan = match_plan_value(match_plan);
-    output.plan_score = plan_score_value(best.score);
+    output.intent = best.intent; match_plan.current_intent = best.intent; match_plans_[key] = match_plan;
+    output.match_plan = match_plan_value(match_plan); output.plan_score = plan_score_value(best.score);
     output.cacheable = best.cacheable && best.sequence.size() > 1;
-    output.explanation = Value(Value::Object{
-        {"confidence", Value(confidence_reason)},
-        {"selected_intent", Value(intent_name(best.intent))},
-        {"deliberation", Value(deliberation_name(output.deliberation))},
-        {"selected_root", Value(best.root_signature)},
-        {"legacy_root", Value(legacy_signature)},
-        {"root_changed", Value(best.root_signature != legacy_signature)},
-        {"scenario_utility", Value(best.scenario_utility)},
-        {"worst_scenario_utility", Value(best.worst_scenario_utility)},
-        {"scenario_count", Value(static_cast<std::int64_t>(
-            best.scenario_count))},
-        {"reply_scenarios_valid", Value(threat_comparison.valid)},
-        {"reply_scenario_samples", Value(static_cast<std::int64_t>(
-            threat_comparison.samples))},
-        {"reply_minimum_gain_milli", Value(
-            threat_comparison.minimum_gain_milli
-                == std::numeric_limits<std::int64_t>::max()
-            ? 0 : threat_comparison.minimum_gain_milli)},
-        {"reply_mean_gain_milli", Value(
-            threat_comparison.mean_gain_milli)},
-        {"deterministic_legacy_extension", Value(legacy_extension)},
-        {"partial_order_pruned", Value(static_cast<std::int64_t>(
-            compiled.partial_order_pruned))},
-        {"safety", Value(validation.reason)},
-        {"cacheable", Value(output.cacheable)},
-        {"intents", intents_value(intents)},
-    });
+    output.explanation = Value(Value::Object{{"confidence", Value(confidence_reason)},
+        {"selected_intent", Value(intent_name(best.intent))}, {"selected_root", Value(best.root_signature)},
+        {"legacy_root", Value(legacy_signature)}, {"root_changed", Value(best.root_signature != legacy_signature)},
+        {"scenario_count", Value(static_cast<std::int64_t>(best.scenario_count))},
+        {"reply_scenarios_valid", Value(selected_comparison.valid)},
+        {"reply_scenario_samples", Value(static_cast<std::int64_t>(selected_comparison.samples))},
+        {"reply_minimum_gain_milli", Value(selected_comparison.valid ? selected_comparison.minimum_gain_milli : 0)},
+        {"reply_mean_gain_milli", Value(selected_comparison.mean_gain_milli)},
+        {"partial_order_pruned", Value(static_cast<std::int64_t>(compiled.partial_order_pruned))},
+        {"safety", Value("validated")}, {"cacheable", Value(output.cacheable)}, {"intents", intents_value(intents)}});
     return output;
 }
 

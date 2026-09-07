@@ -45,6 +45,10 @@ def main():
     parser.add_argument("--search-workers", type=int, choices=(1, 3), default=1)
     parser.add_argument("--engine", choices=("turn_beam_v2", "strategic_intent_v3"))
     parser.add_argument("--assert-parity", action="store_true")
+    for role in ("baseline", "candidate"):
+        parser.add_argument(f"--{role}-search-workers", type=int, choices=(1, 3))
+        parser.add_argument(f"--{role}-anytime-search", choices=("enabled", "disabled"))
+        parser.add_argument(f"--{role}-search-memoization", choices=("enabled", "disabled"))
     args = parser.parse_args()
     if args.rounds < 1 or args.warmups < 0 or args.time_budget_ms < 0:
         parser.error("invalid measurement budget")
@@ -54,6 +58,12 @@ def main():
     timings = {role: defaultdict(list) for role in ("baseline", "candidate")}
     totals = {role: defaultdict(float) for role in timings}
     changed = set()
+    overrides = {role: {f"internal_{feature}": getattr(args, f"{role}_{feature}") == "enabled"
+        for feature in ("anytime_search", "search_memoization")
+        if getattr(args, f"{role}_{feature}") is not None} for role in timings}
+    for role in timings:
+        if getattr(args, f"{role}_search_workers") is not None:
+            overrides[role]["internal_evaluation_batch"] = getattr(args, f"{role}_search_workers") == 1
     with (args.output / "samples.jsonl").open("w", encoding="utf-8") as stream:
         for round_index in range(-args.warmups, args.rounds):
             controllers = {role: [ExternalController(getattr(args, role), catalog, decks,
@@ -77,7 +87,7 @@ def main():
                     order = ("baseline", "candidate") if (index + round_index) % 2 else ("candidate", "baseline")
                     for role in order:
                         started = time.perf_counter()
-                        result = controllers[role][request["actor"]].call("decide", request=request,
+                        result = controllers[role][request["actor"]].call("decide", request={**request, **overrides[role]},
                             generation=request["revision"] + 1)
                         wall_ms = (time.perf_counter() - started) * 1000
                         if not result.get("success"):
@@ -88,6 +98,7 @@ def main():
                         results[role] = result
                         origin = result["decision_origin"]
                         sample[role] = {"elapsed_ms": result["elapsed_ms"], "wall_ms": wall_ms,
+                            "decision": semantic_result(result, request["kind"]),
                             "origin": origin, "nodes_expanded": result.get("nodes_expanded", 0),
                             "strategic_shadow_ms": result.get("strategic_shadow_ms", 0),
                             "strategic_probe_ms": result.get("strategic_probe_ms", 0),
@@ -122,6 +133,7 @@ def main():
         "trace_sha256": sha256_file(args.trace), "requests": len(requests), "rounds": args.rounds,
         "warmups": args.warmups, "time_budget_ms": args.time_budget_ms,
         "search_workers": args.search_workers, "concurrent_games": 1, "changed_requests": sorted(changed),
+        "evaluation_overrides": overrides,
         "timing": {role: {origin: quantiles(values) for origin, values in rows.items()}
                    for role, rows in timings.items()}, "work": totals}
     (args.output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")

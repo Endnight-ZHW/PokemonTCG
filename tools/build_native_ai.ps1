@@ -6,7 +6,9 @@ param(
     [string]$Configuration = 'all',
     [ValidateRange(1, 64)]
     [int]$Jobs = 4,
-    [string]$Python = ''
+    [string]$Python = '',
+    # Stage runtime libraries in an isolated Godot project before publishing.
+    [string]$OutputProjectRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,7 +17,11 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot '.tools'
 $Python = Resolve-ProjectPython -RepoRoot $repoRoot -Python $Python
 $sourceRoot = Join-Path $repoRoot 'godot\native\bindings'
-$projectRoot = Join-Path $repoRoot 'godot'
+$projectRoot = if ([string]::IsNullOrWhiteSpace($OutputProjectRoot)) {
+    Join-Path $repoRoot 'godot'
+} else {
+    [IO.Path]::GetFullPath($OutputProjectRoot)
+}
 $godotCpp = Join-Path $toolsRoot 'native\godot-cpp'
 $sdkRoot = Join-Path $toolsRoot 'android-sdk'
 $ndkRoot = Join-Path $sdkRoot 'ndk\28.1.13356709'

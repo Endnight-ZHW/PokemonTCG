@@ -19,22 +19,22 @@
 namespace ptcg::ai::challenge_detail {
 
 using namespace challenge;
+using traditional_value::field;
 
     std::unique_ptr<ptcg::ai::RulesSession> ChallengeSearchProviderImpl::determinize(
         std::size_t sample_index,
         std::uint32_t seed
     ) {
-        (void)sample_index;
         ++determinizations_;
-        if (information_set_ != nullptr && information_set_->valid()) {
-            ptcg::ai::Value snapshot = information_set_->sample_state(seed);
+        return search_context()->sample(sample_index, seed, [&]() -> std::unique_ptr<RulesSession> {
+            if (information_set_ == nullptr || !information_set_->valid()) return {};
+            Value snapshot = information_set_->sample_state(seed);
             if (!snapshot.is_object()) return {};
-            auto session = std::make_unique<ptcg::ai::RulesSession>(catalog_);
+            auto session = std::make_unique<RulesSession>(catalog_);
             std::string error;
             if (!session->restore(snapshot, seed, &error)) return {};
             return session;
-        }
-        return {};
+        });
     }
 
 
@@ -45,85 +45,77 @@ using namespace challenge;
         std::size_t limit
     ) {
         ++ranked_queries_;
-        const ptcg::ai::Value &effective_actions = supplied_actions.is_array()
-            && !supplied_actions.as_array().empty()
-            ? supplied_actions
-            : position.search_legal_action_candidates(actor);
+        if (search_stopped()) return {};
+        const Value &effective_actions = supplied_actions.is_array() && !supplied_actions.as_array().empty()
+            ? supplied_actions : position.search_legal_action_candidates(actor);
         if (!effective_actions.is_array()) return {};
-
-        const ptcg::ai::Value::Array &actions = effective_actions.as_array();
-        std::vector<ptcg::ai::TraditionalRankedAction> output;
-        output.reserve(actions.size());
+        const auto compute = [&]() -> std::vector<TraditionalRankedAction> {
+        const auto &actions = effective_actions.as_array();
+        search_context()->ranked_input_actions += actions.size();
+        std::vector<TraditionalRankedAction> rows;
+        std::vector<std::int64_t> adjustments;
+        rows.reserve(actions.size()); adjustments.reserve(actions.size());
         for (std::size_t index = 0; index < actions.size(); ++index) {
-            std::int64_t score = evaluator_.default_action_score_milli(actions[index]);
-            const std::optional<double> trusted_score = actor == root_actor_ && !time_budget_exhausted()
-                ? trusted_evaluator_.action_score(position, actor, actions[index])
-                : std::nullopt;
-            if (trusted_score.has_value()) {
-                score = ptcg::ai::TraditionalPositionEvaluator::quantize(
-                    *trusted_score);
-                ++native_trusted_action_scores_;
-            }
-            const double native_strategy = time_budget_exhausted() ? 0.0
-                : strategy_catalog_.action_score(position.search_state(), actor, actions[index]);
-            score += std::max<std::int64_t>(-250000, std::min<std::int64_t>(
-                250000,
-                ptcg::ai::TraditionalPositionEvaluator::quantize(native_strategy)));
-            if (
-                actor != root_actor_ && information_set_ != nullptr
-                && information_set_->valid()
-            ) {
-                const ptcg::ai::Value *source = actions[index].find("source");
-                const std::string source_zone = source != nullptr
-                    && source->is_object()
-                    ? string_field(*source, "zone") : std::string{};
-                const std::string source_card_id = source != nullptr
-                    && source->is_object()
-                    ? string_field(*source, "card_id") : std::string{};
+            if (search_stopped()) return {};
+            const Value &action = actions[index];
+            auto adjustment = std::clamp<std::int64_t>(TraditionalPositionEvaluator::quantize(
+                strategy_catalog_.action_score(position.search_state(), actor, action)), -250000, 250000);
+            if (actor != root_actor_ && information_set_ && information_set_->valid()) {
+                const Value *source = action.find("source");
+                const auto id = source ? string_field(*source, "card_id") : std::string{};
                 const auto &known = information_set_->known_hand(actor);
-                const bool exact_hand_action = source_zone == "hand"
-                    && !source_card_id.empty()
-                    && std::any_of(
-                        known.begin(), known.end(),
-                        [&source_card_id](const ptcg::ai::Value &entry) {
-                            return entry.string_or() == source_card_id;
-                        });
-                if (exact_hand_action) {
-                    // Ranking only: make certain opponent replies survive the
-                    // bounded top-four reply frontier. Leaf evaluation remains
-                    // unchanged, so certainty does not inflate position value.
-                    score += 40000;
+                if (source && string_field(*source, "zone") == "hand" && !id.empty()
+                    && std::any_of(known.begin(), known.end(), [&](const Value &entry) { return entry.string_or() == id; })) {
+                    adjustment += 40000;
                     ++known_reply_actions_promoted_;
                 }
             }
-            output.push_back(ptcg::ai::TraditionalRankedAction{
-                actions[index],
-                score,
-                {},
-                {},
-                {},
-                index,
-            });
+            adjustments.push_back(adjustment);
+            rows.push_back({action, evaluator_.default_action_score_milli(action) + adjustment,
+                value_action_signature(action),
+                traditional_semantic_bucket(action, stable_value_signature),
+                traditional_action_purpose(action), index});
         }
-        const auto stable = [](const ptcg::ai::Value &value) {
-            return stable_value_signature(value);
-        };
-        const auto sha = [](const std::string &value) {
-            return challenge::sha256_text(value);
-        };
-        for (auto &row : output) {
-            row.signature = ptcg::ai::traditional_action_signature(
-                row.action, stable, sha);
-            row.semantic_bucket = ptcg::ai::traditional_semantic_bucket(
-                row.action, stable);
-            row.purpose_bucket = ptcg::ai::traditional_action_purpose(row.action);
+        traditional_sort_ranked_actions(rows);
+        std::set<std::string> detailed;
+        if (search_context()->shortlist_enabled && actor == root_actor_ && rows.size() > 16) {
+            for (std::size_t index = 0; index < 16; ++index) detailed.insert(rows[index].signature);
+            std::set<std::string> protected_routes;
+            const std::string incumbent = value_action_signature(search_context()->incumbent_action());
+            for (const auto &row : rows) {
+                const auto kind = string_field(row.action, "kind");
+                const auto *target = field(row.action, "target");
+                const auto slot = target ? string_field(*target, "slot") : std::string{};
+                const std::string route = row.purpose_bucket + "|" + slot;
+                if (traditional_action_is_terminal(row.action) || row.signature == incumbent
+                    || protected_routes.insert(route).second) detailed.insert(row.signature);
+            }
+            rows.erase(std::remove_if(rows.begin(), rows.end(), [&](const auto &row) {
+                return !detailed.count(row.signature);
+            }), rows.end());
         }
-        ptcg::ai::traditional_sort_ranked_actions(output);
-        (void)limit;
-        // The traversal owns diversity selection. Returning the full stable
-        // ranking preserves TraditionalTurnPlanner's two-stage contract:
-        // freeze a root set once, then re-filter/re-diversify it per belief.
-        return output;
+        for (auto &row : rows) {
+            if (search_stopped()) return {};
+            if (actor == root_actor_) {
+                ++search_context()->detailed_action_scores;
+                const auto trusted = trusted_evaluator_.action_score(position, actor, row.action);
+                if (trusted) {
+                    row.score_milli = TraditionalPositionEvaluator::quantize(*trusted) + adjustments[row.source_index];
+                    ++native_trusted_action_scores_;
+                }
+            }
+        }
+        if (search_stopped()) return {};
+        traditional_sort_ranked_actions(rows);
+        (void)limit; // Traversals retain terminal/diversity selection within the detailed shortlist.
+        return rows;
+        };
+        // The legal-action array is part of the key, so a filtered root cannot
+        // reuse an unfiltered ranking. Changing the protected incumbent also
+        // changes the ranking policy epoch before the next worker batch starts.
+        return search_context()->memoize_values<std::vector<TraditionalRankedAction>>(
+            SearchMemo::Ranking, effective_actions, position.search_state(), position.rng_state(),
+            actor, search_context()->ranking_policy(strategy_optimization_), compute);
     }
 
 
@@ -131,7 +123,6 @@ using namespace challenge;
         const RulesSession &position, std::int32_t actor
     ) {
         ++state_score_queries_;
-        if (time_budget_exhausted()) return evaluator_.base_state_score_milli(position, actor);
         return search_context()->memoize<std::int64_t>(SearchMemo::StateScore,
             position, position.search_state(), actor, strategy_optimization_,
             [&] { return compute_state_score(position, actor); });
@@ -150,7 +141,6 @@ using namespace challenge;
         }
         const std::int64_t base_score = evaluator_.base_state_score_milli(
             position, root_actor);
-        if (time_budget_exhausted()) return base_score;
         std::int64_t score = base_score;
         const std::int64_t trusted_score = std::max<std::int64_t>(
             -210000, std::min<std::int64_t>(
@@ -189,6 +179,7 @@ using namespace challenge;
         (void)nodes_expanded;
         (void)decision_player;
         for (std::size_t guard = 0; guard < 32; ++guard) {
+            if (search_stopped()) return false;
             const ptcg::ai::Value *pending = &position.search_pending_choice(0);
             std::int32_t pending_player = 0;
             if (pending->is_null()) {
@@ -202,8 +193,8 @@ using namespace challenge;
             trace.had_choice = true;
             ptcg::ai::Value response;
             if (!select_choice(position, *pending, *typed_pending, response)) return false;
-            const ptcg::ai::RulesSessionResult applied = position.apply_choice(
-                response);
+            const ptcg::ai::RulesSessionResult applied = position.apply_choice(response);
+            ++search_context()->rule_choices;
             if (!applied.success) return false;
             trace.unpredictable = trace.unpredictable || std::any_of(
                 applied.events.begin(), applied.events.end(), event_is_unpredictable);

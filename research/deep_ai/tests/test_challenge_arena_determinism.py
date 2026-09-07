@@ -16,6 +16,7 @@ except ImportError:
 
 from deep_ai.challenge_arena import (  # noqa: E402
     ArenaAgentSpec,
+    aggregate_native_metrics,
     NativeChallengeArena,
     generate_tasks,
     load_product_payloads,
@@ -25,6 +26,29 @@ from deep_ai.challenge_arena import (  # noqa: E402
 
 @unittest.skipUnless(ptcg_ai_core is not None, "native research binding is not built")
 class ChallengeArenaDeterminismTests(unittest.TestCase):
+    def test_wall_clock_and_gameplay_workers_reach_the_controller(self):
+        catalog, decks, strategies = load_product_payloads()
+        for smoke in (False, True):
+            with self.subTest(smoke=smoke):
+                agent = ArenaAgentSpec("timed", "timed-contract", strategies,
+                    {"engine": "strategic_intent_v3", "node_budget": 192, "belief_samples": 3,
+                     "time_budget_ms": 1, "search_worker_mode": "gameplay", "internal_evaluation_smoke": smoke})
+                tasks = generate_tasks("focused", candidate_decks=("fire",), baseline_decks=("water",), max_decisions=12)
+                result = NativeChallengeArena(catalog, decks, agent, agent, workers=1, trace_all=True).run(tasks)
+                traces = [trace for game in result["games"] for trace in game["decision_trace"]]
+                self.assertTrue(traces)
+                self.assertTrue(all(trace["time_budget_ms"] == 1 for trace in traces))
+                expected = 1 if smoke else ptcg_ai_core.ChallengeController().get_contract()["search_worker_count"]
+                actions = [trace for trace in traces if trace["kind"] == "action"]
+                self.assertTrue(actions)
+                self.assertTrue(all(trace["controller_result"]["native_performance_counters"]["search_worker_count"] == expected
+                                    for trace in actions))
+                self.assertTrue(all(game["controller_failures"] == 0 and game["invalid_actions"] == 0
+                                    and game["illegal_choices"] == 0 for game in result["games"]))
+                metrics = aggregate_native_metrics(result["games"], agent, agent)
+                self.assertFalse(metrics["deterministic"])
+                self.assertEqual(metrics["inner_search_workers"], expected)
+
     def test_one_worker_and_many_workers_have_identical_semantics(self) -> None:
         catalog, decks, strategies = load_product_payloads()
         agent = with_preset_contract(ArenaAgentSpec(

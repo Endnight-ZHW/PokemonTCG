@@ -47,6 +47,7 @@ struct Node {
     std::size_t depth = 0;
     bool ended = false;
     bool cache_open = false;
+    bool unpredictable = false;
 };
 
 bool node_better(const Node &left, const Node &right) {
@@ -87,6 +88,9 @@ struct RootPlan {
     Value::Array cache_preconditions;
     std::int64_t score_milli = 0;
     std::string opponent_strategy_id;
+    std::shared_ptr<RulesSession> state;
+    bool ended = false, unpredictable = false;
+    std::int64_t own_turn_score_milli = 0;
 };
 
 struct SampleResult {
@@ -101,6 +105,8 @@ struct SampleResult {
     std::size_t layers_completed = 0;
     std::size_t reply_completed_depth = 0;
     bool reply_depth_applicable = false;
+    bool replies_complete = true;
+    bool root_coverage_complete = true;
     std::set<std::string> reply_completion_reasons;
     std::string completion_reason;
     std::string trajectory_hash;
@@ -131,7 +137,9 @@ ReplyResult score_opponent_response(
     const std::atomic<bool> *cancel_requested
 ) {
     ReplyResult output;
-    output.score_milli = provider.state_score_milli(*root_node.state, actor);
+    const auto initial_score = provider.evaluate_state(*root_node.state, actor);
+    if (!initial_score) { output.completion_reason = "time_budget_exhausted"; return output; }
+    output.score_milli = *initial_score.value;
     output.resulting_position = root_node.state;
     if (provider.terminal(*root_node.state)) return output;
     auto projected_reply = root_node.state->fork_for_reply_search();
@@ -169,14 +177,18 @@ ReplyResult score_opponent_response(
         output.resulting_position = reply_root;
         trace.append(
             "reply_yield|state=" + provider.state_fingerprint(*reply_root));
-        output.score_milli = provider.state_score_milli(*reply_root, actor);
+        const auto score = provider.evaluate_state(*reply_root, actor);
+        if (!score) { output.completion_reason = "time_budget_exhausted"; return output; }
+        output.score_milli = *score.value;
     }
     const std::int32_t opponent = 1 - actor;
     if (
         provider.terminal(*reply_root)
         || provider.decision_actor(*reply_root) != opponent
     ) {
-        output.score_milli = provider.state_score_milli(*reply_root, actor);
+        const auto score = provider.evaluate_state(*reply_root, actor);
+        if (!score) { output.completion_reason = "time_budget_exhausted"; return output; }
+        output.score_milli = *score.value;
         return output;
     }
 
@@ -206,6 +218,10 @@ ReplyResult score_opponent_response(
         }
         std::vector<ReplyNode> next;
         for (const ReplyNode &parent : frontier) {
+            if (provider.search_stopped()) {
+                output.completion_reason = "time_budget_exhausted";
+                return output;
+            }
             if (cancelled(cancel_requested)) {
                 output.cancelled = true;
                 output.completed_depth = depth - 1;
@@ -230,8 +246,16 @@ ReplyResult score_opponent_response(
             const auto ranked = provider.ranked_actions(
                 *parent.state, opponent, Value(),
                 config.reply_actions_per_node);
-            const auto candidates = traditional_diverse_top_actions(
+            auto candidates = traditional_diverse_top_actions(
                 ranked, config.reply_actions_per_node);
+            if (config.complete_turn_replies) {
+                for (const auto &row : ranked) {
+                    if (provider.action_ends_turn(row.action)
+                        && std::none_of(candidates.begin(), candidates.end(), [&](const auto &other) {
+                            return other.signature == row.signature;
+                        })) candidates.push_back(row);
+                }
+            }
             for (std::size_t index = 0; index < candidates.size(); ++index) {
                 const auto &candidate = candidates[index];
                 const std::string sequence = parent.sequence_signature
@@ -260,11 +284,9 @@ ReplyResult score_opponent_response(
                     continue;
                 }
                 std::shared_ptr<RulesSession> child = std::move(expanded.state);
-                ReplyNode node{
-                    child,
-                    provider.state_score_milli(*child, actor),
-                    sequence,
-                };
+                const auto score = provider.evaluate_state(*child, actor);
+                if (!score) { output.completion_reason = "time_budget_exhausted"; return output; }
+                ReplyNode node{child, *score.value, sequence};
                 const std::string fingerprint = provider.state_fingerprint(*child);
                 const bool ended = provider.terminal(*child)
                     || provider.action_ends_turn(candidate.action)
@@ -422,6 +444,10 @@ SampleResult run_sample(
     };
 
     for (std::size_t root_index = 0; root_index < roots.size(); ++root_index) {
+        if (provider.search_stopped()) {
+            output.root_coverage_complete = false;
+            break;
+        }
         if (cancelled(cancel_requested)) {
             output.cancelled = true;
             output.error = "cancelled";
@@ -443,6 +469,10 @@ SampleResult run_sample(
             output.nodes_expanded
         );
         if (!expanded.state) {
+            if (provider.search_stopped()) {
+                output.root_coverage_complete = false;
+                break;
+            }
             trace.append(
                 "root=" + std::to_string(root_index)
                 + "|" + row.signature + "|failed");
@@ -454,7 +484,9 @@ SampleResult run_sample(
             || provider.action_ends_turn(row.action)
             || provider.decision_actor(*child) != actor;
         if (!ended && fingerprint == root_fingerprint) continue;
-        const std::int64_t score = provider.state_score_milli(*child, actor);
+        const auto evaluation = provider.evaluate_state(*child, actor);
+        if (!evaluation) { output.root_coverage_complete = false; break; }
+        const std::int64_t score = *evaluation.value;
         trace.append(
             "root=" + std::to_string(root_index)
             + "|" + row.signature
@@ -473,6 +505,7 @@ SampleResult run_sample(
             1,
             ended,
             action_allows_cache(row.action, expanded),
+            expanded.trace.unpredictable,
         };
         record(node);
         if (!ended && config.max_depth > 1) frontier.push_back(node);
@@ -542,7 +575,9 @@ SampleResult run_sample(
                     || provider.action_ends_turn(candidate.action)
                     || provider.decision_actor(*child) != actor;
                 if (!ended && fingerprint == parent.state_fingerprint) continue;
-                const std::int64_t score = provider.state_score_milli(*child, actor);
+                const auto evaluation = provider.evaluate_state(*child, actor);
+                if (!evaluation) break;
+                const std::int64_t score = *evaluation.value;
                 trace.append(
                     "depth=" + std::to_string(depth)
                     + "|root=" + parent.root_signature
@@ -564,6 +599,7 @@ SampleResult run_sample(
                     ended,
                     parent.cache_open
                         && action_allows_cache(candidate.action, expanded),
+                    parent.unpredictable || expanded.trace.unpredictable,
                 };
                 node.sequence.push_back(candidate.action);
                 if (record(node) && !ended && depth < config.max_depth) {
@@ -589,6 +625,7 @@ SampleResult run_sample(
     }
 
     output.reply_completed_depth = config.reply_depth;
+    bool replies_complete = true;
     for (const std::string &root_signature : root_order) {
         Node selected;
         bool have_selected = false;
@@ -620,6 +657,7 @@ SampleResult run_sample(
             output.error = "cancelled";
             return output;
         }
+        if (reply.completion_reason == "time_budget_exhausted") replies_complete = false;
         if (reply.applicable) {
             output.reply_depth_applicable = true;
             output.reply_completed_depth = std::min(
@@ -633,8 +671,21 @@ SampleResult run_sample(
             selected.cache_preconditions,
             reply.score_milli,
             reply.opponent_strategy_id,
+            selected.state,
+            selected.ended,
+            selected.unpredictable,
+            selected.score_milli,
         });
     }
+    if (!replies_complete) {
+        // A deadline may interrupt only some replies. Compare every surviving
+        // root at the completed own-turn horizon, never mix reply and leaf values.
+        for (auto &plan : output.root_plans) plan.score_milli = plan.own_turn_score_milli;
+        output.completion_reason = "time_budget_exhausted";
+        output.reply_completed_depth = 0;
+        output.reply_depth_applicable = false;
+    }
+    output.replies_complete = replies_complete;
     if (output.root_plans.empty()) {
         output.error = "no_simulatable_action";
         return output;
@@ -794,10 +845,18 @@ TraditionalSearchResult TraditionalTurnBeamSearch::search(
     }
     for (std::size_t sample = parallel_workers;
         sample < config_.belief_samples; ++sample) {
+        if (provider_.search_stopped()) break;
         sample_rows[sample] = run_sample(
             provider_, config_, actor, belief_seeds[sample], sample,
             root_actions, fixed_roots, cancel_requested);
     }
+
+    // A wall-clock stop can land between samples as well as between roots.
+    // Keep one completed scoring horizon across every retained sample. A
+    // sample that never produced a scored root contributes no vote.
+    const bool all_replies_complete = std::all_of(sample_rows.begin(), sample_rows.end(),
+        [](const SampleResult &row) { return !row.success || row.replies_complete; });
+    std::size_t completed_samples = 0;
 
     for (std::size_t sample = 0; sample < config_.belief_samples; ++sample) {
         if (cancelled(cancel_requested)) {
@@ -821,8 +880,17 @@ TraditionalSearchResult TraditionalTurnBeamSearch::search(
             return result;
         }
         if (!row.success) {
+            if (provider_.time_budget_exhausted()) continue;
             result.error = row.error.empty() ? "planner_failed" : row.error;
             return result;
+        }
+        if (!row.root_coverage_complete && provider_.time_budget_exhausted()) continue;
+        ++completed_samples;
+        if (!all_replies_complete) {
+            for (auto &plan : row.root_plans) plan.score_milli = plan.own_turn_score_milli;
+            row.reply_depth_applicable = false;
+            row.reply_completed_depth = 0;
+            row.completion_reason = "time_budget_exhausted";
         }
         result.completed_depth = std::min(
             result.completed_depth, row.completed_depth);
@@ -839,6 +907,13 @@ TraditionalSearchResult TraditionalTurnBeamSearch::search(
         }
         completion_reasons.insert(row.completion_reason);
         for (const RootPlan &plan : row.root_plans) {
+            if (sample == 0 && plan.state && plan.ended) {
+                std::string sequence;
+                for (const auto &action : plan.sequence) sequence += "|" + challenge::value_action_signature(action);
+                provider_.search_context()->initial_plans.push_back({plan.state, plan.action,
+                    plan.sequence, plan.cache_preconditions, plan.signature, sequence, sample_seed,
+                    plan.ended, plan.unpredictable});
+            }
             Aggregate &entry = aggregate[plan.signature];
             ++entry.count;
             entry.total += plan.score_milli;
@@ -856,7 +931,7 @@ TraditionalSearchResult TraditionalTurnBeamSearch::search(
     for (const std::string &signature : fixed_root_order) {
         const auto found = aggregate.find(signature);
         if (found == aggregate.end()
-            || found->second.count != config_.belief_samples) continue;
+            || found->second.count != completed_samples) continue;
         const Aggregate &candidate = found->second;
         if (best == nullptr) {
             best = &candidate;
@@ -899,7 +974,7 @@ TraditionalSearchResult TraditionalTurnBeamSearch::search(
     result.sequence = best->representative.sequence;
     result.cache_preconditions = best->representative.cache_preconditions;
     result.opponent_strategy_id = best->representative.opponent_strategy_id;
-    result.completion_reason = completion_reasons.size() == 1
+    result.completion_reason = provider_.time_budget_exhausted() ? "time_budget_exhausted" : completion_reasons.size() == 1
         && completion_reasons.count("depth_complete")
         ? "depth_complete" : "frontier_exhausted";
     if (!result.reply_depth_applicable) result.reply_completed_depth = 0;
@@ -910,8 +985,8 @@ TraditionalSearchResult TraditionalTurnBeamSearch::search(
         : (reply_completion_reasons.size() == 1
             && reply_completion_reasons.count("depth_complete")
             ? "depth_complete" : "frontier_exhausted");
-    result.belief_samples = config_.belief_samples;
-    result.belief_consensus = config_.belief_samples;
+    result.belief_samples = completed_samples;
+    result.belief_consensus = completed_samples;
     result.root_signatures_attempted = fixed_root_order;
     for (const std::string &signature : fixed_root_order) {
         const auto found = aggregate.find(signature);

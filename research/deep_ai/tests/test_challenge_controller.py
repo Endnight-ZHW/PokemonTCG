@@ -168,6 +168,13 @@ class ChallengeControllerTests(unittest.TestCase):
         self.controller.reset_match("next-match")
         self.assertFalse(self.decide(match_instance_id="next-match")["turn_plan_cache_hit"])
 
+    def test_policy_change_invalidates_the_continuation(self):
+        for policy in ("use_strategy_optimization", "use_deck_inspection", "internal_anytime_search"):
+            with self.subTest(policy=policy):
+                self.setUp()
+                self.prime_plan()
+                self.assertFalse(self.decide(**{policy: False})["turn_plan_cache_hit"])
+
     def test_fallback_keeps_the_legacy_selection(self):
         state = self.session.snapshot()
         state["players"][1]["active"]["damage_counters"] = 0
@@ -252,7 +259,7 @@ class ChallengeControllerTests(unittest.TestCase):
         owner["deck"] = pool
         state["players"][1]["prizes"] = ["sv1-ener-2"] * 6
         self.assertTrue(self.session.restore(state, 17)["success"])
-        return self.decide()["strategic_facts"]
+        return self.decide(internal_full_diagnostics=True)["strategic_facts"]
 
     def test_small_attack_does_not_mean_burst_attack_is_ready(self):
         facts = self.combat_position("lightning", "svl-pikaex", energies=["sv1-ener-4"])
@@ -269,6 +276,54 @@ class ChallengeControllerTests(unittest.TestCase):
         self.assertFalse(result.get("cancelled", False))
         self.assertTrue(result["native_performance_counters"]["time_budget_exhausted"])
         self.assertTrue(self.session.apply_action({**result["action"], "action_id": "deadline"})["success"])
+
+    def test_unique_action_avoids_optional_combat_analysis(self):
+        request = self.request()
+        request["actions"] = [next(a for a in request["actions"] if a["kind"] == "END_TURN")]
+        result = self.controller.decide(request, 1000)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["strategic_shadow_legacy"])
+        self.assertEqual(result["native_performance_counters"]["memo_pipeline_computations"], 0)
+
+    def test_expired_request_does_not_publish_a_continuation(self):
+        result = self.decide(time_budget_ms=1)
+        self.assertTrue(result["native_performance_counters"]["time_budget_exhausted"])
+        self.assertTrue(self.session.apply_action({**result["action"], "action_id": "expired"})["success"])
+        resumed = self.decide(time_budget_ms=5000)
+        self.assertFalse(resumed["turn_plan_cache_hit"])
+
+    def test_initial_search_candidates_are_reused_as_complete_plans(self):
+        state = self.session.snapshot()
+        state["players"][1]["active"]["damage_counters"] = 0
+        self.assertTrue(self.session.restore(state, 17)["success"])
+        result = self.decide(time_budget_ms=0)
+        self.assertGreaterEqual(result["native_performance_counters"]["reused_initial_plans"], 2)
+
+    def test_fixed_work_parallel_samples_keep_the_same_decision(self):
+        state = self.session.snapshot()
+        state["players"][1]["active"]["damage_counters"] = 0
+        self.assertTrue(self.session.restore(state, 17)["success"])
+        sequential = self.make_controller().decide(self.request(time_budget_ms=0), 1000)
+        parallel = self.make_controller().decide(self.request(time_budget_ms=0, internal_evaluation_batch=False), 1000)
+        semantic = lambda action: {key: value for key, value in action.items() if key != "action_id"}
+        self.assertTrue(sequential["success"] and parallel["success"])
+        self.assertEqual(semantic(sequential["action"]), semantic(parallel["action"]))
+        self.assertEqual(sequential["score_milli"], parallel["score_milli"])
+
+    def test_completed_winning_incumbent_can_be_cached(self):
+        result = self.decide(time_budget_ms=5000)
+        self.assertFalse(result["strategic_fallback"])
+        self.assertTrue(result["strategic_plan_memory"])
+        self.assertEqual(result["strategic_explanation"]["confidence"], "terminal_win")
+        self.assertGreater(result["native_performance_counters"]["rule_action_applications"], 0)
+
+    def test_unfinished_development_is_not_overridden_by_direct_end_turn(self):
+        state = self.session.snapshot()
+        state["players"][1]["active"]["damage_counters"] = 0
+        self.assertTrue(self.session.restore(state, 17)["success"])
+        result = self.decide(internal_evaluation_smoke=True, node_budget=32)
+        self.assertEqual(result["action"]["kind"], "ATTACH_ENERGY")
+        self.assertTrue(result["strategic_fallback"])
 
     def test_xatu_cannot_attach_a_trainer_as_energy(self):
         facts = self.combat_position("psychic", "sv1-113", energies=["sv1-ener-5"],
@@ -391,14 +446,14 @@ class ChallengeControllerTests(unittest.TestCase):
 
     def test_replacing_a_slot_occupant_discards_its_attacker_commitment(self):
         self.combat_position("psychic", "sv1-113", bench=["sv1-111"])
-        before = self.decide()["strategic_match_plan"]
+        before = self.decide(internal_full_diagnostics=True)["strategic_match_plan"]
         self.assertEqual(before["next_attacker_slot"], "bench_0")
         state = self.session.snapshot()
         # The same slot now holds a support engine, not the previous attacker.
         state["players"][0]["bench"][0]["card_id"] = "sv1-108"
         state["revision"] += 1
         self.assertTrue(self.session.restore(state, 17)["success"])
-        after = self.decide()["strategic_match_plan"]
+        after = self.decide(internal_full_diagnostics=True)["strategic_match_plan"]
         self.assertEqual(after["next_attacker_slot"], "")
         self.assertEqual(after["next_attacker_card_id"], "")
 

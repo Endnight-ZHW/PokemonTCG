@@ -250,21 +250,25 @@ Value attacker_pipeline_value(const AttackerPipeline &pipeline) {
 
 } // namespace
 
-CardSemanticModel::CardSemanticModel(Value catalog) {
-    const Value *cards = catalog.find("cards");
-    cards_ = cards != nullptr && cards->is_object() ? *cards : std::move(catalog);
+CardSemanticModel::CardSemanticModel(Value catalog, std::shared_ptr<const Profiles> profiles)
+    : profiles_(std::move(profiles)) {
+    if (profiles_) return;
+    const Value *rows = std::as_const(catalog).find("cards");
+    const Value &cards = rows != nullptr && rows->is_object() ? *rows : catalog;
+    auto computed = std::make_shared<Profiles>();
+    for (const auto &[id, definition] : cards.as_object()) {
+        auto &profile = (*computed)[id];
+        profile.supporter = string_field(definition, "trainer_type") == "Supporter";
+        inspect_semantics(definition, profile);
+    }
+    profiles_ = std::move(computed);
 }
 
 CardSemanticProfile CardSemanticModel::profile(
     const std::string &card_id
 ) const {
-    const auto cached = profile_cache_.find(card_id);
-    if (cached != profile_cache_.end()) return cached->second;
-    CardSemanticProfile result;
-    const Value *definition = card(cards_, card_id);
-    if (definition != nullptr) inspect_semantics(*definition, result);
-    profile_cache_[card_id] = result;
-    return result;
+    const auto cached = profiles_->find(card_id);
+    return cached != profiles_->end() ? cached->second : CardSemanticProfile{};
 }
 
 ActionFootprint CardSemanticModel::action_footprint(const Value &action) const {
@@ -297,9 +301,7 @@ ActionFootprint CardSemanticModel::action_footprint(const Value &action) const {
     } else if (kind == "PLAY_TRAINER") {
         result.writes.insert("hand");
         result.consumes.insert("hand:" + card_id);
-        const Value *definition = card(cards_, card_id);
-        if (definition != nullptr
-            && string_field(*definition, "trainer_type") == "Supporter") {
+        if (semantic.supporter) {
             result.consumes.insert("supporter_per_turn");
         }
     } else if (kind == "USE_ABILITY") {
@@ -388,6 +390,7 @@ BeliefSummary BeliefTracker::summarize(
 }
 
 StrategicAnalyzer::Knowledge::Knowledge(const Value &catalog) {
+    semantic_profiles = CardSemanticModel(catalog).profiles();
     const Value *rows = catalog.find("cards");
     const Value &cards = rows != nullptr && rows->is_object() ? *rows : catalog;
     for (const auto &[id, definition] : cards.as_object()) {
@@ -417,15 +420,9 @@ StrategicAnalyzer::StrategicAnalyzer(
     std::shared_ptr<const Knowledge> knowledge
 ) : catalog_(std::move(catalog)), decks_(std::move(decks)),
     strategies_(strategies), knowledge_(knowledge ? std::move(knowledge)
-        : std::make_shared<Knowledge>(catalog_)), semantics_(catalog_) {
+        : std::make_shared<Knowledge>(catalog_)), semantics_(catalog_, knowledge_->semantic_profiles) {
     const Value *cards = catalog_.find("cards");
     cards_ = cards != nullptr && cards->is_object() ? *cards : catalog_;
-    for (const auto &[card_id, definition] : cards_.as_object()) {
-        // Fully populate immutable semantic facts before shared search workers
-        // use this analyzer. Const analysis must not race on lazy insertion.
-        (void)semantics_.profile(card_id);
-    }
-    (void)semantics_.profile("");
 }
 
 void StrategicAnalyzer::set_strategy_optimization(bool enabled) noexcept {
