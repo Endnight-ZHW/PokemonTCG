@@ -176,4 +176,10 @@ guided-02 的实现哈希为 `2ce1fdf9b0c4e1e4359d8aa3a7e7cc199b561773a248d6f2d1
 
 证据位于 `build/traditional-ai-efficiency/guided-development/traditional-efficiency-guided-02/`。
 新候选在这 47 条请求上的单／三线程固定工作回放也完全一致。
-独立 v2 的 313 条完整轨迹兼容回放继续执行；本任务已设置每 30 分钟自动跟进后续验证。
+独立 v2 的 313 条完整轨迹兼容回放已通过：110 次选牌和 203 次动作请求的动作、选牌、序列和
+评分均与原始 71d02fa 基线一致。该检查使用固定工作模式，单个低优先级逻辑处理器上的并行
+开发耗时不用于五秒延迟验收。证据位于 `build/traditional-ai-efficiency/v2-compatibility/`。
+
+guided-02 的关闭开关兼容、单／三线程一致性和候选保留消融，现已扩展到完整 313 条轨迹，
+顺序执行于 `guided-development/guided-full-02/`，用于覆盖全部十套牌及后期钢牌组。
+本任务保持每 30 分钟自动跟进；final-04 第二批主对局 400 局已完成，固定对手对照继续运行。
