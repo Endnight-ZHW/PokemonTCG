@@ -170,7 +170,7 @@ class ChallengeControllerTests(unittest.TestCase):
 
     def test_policy_change_invalidates_the_continuation(self):
         for policy in ("use_strategy_optimization", "use_deck_inspection", "internal_anytime_search",
-                       "internal_dual_guidance"):
+                       "internal_dual_guidance", "internal_prune_transfer_cycles"):
             with self.subTest(policy=policy):
                 self.setUp()
                 self.prime_plan()
@@ -415,6 +415,15 @@ class ChallengeControllerTests(unittest.TestCase):
         returned = self.decide(node_budget=1)
         self.assertNotEqual(returned["action"]["kind"], "ATTACH_ENERGY")
         self.assertGreater(returned["native_performance_counters"]["root_actions_filtered"], 0)
+
+    def test_shared_tree_prunes_pure_energy_transfer_cycles(self):
+        path = RESEARCH_ROOT.parents[1] / "native/challenge_core/tests/fixtures/pure_energy_transfer_cycle.json"
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        self.assertTrue(self.session.restore(fixture["snapshot"], fixture["rng_state"])["success"])
+        result = self.decide(seed=fixture["rng_state"], match_seed=fixture["match_seed"],
+                             time_budget_ms=0, node_budget=512)
+        self.assertGreater(result["native_performance_counters"]["energy_transfer_cycles_pruned"], 0)
+        self.assertTrue(self.session.apply_action({**result["action"], "action_id": "transfer-progress"})["success"])
 
     def test_ultra_ball_cost_keeps_a_live_candy_evolution_pair(self):
         self.combat_position("water", "sv2-tatsu", energies=["sv1-ener-3"],

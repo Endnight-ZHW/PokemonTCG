@@ -1,4 +1,5 @@
 #include "planner_v3/strategic_intent_planner.hpp"
+#include "planner_v3/energy_transfer_cycle.hpp"
 
 #include "challenge_search_support.hpp"
 #include "ptcg_traditional_policy.hpp"
@@ -368,6 +369,9 @@ struct PlanNode {
     StrategicFacts facts;
     PlanScore score;
     std::optional<std::int64_t> classic_score_milli;
+    // Only the current consecutive run of pure transfers is retained. Values
+    // own their COW identities without retaining a complete search subtree.
+    std::vector<Value> transfer_ancestors;
     IntentKind intent = IntentKind::EndTurnSafely;
     std::size_t depth = 0;
     bool ended = false;
@@ -823,6 +827,7 @@ void advance_turn_plans(
     bool smoke,
     bool anytime,
     bool dual_guidance,
+    bool prune_transfer_cycles,
     const std::atomic<bool> *cancel_requested
 ) {
     if (!root || output.done) return;
@@ -923,14 +928,28 @@ void advance_turn_plans(
         const auto signature = parent.sequence_signature.empty() ? choice.row.signature
             : parent.sequence_signature + "|" + choice.row.signature;
         const auto root_signature = parent.root_signature.empty() ? choice.row.signature : parent.root_signature;
+        const auto action_seed = provider.branch_seed(seed, output.depth, root_signature, signature, index);
         ExpandedAction expanded = apply_action(provider, *parent.state, actor, choice.row.action,
-            provider.branch_seed(seed, output.depth, root_signature, signature, index),
+            action_seed,
             "strategic-intent-" + std::to_string(output.depth) + "-" + std::to_string(index), output.nodes_expanded);
         if (!expanded.state) continue;
         const auto fingerprint = provider.state_fingerprint(*expanded.state);
         const bool ended = provider.terminal(*expanded.state) || provider.action_ends_turn(choice.row.action)
             || provider.decision_actor(*expanded.state) != actor;
         if (!ended && fingerprint == parent.fingerprint) continue;
+        const bool pure_transfer = prune_transfer_cycles && !ended && action_seed != 0
+            && semantics.pure_energy_transfer(choice.row.action) && !expanded.trace.unpredictable
+            && expanded.state->rng_state() == action_seed;
+        if (pure_transfer && std::any_of(parent.transfer_ancestors.begin(), parent.transfer_ancestors.end(),
+                [&](const Value &ancestor) {
+                    return same_energy_transfer_position(ancestor, expanded.state->search_state());
+                })) {
+            // A physical cycle cannot improve a turn. In particular it must
+            // not gain value merely by changing rollout seeds or log tie-breaks.
+            // Full history and RNG still distinguish all evaluation cache keys.
+            ++provider.search_context()->energy_transfer_cycles_pruned;
+            continue;
+        }
         // Only deterministic paths are deduplicated, with the policy's complete
         // action history retained. Cycle fingerprints alone omit that history.
         const auto *history = field(expanded.state->search_state(), "action_log");
@@ -942,6 +961,8 @@ void advance_turn_plans(
         const auto facts = provider.evaluate([&] { return analyzer.analyze(*expanded.state, belief, actor); });
         if (!facts) break;
         PlanNode node = parent;
+        if (pure_transfer) node.transfer_ancestors.push_back(parent.state->search_state());
+        else node.transfer_ancestors.clear();
         node.state = std::move(expanded.state);
         if (output.depth == 1) {
             node.root_action = choice.row.action; node.root_signature = root_signature;
@@ -1336,6 +1357,7 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
     }
     analyzer_.set_strategy_optimization(config.strategy_optimization);
     config.dual_guidance = config.dual_guidance && config.anytime_search && !config.evaluation_smoke;
+    config.prune_transfer_cycles = config.prune_transfer_cycles && config.dual_guidance;
     analyzer_.set_search_context(provider.search_context());
     auto root = provider.determinize(0, seed);
     if (!root) {
@@ -1570,7 +1592,7 @@ StrategicPlannerResult StrategicIntentPlanner::decide(
         advance_turn_plans(compiled, provider, shared_root, root_actions, actor, seed,
             initial, match_plan, intents, output.deliberation, semantics_, strategies_, analyzer_, belief,
             legacy_signature, config.node_budget, config.evaluation_smoke, config.anytime_search,
-            config.dual_guidance, cancel_requested);
+            config.dual_guidance, config.prune_transfer_cycles, cancel_requested);
         if (compiled.candidates.empty()) continue;
         if (!anchor || !anchor->ended) {
             // Mature the incumbent's root in the shared candidate tree. A

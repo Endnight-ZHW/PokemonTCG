@@ -1,4 +1,5 @@
 #include "decision_search_context.hpp"
+#include "planner_v3/energy_transfer_cycle.hpp"
 
 #include <atomic>
 #include <iostream>
@@ -81,6 +82,39 @@ int main() {
         });
         for (auto &worker : workers) worker.join();
         require(valid, "parallel cache returned inconsistent results");
+        const Value position(Value::Object{
+            {"players", Value(Value::Array{Value(Value::Object{{"energy", Value("active")},
+                {"retreated_this_turn", Value(false)}, {"damage", Value(0)}}), Value::make_object()})},
+            {"revision", Value(1)}, {"action_log", Value::make_array()},
+            {"turn_fact_book", Value::make_object()},
+            {"resolution_stack", Value(Value::Object{{"frames", Value::make_array()},
+                {"pending_request", Value()}, {"sequence", Value(0)}, {"context", Value::make_object()}})}
+        });
+        Value cycled = position;
+        cycled["revision"] = Value(5);
+        cycled["action_log"].as_array().emplace_back("energy moved out and back");
+        cycled["resolution_stack"]["sequence"] = Value(4);
+        require(planner_v3::same_energy_transfer_position(position, cycled), "physical transfer cycle was missed");
+        Value advanced = cycled;
+        advanced["players"].as_array()[0]["energy"] = Value("bench");
+        require(!planner_v3::same_energy_transfer_position(position, advanced), "energy preparation was pruned as a cycle");
+        advanced = cycled;
+        advanced["players"].as_array()[0]["retreated_this_turn"] = Value(true);
+        require(!planner_v3::same_energy_transfer_position(position, advanced), "spent retreat was ignored");
+        advanced = cycled;
+        advanced["players"].as_array()[0]["damage"] = Value(10);
+        require(!planner_v3::same_energy_transfer_position(position, advanced), "damage change was ignored");
+        advanced = cycled;
+        advanced["turn_fact_book"]["knockout"] = Value(true);
+        require(!planner_v3::same_energy_transfer_position(position, advanced), "relevant turn history was ignored");
+        advanced = cycled;
+        advanced["resolution_stack"]["pending_request"] = Value::make_object();
+        require(!planner_v3::same_energy_transfer_position(position, advanced), "pending resolution was treated as complete");
+        DecisionSearchContext cycle_cache;
+        require(cycle_cache.memoize_values<int>(SearchMemo::StateScore, position, position, 17, 0, 0,
+            [] { return 1; }) == 1, "initial policy score missing");
+        require(cycle_cache.memoize_values<int>(SearchMemo::StateScore, cycled, cycled, 17, 0, 0,
+            [] { return 2; }) == 2, "physical cycle equivalence leaked into policy score caching");
         std::cout << "SEARCH_CONTEXT_OK cow, mutation, rng, perspective, policy, basis, parallel\n";
         return 0;
     } catch (const std::exception &error) {
