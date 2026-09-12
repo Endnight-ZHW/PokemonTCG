@@ -1167,7 +1167,10 @@ def run_arena(
             ]
             if batch:
                 batch_result = arena.run(
-                    batch, on_games=retry_journal.persist_primary
+                    batch, on_games=retry_journal.persist_primary,
+                    # generate_tasks validated the full matrix before the store
+                    # removed completed games; a resumed subset need not close.
+                    require_complete_matrix=False,
                 )
                 batch_elapsed = float(batch_result["elapsed_seconds"])
                 elapsed_seconds += batch_elapsed

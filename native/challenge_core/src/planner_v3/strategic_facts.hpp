@@ -30,6 +30,7 @@ struct CardSemanticProfile {
     bool random = false;
     bool reveals_information = false;
     bool irreversible = false;
+    std::string pure_transfer_ability;
 };
 
 class CardSemanticModel {
@@ -40,6 +41,7 @@ public:
 
     CardSemanticProfile profile(const std::string &card_id) const;
     ActionFootprint action_footprint(const Value &action) const;
+    bool pure_energy_transfer(const Value &action) const;
 
 private:
     std::shared_ptr<const Profiles> profiles_;

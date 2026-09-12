@@ -21,6 +21,8 @@ struct StrategicPlannerConfig {
     bool evaluation_smoke = false;
     bool strategy_optimization = true;
     bool anytime_search = true;
+    bool dual_guidance = true;
+    bool prune_transfer_cycles = true;
     bool full_diagnostics = false;
     // Full turn_beam_v2 output for this exact public state.  During migration
     // a strategic plan may only take control after it dominates this action,
