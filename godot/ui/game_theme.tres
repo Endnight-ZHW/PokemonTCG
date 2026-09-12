@@ -1,4 +1,4 @@
-[gd_resource type="Theme" load_steps=19 format=3 uid="uid://dukxt6xci8qas"]
+[gd_resource type="Theme" load_steps=22 format=3 uid="uid://dukxt6xci8qas"]
 
 [ext_resource type="Font" path="res://assets/ui/fonts/noto_sans_cjk_sc_medium.tres" id="1_medium"]
 [ext_resource type="Font" path="res://assets/ui/fonts/noto_sans_cjk_sc_semibold.tres" id="2_semibold"]
@@ -240,7 +240,59 @@ corner_radius_top_right = 16
 corner_radius_bottom_right = 16
 corner_radius_bottom_left = 16
 
+[sub_resource type="StyleBoxFlat" id="BattleCompactNormal"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(0.065, 0.12, 0.19, 1)
+border_color = Color(0.24, 0.39, 0.53, 0.65)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="BattleCompactHover"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(0.10, 0.20, 0.30, 1)
+border_color = Color(0.38, 0.72, 0.87, 0.85)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="BattleCompactPressed"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(0.08, 0.16, 0.24, 1)
+border_color = Color(0.95, 0.78, 0.29, 0.80)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
 [resource]
+BattleCompactButton/base_type = &"Button"
+BattleCompactButton/styles/normal = SubResource("BattleCompactNormal")
+BattleCompactButton/styles/hover = SubResource("BattleCompactHover")
+BattleCompactButton/styles/pressed = SubResource("BattleCompactPressed")
 default_font = ExtResource("2_semibold")
 default_font_size = 18
 Button/colors/font_color = Color(0.949, 0.965, 1, 1)

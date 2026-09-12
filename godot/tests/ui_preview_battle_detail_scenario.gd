@@ -23,6 +23,7 @@ func run(ui: Control) -> void:
 		UIPreviewStateFactory.action_rows(demo),
 		"pokemon:0:active",
 	)
+	await harness._settle_rendered(3)
 	ui.battle_screen.show_card_detail(
 		demo.players[0].active.card_id,
 		demo.players[0].active,

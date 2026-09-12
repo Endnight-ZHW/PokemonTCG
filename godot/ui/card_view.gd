@@ -128,9 +128,12 @@ var catalog: CardCatalog
 @onready var interaction_hint_label: Label = %InteractionHintLabel
 @onready var animation_player: AnimationPlayer = %AnimationPlayer
 
-var _press_msec := 0
 var _press_position := Vector2.ZERO
 var _pressed := false
+static var _touch_owner: WeakRef
+var _long_press_timer: Timer
+var _long_press_fired := false
+var _press_card_id := ""
 var _touch_pointer := -1
 var _touch_scrolling := false
 var _hovered := false
@@ -176,6 +179,15 @@ func set_local_visual_id(value: String) -> void:
 
 func _ready() -> void:
 	set_process(false)
+	_long_press_timer = Timer.new()
+	_long_press_timer.one_shot = true
+	_long_press_timer.wait_time = float(LONG_PRESS_MSEC) / 1000.0
+	_long_press_timer.timeout.connect(_on_long_press_timeout)
+	add_child(_long_press_timer)
+	visibility_changed.connect(func() -> void:
+		if not is_visible_in_tree():
+			cancel_pointer_gesture()
+	)
 	visibility_changed.connect(_sync_detached_selection_ring)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -196,7 +208,10 @@ func _ready() -> void:
 
 
 func _notification(what: int) -> void:
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_EXIT_TREE]:
+		cancel_pointer_gesture()
 	if what == NOTIFICATION_DRAG_END and _dragging:
+		cancel_pointer_gesture()
 		_set_native_drag_masked(false)
 		_dragging = false
 		drag_ended.emit()
@@ -227,6 +242,8 @@ func configure(
 		p_slot,
 		p_compact,
 	)
+	if card_id != p_card_id or hand_index != p_hand_index or owner_player != p_player or slot != p_slot or is_hidden_card != p_hidden:
+		cancel_pointer_gesture()
 	card_id = p_card_id
 	pokemon = p_pokemon
 	is_hidden_card = p_hidden
@@ -453,9 +470,7 @@ func clear_drag_mask() -> void:
 func cancel_drag_state() -> void:
 	# Resync/scene teardown must not wait for NOTIFICATION_DRAG_END: the native
 	# drag may outlive the authoritative view replacement by one input frame.
-	_pressed = false
-	_touch_pointer = -1
-	_touch_scrolling = false
+	cancel_pointer_gesture()
 	_dragging = false
 	_set_native_drag_masked(false)
 	set_drag_masked(false)
@@ -752,6 +767,10 @@ func _refresh_statuses() -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	# The project enables both emulation directions. Each physical gesture has
+	# exactly one owner here: real mouse OR real touch, never its synthetic twin.
+	if event.device == InputEvent.DEVICE_ID_EMULATION:
+		return
 	if event is InputEventScreenTouch:
 		_handle_screen_touch(event as InputEventScreenTouch)
 		return
@@ -759,50 +778,78 @@ func _gui_input(event: InputEvent) -> void:
 		_handle_screen_drag(event as InputEventScreenDrag)
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if _touch_owner != null and _touch_owner.get_ref() != null:
+			return
 		if event.pressed:
-			_pressed = true
-			_press_msec = Time.get_ticks_msec()
-			_press_position = event.position
+			_begin_pointer_press(event.position)
 			accept_event()
 		else:
 			if not _pressed:
 				return
-			_pressed = false
-			var held := Time.get_ticks_msec() - _press_msec
 			var moved: float = Vector2(event.position).distance_to(_press_position)
-			if held >= LONG_PRESS_MSEC and not card_id.is_empty():
-				detail_requested.emit(card_id)
-			elif moved < MOUSE_DRAG_THRESHOLD:
+			var activate := not _long_press_fired and moved < MOUSE_DRAG_THRESHOLD
+			cancel_pointer_gesture()
+			if activate:
 				activated.emit(card_id, hand_index, owner_player, slot)
 			accept_event()
-	elif event is InputEventMouseMotion and _pressed and hand_index >= 0:
+	elif event is InputEventMouseMotion and _pressed:
 		if Vector2(event.position).distance_to(_press_position) >= MOUSE_DRAG_THRESHOLD:
-			_begin_forced_drag()
+			_long_press_timer.stop()
+			if hand_index >= 0 and not _long_press_fired:
+				_begin_forced_drag()
 			accept_event()
+
+
+func _begin_pointer_press(at_position: Vector2) -> void:
+	_pressed = true
+	_long_press_fired = false
+	_press_card_id = card_id
+	_press_position = at_position
+	if _long_press_timer != null and not card_id.is_empty():
+		_long_press_timer.start()
+
+
+func _on_long_press_timeout() -> void:
+	if not _pressed or _dragging or _touch_scrolling or not is_visible_in_tree():
+		return
+	if card_id.is_empty() or card_id != _press_card_id:
+		cancel_pointer_gesture()
+		return
+	_long_press_fired = true
+	detail_requested.emit(card_id)
+
+
+func cancel_pointer_gesture() -> void:
+	if _long_press_timer != null:
+		_long_press_timer.stop()
+	if _touch_owner != null and _touch_owner.get_ref() == self:
+		_touch_owner = null
+	_pressed = false
+	_long_press_fired = false
+	_touch_pointer = -1
+	_touch_scrolling = false
 
 
 func _handle_screen_touch(event: InputEventScreenTouch) -> void:
 	if event.pressed:
+		if _touch_owner != null and _touch_owner.get_ref() != null:
+			return
+		_touch_owner = weakref(self)
 		_touch_pointer = event.index
 		_touch_scrolling = false
-		_pressed = true
-		_press_msec = Time.get_ticks_msec()
-		_press_position = event.position
+		_begin_pointer_press(event.position)
 		accept_event()
 		return
 	if event.index != _touch_pointer:
 		return
-	_touch_pointer = -1
-	var was_pressed := _pressed
-	_pressed = false
-	if not was_pressed or _touch_scrolling or _dragging:
-		accept_event()
-		return
-	var held := Time.get_ticks_msec() - _press_msec
 	var moved := event.position.distance_to(_press_position)
-	if held >= LONG_PRESS_MSEC and moved < TOUCH_DRAG_THRESHOLD and not card_id.is_empty():
-		detail_requested.emit(card_id)
-	elif moved < TOUCH_DRAG_THRESHOLD:
+	var activate := (
+		_pressed and not _touch_scrolling and not _dragging
+		and not _long_press_fired and not event.canceled
+		and moved < TOUCH_DRAG_THRESHOLD
+	)
+	cancel_pointer_gesture()
+	if activate:
 		activated.emit(card_id, hand_index, owner_player, slot)
 	accept_event()
 
@@ -818,6 +865,9 @@ func _handle_screen_drag(event: InputEventScreenDrag) -> void:
 		return
 	var displacement := event.position - _press_position
 	if displacement.length() < TOUCH_DRAG_THRESHOLD:
+		return
+	_long_press_timer.stop()
+	if _long_press_fired:
 		return
 	if absf(displacement.x) >= absf(displacement.y) * TOUCH_SCROLL_AXIS_RATIO:
 		_touch_scrolling = true
@@ -847,6 +897,8 @@ func _begin_forced_drag() -> void:
 	if data == null:
 		return
 	_pressed = false
+	if _long_press_timer != null:
+		_long_press_timer.stop()
 	force_drag(data, null)
 
 

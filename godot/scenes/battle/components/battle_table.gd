@@ -178,10 +178,15 @@ var _presentation_drag_proxy: Control
 var _last_action_rows_signature := ""
 var _last_selected_entity_identity := ""
 var _detail_content_signature := ""
+var _pending_detail_card_id := ""
+var _pending_detail_pokemon: PokemonState
 var _detail_passthrough_key := ""
 var _read_only_detail_key := ""
 var _board_origin := Vector2.ZERO
 var _initialized := false
+var _modal_input_blocked := false
+var _blank_press_position := Vector2.ZERO
+var _blank_selection_key := ""
 var card_motion_layer: BattleCardMotionLayer
 var motion_geometry: BattleMotionGeometry
 var motion_entities: BattleMotionEntities
@@ -269,6 +274,53 @@ func clear_task_hint() -> void:
 func close_log_drawer() -> void:
 	if hud:
 		hud.close_log_drawer()
+
+
+func is_compact_layout() -> bool:
+	var available := board_canvas.size if board_canvas else size
+	return available.x < 1180.0 or available.y < 650.0
+
+
+func cancel_pointer_gestures() -> void:
+	_blank_selection_key = ""
+	for view in hand_views:
+		view.cancel_pointer_gesture()
+	for view_value in slot_views.values():
+		(view_value as CardView).cancel_pointer_gesture()
+
+
+func cancel_unsubmitted_drag() -> void:
+	# A submitted action belongs to the authority; only an unsubmitted gesture
+	# may be returned to the hand by UI cancellation.
+	if _drag_session != null and _drag_session.state in [CARD_DRAG_SESSION.DRAGGING, CARD_DRAG_SESSION.AWAITING_VARIANT]:
+		if get_viewport().gui_is_dragging():
+			get_viewport().gui_cancel_drag()
+		clear_pending_drag("user_cancelled")
+
+
+func cancel_action_selection() -> void:
+	cancel_unsubmitted_drag()
+	cancel_pointer_gestures()
+	board_view._reset_action_interaction_state()
+	selection_clear_requested.emit(selected_entity_key)
+
+
+func handle_back() -> bool:
+	if detail_panel and detail_panel.visible:
+		hide_card_detail()
+		return true
+	if hud and hud.is_log_drawer_open():
+		hud.close_log_drawer()
+		return true
+	if attachment_choice_popover and attachment_choice_popover.visible:
+		attachment_choice_popover.dismiss()
+		return true
+	if is_presentation_busy():
+		return false
+	if not selected_entity_key.is_empty() or (_drag_session != null and _drag_session.state in [CARD_DRAG_SESSION.DRAGGING, CARD_DRAG_SESSION.AWAITING_VARIANT]):
+		cancel_action_selection()
+		return true
+	return false
 
 
 func toast_anchor_rect() -> Rect2:
@@ -927,7 +979,14 @@ func clear_presentation_visuals_for_resync() -> void:
 
 
 func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
+	if board_canvas != null and (board_canvas.size.x < 100.0 or board_canvas.size.y < 100.0):
+		_pending_detail_card_id = card_id
+		_pending_detail_pokemon = pokemon
+		return
 	_read_only_detail_key = ""
+	if is_compact_layout() or board_view.is_selecting_action_target():
+		hide_card_detail()
+		return
 	_show_card_detail_content(card_id, pokemon)
 
 
@@ -985,6 +1044,9 @@ func _show_card_detail_content(card_id: String, pokemon: PokemonState = null) ->
 
 
 func hide_card_detail() -> void:
+	var was_visible := detail_panel != null and detail_panel.visible
+	_pending_detail_card_id = ""
+	_pending_detail_pokemon = null
 	_detail_content_signature = ""
 	_read_only_detail_key = ""
 	var component := detail_panel as BattleDetailPanel
@@ -992,18 +1054,15 @@ func hide_card_detail() -> void:
 		component.hide_card()
 	elif detail_panel:
 		detail_panel.visible = false
+	if was_visible:
+		board_view._layout_current_status()
 	if action_popover and action_popover.visible:
 		board_view._reposition_action_popover()
 
 
 func _on_detail_close_requested() -> void:
-	_detail_content_signature = ""
-	if not _read_only_detail_key.is_empty():
-		_read_only_detail_key = ""
-		return
-	var expected_key := selected_entity_key
-	board_view._reset_action_interaction_state()
-	selection_clear_requested.emit(expected_key)
+	hide_card_detail()
+	board_view._layout_current_status()
 
 
 func _sync_visible_card_detail(force_show := false) -> void:
@@ -1331,7 +1390,7 @@ func _bind_scene_nodes() -> void:
 		camera_rig.configure([board_panel, effects, world_feedback])
 	opponent_hand_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	opponent_hand_surface.z_index = 6
-	opponent_hand_count_badge.z_index = 12
+	opponent_hand_count_badge.z_index = 90
 	opponent_hand_count_badge.add_theme_stylebox_override(
 		"normal",
 		DesignTokens.panel_style(
@@ -1352,9 +1411,9 @@ func _bind_scene_nodes() -> void:
 	opponent_info.add_theme_stylebox_override(
 		"normal",
 		DesignTokens.panel_style(
-			Color(0.105, 0.025, 0.045, 0.94),
+			Color(0.06, 0.085, 0.14, 0.96),
 			7,
-			Color(0.76, 0.22, 0.32, 0.72),
+			Color(0.35, 0.40, 0.57, 0.55),
 			1,
 			7,
 		),
@@ -1427,6 +1486,8 @@ func _bind_scene_nodes() -> void:
 		board_view._on_prize_index_activated.bind(false))
 	header.initialize_ui()
 	header.menu_requested.connect(board_view._on_menu_pressed)
+	header.cancel_requested.connect(cancel_action_selection)
+	header.detail_requested.connect(board_view._on_popover_detail_requested)
 	hud.phase_action_requested.connect(action_requested.emit)
 	if not hud.log_drawer_toggled.is_connected(board_view._on_log_drawer_toggled):
 		hud.log_drawer_toggled.connect(board_view._on_log_drawer_toggled)
@@ -1437,6 +1498,7 @@ func _bind_scene_nodes() -> void:
 	if action_popover:
 		action_popover.action_chosen.connect(board_view._on_popover_action_chosen)
 		action_popover.dismissed.connect(board_view._on_popover_dismissed)
+		action_popover.detail_requested.connect(board_view._on_popover_detail_requested)
 	if attachment_choice_popover == null:
 		attachment_choice_popover = ATTACHMENT_POPOVER.new() as AttachmentChoicePopover
 		attachment_choice_popover.name = "AttachmentChoicePopover"
@@ -1525,6 +1587,8 @@ func _sync_input_blocker() -> void:
 			or _recovery_input_blocked
 		)
 		input_blocker.visible = blocked
+		if blocked:
+			cancel_pointer_gestures()
 		if not blocked:
 			input_blocker.mouse_default_cursor_shape = Control.CURSOR_ARROW
 
@@ -1684,7 +1748,7 @@ func _input(event: InputEvent) -> void:
 	# PresentationInputBlocker owns the GUI phase while an effect sequence runs.
 	# Global input must stay read-only so it cannot dismiss transient surfaces
 	# before the blocker consumes the same pointer gesture.
-	if input_blocker and input_blocker.visible:
+	if _modal_input_blocked or (input_blocker and input_blocker.visible):
 		return
 	var pointer_button := event as InputEventMouseButton
 	var is_left_pointer_button := (
@@ -1692,6 +1756,12 @@ func _input(event: InputEvent) -> void:
 		and pointer_button.button_index == MOUSE_BUTTON_LEFT
 	)
 	if is_left_pointer_button and not pointer_button.pressed:
+		var blank_key := _blank_selection_key
+		_blank_selection_key = ""
+		if not blank_key.is_empty() and blank_key == selected_entity_key and pointer_button.position.distance_to(_blank_press_position) < CardView.MOUSE_DRAG_THRESHOLD and not get_viewport().gui_is_dragging():
+			cancel_action_selection()
+			get_viewport().set_input_as_handled()
+			return
 		if not _detail_passthrough_key.is_empty():
 			var expected_key := _detail_passthrough_key
 			_detail_passthrough_key = ""
@@ -1703,6 +1773,10 @@ func _input(event: InputEvent) -> void:
 	if not is_pointer_press:
 		return
 	var pointer_position := (event as InputEventMouseButton).position
+	_blank_selection_key = ""
+	if not selected_entity_key.is_empty() and choice_target_options.is_empty() and _is_blank_table_point(pointer_position):
+		_blank_selection_key = selected_entity_key
+		_blank_press_position = pointer_position
 	# The log drawer is the top-most table surface. Closing it consumes this
 	# press so the same gesture cannot also activate a card beneath the drawer.
 	if hud and hud.is_log_drawer_open():
@@ -1765,6 +1839,26 @@ func _input(event: InputEvent) -> void:
 	# not handle the event. CardView must receive the original press so its
 	# release, long-press and drag thresholds stay intact.
 	action_popover.dismiss()
+
+
+func _is_blank_table_point(point: Vector2) -> bool:
+	if not board_panel.get_global_rect().has_point(point):
+		return false
+	var controls: Array[Control] = [header, detail_panel, log_panel, hud.get_node("PhasePanel")]
+	controls.append_array(hand_views)
+	controls.append_array(opponent_hand_views)
+	for control in slot_views.values():
+		controls.append(control as Control)
+	for control in zones.values():
+		controls.append(control as Control)
+	for control in controls:
+		if control and control.is_visible_in_tree() and _control_contains_global_point(control, point):
+			return false
+	if action_popover.visible and action_popover.panel_global_rect().has_point(point):
+		return false
+	if attachment_choice_popover.visible and attachment_choice_popover.panel_global_rect().has_point(point):
+		return false
+	return true
 
 
 func _restore_detail_after_passthrough(expected_key: String) -> void:

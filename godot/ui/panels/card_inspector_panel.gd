@@ -90,16 +90,25 @@ func _apply_responsive_layout() -> void:
 	var tree := get_tree()
 	if tree == null or tree.root == null:
 		return
-	var compact_layout := tree.root.size.x <= 900 or (size.x > 0.0 and size.x < 720.0)
+	var available_width := size.x
+	var ancestor := get_parent()
+	while ancestor != null:
+		if ancestor is ScrollContainer and (ancestor as ScrollContainer).size.x > 1.0:
+			available_width = (ancestor as ScrollContainer).size.x - 14.0
+			break
+		ancestor = ancestor.get_parent()
+	var compact_layout := available_width < 560.0
+	var short_landscape := tree.root.size.y < 650 and not compact_layout
 	_content_grid.columns = 1 if compact_layout else 2
 	if _image_button:
 		_image_button.custom_minimum_size = (
-			Vector2(180, 251) if compact_layout else Vector2(260, 363)
+			Vector2(148, 207) if short_landscape else Vector2(180, 251) if compact_layout else Vector2(260, 363)
 		)
 	if _detail_text:
 		_detail_text.custom_minimum_size = (
-			Vector2(0, 280) if compact_layout else Vector2(500, 363)
+			Vector2(0, 240) if short_landscape else Vector2(0, 280) if compact_layout else Vector2(0, 363)
 		)
+		_detail_text.add_theme_font_size_override("normal_font_size", 16 if short_landscape else 18)
 
 
 func _show_art_zoom(card: Dictionary) -> void:

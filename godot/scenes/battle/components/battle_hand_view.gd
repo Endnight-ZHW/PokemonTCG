@@ -4,6 +4,8 @@ extends Node
 var host: Node
 var table: BattleTable
 var tween_registry: Dictionary = {}
+var _scroll_positions: Dictionary = {}
+var _scroll_player := -1
 
 
 func configure(p_host: Node) -> void:
@@ -250,7 +252,7 @@ func _refresh_opponent_hand() -> void:
 	table.opponent_hand_surface.visible = hand_count > 0
 	table.opponent_hand_count_badge.visible = hand_count > 0
 	table.opponent_hand_count_badge.text = str(hand_count)
-	_layout_opponent_hand()
+	_layout_opponent_hand(_current_opponent_hand_card_size())
 
 func _layout_player_hands(metrics: Dictionary) -> void:
 	var center_x := float(metrics["center_x"])
@@ -326,6 +328,25 @@ func _apply_hand_layout_geometry(plan: Dictionary, card_size: Vector2) -> void:
 		table.hand_scroll.size.x,
 	))
 	var items: Array = plan.get("items", [])
+	var next_positions: Dictionary = {}
+	var visible_index := 0
+	for view in table.hand_views:
+		if not _hand_view_participates_in_layout(view) or visible_index >= items.size():
+			continue
+		next_positions[view.local_visual_id] = Vector2(items[visible_index]["position"]).x + card_size.x * 0.5
+		visible_index += 1
+	var target_scroll := maxi(0, roundi(float(plan.get("center_scroll", 0.0))))
+	if _scroll_player == table.view_player and not _scroll_positions.is_empty():
+		var old_scroll := float(table.hand_scroll.scroll_horizontal)
+		var nearest_distance := INF
+		for identity in next_positions:
+			if not _scroll_positions.has(identity):
+				continue
+			var screen_x := float(_scroll_positions[identity]) - old_scroll
+			var distance := absf(screen_x - table.hand_scroll.size.x * 0.5)
+			if distance < nearest_distance:
+				nearest_distance = distance
+				target_scroll = maxi(0, roundi(float(next_positions[identity]) - screen_x))
 	var geometry_signature := "%d|%d|%d|%d|%d|%d" % [
 		items.size(),
 		roundi(table.hand_scroll.size.x * 100.0),
@@ -334,12 +355,16 @@ func _apply_hand_layout_geometry(plan: Dictionary, card_size: Vector2) -> void:
 		roundi(float(plan.get("content_width", 0.0)) * 100.0),
 		roundi(float(plan.get("surface_width", 0.0)) * 100.0),
 	]
-	if geometry_signature == table._hand_layout_geometry_signature:
+	var same_player := _scroll_player == table.view_player
+	_scroll_positions = next_positions
+	_scroll_player = table.view_player
+	if geometry_signature == table._hand_layout_geometry_signature and same_player:
 		return
 	table._hand_layout_geometry_signature = geometry_signature
 	table._hand_scroll_center_generation += 1
 	var generation := table._hand_scroll_center_generation
-	var center_scroll := maxi(0, roundi(float(plan.get("center_scroll", 0.0))))
+	var maximum_scroll := maxi(0, ceili(float(plan.get("surface_width", 0.0)) - table.hand_scroll.size.x))
+	var center_scroll := mini(target_scroll, maximum_scroll)
 	_set_hand_scroll_center(center_scroll)
 	# ScrollContainer updates its range during the container sort that follows a
 	# custom-minimum-table.size change. Repeat after that sort so growing from a small

@@ -117,6 +117,12 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   --script res://tests/ui_preview.gd `
   -- --battle-detail-only
 
+# 对战可用性：四档分辨率、安全区、详情、退出确认与低画质
+.\.tools\godot-4.7\Godot_v4.7-stable_win64.exe `
+  --path .\godot `
+  --script res://tests/ui_preview.gd `
+  -- --battle-usability-only
+
 .\tools\build_native_ai.ps1 -Target all -Configuration all
 .\tools\build_godot.ps1 -Target all -Configuration debug
 .\tools\smoke_godot_build.ps1

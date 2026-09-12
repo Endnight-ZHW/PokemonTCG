@@ -439,41 +439,14 @@ func run(ui: Control) -> void:
 	harness.tree.root.size = Vector2i(900, 540)
 	await harness._settle_rendered(4)
 	var compact_detail := ui.battle_screen.detail_panel as BattleDetailPanel
-	if (
-		compact_detail == null
-		or not compact_detail.is_compact_layout()
-		or not compact_detail.scale.is_equal_approx(Vector2.ONE)
-		or not compact_detail.size.is_equal_approx(
-			BattleDetailPanel.COMPACT_PANEL_SIZE
-		)
-		or not harness._physical_control_rect(compact_detail).size.is_equal_approx(
-			BattleDetailPanel.COMPACT_PANEL_SIZE
-		)
-		or not harness._assert_physical_touch_targets(
-			[compact_detail.close_button],
-			"battle detail compact",
-		)
-	):
-		push_error(
-			"Compact battle detail did not use the configured unscaled bottom surface: "
-			+ "detail=%s physical=%s expected=%s close=%s" % [
-				compact_detail.size if compact_detail else Vector2.ZERO,
-				harness._physical_control_rect(compact_detail).size if compact_detail else Vector2.ZERO,
-				BattleDetailPanel.COMPACT_PANEL_SIZE,
-				compact_detail.close_button.get_global_rect() if compact_detail else Rect2(),
-			]
-		)
+	var compact_action_popover := ui.battle_screen.action_popover as CardActionPopover
+	var compact_rail := ui.battle_screen.hud.get_node("PhasePanel") as Control
+	if compact_detail == null or compact_detail.visible:
+		push_error("Compact selection must keep full details closed until requested")
 		harness._finish(1)
 		return
-	var compact_action_popover := ui.battle_screen.action_popover as CardActionPopover
-	if (
-		compact_action_popover
-		and compact_action_popover.visible
-		and compact_detail.get_global_rect().intersects(
-			compact_action_popover.panel_global_rect()
-		)
-	):
-		push_error("Compact battle detail overlaps the card action popover")
+	if compact_action_popover and compact_action_popover.visible and compact_action_popover.panel_global_rect().intersects(compact_rail.get_global_rect()):
+		push_error("Compact card actions cover the phase controls")
 		harness._finish(1)
 		return
 	if not harness._capture("battle-card-preview-compact.png"):
@@ -674,11 +647,11 @@ func run(ui: Control) -> void:
 		return
 	(inspector_panel.get_node("CardArtZoom") as PopupPanel).hide()
 	await harness._settle_rendered(2)
-	harness.tree.root.size = Vector2i(560, 720)
+	harness.tree.root.size = Vector2i(900, 720)
 	await harness._settle_rendered(4)
 	inspector_panel._apply_responsive_layout()
-	if inspector_panel._content_grid.columns != 1:
-		push_error("Compact card inspector did not switch to a single-column layout: panel=%s window=%s viewport=%s columns=%d" % [
+	if inspector_panel._content_grid.columns != 2:
+		push_error("Landscape card inspector must display artwork beside the rules: panel=%s window=%s viewport=%s columns=%d" % [
 			inspector_panel.size,
 			inspector_panel.get_window().size,
 			inspector_panel.get_viewport_rect().size,

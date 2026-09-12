@@ -25,6 +25,15 @@ var _close_completion := Callable()
 var _close_completion_generation := -1
 
 
+func _ready() -> void:
+	visibility_changed.connect(_sync_battle_input)
+
+
+func _sync_battle_input() -> void:
+	if main != null and is_instance_valid(main.battle_screen):
+		main.battle_screen._modal_input_blocked = visible
+
+
 func configure(owner: Control) -> void:
 	main = owner
 	modal_layer = self
@@ -57,6 +66,9 @@ func open(
 ) -> void:
 	if main.battle_screen:
 		main.battle_screen.close_log_drawer()
+		main.battle_screen.cancel_pointer_gestures()
+		main.battle_screen.cancel_unsubmitted_drag()
+		main.battle_screen._modal_input_blocked = true
 	main._clear_battle_selection("", false)
 	# Opening a modal is a hard interaction boundary, including for any stale
 	# table-side selection that Main has already forgotten.
@@ -83,6 +95,8 @@ func open(
 	_disconnect_button(modal_confirm)
 	_disconnect_button(modal_cancel)
 	clear_body()
+	modal_scroll.scroll_vertical = 0
+	modal_scroll.scroll_horizontal = 0
 	begin(resolved_spec, main.shell_view.safe_content_size())
 	modal_title.text = title_text
 	var frontend_modal := resolved_spec.surface == ModalSpec.Surface.FRONTEND
@@ -158,6 +172,8 @@ func finish_close(close_generation: int) -> void:
 		return
 	closing = false
 	modal_layer.visible = false
+	if main.battle_screen:
+		main.battle_screen._modal_input_blocked = false
 	_free_children_immediate(modal_body)
 	modal_shade.color.a = MODAL_SHADE_ALPHA
 	modal_panel.modulate = Color.WHITE
@@ -261,6 +277,10 @@ func reset_surface() -> void:
 
 
 func _apply_layout(spec: ModalSpec, available_size: Vector2) -> void:
+	var margin := modal_panel.get_node("Margin") as MarginContainer
+	var compact_battle := spec.surface == ModalSpec.Surface.BATTLE and available_size.y < 650.0
+	margin.add_theme_constant_override("margin_top", 16 if compact_battle else 26)
+	margin.add_theme_constant_override("margin_bottom", 16 if compact_battle else 26)
 	var panel_size := _resolved_size(spec, available_size)
 	# Reset the previous viewport's scroll floor before changing the panel. A
 	# stale 420 px floor can otherwise become the panel's effective minimum and

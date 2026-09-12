@@ -81,71 +81,17 @@ func _draw() -> void:
 
 
 func _draw_backdrop() -> void:
-	var middle := size.y * 0.50
-	var bands := 14 if quality_profile == "low" else 28 if quality_profile == "medium" else 44
+	var bands := 24
 	for index in range(bands):
-		var t := float(index) / float(maxi(1, bands - 1))
-		var y := size.y * t
-		var top_side := y < middle
-		var local_t := y / middle if top_side else (y - middle) / maxf(1.0, size.y - middle)
-		var color := (
-			Color("#4a0713").lerp(Color("#120a12"), local_t)
-			if top_side
-			else Color("#07101d").lerp(Color("#032768"), local_t)
-		)
-		draw_rect(Rect2(0, y, size.x, size.y / float(bands) + 1.0), color)
-	# A quiet horizon and dark side wings make the arena feel recessed without
-	# stealing contrast from cards placed along the outer lanes.
-	draw_rect(Rect2(0, middle - 2.0, size.x, 4.0), Color(0, 0, 0, 0.42))
-	draw_rect(Rect2(0, middle - 0.5, size.x, 1.0), Color(0.68, 0.78, 0.90, 0.13))
-	var wing_width := maxf(70.0, size.x * 0.085)
-	for index in range(8):
-		var alpha := 0.018 + float(index) * 0.012
-		var offset := float(index) * wing_width / 8.0
-		draw_rect(Rect2(offset, 0, wing_width / 8.0 + 1.0, size.y), Color(0, 0, 0, alpha))
-		draw_rect(
-			Rect2(size.x - offset - wing_width / 8.0, 0, wing_width / 8.0 + 1.0, size.y),
-			Color(0, 0, 0, alpha),
-		)
+		var t := float(index) / float(bands - 1)
+		var tint := Color("#080e1b").lerp(Color("#11263a"), sin(t * PI) * 0.70)
+		draw_rect(Rect2(0, size.y * float(index) / bands, size.x, size.y / bands + 1.0), tint)
 
 
 func _draw_side_rails() -> void:
-	var rail_height := maxf(48.0, size.y * 0.078)
-	var top_rail := PackedVector2Array([
-		Vector2(0, 0),
-		Vector2(size.x, 0),
-		Vector2(size.x - size.x * 0.060, rail_height),
-		Vector2(size.x * 0.060, rail_height),
-	])
-	var bottom_rail := PackedVector2Array([
-		Vector2(size.x * 0.060, size.y - rail_height),
-		Vector2(size.x - size.x * 0.060, size.y - rail_height),
-		Vector2(size.x, size.y),
-		Vector2(0, size.y),
-	])
-	draw_colored_polygon(top_rail, Color("#17080d"))
-	draw_colored_polygon(bottom_rail, Color("#07101f"))
-	var top_color := Color("#d8324f")
-	var bottom_color := Color("#3078e8")
-	top_color.a = 0.48
-	bottom_color.a = 0.54
-	draw_polyline(_closed_points(top_rail), top_color, 7.0)
-	draw_polyline(_closed_points(bottom_rail), bottom_color, 7.0)
-	var metal := Color(0.72, 0.78, 0.84, 0.42)
-	draw_line(
-		Vector2(size.x * 0.075, rail_height + 5.0),
-		Vector2(size.x * 0.925, rail_height + 5.0),
-		metal,
-		2.0,
-	)
-	draw_line(
-		Vector2(size.x * 0.075, size.y - rail_height - 5.0),
-		Vector2(size.x * 0.925, size.y - rail_height - 5.0),
-		metal,
-		2.0,
-	)
-	_draw_rail_ticks(rail_height, true, top_color)
-	_draw_rail_ticks(size.y - rail_height, false, bottom_color)
+	var margin := 18.0
+	draw_line(Vector2(margin, 6), Vector2(size.x - margin, 6), Color(0.54, 0.60, 0.78, 0.16), 1.0)
+	draw_line(Vector2(margin, size.y - 6), Vector2(size.x - margin, size.y - 6), Color(0.34, 0.72, 0.86, 0.20), 1.0)
 
 
 func _draw_rail_ticks(y: float, points_down: bool, color: Color) -> void:
@@ -182,27 +128,16 @@ func _table_points() -> PackedVector2Array:
 
 
 func _draw_table_shell(points: PackedVector2Array) -> void:
-	var center := Vector2(size.x * 0.5, size.y * 0.5)
+	var center := size * 0.5
 	var shadow := points.duplicate()
 	for index in range(shadow.size()):
-		shadow[index] += Vector2(0, 14.0)
-	draw_colored_polygon(shadow, Color(0, 0, 0, 0.46))
-	draw_colored_polygon(points, Color("#111722"))
-	draw_polyline(_closed_points(points), Color(0.01, 0.015, 0.025, 0.95), 18.0)
-	draw_polyline(_closed_points(points), Color(0.40, 0.46, 0.54, 0.82), 11.0)
-	draw_polyline(_closed_points(points), Color(0.76, 0.82, 0.88, 0.58), 5.0)
-	draw_polyline(_closed_points(points), Color(0.035, 0.050, 0.075, 0.96), 2.0)
-	var glass_points := _scale_points(points, center, 0.982)
-	draw_colored_polygon(glass_points, Color(0.035, 0.065, 0.105, 0.95))
-	var top_glass := _table_half_points(glass_points, true)
-	var bottom_glass := _table_half_points(glass_points, false)
-	draw_colored_polygon(top_glass, Color(0.24, 0.025, 0.055, 0.13))
-	draw_colored_polygon(bottom_glass, Color(0.025, 0.12, 0.34, 0.16))
-	# Two translucent inset plates sell the laminated glass construction.
-	var inner := _scale_points(points, center, 0.955)
-	draw_polyline(_closed_points(inner), Color(0.55, 0.70, 0.84, 0.22), 2.0)
-	var core := _scale_points(points, center, 0.925)
-	draw_polyline(_closed_points(core), Color(0.01, 0.03, 0.06, 0.64), 1.0)
+		shadow[index] += Vector2(0, 8)
+	draw_colored_polygon(shadow, Color(0, 0, 0, 0.30))
+	draw_colored_polygon(points, Color("#0e1a2b"))
+	draw_polyline(_closed_points(points), Color(0.27, 0.42, 0.58, 0.50), 1.5, true)
+	var inner := _scale_points(points, center, 0.986)
+	draw_colored_polygon(inner, Color("#0b1625"))
+	draw_colored_polygon(_table_half_points(inner, false), Color(0.06, 0.16, 0.24, 0.20))
 
 
 func _draw_table_depth(points: PackedVector2Array) -> void:
@@ -213,33 +148,18 @@ func _draw_table_depth(points: PackedVector2Array) -> void:
 		points[4] + Vector2(0, 15),
 	])
 	draw_colored_polygon(bottom_edge, Color(0.015, 0.025, 0.045, 0.90))
-	draw_line(points[5], points[4], Color(0.74, 0.82, 0.90, 0.32), 2.0)
+	draw_line(points[5], points[4], Color(0.34, 0.55, 0.72, 0.16), 1.0)
 
 
 func _draw_table_inner(points: PackedVector2Array) -> void:
-	var center := Vector2(size.x * 0.5, size.y * 0.50)
-	var radius := Vector2(minf(size.x * 0.275, 410.0), minf(size.y * 0.285, 238.0))
-	var pulse := 0.052
-	if _animations_enabled():
-		pulse += sin(_time * 0.52) * 0.010
-	var lens := _ellipse_points(center, radius * 0.62, 96)
-	draw_colored_polygon(lens, Color(0.25, 0.52, 0.76, pulse * 0.44))
-	for ring_scale in [1.0, 0.78, 0.61, 0.43]:
-		var ring := _ellipse_points(center, radius * float(ring_scale), 96)
-		draw_polyline(_closed_points(ring), Color(0.70, 0.82, 0.94, pulse + 0.025), 1.5)
-	var upper_arc := _ellipse_arc_points(center, radius * 1.02, PI, TAU, 48)
-	var lower_arc := _ellipse_arc_points(center, radius * 1.02, 0.0, PI, 48)
-	draw_polyline(upper_arc, Color(1.0, 0.22, 0.34, 0.16), 3.0)
-	draw_polyline(lower_arc, Color(0.18, 0.52, 1.0, 0.18), 3.0)
-	draw_line(
-		Vector2(points[7].x + 26.0, center.y),
-		Vector2(points[3].x - 26.0, center.y),
-		Color(0.80, 0.88, 0.96, 0.16),
-		1.0,
-	)
-	var core := _ellipse_points(center, Vector2(34.0, 18.0), 32)
-	draw_colored_polygon(core, Color(0.72, 0.86, 1.0, 0.075))
-	draw_polyline(_closed_points(core), Color(0.85, 0.93, 1.0, 0.18), 1.0)
+	var center := size * 0.5
+	var radius := Vector2(minf(size.x * 0.22, 330.0), minf(size.y * 0.27, 225.0))
+	var ring := _ellipse_points(center, radius, 96)
+	draw_polyline(_closed_points(ring), Color(0.38, 0.61, 0.78, 0.075), 1.5, true)
+	draw_line(Vector2(points[7].x + 18, center.y), Vector2(points[3].x - 18, center.y), Color(0.38, 0.61, 0.78, 0.11), 1.0)
+	var core := _ellipse_points(center, radius * 0.19, 48)
+	draw_colored_polygon(core, Color("#0c1828"))
+	draw_polyline(_closed_points(core), Color(0.64, 0.75, 0.87, 0.10), 1.5, true)
 
 
 func _draw_honeycomb_texture(points: PackedVector2Array) -> void:
@@ -261,7 +181,7 @@ func _draw_honeycomb_texture(points: PackedVector2Array) -> void:
 			var hex_center := Vector2(x, y)
 			if _point_inside_polygon(hex_center, points):
 				var edge_factor := clampf(absf(x - center.x) / maxf(1.0, size.x * 0.46), 0.0, 1.0)
-				var alpha := 0.016 + edge_factor * edge_factor * 0.042
+				var alpha := 0.008 + edge_factor * edge_factor * 0.016
 				var tint := Color("#ff6479") if y < center.y else Color("#62a5ff")
 				tint = Color(0.60, 0.70, 0.80, 1.0).lerp(tint, edge_factor * 0.34)
 				tint.a = alpha
@@ -273,7 +193,7 @@ func _draw_honeycomb_texture(points: PackedVector2Array) -> void:
 
 
 func _draw_subtle_grid(points: PackedVector2Array) -> void:
-	var grid_color := Color(0.68, 0.80, 0.92, 0.035)
+	var grid_color := Color(0.68, 0.80, 0.92, 0.012)
 	var top_y := points[0].y + 8.0
 	var bottom_y := points[5].y - 8.0
 	for index in range(1, 9):
@@ -380,13 +300,13 @@ func _draw_pile_dock(guide: Dictionary) -> void:
 		return
 	var side := str(guide.get("side", "own"))
 	var depth := clampf(float(guide.get("depth", 0.5)), 0.0, 1.0)
-	var accent := Color("#428ff2") if side == "own" else Color("#df5365")
+	var accent := Color("#57a8c6") if side == "own" else Color("#8b92bd")
 	var fill := (
 		Color(0.018, 0.060, 0.115, 0.88)
 		if side == "own"
-		else Color(0.105, 0.022, 0.040, 0.88)
+		else Color(0.045, 0.060, 0.105, 0.88)
 	)
-	var metal := Color(0.58, 0.66, 0.75, 0.68)
+	var metal := Color(0.34, 0.47, 0.62, 0.38)
 	_draw_rounded_panel(
 		Rect2(rect.position + Vector2(0.0, 4.0 + depth * 2.0), rect.size),
 		Color(0.0, 0.0, 0.0, 0.34),
@@ -394,7 +314,7 @@ func _draw_pile_dock(guide: Dictionary) -> void:
 		0.0,
 		7.0,
 	)
-	_draw_rounded_panel(rect, Color("#151b24"), metal, 2.0, 7.0)
+	_draw_rounded_panel(rect, Color("#151b24"), metal, 1.0, 12.0)
 	_draw_rounded_panel(
 		rect.grow(-3.0),
 		fill,
@@ -417,7 +337,7 @@ func _draw_pile_dock(guide: Dictionary) -> void:
 		)
 	var rail_y := rect.position.y + 2.5 if side == "own" else rect.end.y - 2.5
 	var rail := accent
-	rail.a = 0.82
+	rail.a = 0.35
 	draw_line(
 		Vector2(rect.position.x + 14.0, rail_y),
 		Vector2(rect.end.x - 14.0, rail_y),
@@ -430,7 +350,7 @@ func _draw_pile_dock(guide: Dictionary) -> void:
 		rect.end - Vector2(8.0, 8.0),
 		Vector2(rect.position.x + 8.0, rect.end.y - 8.0),
 	]:
-		draw_circle(bolt, 1.7, Color(0.75, 0.82, 0.90, 0.52))
+		draw_circle(bolt, 1.7, Color(0.45, 0.57, 0.70, 0.15))
 
 
 func _draw_bench_tray(guide: Dictionary) -> void:
@@ -439,11 +359,11 @@ func _draw_bench_tray(guide: Dictionary) -> void:
 		return
 	var side := str(guide.get("side", "own"))
 	var depth := clampf(float(guide.get("depth", 0.5)), 0.0, 1.0)
-	var accent := Color("#438fe8") if side == "own" else Color("#e25868")
+	var accent := Color("#57a8c6") if side == "own" else Color("#8b92bd")
 	var tray_fill := (
 		Color(0.025, 0.105, 0.205, 0.20)
 		if side == "own"
-		else Color(0.205, 0.035, 0.060, 0.18)
+		else Color(0.08, 0.10, 0.20, 0.18)
 	)
 	var tray_border := accent
 	tray_border.a = 0.36 + depth * 0.08
@@ -481,7 +401,7 @@ func _draw_bench_tray(guide: Dictionary) -> void:
 	# legible even when all five bench positions are occupied.
 	var lane_y := rect.end.y - 2.0 if side == "opponent" else rect.position.y + 2.0
 	var rail_color := accent
-	rail_color.a = 0.68
+	rail_color.a = 0.32
 	draw_line(
 		Vector2(rect.position.x + 14.0, lane_y),
 		Vector2(rect.end.x - 14.0, lane_y),
@@ -496,12 +416,12 @@ func _draw_active_pad(guide: Dictionary) -> void:
 		return
 	var side := str(guide.get("side", "own"))
 	var depth := clampf(float(guide.get("depth", 0.5)), 0.0, 1.0)
-	var accent := Color("#58b7f5") if side == "own" else Color("#f56875")
+	var accent := Color("#69b7d4") if side == "own" else Color("#959ec5")
 	var platform := rect.grow(10.0)
 	var platform_fill := (
 		Color(0.025, 0.155, 0.285, 0.16)
 		if side == "own"
-		else Color(0.285, 0.035, 0.065, 0.15)
+		else Color(0.10, 0.12, 0.24, 0.15)
 	)
 	var border := accent
 	border.a = 0.54 + depth * 0.10
@@ -520,10 +440,10 @@ func _draw_active_pad(guide: Dictionary) -> void:
 		1.0,
 		5.0,
 	)
-	_draw_corner_brackets(platform.grow(-2.0), accent, 16.0, 2.0)
+	_draw_corner_brackets(platform.grow(-2.0), Color(accent, 0.38), 12.0, 1.0)
 	var lane_y := platform.position.y + 2.0 if side == "own" else platform.end.y - 2.0
 	var lane_color := accent
-	lane_color.a = 0.78
+	lane_color.a = 0.38
 	draw_line(
 		Vector2(platform.position.x + 22.0, lane_y),
 		Vector2(platform.end.x - 22.0, lane_y),

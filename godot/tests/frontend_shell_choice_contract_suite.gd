@@ -1109,11 +1109,11 @@ func _check_card_action_detail_separation(table: BattleTable) -> void:
 	var detail := table.detail_panel as BattleDetailPanel
 	context._check(
 		detail != null
-		and detail.visible
+		and detail.visible == (not table.is_compact_layout() and not table.board_view.is_selecting_action_target())
 		and detail.get_node_or_null("Content/ActionSection") == null
 		and table.action_popover != null
 		and table.action_popover.visible
-		and table.action_popover.action_buttons.get_child_count() > 0,
+		and table.action_popover.action_buttons.get_child_count() + table.action_popover.compact_action_buttons.get_child_count() > 0,
 		"Card actions must remain in CardActionPopover and outside the detail panel",
 	)
 	table.hide_card_detail()

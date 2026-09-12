@@ -540,65 +540,28 @@ func _check_compact_battle_detail_layout() -> void:
 	battle.show_card_detail(pokemon.card_id, pokemon)
 	await context._settle_layout(4)
 	var detail := battle.detail_panel as BattleDetailPanel
-	var board_rect := battle.board_panel.get_global_rect()
-	var detail_rect := detail.get_global_rect() if detail else Rect2()
-	var close_rect := (
-		detail.close_button.get_global_rect()
-		if detail and detail.close_button
-		else Rect2()
+	context._check(detail != null and not detail.visible,
+		"Compact selection must leave the board readable until details are requested")
+	var action_rect := battle.action_popover.panel_global_rect()
+	var rail := battle.hud.get_node("PhasePanel") as Control
+	context._check(battle.action_popover.visible
+		and not action_rect.intersects(battle.own_active.visual_global_bounds())
+		and not action_rect.intersects(rail.get_global_rect()),
+		"Compact actions must keep both the selected card and phase controls reachable")
+	var detail_button := battle.header.get_node("RightInset/DetailButton") as Button
+	var cancel_button := battle.header.get_node("RightInset/CancelSelectionButton") as Button
+	for button in [detail_button, cancel_button]:
+		context._check(button.visible and button.size.x >= 48 and button.size.y >= 48,
+			"Compact selection needs touch-sized details and cancel controls")
+	var inspections: Array[Dictionary] = []
+	battle.inspect_card_requested.connect(func(card_context: Dictionary) -> void:
+		inspections.append(card_context)
 	)
-	context._check(
-		detail != null
-		and detail.visible
-		and detail.is_compact_layout()
-		and detail.scale.is_equal_approx(Vector2.ONE)
-		and detail.size.is_equal_approx(BattleDetailPanel.COMPACT_PANEL_SIZE)
-		and detail_rect.position.y >= board_rect.position.y + board_rect.size.y * 0.4
-		and detail_rect.end.y <= board_rect.end.y + context.EPSILON,
-		"900x540 battle detail must use the unscaled 440x220 bottom layout: detail=%s board=%s" % [
-			detail_rect, board_rect,
-		],
-	)
-	context._check(
-		close_rect.size.x + context.EPSILON >= context.MIN_TARGET_SIZE
-		and close_rect.size.y + context.EPSILON >= context.MIN_TARGET_SIZE,
-		"Compact battle detail close target is below 48x48: %s" % close_rect,
-	)
-	context._check(
-		detail != null and detail.detail_text.scroll_active,
-		"Compact battle detail must keep its body internally scrollable",
-	)
-	context._check(
-		detail != null
-		and detail.state_panel.visible
-		and "当前状态" in detail.state_text.text
-		and "当前状态" not in detail.detail_text.text
-		and detail.detail_text.tooltip_text.is_empty()
-		and detail.state_text.get_content_height() <= detail.state_text.size.y + context.EPSILON,
-		"Compact battle detail must separate unclipped live state from printed rules: "
-		+ "visible=%s state=%s rules=%s tooltip=%s content=%s size=%s" % [
-			detail.state_panel.visible if detail else false,
-			detail.state_text.text if detail else "<missing>",
-			detail.detail_text.text if detail else "<missing>",
-			detail.detail_text.tooltip_text if detail else "<missing>",
-			detail.state_text.get_content_height() if detail else -1,
-			detail.state_text.size if detail else Vector2.ZERO,
-		],
-	)
-	context._check(
-		battle.action_popover != null
-		and battle.action_popover.visible
-		and battle.action_popover.is_compact_layout()
-		and not detail_rect.intersects(
-			battle.action_popover.panel_global_rect().grow(4.0)
-		),
-		"Compact card actions must use the short action strip without covering details: "
-		+ "detail=%s actions=%s placement=%s" % [
-			detail_rect,
-			battle.action_popover.panel_global_rect() if battle.action_popover else Rect2(),
-			battle.action_popover.current_placement if battle.action_popover else "<missing>",
-		],
-	)
+	detail_button.pressed.emit()
+	context._check(inspections.size() == 1
+		and inspections[0].get("card_id") == pokemon.card_id
+		and inspections[0].get("pokemon") == pokemon,
+		"Explicit details must preserve the chosen Pokemon and its live state")
 	host.queue_free()
 	await context._settle_layout(2)
 

@@ -3,6 +3,7 @@ extends Control
 
 signal action_chosen(action: GameAction)
 signal dismissed
+signal detail_requested
 signal outside_pressed(global_position: Vector2)
 
 @export_range(200.0, 260.0, 1.0) var preferred_width := 236.0
@@ -47,6 +48,7 @@ const COMPACT_ACTION_GAP := 4.0
 
 func _ready() -> void:
 	_resolve_nodes()
+	get_node("Panel/Margin/Content/TitleRow/DetailButton").pressed.connect(detail_requested.emit)
 	# Only the visible Panel should participate in GUI hit testing. A full-screen
 	# STOP root steals clicks from the battle menu before BattleTable can dismiss
 	# the popover; IGNORE still lets Panel and its action buttons receive input.
@@ -336,7 +338,8 @@ func _action_button(row: Dictionary) -> Button:
 	button.accessibility_name = label
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	button.add_theme_font_size_override("font_size", 13)
+	button.add_theme_font_size_override("font_size", 14)
+	button.theme_type_variation = &"BattleCompactButton"
 	button.disabled = action == null or bool(row.get("disabled", false))
 	button.set_meta("row", row.duplicate())
 	button.set_meta("hint", row.get("hint", ""))
@@ -383,7 +386,11 @@ func _layout_popover() -> void:
 	_set_compact_layout(_compact_preferred)
 	var panel_size := _desired_panel_size(_compact_layout)
 	var placement := _preferred_placement(panel_size)
-	if not bool(placement.get("valid", false)) and not _compact_layout:
+	if not bool(placement.get("valid", false)) and _compact_layout:
+		_set_compact_layout(false)
+		panel_size = _desired_panel_size(false)
+		placement = _preferred_placement(panel_size)
+	if not bool(placement.get("valid", false)) and not _compact_layout and not _compact_preferred:
 		_set_compact_layout(true)
 		panel_size = _desired_panel_size(true)
 		placement = _preferred_placement(panel_size)
@@ -419,8 +426,7 @@ func _desired_panel_size(compact_layout: bool) -> Vector2:
 			+ float(maxi(0, visible_count - 1)) * 4.0
 		)
 	var height := 20.0 + content_height
-	if title_label.visible:
-		height += 22.0
+	height += 48.0
 	if hint_label.visible:
 		height += 34.0
 	if title_label.visible or hint_label.visible:
@@ -429,15 +435,13 @@ func _desired_panel_size(compact_layout: bool) -> Vector2:
 	return Vector2(width, height)
 
 
-## Keep actions spatially attached to the selected card. The stable placement is
-## centered directly above the source; only a card against the top safe edge may
-## use the centered below fallback. Avoid rectangles remain available for
-## diagnostics, but must not make the action UI jump to an unrelated board area.
+## Try the four adjacent anchors, reserving the selected card and visible board
+## objects. The phase controls are excluded from the safe rectangle entirely.
 func _preferred_placement(panel_size: Vector2) -> Dictionary:
 	for candidate in _anchored_placement_candidates(panel_size):
 		var position: Vector2 = candidate["position"]
 		var rect := Rect2(position, panel_size)
-		if _safe_rect.encloses(rect) and not rect.intersects(_source_rect.grow(2.0)):
+		if _safe_rect.encloses(rect) and _collision_area(rect) <= 0.0:
 			return {
 				"valid": true,
 				"position": position,
@@ -454,6 +458,14 @@ func _anchored_placement_candidates(panel_size: Vector2) -> Array[Dictionary]:
 		maxf(_safe_rect.position.x, _safe_rect.end.x - panel_size.x),
 	)
 	return [
+		{
+			"direction": "right",
+			"position": Vector2(_source_rect.end.x + anchor_gap, clampf(center.y - panel_size.y * 0.5, _safe_rect.position.y, maxf(_safe_rect.position.y, _safe_rect.end.y - panel_size.y))),
+		},
+		{
+			"direction": "left",
+			"position": Vector2(_source_rect.position.x - anchor_gap - panel_size.x, clampf(center.y - panel_size.y * 0.5, _safe_rect.position.y, maxf(_safe_rect.position.y, _safe_rect.end.y - panel_size.y))),
+		},
 		{
 			"direction": "above",
 			"position": Vector2(
@@ -475,9 +487,8 @@ func _nearest_free_placement(panel_size: Vector2) -> Dictionary:
 	var best_position := _safe_rect.position
 	var best_score := INF
 	var best_direction := "above"
-	# Extremely small safe areas may have no collision-free solution. Never scan
-	# the board for an unrelated free point: keep the panel attached to the same
-	# horizontal card axis and choose only between its above/below anchors.
+	# If every adjacent anchor is occupied, minimize overlap while keeping the
+	# selected card reachable and staying inside the reserved safe rectangle.
 	for candidate in _anchored_placement_candidates(panel_size):
 		var position := _clamp_to_safe_rect(candidate["position"], panel_size)
 		var rect := Rect2(position, panel_size)
@@ -524,10 +535,8 @@ func _set_compact_layout(value: bool) -> void:
 	if _compact_layout == value:
 		return
 	_compact_layout = value
-	# The horizontal compact action strip is already visually tied to its source
-	# card. Omitting the redundant title saves enough height to keep it above the
-	# card and clear of the compact detail sheet.
-	title_label.visible = not value and not title_label.text.is_empty()
+	# Keep the source name and explicit details control in either orientation.
+	title_label.visible = not title_label.text.is_empty()
 	var from_container: Container = (
 		action_buttons if value else compact_action_buttons
 	)
@@ -709,7 +718,7 @@ func _clear_buttons(container: Container) -> void:
 func _resolve_nodes() -> void:
 	pointer_line = get_node_or_null("PointerLine") as Line2D
 	panel = get_node_or_null("Panel") as Panel
-	title_label = get_node_or_null("Panel/Margin/Content/TitleLabel") as Label
+	title_label = get_node_or_null("Panel/Margin/Content/TitleRow/TitleLabel") as Label
 	hint_label = get_node_or_null("Panel/Margin/Content/HintLabel") as Label
 	empty_hint = get_node_or_null("Panel/Margin/Content/EmptyHint") as Label
 	action_scroll = get_node_or_null("Panel/Margin/Content/ActionScroll") as ScrollContainer

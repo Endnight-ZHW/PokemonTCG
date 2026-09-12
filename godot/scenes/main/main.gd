@@ -1354,6 +1354,8 @@ func _matching_selected_pokemon_target_actions(
 	return result
 
 func _execute_action(action: GameAction) -> StepResult:
+	if modal_host_controller.visible or modal_host_controller.closing:
+		return StepResult.new(false, "请先完成或关闭当前弹窗。")
 	if _battle_submission_locked():
 		var locked_message := "动画或局面同步尚未完成，请稍候。"
 		if battle_screen:
@@ -1369,6 +1371,14 @@ func _execute_action(action: GameAction) -> StepResult:
 	return _execute_action_now(action)
 
 func _execute_action_now(action: GameAction) -> StepResult:
+	if state == null or action == null:
+		return StepResult.new(false, "对局已结束。")
+	if action.base_revision >= 0 and action.base_revision != state.revision:
+		if battle_screen:
+			battle_screen.clear_pending_drag("stale_action")
+		_refresh_game()
+		shell_view.show_toast("局面已更新，请重新选择操作。", true)
+		return StepResult.new(false, "操作已过期。")
 	if _battle_submission_locked():
 		var locked_message := "动画或局面同步尚未完成，请稍候。"
 		if battle_screen:
@@ -1752,7 +1762,7 @@ func _continue_after_choice_transition(
 	_after_step(previous_active, previous_phase)
 
 func _cancel_choice() -> void:
-	if active_request == null:
+	if active_request == null or not active_request.can_cancel:
 		return
 	if _battle_submission_locked():
 		shell_view.show_toast("动画或局面同步尚未完成，请稍候。", true)
@@ -1854,15 +1864,41 @@ func _show_pause_overlay(resume_choice_context: Dictionary = {}) -> void:
 	, CONNECT_ONE_SHOT)
 	modal_cancel.pressed.connect(func() -> void:
 		_play_click()
-		modal_host_controller.close()
-		if game_mode == MODE_NETWORK:
-			_surrender_network_and_show_title()
-		else:
-			state = null
-			shell_view.show_title()
+		_show_exit_confirmation(field_choice_context)
+	, CONNECT_ONE_SHOT)
+
+func _show_exit_confirmation(field_choice_context: Dictionary = {}) -> void:
+	var network_match := game_mode == MODE_NETWORK
+	var match_screen := battle_screen
+	var spec := ModalSpec.battle(Vector2(580, 320), true, ModalSpec.SizeMode.FIT_CONTENT)
+	spec.stack_behavior = ModalSpec.StackBehavior.RESTORE_PARENT
+	spec.with_button_roles(ModalSpec.ButtonRole.DANGER, ModalSpec.ButtonRole.SECONDARY)
+	modal_host_controller.open(
+		"离开当前对局？", "认输并离开" if network_match else "结束对局", "取消退出", true, spec)
+	var body := Label.new()
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.text = (
+		"离开将向对手认输并断开连接。当前对局无法继续。"
+		if network_match else "当前对局进度不会保留。确定结束对局并返回标题吗？"
+	)
+	modal_body.add_child(body)
+	var return_to_menu := _show_pause_overlay.bind(field_choice_context)
+	modal_host_controller.back_action = return_to_menu
+	modal_cancel.pressed.connect(return_to_menu, CONNECT_ONE_SHOT)
+	modal_confirm.pressed.connect(func() -> void:
+		modal_host_controller.close(func() -> void:
+			if state == null or battle_screen != match_screen or current_screen != SCREEN_GAME:
+				return
+			if network_match:
+				_surrender_network_and_show_title()
+			else:
+				state = null
+				shell_view.show_title()
+		)
 	, CONNECT_ONE_SHOT)
 
 func _show_end_turn_confirmation(action: GameAction) -> void:
+	var confirmed_action := _versioned_confirmation_action(action)
 	var remaining := _remaining_turn_action_labels()
 	if remaining.is_empty():
 		_execute_action_now(action)
@@ -1890,7 +1926,7 @@ func _show_end_turn_confirmation(action: GameAction) -> void:
 	modal_body.add_child(body)
 	modal_confirm.pressed.connect(func() -> void:
 		_play_click()
-		modal_host_controller.close(_execute_action_now.bind(action))
+		modal_host_controller.close(_execute_action_now.bind(confirmed_action))
 	, CONNECT_ONE_SHOT)
 	modal_cancel.pressed.connect(func() -> void:
 		_play_click()
@@ -1902,23 +1938,23 @@ func _resume_after_pause() -> void:
 		_maybe_start_ai()
 
 func _remaining_turn_action_labels() -> Array[String]:
-	var result: Array[String] = []
+	var available: Dictionary = {}
 	for row in _current_action_rows():
 		var action := row.get("action") as GameAction
-		if action == null or action.kind in ["END_TURN", "SETUP_DONE"]:
+		if action == null:
 			continue
-		var label := str({
-			"PLAY_BASIC": "放置基础宝可梦",
-			"EVOLVE": "进化宝可梦",
-			"ATTACH_ENERGY": "附加能量",
-			"PLAY_TRAINER": "使用训练家卡",
-			"USE_ABILITY": "发动特性",
-			"USE_STADIUM": "发动竞技场效果",
-			"RETREAT": "撤退",
-			"DECLARE_ATTACK": "发动攻击",
-			"PROMOTE": "晋升备战宝可梦",
-		}.get(action.kind, "执行%s" % action.kind))
-		if label not in result:
+		if action.kind == "ATTACH_ENERGY":
+			available["附加能量"] = true
+		elif action.kind == "DECLARE_ATTACK":
+			available["发动攻击"] = true
+		elif action.kind == "PLAY_TRAINER" and action.actor in [0, 1]:
+			var hand := state.get_player(action.actor).hand
+			var index := action.hand_index()
+			if index >= 0 and index < hand.size() and catalog.is_supporter(str(hand[index])):
+				available["使用支援者"] = true
+	var result: Array[String] = []
+	for label in ["附加能量", "使用支援者", "发动攻击"]:
+		if available.has(label):
 			result.append(label)
 	return result
 
@@ -2361,6 +2397,9 @@ func _apply_runtime_settings() -> void:
 	Engine.max_fps = AppSettings.target_fps()
 
 func _notification(what: int) -> void:
+	if what in [NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT] and battle_screen != null:
+		battle_screen.cancel_pointer_gestures()
+		battle_screen.cancel_unsubmitted_drag()
 	if what == NOTIFICATION_APPLICATION_PAUSED:
 		CardTextureCache.clear()
 		if game_mode == MODE_CHALLENGE:
@@ -2418,7 +2457,8 @@ func _notification(what: int) -> void:
 				):
 					shell_view.show_title()
 			SCREEN_GAME:
-				_show_pause_overlay()
+				if battle_screen == null or not battle_screen.handle_back():
+					_show_pause_overlay()
 			SCREEN_END:
 				shell_view.show_title()
 
@@ -2445,7 +2485,13 @@ func _refresh_choice_buttons() -> void:
 	choice_presenter.refresh_selection()
 
 func _show_retreat_confirmation(action: GameAction) -> void:
-	choice_presenter.show_retreat_confirmation(action, state, catalog)
+	choice_presenter.show_retreat_confirmation(_versioned_confirmation_action(action), state, catalog)
+
+func _versioned_confirmation_action(action: GameAction) -> GameAction:
+	var captured := GameAction.from_dict(action.to_dict())
+	if state != null and captured.base_revision < 0:
+		captured.base_revision = state.revision
+	return captured
 
 func _suspend_field_choice_for_auxiliary_modal() -> Dictionary:
 	return choice_presenter.suspend_field_choice()
@@ -2466,8 +2512,30 @@ func _show_card_inspector(context: Dictionary, return_action: Callable = Callabl
 	if str(context.get("card_id", "")).is_empty():
 		return
 	_prepare_auxiliary_panels()
-	auxiliary_panels._show_card_inspector(context, return_action, return_label,
-		_suspended_choice_context(resume_choice_context))
+	var choice_context := _suspended_choice_context(resume_choice_context)
+	var restore_action := return_action
+	if current_screen == SCREEN_GAME and not selected_entity_key.is_empty() and choice_context.is_empty() and not restore_action.is_valid():
+		var selection := selected_entity_key
+		var identity := selected_entity_identity
+		var revision := state.revision
+		var match_state := state
+		var action_group := battle_screen._selected_action_group_key if battle_screen else ""
+		restore_action = func() -> void:
+			modal_host_controller.close(func() -> void:
+				if state != match_state or state == null or state.revision != revision:
+					return
+				if _entity_identity_for_key(selection) != identity:
+					return
+				selected_entity_key = selection
+				selected_entity_identity = identity
+				_refresh_game()
+				if battle_screen and not action_group.is_empty():
+					battle_screen._selected_action_group_key = action_group
+					battle_screen.board_view._refresh_actions()
+					battle_screen.board_view._refresh_target_hints()
+					battle_screen.board_view._refresh_header()
+			)
+	auxiliary_panels._show_card_inspector(context, restore_action, return_label, choice_context)
 
 func _show_zone_inspector(context: Dictionary, resume_choice_context: Dictionary = {}) -> void:
 	_prepare_auxiliary_panels()

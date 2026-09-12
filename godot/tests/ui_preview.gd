@@ -39,6 +39,11 @@ func _render_previews() -> void:
 	Input.warp_mouse(Vector2(4, 4))
 	await harness._settle_frontend(8)
 	var user_args := OS.get_cmdline_user_args()
+	if "--battle-usability-only" in user_args:
+		var usability_scenario := preload("res://tests/ui_preview_usability_scenario.gd").new()
+		usability_scenario.configure(harness)
+		await usability_scenario.run(ui)
+		return
 	if "--semantic-choice-only" in user_args:
 		var semantic_scenario := SemanticChoiceScenario.new()
 		semantic_scenario.configure(harness)

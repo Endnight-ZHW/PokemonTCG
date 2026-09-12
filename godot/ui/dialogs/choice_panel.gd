@@ -66,6 +66,8 @@ var _request_type := ""
 var _allow_duplicates := false
 var _choice_context: Dictionary = {}
 var _responsive_update_queued := false
+var _preview_return_scroll := 0
+var _preview_scroll_generation := 0
 
 
 func configure(
@@ -113,6 +115,8 @@ func configure(
 
 
 func clear_options() -> void:
+	_preview_scroll_generation += 1
+	_preview_return_scroll = 0
 	_resolve_nodes()
 	_clear_children(card_grid)
 	_clear_children(option_list)
@@ -749,8 +753,36 @@ func _resolve_nodes() -> void:
 
 
 func _toggle_compact_preview() -> void:
+	var scroll := _choice_scroll_container()
+	if not _compact_preview_expanded and scroll:
+		_preview_return_scroll = scroll.scroll_vertical
 	_compact_preview_expanded = not _compact_preview_expanded
+	_preview_scroll_generation += 1
+	_restore_preview_scroll.call_deferred(_preview_scroll_generation)
 	_queue_responsive_layout()
+
+
+func _choice_scroll_container() -> ScrollContainer:
+	var ancestor := get_parent()
+	while ancestor != null:
+		if ancestor is ScrollContainer:
+			return ancestor as ScrollContainer
+		ancestor = ancestor.get_parent()
+	return null
+
+
+func _restore_preview_scroll(generation: int) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_inside_tree() or generation != _preview_scroll_generation:
+		return
+	var scroll := _choice_scroll_container()
+	if scroll == null:
+		return
+	if _compact_preview_expanded and preview_panel.visible:
+		scroll.ensure_control_visible(preview_panel)
+	else:
+		scroll.scroll_vertical = _preview_return_scroll
 
 
 func _configure_preview_panel() -> void:
@@ -1213,8 +1245,20 @@ func _apply_responsive_layout() -> void:
 	if available_width <= 1.0:
 		return
 	var has_preview := not _previewed_card_id.is_empty()
-	var compact_preview := available_width < 820.0
+	var choice_scroll := _choice_scroll_container()
+	var compact_preview := available_width < 820.0 or (choice_scroll != null and choice_scroll.size.y < 460.0)
 	_compact_choice_layout = compact_preview
+	# On a short viewport the actual choices take precedence over a duplicate
+	# source-card image and its full-width details toggle.
+	choice_column.move_child(preview_toggle_button, choice_column.get_child_count() - 1)
+	energy_grid.visible = not compact_preview or energy_distribution._energy_distribution_mode
+	if compact_preview and not energy_distribution._energy_distribution_mode and not energy_distribution._energy_preview_cards.is_empty():
+		var source_names: Array[String] = []
+		for card in energy_distribution._energy_preview_cards:
+			if card != null:
+				source_names.append(_card_name(card.card_id))
+		energy_preview_label.text = "来源：%s" % "、".join(source_names)
+		energy_preview_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	if browse_mode_label:
 		browse_mode_label.visible = available_width >= 480.0
 	if browse_valid_button and browse_all_button:
@@ -1236,7 +1280,7 @@ func _apply_responsive_layout() -> void:
 		not compact_preview or _compact_preview_expanded
 	)
 	if content_row:
-		content_row.vertical = compact_preview and show_preview
+		content_row.vertical = compact_preview
 	if preview_toggle_button:
 		preview_toggle_button.visible = (
 			has_preview

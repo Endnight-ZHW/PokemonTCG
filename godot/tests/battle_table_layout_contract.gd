@@ -151,7 +151,7 @@ static func _check_mulligan_bonus_placement_controls(
 	_expect(
 		failures,
 		header.task_hint_label.text == "等待对手完成准备"
-		and "玩家 1" in header.turn_label.text,
+		and "对手行动" in header.turn_label.text,
 		"mulligan bonus placement does not mark the non-actor as waiting",
 	)
 	header.free()

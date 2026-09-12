@@ -2,6 +2,8 @@ class_name BattleHeader
 extends HBoxContainer
 
 signal menu_requested
+signal cancel_requested
+signal detail_requested
 
 @onready var menu_button: Button = %MenuButton
 @onready var turn_label: Label = %TurnLabel
@@ -10,6 +12,7 @@ signal menu_requested
 var _connected := false
 var _ai_thinking := false
 var _task_hint_override := ""
+var _turn_full_text := ""
 
 
 func _ready() -> void:
@@ -44,11 +47,14 @@ func update_header(
 	var display_actor := state.active_player_idx
 	if state.phase == "SETUP" and state.setup_actor_idx in [0, 1]:
 		display_actor = state.setup_actor_idx
-	turn_label.text = "第 %d 回合 · 玩家 %d · %s" % [
+	turn_label.text = "第 %d 回合 · %s · %s" % [
 		state.turn_number,
-		display_actor + 1,
+		"我方行动" if display_actor == view_player else "对手行动",
 		_phase_name(state.phase),
 	]
+	turn_label.add_theme_color_override("font_color", DesignTokens.GOLD if display_actor == view_player else DesignTokens.TEXT_MUTED)
+	_turn_full_text = turn_label.text
+	_fit_turn_caption()
 	turn_label.tooltip_text = turn_label.text
 	turn_label.accessibility_name = "当前对局：%s" % turn_label.text
 	var effective_hint := task_hint.strip_edges()
@@ -90,6 +96,13 @@ func _ensure_connections() -> void:
 		return
 	_connected = true
 	menu_button.pressed.connect(menu_requested.emit)
+	get_node("RightInset/CancelSelectionButton").pressed.connect(cancel_requested.emit)
+	get_node("RightInset/DetailButton").pressed.connect(detail_requested.emit)
+
+
+func set_selection_active(active: bool) -> void:
+	get_node("RightInset/CancelSelectionButton").visible = active
+	get_node("RightInset/DetailButton").visible = active
 
 
 func _phase_name(phase: String) -> String:
@@ -167,3 +180,12 @@ func _apply_responsive_layout() -> void:
 		clampf(size.x * 0.22, 250.0, 340.0),
 		44.0,
 	)
+	_fit_turn_caption()
+
+
+func _fit_turn_caption() -> void:
+	if turn_label == null or _turn_full_text.is_empty():
+		return
+	turn_label.text = _turn_full_text
+	if size.x > 0.0 and size.x < 1180.0:
+		turn_label.text = _turn_full_text.replace("我方行动", "我方").replace("对手行动", "对手")

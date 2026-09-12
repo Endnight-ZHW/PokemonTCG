@@ -13,6 +13,7 @@ func _refresh_header(display_state: GameState = null) -> void:
 	if active_state == null:
 		return
 	if table.header:
+		table.header.set_selection_active(not table.selected_entity_key.is_empty())
 		table.header.update_header(
 			active_state,
 			table.view_player,
@@ -62,18 +63,20 @@ func _refresh_field_info(display_state: GameState) -> void:
 		return
 	var own := display_state.get_player(table.view_player)
 	var opponent := display_state.get_player(1 - table.view_player)
-	table.opponent_info.text = "%s　手牌 %d　牌库 %d　奖赏卡 %d" % [
-		opponent.name,
+	table.opponent_info.text = "%s · 手牌 %d · 牌库 %d · 奖赏 %d" % [
+		"对方",
 		opponent.hand.size(),
 		opponent.deck.size(),
 		opponent.prizes.size(),
 	]
-	table.own_info.text = "%s　手牌 %d　牌库 %d　奖赏卡 %d" % [
-		own.name,
+	table.own_info.text = "%s · 手牌 %d · 牌库 %d · 奖赏 %d" % [
+		"我方",
 		own.hand.size(),
 		own.deck.size(),
 		own.prizes.size(),
 	]
+	table.own_info.accessibility_name = "%s，%s" % [own.name, table.own_info.text]
+	table.opponent_info.accessibility_name = "%s，%s" % [opponent.name, table.opponent_info.text]
 	_refresh_turn_allowance_chips(own)
 
 
@@ -341,6 +344,14 @@ func _layout_board() -> void:
 	else:
 		table.hand_view._layout_hand(metrics["own_hand_size"])
 	_layout_overlay_drawers()
+	if not table._pending_detail_card_id.is_empty():
+		var pending_card := table._pending_detail_card_id
+		var pending_pokemon := table._pending_detail_pokemon
+		table._pending_detail_card_id = ""
+		table._pending_detail_pokemon = null
+		table.show_card_detail(pending_card, pending_pokemon)
+	if table.is_compact_layout() and table._read_only_detail_key.is_empty():
+		table.hide_card_detail()
 	_layout_coin_showcase()
 	table.hand_view._reconcile_drag_after_layout_change()
 	table._refresh_ai_thinking_indicator()
@@ -833,12 +844,13 @@ func _layout_detail_panel() -> void:
 	var available_width := maxf(1.0, maximum_detail_right - minimum_fixed_x)
 	var available_height := maxf(1.0, corridor_bottom - corridor_top)
 	var component := table.detail_panel as BattleDetailPanel
-	var use_bottom_layout := (
+	var compact_content := (
 		available_width < BattleDetailPanel.NORMAL_PANEL_SIZE.x
 		or available_height < BattleDetailPanel.NORMAL_PANEL_SIZE.y
 	)
+	var use_bottom_layout := table.is_compact_layout()
 	if component:
-		component.set_compact_layout(use_bottom_layout)
+		component.set_compact_layout(use_bottom_layout or compact_content)
 	var base_panel_size := (
 		component.layout_size()
 		if component
@@ -846,6 +858,9 @@ func _layout_detail_panel() -> void:
 	)
 	if base_panel_size.x <= 1.0 or base_panel_size.y <= 1.0:
 		base_panel_size = BattleDetailPanel.NORMAL_PANEL_SIZE
+	if not use_bottom_layout:
+		base_panel_size.x = minf(base_panel_size.x, maxf(300.0, available_width))
+		table.detail_panel.custom_minimum_size.x = base_panel_size.x
 	table.detail_panel.pivot_offset = Vector2.ZERO
 	table.detail_panel.scale = Vector2.ONE
 	if use_bottom_layout:
@@ -890,6 +905,8 @@ func _layout_detail_panel() -> void:
 	var fixed_y := roundf(
 		corridor_top + (corridor_height - panel_size.y) * 0.5
 	)
+	if compact_content:
+		fixed_y = corridor_top
 	fixed_y = clampf(
 		fixed_y,
 		corridor_top,
@@ -897,6 +914,7 @@ func _layout_detail_panel() -> void:
 	)
 	table.detail_panel.position = Vector2(fixed_x, fixed_y)
 	table.detail_panel.size = base_panel_size
+	_layout_current_status()
 
 
 func _new_card_view() -> CardView:
@@ -1059,9 +1077,9 @@ func _refresh_turn_allowance_chips(player: PlayerState) -> void:
 
 func _allowance_chip_style(used: bool) -> StyleBoxFlat:
 	return DesignTokens.panel_style(
-		Color(0.025, 0.040, 0.060, 0.90) if used else Color(0.025, 0.105, 0.090, 0.94),
+		Color(0.035, 0.055, 0.080, 0.90) if used else Color(0.050, 0.105, 0.125, 0.94),
 		7,
-		Color(0.25, 0.34, 0.45, 0.62) if used else Color(0.36, 0.78, 0.58, 0.78),
+		Color(0.25, 0.34, 0.45, 0.32) if used else Color(0.30, 0.50, 0.53, 0.45),
 		1,
 		5,
 	)
@@ -1087,6 +1105,24 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 	)
 	var info_rect: Rect2 = status_plan["info_rect"]
 	var allowance_rect: Rect2 = status_plan["allowance_rect"]
+	if table.detail_panel and table.detail_panel.visible and not table.is_compact_layout():
+		var detail_rect := _visual_rect_in_control(table.detail_panel, Rect2(Vector2.ZERO, table.detail_panel.size), table.board_canvas)
+		if detail_rect.intersects(info_rect) or detail_rect.intersects(allowance_rect):
+			var left := detail_rect.end.x + 10.0
+			var available := info_rect.end.x - left
+			if available >= 230.0:
+				info_rect.position.x = left
+				info_rect.size.x = available
+				allowance_rect.position.x = left
+				allowance_rect.size.x = available
+			else:
+				var below_y := detail_rect.end.y + 8.0
+				var prizes := table.zones.get("own_prizes") as ZoneView
+				var bottom := prizes.position.y - 12.0 if prizes else float(metrics["own_hand_y"])
+				if below_y + status_height <= bottom:
+					var row_gap := allowance_rect.position.y - info_rect.position.y
+					info_rect.position = Vector2(detail_rect.position.x, below_y)
+					allowance_rect.position = Vector2(detail_rect.position.x, below_y + row_gap)
 	table.own_info.position = info_rect.position
 	table.own_info.size = info_rect.size
 	table.own_allowance_row.position = allowance_rect.position
@@ -1094,7 +1130,8 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 	var compact_status := allowance_rect.size.x < 300.0
 	var separation := 3 if compact_status else 6
 	table.own_allowance_row.add_theme_constant_override("separation", separation)
-	table.own_info.add_theme_font_size_override("font_size", 11 if compact_status else 12)
+	table.own_info.add_theme_font_size_override("font_size", 12 if compact_status else 13)
+	table.opponent_info.add_theme_font_size_override("font_size", 12 if compact_status else 13)
 	var compact_unit := maxf(
 		1.0,
 		(allowance_rect.size.x - float(separation * 3)) / 4.2,
@@ -1103,12 +1140,19 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 		var label := table.own_allowance_labels.get(key) as Label
 		if label == null:
 			continue
-		label.add_theme_font_size_override("font_size", 10 if compact_status else 12)
+		label.add_theme_font_size_override("font_size", 11 if compact_status else 12)
 		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		if compact_status:
 			label.custom_minimum_size.x = compact_unit * (1.2 if key == "stadium" else 1.0)
 		else:
 			label.custom_minimum_size.x = 82.0 if key == "stadium" else 68.0
+
+
+func _layout_current_status() -> void:
+	if table.board_canvas == null or table.board_canvas.size.x < 100.0:
+		return
+	var metrics := _board_layout_metrics(table.board_canvas.size.x, table.board_canvas.size.y)
+	_layout_own_status(metrics, BattleTableLayout.field_plan(metrics, table.bench_spacing))
 
 
 func _routed_action_rows() -> Array[Dictionary]:
@@ -1206,6 +1250,14 @@ func _current_task_hint() -> String:
 			var action := (rows[0] as Dictionary).get("action") as GameAction
 			return "选择%s目标" % _target_hint_for_action(action)
 	return "确认要执行的卡牌动作"
+
+
+func is_selecting_action_target() -> bool:
+	for row in _rows_for_active_selection():
+		var action := row.get("action") as GameAction
+		if not BattleInteractionController.target_keys_for_action(action, row).is_empty():
+			return true
+	return false
 
 
 func _disabled_reason_for_source(source_key: String) -> String:
@@ -1467,6 +1519,11 @@ func _present_popover_rows(
 	if table._forced_popover_source_key != source_key:
 		avoidance_rows = table.interaction_router.rows_for_source(source_key)
 	table._popover_source_key = source_key
+	if source_control is CardView:
+		var source_card := source_control as CardView
+		if not source_card.card_id.is_empty():
+			title = str(table.catalog.get_card(source_card.card_id).get("name", title))
+	table.action_popover.set_compact_preferred(table.is_compact_layout())
 	table.action_popover.show_for_control(
 		display_rows,
 		source_control,
@@ -1520,6 +1577,9 @@ func _safe_popover_rect() -> Rect2:
 			var result_bottom := result.end.y
 			result.position.y = header_bottom
 			result.size.y = result_bottom - header_bottom
+	if table.hud:
+		var phase_panel := table.hud.get_node("PhasePanel") as Control
+		result.size.x = minf(result.size.x, phase_panel.get_global_rect().position.x - 12.0 - result.position.x)
 	return result
 
 
@@ -1581,11 +1641,8 @@ func _reposition_action_popover() -> void:
 	if source_control == null:
 		table.action_popover.dismiss(false)
 		return
-	var detail_component := table.detail_panel as BattleDetailPanel
 	table.action_popover.set_compact_preferred(
-		detail_component != null
-		and detail_component.visible
-		and detail_component.is_compact_layout()
+		table.is_compact_layout()
 	)
 	var avoidance_rows := table.interaction_router.rows_for_source(table._popover_source_key)
 	if table._forced_popover_source_key == table._popover_source_key:
@@ -1626,6 +1683,7 @@ func _on_popover_action_chosen(action: GameAction) -> void:
 			return
 	var group := _group_for_action(table._popover_source_key, action)
 	if not group.is_empty() and bool(group.get("requires_target", false)):
+		table.hide_card_detail()
 		table._selected_action_group_key = str(group.get("key", ""))
 		table._popover_source_key = ""
 		_refresh_target_hints()
@@ -1654,6 +1712,7 @@ func _on_popover_dismissed() -> void:
 
 
 func _reset_action_interaction_state(dismiss_popover := true) -> void:
+	table.clear_task_hint()
 	table._selected_action_group_key = ""
 	table._popover_dismissed_source_key = ""
 	table._popover_source_key = ""
@@ -1755,6 +1814,9 @@ func _on_card_activated(
 		elif target_rows.size() > 1:
 			_show_forced_action_rows(target_rows)
 			return
+		if hand_index < 0 and is_selecting_action_target():
+			table.set_task_hint("这个位置不能作为目标，请选择青色标记的位置")
+			return
 	if hand_index < 0 and card_id.is_empty():
 		return
 	if hand_index >= 0:
@@ -1774,6 +1836,15 @@ func _on_detail_requested(card_id: String) -> void:
 	table.detail_requested.emit(card_id)
 	if not card_id.is_empty():
 		table.inspect_card_requested.emit(table._card_inspection_context(card_id))
+
+
+func _on_popover_detail_requested() -> void:
+	var key := table._popover_source_key if not table._popover_source_key.is_empty() else table.selected_entity_key
+	var source := _source_control_for_key(key)
+	if source is CardView:
+		_on_card_view_detail_requested((source as CardView).card_id, source as CardView)
+	elif key == "stadium" and table.state_ref:
+		_on_detail_requested(table.state_ref.stadium_card_id)
 
 
 func _on_card_view_detail_requested(card_id: String, view: CardView) -> void:

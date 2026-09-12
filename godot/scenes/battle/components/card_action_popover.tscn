@@ -8,13 +8,13 @@ border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.384, 0.843, 1, 0.88)
+border_color = Color(0.35, 0.53, 0.69, 0.70)
 corner_radius_top_left = 10
 corner_radius_top_right = 10
 corner_radius_bottom_right = 10
 corner_radius_bottom_left = 10
 shadow_color = Color(0, 0, 0, 0.42)
-shadow_size = 8
+shadow_size = 3
 
 [node name="CardActionPopover" type="Control"]
 layout_mode = 3
@@ -32,8 +32,8 @@ script = ExtResource("1_script")
 [node name="PointerLine" type="Line2D" parent="."]
 unique_name_in_owner = true
 z_index = -1
-width = 3.0
-default_color = Color(0.384, 0.843, 1, 0.88)
+width = 1.5
+default_color = Color(0.35, 0.53, 0.69, 0.70)
 begin_cap_mode = 2
 end_cap_mode = 2
 antialiased = true
@@ -62,13 +62,26 @@ theme_override_constants/margin_bottom = 10
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="TitleLabel" type="Label" parent="Panel/Margin/Content"]
+[node name="TitleRow" type="HBoxContainer" parent="Panel/Margin/Content"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 48)
+
+[node name="TitleLabel" type="Label" parent="Panel/Margin/Content/TitleRow"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
 theme_override_font_sizes/font_size = 14
 text = "可执行动作"
 text_overrun_behavior = 3
+
+[node name="DetailButton" type="Button" parent="Panel/Margin/Content/TitleRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(48, 48)
+focus_mode = 0
+theme_type_variation = &"BattleCompactButton"
+theme_override_font_sizes/font_size = 12
+text = "详情"
 
 [node name="HintLabel" type="Label" parent="Panel/Margin/Content"]
 unique_name_in_owner = true
