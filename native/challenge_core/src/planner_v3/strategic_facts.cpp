@@ -260,16 +260,6 @@ CardSemanticModel::CardSemanticModel(Value catalog, std::shared_ptr<const Profil
         auto &profile = (*computed)[id];
         profile.supporter = string_field(definition, "trainer_type") == "Supporter";
         inspect_semantics(definition, profile);
-        const auto &abilities = array_field(definition, "abilities");
-        if (abilities.size() == 1 && string_field(abilities.front(), "trigger") == "repeatable") {
-            const auto &effects = array_field(abilities.front(), "compiled_effects");
-            if (effects.size() == 1 && string_field(effects.front(), "op") == "relocate_energy") {
-                const auto *branches = field(effects.front(), "branches");
-                if (!branches || (branches->is_object() && branches->as_object().empty())) {
-                    profile.pure_transfer_ability = string_field(abilities.front(), "name");
-                }
-            }
-        }
     }
     profiles_ = std::move(computed);
 }
@@ -330,14 +320,6 @@ ActionFootprint CardSemanticModel::action_footprint(const Value &action) const {
     result.terminal = kind == "DECLARE_ATTACK" || kind == "END_TURN"
         || kind == "SETUP_DONE";
     return result;
-}
-
-bool CardSemanticModel::pure_energy_transfer(const Value &action) const {
-    if (string_field(action, "kind") != "USE_ABILITY") return false;
-    const auto found = profiles_->find(action_card_id(action));
-    const auto *payload = field(action, "payload");
-    return found != profiles_->end() && !found->second.pure_transfer_ability.empty()
-        && payload && string_field(*payload, "ability_name") == found->second.pure_transfer_ability;
 }
 
 BeliefTracker::BeliefTracker(

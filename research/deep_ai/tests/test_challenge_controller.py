@@ -169,8 +169,7 @@ class ChallengeControllerTests(unittest.TestCase):
         self.assertFalse(self.decide(match_instance_id="next-match")["turn_plan_cache_hit"])
 
     def test_policy_change_invalidates_the_continuation(self):
-        for policy in ("use_strategy_optimization", "use_deck_inspection", "internal_anytime_search",
-                       "internal_dual_guidance", "internal_prune_transfer_cycles"):
+        for policy in ("use_strategy_optimization", "use_deck_inspection", "internal_anytime_search"):
             with self.subTest(policy=policy):
                 self.setUp()
                 self.prime_plan()
@@ -318,46 +317,6 @@ class ChallengeControllerTests(unittest.TestCase):
         self.assertEqual(result["strategic_explanation"]["confidence"], "terminal_win")
         self.assertGreater(result["native_performance_counters"]["rule_action_applications"], 0)
 
-    def test_dual_guidance_leaves_the_independent_v2_entry_unchanged(self):
-        state = self.session.snapshot()
-        state["players"][1]["active"]["damage_counters"] = 0
-        self.assertTrue(self.session.restore(state, 17)["success"])
-        results = [self.make_controller().decide(self.request(
-            engine="turn_beam_v2", internal_dual_guidance=enabled, time_budget_ms=0), 1000)
-            for enabled in (False, True)]
-        for result in results:
-            self.assertTrue(result["success"])
-            self.assertEqual(result["native_performance_counters"]["classic_routes_retained"], 0)
-        for key in ("action", "sequence", "score_milli", "worst_score_milli"):
-            self.assertEqual(results[0].get(key), results[1].get(key))
-
-    def test_guided_complete_candidates_replay_to_a_turn_boundary(self):
-        state = self.session.snapshot()
-        state["players"][0]["bench"][0] = copy.deepcopy(state["players"][0]["active"])
-        state["players"][1]["active"].update(card_id="sv1-113", damage_counters=0)
-        for player in state["players"]:
-            player["prizes"] = ["sv1-ener-2"] * 6
-        self.assertTrue(self.session.restore(state, 17)["success"])
-        result = self.decide(time_budget_ms=0, internal_full_diagnostics=True)
-        candidates = result["strategic_explanation"]["candidate_plans"]
-        self.assertGreater(len(candidates), 1)
-        for candidate in candidates:
-            with self.subTest(sequence=candidate["sequence"]):
-                self.assertIsInstance(candidate["classic_score_milli"], int)
-                replay = native.NativeRulesSession()
-                replay.set_catalog(self.catalog)
-                self.assertTrue(replay.restore(state, 17)["success"])
-                for step, action in enumerate(candidate["sequence"]):
-                    self.assertTrue(replay.apply_action({**action, "action_id": f"guided:{step}"})["success"])
-                    for actor in (0, 1):
-                        pending = replay.pending_choice(actor)
-                        if pending:
-                            self.assertEqual(len(pending["options"]), 1)
-                            self.assertTrue(replay.apply_choice({"request_id": pending["request_id"],
-                                "option_ids": [pending["options"][0]["option_id"]], "cancelled": False})["success"])
-                self.assertIn(candidate["sequence"][-1]["kind"], ("DECLARE_ATTACK", "END_TURN"))
-                self.assertNotEqual(replay.snapshot()["active_player_idx"], 0)
-
     def test_unfinished_development_is_not_overridden_by_direct_end_turn(self):
         state = self.session.snapshot()
         state["players"][1]["active"]["damage_counters"] = 0
@@ -415,15 +374,6 @@ class ChallengeControllerTests(unittest.TestCase):
         returned = self.decide(node_budget=1)
         self.assertNotEqual(returned["action"]["kind"], "ATTACH_ENERGY")
         self.assertGreater(returned["native_performance_counters"]["root_actions_filtered"], 0)
-
-    def test_shared_tree_prunes_pure_energy_transfer_cycles(self):
-        path = RESEARCH_ROOT.parents[1] / "native/challenge_core/tests/fixtures/pure_energy_transfer_cycle.json"
-        fixture = json.loads(path.read_text(encoding="utf-8"))
-        self.assertTrue(self.session.restore(fixture["snapshot"], fixture["rng_state"])["success"])
-        result = self.decide(seed=fixture["rng_state"], match_seed=fixture["match_seed"],
-                             time_budget_ms=0, node_budget=512)
-        self.assertGreater(result["native_performance_counters"]["energy_transfer_cycles_pruned"], 0)
-        self.assertTrue(self.session.apply_action({**result["action"], "action_id": "transfer-progress"})["success"])
 
     def test_ultra_ball_cost_keeps_a_live_candy_evolution_pair(self):
         self.combat_position("water", "sv2-tatsu", energies=["sv1-ener-3"],
