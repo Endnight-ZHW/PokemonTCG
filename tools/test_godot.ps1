@@ -5,15 +5,9 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot '.tools'
 
-. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
-$lock = Get-ToolchainLock -RepoRoot $repoRoot
-$godotPaths = Get-GodotToolchainPaths -RepoRoot $repoRoot
+. (Join-Path $PSScriptRoot 'godot_test_common.ps1')
+$godotPaths = Initialize-GodotTestEnvironment -RepoRoot $repoRoot
 $godot = $godotPaths.Console
-Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
-
-if (-not (Test-Path -LiteralPath $godot)) {
-    throw "Godot $($lock.godot.version) is not installed. Run tools/setup_godot_toolchain.ps1 first."
-}
 
 function Clear-StaleGodotImportArtifacts {
     $binRoot = Join-Path $repoRoot 'godot\bin\windows'
@@ -54,62 +48,21 @@ if ($joinedImportOutput -match $fatalGodotErrorPattern) {
     throw 'Godot emitted script/runtime errors during import.'
 }
 
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/card_catalog_contract.gd' `
-    -SuccessMarker 'CARD_CATALOG_CONTRACT_OK' `
-    -ContractName 'Card catalog contract'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/card_presentation_contract.gd' `
-    -SuccessMarker 'CARD_PRESENTATION_CONTRACT_OK' `
-    -ContractName 'Card visual audit coverage and shared presentation contract'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/network_protocol_contract.gd' `
-    -SuccessMarker 'NETWORK_PROTOCOL_CONTRACT_OK' `
-    -ContractName 'Network protocol contract'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/native_rules_session_contract_test.gd' `
-    -SuccessMarker 'NATIVE_RULES_SESSION_CONTRACT_OK' `
-    -ContractName 'Native ABI 2 stateful rules session, privacy, rollback, Snapshot and journal contract'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/vm_descriptor_contract_test.gd' `
-    -SuccessMarker 'VM_DESCRIPTOR_CONTRACT_OK' `
-    -ContractName 'Generated VM IR descriptor and negative-schema contract'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/frontend_layout_contract.gd' `
-    -SuccessMarker 'FRONTEND_LAYOUT_CONTRACT_OK' `
-    -ContractName 'Frontend layout contract'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/battle_feedback_lifecycle_contract.gd' `
-    -SuccessMarker 'BATTLE_FEEDBACK_LIFECYCLE_OK' `
-    -ContractName 'Battle feedback lifecycle contract'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/card_view_layers_contract.gd' `
-    -SuccessMarker 'CARD_VIEW_LAYERS_OK' `
-    -ContractName 'Card view layers contract'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/view_model_ownership_contract.gd' `
-    -SuccessMarker 'VIEW_MODEL_OWNERSHIP_OK' `
-    -ContractName 'Player view privacy and queued snapshot ownership'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/battle_drag_lifecycle_contract.gd' `
-    -SuccessMarker 'BATTLE_DRAG_LIFECYCLE_OK' `
-    -ContractName 'Drag tracking, stale completions, cancellation and resync'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/attachment_visual_contract.gd' `
-    -SuccessMarker 'ATTACHMENT_VISUAL_CONTRACT_OK' `
-    -ContractName 'Attachment visual descriptor and badge contract'
-
-Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
-    -Script 'res://tests/ui_workbench_transition_contract.gd' `
-    -SuccessMarker 'UI_WORKBENCH_TRANSITION_OK' `
-    -ContractName 'UI Workbench transition contract'
+$contracts = @(
+    @('card_catalog_contract', 'CARD_CATALOG_CONTRACT_OK', 'Card catalog contract'),
+    @('card_presentation_contract', 'CARD_PRESENTATION_CONTRACT_OK', 'Card visual audit coverage and shared presentation contract'),
+    @('network_protocol_contract', 'NETWORK_PROTOCOL_CONTRACT_OK', 'Network protocol contract'),
+    @('native_rules_session_contract_test', 'NATIVE_RULES_SESSION_CONTRACT_OK', 'Native ABI 2 stateful rules session, privacy, rollback, Snapshot and journal contract'),
+    @('vm_descriptor_contract_test', 'VM_DESCRIPTOR_CONTRACT_OK', 'Generated VM IR descriptor and negative-schema contract'),
+    @('frontend_layout_contract', 'FRONTEND_LAYOUT_CONTRACT_OK', 'Frontend layout contract'),
+    @('battle_feedback_lifecycle_contract', 'BATTLE_FEEDBACK_LIFECYCLE_OK', 'Battle feedback lifecycle contract'),
+    @('card_view_layers_contract', 'CARD_VIEW_LAYERS_OK', 'Card view layers contract'),
+    @('view_model_ownership_contract', 'VIEW_MODEL_OWNERSHIP_OK', 'Player view privacy and queued snapshot ownership'),
+    @('battle_drag_lifecycle_contract', 'BATTLE_DRAG_LIFECYCLE_OK', 'Drag tracking, stale completions, cancellation and resync'),
+    @('attachment_visual_contract', 'ATTACHMENT_VISUAL_CONTRACT_OK', 'Attachment visual descriptor and badge contract'),
+    @('ui_workbench_transition_contract', 'UI_WORKBENCH_TRANSITION_OK', 'UI Workbench transition contract')
+)
+foreach ($contract in $contracts) {
+    Invoke-GodotCheckedScript -Executable $godot -ProjectRoot (Join-Path $repoRoot godot) -AllowRootCertificateWarning `
+        -Script "res://tests/$($contract[0]).gd" -SuccessMarker $contract[1] -ContractName $contract[2]
+}

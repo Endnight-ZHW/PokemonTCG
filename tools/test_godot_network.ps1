@@ -13,9 +13,8 @@ $projectRoot = Join-Path $repoRoot 'godot'
 $relayRoot = Join-Path $repoRoot 'native\relay_server'
 $tempRoot = Join-Path $repoRoot '.test_tmp\godot-network'
 
-. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
-$godot = (Get-GodotToolchainPaths -RepoRoot $repoRoot).Console
-Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
+. (Join-Path $PSScriptRoot 'godot_test_common.ps1')
+$godot = (Initialize-GodotTestEnvironment -RepoRoot $repoRoot).Console
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 & (Join-Path $PSScriptRoot 'build_relay.ps1') -Configuration debug
 $relayBinary = Join-Path $relayRoot 'bin\ptcg_relay_server.exe'
@@ -58,21 +57,10 @@ try {
     if (-not $ready) {
         throw 'Relay server did not become healthy before the regression test.'
     }
-    $output = & $godot `
-        --headless `
-        --path $projectRoot `
-        --script 'res://tests/network_regression.gd' `
-        -- `
-        "--relay-url=ws://127.0.0.1:$RelayPort" 2>&1
-    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-    $output | ForEach-Object { Write-Host $_ }
-    $joined = $output -join "`n"
-    if ($exitCode -ne 0 -or $joined -notmatch 'NETWORK_REGRESSION_OK') {
-        throw "Godot network regression failed with exit code $exitCode."
-    }
-    if ($joined -match '(?m)^(SCRIPT ERROR|ERROR:)') {
-        throw 'Godot emitted script/runtime errors during network regression.'
-    }
+    Invoke-GodotCheckedScript -Executable $godot -ProjectRoot $projectRoot `
+        -Script 'res://tests/network_regression.gd' -SuccessMarker 'NETWORK_REGRESSION_OK' `
+        -ContractName 'Godot network regression' -AllowWarnings `
+        -ScriptArguments @("--relay-url=ws://127.0.0.1:$RelayPort")
 }
 finally {
     if (-not $relay.HasExited) {

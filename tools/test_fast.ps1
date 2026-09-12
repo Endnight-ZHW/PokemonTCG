@@ -24,10 +24,8 @@ if ($LASTEXITCODE -ne 0) { throw 'C++ Relay protocol core failed.' }
 & (Join-Path $PSScriptRoot 'content.ps1') test
 if ($LASTEXITCODE -ne 0) { throw 'Native content compiler contract failed.' }
 
-. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
-$godotPaths = Get-GodotToolchainPaths -RepoRoot $repoRoot
-$godot = $godotPaths.Console
-Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
+. (Join-Path $PSScriptRoot 'godot_test_common.ps1')
+$godot = (Initialize-GodotTestEnvironment -RepoRoot $repoRoot).Console
 $projectRoot = Join-Path $repoRoot 'godot'
 Invoke-GodotCheckedScript -Executable $godot -ProjectRoot $projectRoot `
     -Script 'res://tests/native_rules_session_contract_test.gd' `
