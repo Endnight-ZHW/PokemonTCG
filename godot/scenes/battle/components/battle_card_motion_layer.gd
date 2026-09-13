@@ -255,6 +255,16 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 	var target := table.presentation_runtime._event_target_endpoint(event)
 	var event_type := str(event.get("event_type", ""))
 	var actor := int(event.get("actor", table.view_player))
+	if (
+		str(source.get("zone", "")) == "hand"
+		and int(source.get("player", -1)) == table.view_player
+		and table.presentation_runtime.event_hand_sources.has(motion_event_id)
+		and Array(table.presentation_runtime.event_hand_sources[motion_event_id]).is_empty()
+	):
+		# This hand departure was already rendered before a pending choice. Keep
+		# its semantic completion, without inventing a second card at hand center.
+		_finish_event_motion_dispatch(motion_event_id)
+		return
 	if table.render3d != null and table.render3d.is_projection_ready() and BattleMulligan3D.handles(event):
 		_register_event_motion_handle(motion_event_id, table.render3d.mulligan.play(event, duration))
 		_finish_event_motion_dispatch(motion_event_id)

@@ -99,19 +99,16 @@ func open(
 	modal_scroll.scroll_horizontal = 0
 	begin(resolved_spec, main.shell_view.safe_content_size())
 	modal_title.text = title_text
-	var frontend_modal := resolved_spec.surface == ModalSpec.Surface.FRONTEND
-	modal_title.theme_type_variation = &"FrontModalTitle" if frontend_modal else &""
+	modal_title.theme_type_variation = &"FrontModalTitle"
 	modal_confirm.text = confirm_text
 	modal_confirm.disabled = false
 	modal_confirm.theme_type_variation = _button_variation(
-		resolved_spec.surface,
 		resolved_spec.confirm_role,
 	)
 	modal_cancel.text = cancel_text
 	modal_cancel.disabled = false
 	modal_cancel.visible = resolved_spec.cancellable and not cancel_text.is_empty()
 	modal_cancel.theme_type_variation = _button_variation(
-		resolved_spec.surface,
 		resolved_spec.cancel_role,
 	)
 	modal_shade.color.a = (
@@ -217,19 +214,13 @@ func handle_back() -> bool:
 	return true
 
 
-func _button_variation(surface: int, role: int) -> StringName:
+func _button_variation(role: int) -> StringName:
 	if role == ModalSpec.ButtonRole.DEFAULT:
 		return &""
-	if surface == ModalSpec.Surface.FRONTEND:
-		return {
-			ModalSpec.ButtonRole.PRIMARY: &"FrontPrimaryButton",
-			ModalSpec.ButtonRole.SECONDARY: &"FrontSecondaryButton",
-			ModalSpec.ButtonRole.DANGER: &"FrontDangerButton",
-		}.get(role, &"")
 	return {
-		ModalSpec.ButtonRole.PRIMARY: &"BattlePrimaryButton",
-		ModalSpec.ButtonRole.SECONDARY: &"BattleSecondaryButton",
-		ModalSpec.ButtonRole.DANGER: &"BattleDangerButton",
+		ModalSpec.ButtonRole.PRIMARY: &"FrontPrimaryButton",
+		ModalSpec.ButtonRole.SECONDARY: &"FrontSecondaryButton",
+		ModalSpec.ButtonRole.DANGER: &"FrontDangerButton",
 	}.get(role, &"")
 
 
@@ -247,11 +238,12 @@ func _free_children_immediate(parent: Node) -> void:
 func begin(spec: ModalSpec, available_size: Vector2) -> void:
 	active_spec = spec
 	if modal_panel:
-		modal_panel.theme = FRONTEND_THEME if spec.surface == ModalSpec.Surface.FRONTEND else null
+		modal_panel.theme = FRONTEND_THEME
+		modal_panel.remove_theme_stylebox_override("panel")
 		_apply_layout(spec, available_size)
 	if modal_scroll:
-		DesignTokens.style_scrollbar(modal_scroll.get_v_scroll_bar())
-		DesignTokens.style_scrollbar(modal_scroll.get_h_scroll_bar())
+		FrontendPalette.style_scrollbar(modal_scroll.get_v_scroll_bar())
+		FrontendPalette.style_scrollbar(modal_scroll.get_h_scroll_bar())
 
 
 func update_available_size(available_size: Vector2) -> void:
@@ -278,7 +270,11 @@ func reset_surface() -> void:
 
 func _apply_layout(spec: ModalSpec, available_size: Vector2) -> void:
 	var margin := modal_panel.get_node("Margin") as MarginContainer
-	var compact_battle := spec.surface == ModalSpec.Surface.BATTLE and available_size.y < 650.0
+	var compact_battle := available_size.y < 650.0
+	for button in [modal_confirm, modal_cancel]:
+		button.custom_minimum_size.y = 56
+	for side in ["left", "right"]:
+		margin.add_theme_constant_override("margin_" + side, 18 if available_size.x < 700 else 26)
 	margin.add_theme_constant_override("margin_top", 16 if compact_battle else 26)
 	margin.add_theme_constant_override("margin_bottom", 16 if compact_battle else 26)
 	var panel_size := _resolved_size(spec, available_size)

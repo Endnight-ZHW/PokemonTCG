@@ -28,9 +28,9 @@ enum ConnectionState {
 
 const COMPACT_ASPECT := 1.5
 const COMPACT_WIDTH := 1360.0
-const FRONT_ERROR := Color("#ff9aa4")
-const LAN_ACCENT := Color("#50c8ff")
-const RELAY_ACCENT := Color("#bd8cff")
+const FRONT_ERROR := FrontendPalette.DANGER
+const LAN_ACCENT := FrontendPalette.GOLD
+const RELAY_ACCENT := FrontendPalette.MUTED
 
 var kind := "lan"
 var connection_state := ConnectionState.IDLE
@@ -46,8 +46,7 @@ var _updating_kind_ui := false
 var _received_locked_rules_options := false
 
 @onready var page: VBoxContainer = %Page
-@onready var page_scroll: ScrollContainer = get_node("PageMargin/Center") as ScrollContainer
-@onready var page_center: HBoxContainer = page_scroll.get_node("PageCenter") as HBoxContainer
+@onready var page_scroll: ScrollContainer = %BodyScroll
 @onready var back_button: Button = %BackButton
 @onready var intro_panel: PanelContainer = %IntroPanel
 @onready var form_panel: PanelContainer = %FormPanel
@@ -136,7 +135,7 @@ func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> voi
 		var deck := p_catalog.get_deck(key)
 		deck_option.add_item("%s · %s" % [
 			deck.get("name", key),
-			deck.get("energy_type", ""),
+			EnergyIconCatalog.type_display_name_for(str(deck.get("energy_type", ""))),
 		])
 		deck_option.set_item_metadata(deck_option.item_count - 1, key)
 	_apply_kind_presentation()
@@ -147,10 +146,10 @@ func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> voi
 
 func _resolve_nodes() -> void:
 	page = get_node("%Page") as VBoxContainer
-	page_scroll = get_node("PageMargin/Center") as ScrollContainer
-	page_center = page_scroll.get_node("PageCenter") as HBoxContainer
+	page_scroll = %BodyScroll
+	FrontendPalette.style_scrollbar(page_scroll.get_v_scroll_bar())
 	back_button = page.get_node("TopBar/BackButton") as Button
-	intro_panel = page.get_node("Body/IntroPanel") as PanelContainer
+	intro_panel = get_node("%IntroPanel") as PanelContainer
 	steps = page.get_node("Steps") as HBoxContainer
 	compact_step_bar = page.get_node("CompactStepBar") as HBoxContainer
 	compact_step_label = compact_step_bar.get_node("CompactStepLabel") as Label
@@ -175,7 +174,7 @@ func _resolve_nodes() -> void:
 		get_node("%FeatureTwo") as Label,
 		get_node("%FeatureThree") as Label,
 	]
-	var form := page.get_node("Body/FormPanel/FormMargin/Form") as VBoxContainer
+	var form := page.get_node("BodyScroll/Body/FormPanel/FormMargin/Form") as VBoxContainer
 	role_label = form.get_node("RoleLabel") as Label
 	role_option = form.get_node("NetworkRoleOption") as OptionButton
 	address_label = form.get_node("AddressRow/AddressLabel") as Label
@@ -208,7 +207,7 @@ func _resolve_nodes() -> void:
 	role_option.accessibility_name = "联机身份"
 	address_input.accessibility_name = "连接地址"
 	port_input.accessibility_name = "局域网端口"
-	room_input.accessibility_name = "Relay 房间码"
+	room_input.accessibility_name = "房间码"
 	deck_option.accessibility_name = "联机牌组"
 	matchup_toggle.accessibility_name = "弱点与抗性规则"
 	room_code_display.accessibility_name = "当前房间码"
@@ -238,9 +237,9 @@ func _ensure_connections() -> void:
 
 func _populate_kind_options() -> void:
 	kind_option.clear()
-	kind_option.add_item("局域网 LAN")
+	kind_option.add_item("局域网")
 	kind_option.set_item_metadata(0, "lan")
-	kind_option.add_item("远程 Relay")
+	kind_option.add_item("互联网")
 	kind_option.set_item_metadata(1, "relay")
 	_select_kind_option(kind)
 
@@ -257,18 +256,18 @@ func _apply_kind_presentation() -> void:
 	var accent := RELAY_ACCENT if relay else LAN_ACCENT
 	_updating_kind_ui = true
 	_select_kind_option(kind)
-	heading.text = "远程 Relay 联机" if relay else "局域网联机"
+	heading.text = "互联网联机" if relay else "局域网联机"
 	subtitle.text = (
 		"通过房间码跨网络连接另一名玩家"
 		if relay
 		else "连接同一局域网内的 Windows 或 Android 设备"
 	)
 	kind_label.text = "远程中继" if relay else "局域网直连"
-	kind_code.text = "RELAY · REMOTE SESSION" if relay else "LAN · LOCAL NETWORK"
+	kind_code.text = "房间码连接" if relay else "同一网络内连接"
 	kind_description.text = (
-		"通过 Relay 服务跨网络建立房间；双方仍使用同一套权威规则与隐藏信息隔离。"
+		"和远方的朋友对战。选择服务器，由一方创建房间，再把房间码分享给对方。"
 		if relay
-		else "两台设备处于同一网络时，直接建立低延迟对局。对局判定始终由房主负责。"
+		else "在同一 Wi-Fi 或有线网络中对战。创建房间后，将主机地址和端口分享给对方。"
 	)
 	intro_accent.color = accent
 	intro_icon.texture = RELAY_OVERVIEW_ICON if relay else LAN_OVERVIEW_ICON
@@ -276,15 +275,15 @@ func _apply_kind_presentation() -> void:
 	kind_code.add_theme_color_override("font_color", accent)
 	role_badge_label.add_theme_color_override("font_color", accent)
 	var feature_copy := (
-		PackedStringArray(["支持跨网络连接", "使用房间码快速加入", "房主继续权威判定"])
+		PackedStringArray(["支持跨网络连接", "使用房间码快速加入", "Windows 与 Android 互联"])
 		if relay
-		else PackedStringArray(["同一 Wi-Fi / 有线网络", "低延迟设备直连", "隐藏信息按玩家隔离"])
+		else PackedStringArray(["同一 Wi-Fi / 有线网络", "低延迟设备直连", "支持跨设备对战"])
 	)
 	for index in range(intro_feature_labels.size()):
 		intro_feature_labels[index].text = feature_copy[index]
 		intro_feature_icons[index].modulate = accent
-	address_label.text = "Relay URL" if relay else "主机地址"
-	address_input.accessibility_name = "Relay URL" if relay else "主机地址"
+	address_label.text = "服务器地址" if relay else "主机地址"
+	address_input.accessibility_name = "服务器地址" if relay else "主机地址"
 	address_input.placeholder_text = (
 		"例如 wss://relay.example.com"
 		if relay
@@ -394,7 +393,7 @@ func _refresh_matchup_toggle_presentation() -> void:
 	var host := selected_role() == "host"
 	var enabled := matchup_toggle.button_pressed
 	var state_copy := "已开启" if enabled else "已关闭"
-	var state_color := DesignTokens.GREEN if enabled else DesignTokens.TEXT_MUTED
+	var state_color := FrontendPalette.SUCCESS if enabled else FrontendPalette.MUTED
 	var connection_locked := connection_state in [
 		ConnectionState.VALIDATING,
 		ConnectionState.CONNECTING,
@@ -409,7 +408,7 @@ func _refresh_matchup_toggle_presentation() -> void:
 		matchup_toggle.tooltip_text = (
 			"当前已开启；开局后将按中国大陆官方步骤计算弱点与抗性。"
 			if enabled
-			else "当前已关闭（项目默认）；开局后将不计算弱点与抗性。"
+			else "当前已关闭；开局后将不计算弱点与抗性。"
 		)
 		matchup_toggle.accessibility_name = "弱点与抗性规则，%s，%s" % [
 			state_copy,
@@ -423,7 +422,7 @@ func _refresh_matchup_toggle_presentation() -> void:
 		rule_status_badge.text = "等待同步 · 只读"
 		matchup_toggle.tooltip_text = "加入房间后将显示房主锁定的弱点与抗性设置。"
 		matchup_toggle.accessibility_name = "弱点与抗性规则，等待房主同步，只读"
-		state_color = DesignTokens.CYAN
+		state_color = FrontendPalette.GOLD
 	_apply_matchup_status_color(state_color)
 
 
@@ -515,17 +514,17 @@ func set_connection_state(
 	}.get(state, ""))
 	status_label.text = PlayerFacingText.message(message, state == ConnectionState.ERROR) if not message.is_empty() else default_message
 	var state_color: Color = {
-		ConnectionState.IDLE: DesignTokens.TEXT_MUTED,
-		ConnectionState.VALIDATING: DesignTokens.CYAN,
-		ConnectionState.CONNECTING: DesignTokens.CYAN,
-		ConnectionState.WAITING: DesignTokens.GOLD,
-		ConnectionState.CONNECTED: DesignTokens.GREEN,
+		ConnectionState.IDLE: FrontendPalette.MUTED,
+		ConnectionState.VALIDATING: FrontendPalette.GOLD,
+		ConnectionState.CONNECTING: FrontendPalette.GOLD,
+		ConnectionState.WAITING: FrontendPalette.GOLD,
+		ConnectionState.CONNECTED: FrontendPalette.SUCCESS,
 		ConnectionState.ERROR: FRONT_ERROR,
-	}.get(state, DesignTokens.TEXT_MUTED)
+	}.get(state, FrontendPalette.MUTED)
 	status_dot.add_theme_color_override("font_color", state_color)
 	status_label.add_theme_color_override(
 		"font_color",
-		DesignTokens.TEXT if state != ConnectionState.ERROR else FRONT_ERROR,
+		FrontendPalette.TEXT if state != ConnectionState.ERROR else FRONT_ERROR,
 	)
 	var show_code := not _current_room_code.is_empty() and state in [
 		ConnectionState.WAITING,
@@ -584,7 +583,7 @@ func _validate_form() -> bool:
 		address.begins_with("ws://") or address.begins_with("wss://")
 	)):
 		address_error.text = (
-			"Relay URL 必须以 ws:// 或 wss:// 开头。"
+			"服务器地址 必须以 ws:// 或 wss:// 开头。"
 			if kind == "relay"
 			else "加入局域网房间时必须填写主机地址。"
 		)
@@ -613,7 +612,7 @@ func _validate_form() -> bool:
 			if first_invalid == role_option:
 				_set_compact_step(0)
 			elif first_invalid == deck_option:
-				_set_compact_step(2)
+				_set_compact_step(0)
 			else:
 				_set_compact_step(1)
 	return first_invalid == null
@@ -638,75 +637,31 @@ func _copy_room_code() -> void:
 func _apply_responsive_layout() -> void:
 	if not is_node_ready() or page == null:
 		return
-	_compact = (
-		size.y < 840.0
-		or size.x < COMPACT_WIDTH
-		or size.x / maxf(size.y, 1.0) < COMPACT_ASPECT
-	)
-	_dense_wide = not _compact and size.y < 980.0
+	_compact = size.x < 1180.0 or size.y < 700.0 or size.x < size.y * 1.4
+	_dense_wide = not _compact and size.y < 900.0
 	intro_panel.visible = not _compact
-	form_panel.custom_minimum_size.y = (
-		0.0 if _compact else 568.0 if _dense_wide else 620.0
-	)
-	steps.visible = not _compact
+	steps.visible = false
 	compact_step_bar.visible = _compact
-	var margin := 20 if _compact else 32
+	form_panel.custom_minimum_size.y = 0
+	page.custom_minimum_size.x = 0
+	var margin := maxi(20, int((size.x - 1200.0) * 0.5))
 	var page_margin := get_node("PageMargin") as MarginContainer
 	for side in ["left", "right"]:
 		page_margin.add_theme_constant_override("margin_" + side, margin)
-	# A resize notification can arrive before MarginContainer has propagated its
-	# new side margins into PageScroll. Never let that one-frame stale width make
-	# the centered Page wider than the current compact viewport.
-	var current_margin_width := maxf(1.0, size.x - margin * 2.0)
-	var scroll_width := current_margin_width
-	if page_scroll and page_scroll.size.x > 1.0:
-		scroll_width = minf(scroll_width, page_scroll.size.x)
-	var compact_available_width := maxf(
-		1.0,
-		scroll_width - _vertical_scrollbar_reserve(),
-	)
-	page.custom_minimum_size.x = (
-		minf(1040.0, maxf(620.0, compact_available_width))
-		if _compact
-		else 1120.0
-	)
-	var vertical_margin := 18 if _compact else 10 if _dense_wide else 18
 	for side in ["top", "bottom"]:
-		page_margin.add_theme_constant_override("margin_" + side, vertical_margin)
-	# Room-code controls keep a real 48 px target when a room is locked. One
-	# pixel less between the five dense sections keeps that expanded status row
-	# inside a 1600×900 safe viewport without shrinking any interactive target.
-	page.add_theme_constant_override("separation", 5 if _dense_wide else 12)
-	steps.custom_minimum_size.y = 30.0 if _dense_wide else 36.0
-	status_panel.custom_minimum_size.y = 60.0 if _dense_wide else 68.0
-	connect_button.custom_minimum_size.y = 54.0 if _dense_wide else 58.0
-	var status_margin := status_panel.get_node("StatusMargin") as MarginContainer
-	for side in ["top", "bottom"]:
-		status_margin.add_theme_constant_override(
-			"margin_" + side,
-			4 if _dense_wide else 8,
-		)
+		page_margin.add_theme_constant_override("margin_" + side, 16 if size.y < 650 else 28)
+	page.add_theme_constant_override("separation", 10 if _compact else 18)
+	status_panel.custom_minimum_size.y = 56
+	connect_button.custom_minimum_size.y = 56
+	heading.add_theme_font_size_override("font_size", 26 if _compact else 34)
+	subtitle.visible = size.y >= 650
 	var form_margin := form_panel.get_node("FormMargin") as MarginContainer
 	for side in ["top", "bottom"]:
-		form_margin.add_theme_constant_override(
-			"margin_" + side,
-			10 if _dense_wide else 24,
-		)
-	var form := form_margin.get_node("Form") as VBoxContainer
-	form.add_theme_constant_override("separation", 6 if _dense_wide else 10)
-	var field_height := 48.0 if _dense_wide else 54.0
+		form_margin.add_theme_constant_override("margin_" + side, 10 if _compact else 18)
+	form_margin.get_node("Form").add_theme_constant_override("separation", 8 if _compact else 10)
 	for field in [kind_option, role_option, address_input, port_input, room_input, deck_option]:
-		field.custom_minimum_size.y = field_height
+		field.custom_minimum_size.y = 48
 	_apply_compact_step_visibility()
-
-
-func _vertical_scrollbar_reserve() -> float:
-	if page_scroll == null:
-		return 16.0
-	var scrollbar := page_scroll.get_v_scroll_bar()
-	if scrollbar == null:
-		return 16.0
-	return maxf(16.0, scrollbar.get_combined_minimum_size().x)
 
 
 func handle_back() -> bool:
@@ -729,8 +684,9 @@ func _show_next_compact_step() -> void:
 
 
 func _set_compact_step(value: int) -> void:
-	_compact_step = clampi(value, 0, 2)
+	_compact_step = clampi(value, 0, 1)
 	_apply_compact_step_visibility()
+	page_scroll.scroll_vertical = 0
 
 
 func _apply_compact_step_visibility() -> void:
@@ -747,20 +703,19 @@ func _apply_compact_step_visibility() -> void:
 		and kind == "relay"
 		and selected_role() == "client"
 	)
-	deck_label.visible = not _compact or _compact_step == 2
-	deck_option.visible = not _compact or _compact_step == 2
-	rules_label.visible = not _compact or _compact_step == 2
-	rule_row.visible = not _compact or _compact_step == 2
-	connect_button.visible = not _compact or _compact_step == 2
+	deck_label.visible = not _compact or _compact_step == 0
+	deck_option.visible = not _compact or _compact_step == 0
+	rules_label.visible = not _compact or _compact_step == 1
+	rule_row.visible = not _compact or _compact_step == 1
+	connect_button.visible = not _compact or _compact_step == 1
 	if not _compact:
 		return
 	compact_step_label.text = [
-		"01 / 03  联机方式与身份",
-		"02 / 03  连接信息",
-		"03 / 03  规则与牌组",
+		"第 1 步 · 方式与牌组",
+		"第 2 步 · 连接与规则",
 	][_compact_step]
 	compact_previous_button.visible = _compact_step > 0
-	compact_next_button.visible = _compact_step < 2
+	compact_next_button.visible = _compact_step < 1
 
 
 func _play_enter_motion() -> void:

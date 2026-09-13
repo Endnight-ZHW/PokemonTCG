@@ -44,8 +44,7 @@ func configure(p_catalog: CardCatalog, deck_key: String) -> bool:
 	var energy_type := str(deck.get("energy_type", "Colorless"))
 	deck_accent.color = DesignTokens.type_color(energy_type)
 	deck_name_label.text = str(deck.get("name", deck_key))
-	deck_meta_label.text = "%s · %s · 共 %d 张" % [
-		deck_key,
+	deck_meta_label.text = "%s · 共 %d 张" % [
 		EnergyIconCatalog.type_display_name_for(energy_type),
 		int(deck.get("card_count", 0)),
 	]
@@ -147,7 +146,7 @@ func _on_core_card_pressed(card_id: String) -> void:
 func _add_category(supertype: String, rows: Array, total_count: int) -> void:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.theme_type_variation = &"FrontSectionPanel"
+	panel.theme_type_variation = &"FrontQuietPanel"
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 14)
 	margin.add_theme_constant_override("margin_top", 12)
@@ -183,10 +182,9 @@ func _add_category(supertype: String, rows: Array, total_count: int) -> void:
 		item.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		item.clip_text = true
 		item.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		item.text = "%2d × %s\n%s" % [
+		item.text = "%2d × %s" % [
 			int(row.get("count", 0)),
 			str(row.get("name", card_id)),
-			card_id,
 		]
 		item.tooltip_text = ""
 		item.accessibility_name = "%d 张 %s" % [

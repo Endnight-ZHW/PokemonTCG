@@ -66,7 +66,7 @@ const CATEGORIES := [
 	},
 	{
 		"title": "本地与联机",
-		"summary": "不同模式共享同一套规则，只改变玩家输入和信息视角。",
+		"summary": "与身边的朋友轮流操作，或连接另一台设备对战。",
 		"sections": [
 			{
 				"title": "本地双人",
@@ -76,10 +76,10 @@ const CATEGORIES := [
 				],
 			},
 			{
-				"title": "LAN 与 Relay",
+				"title": "局域网与互联网",
 				"rows": [
-					"LAN 适合同一局域网，Relay 使用 URL 与房间码跨网络连接。",
-					"房主运行权威规则，挑战者只提交动作和选择。",
+					"在同一个网络中选择局域网；异地对战选择互联网，使用服务器地址与房间码连接。",
+					"由一方创建房间，另一方使用房间信息加入，双方准备后开始对局。",
 					"应用进入后台时会安全断开联机，避免留下失效会话。",
 				],
 			},
@@ -100,6 +100,8 @@ func _ready() -> void:
 	_resolve_nodes()
 	_bind_categories()
 	show_category(0)
+	resized.connect(_apply_layout)
+	call_deferred("_apply_layout")
 
 
 func configure() -> void:
@@ -126,13 +128,16 @@ func show_category(index: int) -> void:
 
 
 func _resolve_nodes() -> void:
-	content_body = get_node("ContentPanel/Margin/ContentBody") as VBoxContainer
-	category_buttons.assign([
-		get_node("CategoryBar/QuickStartCategory") as Button,
-		get_node("CategoryBar/TurnCategory") as Button,
-		get_node("CategoryBar/BoardCategory") as Button,
-		get_node("CategoryBar/NetworkCategory") as Button,
-	])
+	content_body = %ContentBody
+	category_buttons.assign([%QuickStartCategory, %TurnCategory, %BoardCategory, %NetworkCategory])
+
+
+func _apply_layout() -> void:
+	var compact := size.x < 760.0
+	%ReadingLayout.vertical = compact
+	%CategoryBar.columns = 2 if compact else 1
+	%CategoryBar.custom_minimum_size.x = 0 if compact else 156
+
 
 
 func _bind_categories() -> void:

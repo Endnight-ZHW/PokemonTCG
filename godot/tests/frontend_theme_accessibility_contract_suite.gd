@@ -129,8 +129,8 @@ func _check_theme_contract() -> void:
 		"Frontend sliders need a visible hover grabber state",
 	)
 	context._check(
-		_font_weight(theme.default_font) >= 600.0,
-		"Frontend compact body text must use Noto Semibold 600 or heavier",
+		_font_weight(theme.default_font) >= 500.0,
+		"Frontend body text must retain the existing Noto Medium font",
 	)
 	context._check(
 		theme.has_font(&"font", &"Button")
@@ -240,9 +240,9 @@ func _check_frontend_contrast(theme: Theme) -> void:
 		],
 	)
 	context._check(
-		context._contrast_ratio(status.border_color, status.bg_color) >= 3.0,
-		"Cyan status boundary contrast must be at least 3:1 (actual %.2f:1)" % [
-			context._contrast_ratio(status.border_color, status.bg_color),
+		context._contrast_ratio(body_text, status.bg_color) >= 4.5,
+		"Status text contrast must be at least 4.5:1 (actual %.2f:1)" % [
+			context._contrast_ratio(body_text, status.bg_color),
 		],
 	)
 	var status_background := context._composite_color(status.bg_color, raised.bg_color)

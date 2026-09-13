@@ -174,7 +174,12 @@ func _pump() -> void:
 	if run_generation != _generation or _table == null:
 		return
 	var previous_snapshot := _table.capture_presentation_snapshot()
-	_table.prepare_hand_identity_transition(request.events, previous_snapshot)
+	var final_state := request.target_view.state_for_render()
+	var new_events: Array[Dictionary] = []
+	for event in PresentationEvent.normalize_all(request.events, request.revision, request.fallback_actor):
+		if not _table.director.has_seen_event(str(event.get("event_id", ""))):
+			new_events.append(event)
+	_table.prepare_hand_identity_transition(new_events, previous_snapshot, final_state.get_player(request.target_view.view_player).hand)
 	if not request.drag_session_id.is_empty():
 		_table.prepare_pending_drag_for_transition(request.drag_session_id)
 	_apply_view(request.target_view)

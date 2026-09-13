@@ -175,6 +175,25 @@ func _check_main_shell_contract() -> void:
 			== ModalSpec.StackBehavior.RESTORE_PARENT,
 			"Deck card inspector did not declare modal history behavior",
 		)
+		var inspector := main.modal_body.get_child(0) as CardInspectorPanel
+		var inspector_title: String = main.modal_title.text
+		inspector._image_button.pressed.emit()
+		await context._settle_layout(3)
+		context._check(main.modal_body.get_child(0) is CardArtPanel
+			and main.modal_host_controller.active_spec.stack_behavior == ModalSpec.StackBehavior.RESTORE_PARENT,
+			"Card art must use the shared ModalHost instead of an independent popup window")
+		main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+		await context._settle_layout(4)
+		context._check(main.modal_body.get_child(0) is CardInspectorPanel
+			and main.modal_title.text == inspector_title,
+			"Android back from full art must restore its inspector before returning to the deck")
+		inspector = main.modal_body.get_child(0) as CardInspectorPanel
+		inspector.card_requested.emit({"card_id": "svi-jete", "location": "附着能量"})
+		await context._settle_layout(3)
+		main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+		await context._settle_layout(4)
+		context._check(main.modal_title.text == inspector_title,
+			"Returning from an attachment must restore the original Pokemon inspector")
 		main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
 		await context._settle_layout(5)
 		context._check(
@@ -192,10 +211,10 @@ func _check_main_shell_contract() -> void:
 		== ModalSpec.SizeMode.FIT_CONTENT
 		and main.modal_panel.custom_minimum_size == Vector2(720, 400)
 		and main.modal_scroll.custom_minimum_size.y == 0.0
-		and main.modal_confirm.theme_type_variation == &"BattlePrimaryButton"
-		and main.modal_cancel.theme_type_variation == &"BattleDangerButton"
+		and main.modal_confirm.theme_type_variation == &"FrontPrimaryButton"
+		and main.modal_cancel.theme_type_variation == &"FrontDangerButton"
 		and pause_help != null
-		and pause_help.theme_type_variation == &"BattleSecondaryButton",
+		and pause_help.theme_type_variation == &"FrontSecondaryButton",
 		"Pause modal must use 720x400 FIT_CONTENT and Primary/Secondary/Danger roles",
 	)
 	main.modal_host_controller.close()
@@ -397,13 +416,16 @@ func _check_deck_browse_choice(main: Control) -> void:
 	context.tree.root.size = Vector2i(360, 640)
 	await context._settle_layout(4)
 	context._check(
-		not panel.browse_mode_label.visible
-		and panel.browse_mode_row.size.x <= panel.choice_column.size.x + 1.0
+		panel.browse_mode_row.size.x <= panel.choice_column.size.x + 1.0
 		and main.modal_scroll.horizontal_scroll_mode
 			== ScrollContainer.SCROLL_MODE_DISABLED
-		and main.modal_scroll.get_v_scroll_bar().max_value
-			> main.modal_scroll.get_v_scroll_bar().page,
-		"The 50-card deck browser overflowed or stopped scrolling in compact layout",
+		and panel._choice_scroll_container().get_v_scroll_bar().max_value
+			> panel._choice_scroll_container().get_v_scroll_bar().page,
+		"The 50-card deck browser overflowed or stopped scrolling in compact layout: label=%s row=%s column=%s scroll=%s/%s" % [
+			panel.browse_mode_label.visible, panel.browse_mode_row.size, panel.choice_column.size,
+			panel._choice_scroll_container().get_v_scroll_bar().max_value,
+			panel._choice_scroll_container().get_v_scroll_bar().page,
+		],
 	)
 	context.tree.root.size = previous_root_size
 	await context._settle_layout(3)
@@ -1476,17 +1498,18 @@ func _check_same_id_hand_motion_staging(table: BattleTable) -> void:
 			},
 		},
 	]
-	table.prepare_hand_identity_transition(raw_events, snapshot)
+	var final_hand: Array[String] = [
+		"svf-potion", "sv1-ener-2", "sv1-151", "sv1-176",
+		"sv1-153", "sv1-189", "sv1-150",
+	]
+	table.prepare_hand_identity_transition(raw_events, snapshot, final_hand)
 	context._check(
 		table._pending_removed_hand_visual_ids.size() == 3,
 		"Same-id replacement did not retire every physical pre-resolution hand card",
 	)
 	var after := before.clone_state()
 	after.revision += 1
-	after.players[0].hand = [
-		"svf-potion", "sv1-ener-2", "sv1-151", "sv1-176",
-		"sv1-153", "sv1-189", "sv1-150",
-	]
+	after.players[0].hand = final_hand
 	after.players[0].deck = []
 	after.players[0].discard = ["sv1-ener-2", "svi-chim", "sv1-189"]
 	table.update_view(after, 0, [], "", false, "local")

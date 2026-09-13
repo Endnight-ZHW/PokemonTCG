@@ -46,7 +46,7 @@
 第一次建议在 FileSystem 中双击 `res://tools/ui_workbench.tscn`，再按 `F6`。
 这是安全预览工作台，不会保存设置、创建网络房间或修改正式对局。
 
-<!-- 这张图只用于说明 Workbench 结构；当前“午夜竞技场”正式效果见第 4 节。 -->
+<!-- 这张图只用于说明 Workbench 结构；当前“实体卡牌俱乐部”正式效果见第 4 节。 -->
 ![UI Workbench 固定种子预览](images/godot-guide/ui-workbench.png)
 
 Workbench 顶部可以切换标题、选牌、网络、设置、选择、能量分配、帮助、卡牌检查器、
@@ -162,10 +162,8 @@ Main 保留规则提交、请求恢复校验、网络与 AI 编排；展示器�
 分区面板和状态面板也有对应 variation。新增控件时先复用现有 variation，确实需要新的
 交互语义时再扩展 Theme，并同时补齐 normal、hover、pressed 和 disabled 状态。
 
-标题页的青、金、紫斜切入口使用标题专用 `TitleModeButton` 绘制组件；不要为了首页效果修改共享的
-`FrontModeTileButton`。三种入口都使用深蓝填充、白色标题和冷灰蓝副标题，属性色只用于边线、图标、
-分隔线和箭头。`ModesGlass` 只是控制宽度与留白的 `MarginContainer`，不能改回包住三个入口的可见面板；
-按钮内部也不要恢复顶部的长装饰线。
+标题页三个入口由 `TitleModeButton` 绘制，使用哑光深色、统一圆角、金色图标与暖白标题。
+`ModesPanel` 负责留白，按钮独立呈现；前台配色来自 `FrontendPalette`，不要修改对战 HUD 的全局颜色。
 
 运行时 UI 采用鼠标与触控专用交互：桌面使用左键点击，移动端使用轻触；hover 只作为鼠标经过反馈，
 pressed 同时服务点击和触摸。不要为普通按钮新增按键/控制器快捷操作、默认选中、高亮环或方向循环。
@@ -200,38 +198,29 @@ TTF，也不要用描边模拟字重；原始字体的默认轴值可能不是 R
 夜光能量。图标保持素材自身的透明边缘，外层 `EnergyBadge` 使用空样式，不能增加黑色底圈、描边或
 可点击状态。Wide / Compact 为单排八枚，Dense 为每排四枚的两排布局。
 
-标题页使用独立的“午夜竞技场”深色背景：程序绘制 `#07101D → #0D1B30 → #030812` 深海军蓝渐变、
-青蓝舞台光、少量金色辉光、星点、低透明宝可球同心徽记和底部竞技场环；徽记周围的八段低透明刻度
-按基本能量顺序取色。背景保持纯程序化，不加载卡面、卡背或边缘牌扇装饰，也不再使用浅蓝天空、
-白云或明亮日间背景。
-`Main` 在通用 `Background` 与 `SafeArea` 之间放置
-`TitleFullBleedBackdrop`，页面本身保留 `EmbeddedBackdrop` 供 `F6` / Workbench 预览；路由离开
-标题页时必须隐藏前者。静态背景只在尺寸、画质或设置变化时重绘，不要增加逐帧全屏绘制或
-高成本模糊 Shader。
+前台使用“实体卡牌俱乐部”视觉：`FrontendPalette` 定义深蓝织物、低对比木纹、
+哑光面板和金色主要操作。`front_end_theme.tres` 只应用于前台页面和通用弹窗，
+对战 HUD 继续使用 `game_theme.tres` 与现有布局。
 
-其他前台继续复用 `res://ui/frontend/frontend_backdrop.tscn`。牌组、联机等任务型页面使用的
-`neutral`、`title` 和 `victory` 变体都只绘制程序化背景，不实例化边角装饰卡牌，避免与表单、
-结算面板和牌组内容竞争。标题页内容区的三个展示槽仍从 `CardCatalog.shared()` 中具备有效图片的宝可梦卡池轮换，
-每隔约 5.5～8 秒依次替换一张，避免三槽重复，并让卡面与阴影共用同一纹理。背景与展示卡动效都必须
-响应画质和减少动画设置：High/medium 可使用淡入淡出、轻微漂浮与鼠标视差；low、reduced motion
-或隐藏 Hero 的 Dense 布局应停止轮换与对应 `_process()`，显示稳定静态状态。页面入场统一只改变
-透明度和缩放，Container 子节点的位置仍交给布局系统。
+`Main` 的 `TitleFullBleedBackdrop` 与标题页的 `EmbeddedBackdrop` 都实例化
+`frontend_backdrop.tscn`，前者用于 F5，后者用于 F6 / Workbench，避免叠加背景。
+背景只在尺寸变化时重绘。首页 `CardStage` 是 `FrontendCardShowcase3D`，通过独立
+SubViewport 展示最多三张公开卡，复用 `CardEntity3D` 与纹理缓存。使用
+`set_cards(card_ids)` 更新展示、`set_active(active)` 控制活动状态；低档或减少动画时
+只保留静态三维画面，隐藏或被弹窗覆盖时停止更新，不接入对局状态或对局自动画质生命周期。
 
-项目基准仍是 1600×900、`canvas_items`、`expand`，不要为了适配单个页面改全局 stretch。
-前台布局使用安全区内的可用尺寸，而不是物理窗口尺寸。标题页有三档：宽度至少 1180、
-高度至少 650 且纵横比至少 1.5 时为 Wide；宽度至少 900 且高度至少 600 时为 Compact
-landscape，同时要求纵横比至少 1.15；其余为 Dense。Wide / Compact 保留左右两栏，Dense 隐藏展示卡扇并把三个入口
-居中单列，标题内容最大宽度为 1440。牌组、网络等页面仍保留各自的 wide/compact 主从重排，
-不应把大屏页面整体等比缩小。`Main._apply_safe_area()` 会把平台安全区同步到页面、弹窗、
-加载层和提示层；只有纯程序化背景允许越过安全区，新增全屏层也要接入这条路径。
+项目基准仍是 1600×900、`canvas_items`、`expand`。前台布局按安全区内尺寸重排：
+标题页宽屏左右分栏，紧凑横屏缩小标题与展示台，竖屏上下排列，三个入口始终保留。
+牌组卡册在宽屏右侧显示详情，紧凑布局切换到详情页并保存卡册滚动位置；点击卡册只是浏览，
+分配按钮才更新玩家槽位。联机页宽屏展示概览与表单，小屏依次选择方式/牌组和连接信息/规则，
+连接状态与主要按钮固定在底部。
 
-通用弹窗通过 `res://ui/frontend/modal_spec.gd` 描述 `preferred_size`、前台/战斗 surface、
-遮罩透明度、可取消性和堆栈行为。调用 `ModalSpec.frontend(...)` 时 `ModalHost` 临时应用前台 Theme，
-关闭后恢复继承主题；战斗选择、隐私和暂停弹窗使用 `ModalSpec.battle(...)`，继续保持原有
-遮罩与不可取消语义。compact 下前台 Modal 会占满安全内容区，战斗 Modal 仍保持自己的首选
-尺寸。Modal 正文共用一个纵向 ScrollContainer，横向滚动被禁用，页脚按钮位于滚动区外；
-面板不要再嵌套整页滚动。前台“牌组详情 → 卡牌检查器”通过 `Main` 的返回动作恢复详情滚动位置和
-上下文，面板本身不要私自创建第二个 ModalLayer。
+所有弹窗统一应用前台 Theme，`ModalSpec` 继续管理首选尺寸、surface、遮罩、取消与堆栈行为。
+设置按声音/画面分组，缓存放在高级折叠项内，动画模式是唯一的动画入口。
+通用 Modal 页脚位于滚动区外；选择弹窗进一步把进度固定在顶部，卡牌列表与说明各自滚动，
+小屏说明页通过“返回选择列表”恢复原位置。卡牌检查器宽屏使用大图和独立滚动卡文，
+竖屏使用一个连续阅读区，避免并排滚动条。详情返回动作必须保留父弹窗的选择与滚动位置。
+隐私交接仍使用完全不透明的遮罩。
 
 节点上的 `editor_description` 会在 Inspector 中解释用途。标有“不要删除”的节点
 是运行时和自动测试的稳定契约，可以移动或调样式，但不要随意改名。
@@ -301,22 +290,21 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 
 先做一个最小闭环：打开场景、选节点、改 Inspector、运行当前场景、再从 Workbench 验证。
 
-![午夜竞技场标题页（1600×900）](images/godot-guide/title-midnight-arena.png)
+![实体卡牌俱乐部首页（1600×900）](images/godot-guide/title-club.png)
 
-![午夜竞技场 Dense 标题页（720×1280）](images/godot-guide/title-midnight-arena-dense.png)
+![竖屏首页（640×960）](images/godot-guide/title-club-portrait.png)
 
 1. 打开 `res://scenes/title/title_page.tscn`。
 2. 在 Scene 树中搜索 `TitleLabel`，选择顶部字标。
-3. 在 Inspector 修改 Text、字体大小或描边；副标 `PTCG` 与主标题保持为两个独立 Label。
-4. 展开 `TypeOrbsCenter/TypeOrbs`，确认八枚基本能量没有黑色底圈，Dense 时自动排成 4×2。
-5. 展开 `HeroPanel/CardStage`，观察三个展示槽的尺寸、旋转和重叠；运行时卡面会从宝可梦卡池轮换。
-6. 展开 `ModesPanel/ModeStack`，选择 `LocalTwoPlayerButton`、`AIButton` 或 `NetworkButton`，修改
-   `custom_minimum_size.y`，观察三个斜切主入口的高度变化。
-7. 确认 `ModesGlass` 没有可见面板外框，三个入口内部也没有顶部的长装饰线。
+3. 在 Inspector 修改标题或 `BrandSubtitle` 的文字，保持清晰中文与统一字号。
+4. 展开 `HeroPanel/TypeOrbs`，确认八枚基本能量沿用既有图标。
+5. 选择 `HeroPanel/CardStage`，观察真实三维卡牌、材质、相机与投影尺寸。
+6. 展开 `ModesPanel/ModeStack`，选择三个主入口，检查圆角按钮状态和至少 48px 的交互目标。
+7. 调整横竖屏尺寸，确认展示台不裁切、三个入口完整可见。
 8. 选择 `FooterRow`，修改 `SettingsButton` / `HelpButton` 间距，并确认 `VersionLabel` 仍在右侧。
 9. 按 `Ctrl+S` 保存场景。
 10. 按 `F6` 查看带 `EmbeddedBackdrop` 的独立标题页，并用鼠标点击或触摸轻点检查入口。
-11. 再运行 `ui_workbench.tscn`，检查标题页在 Compact landscape / Dense 宿主中的效果。
+11. 再运行 `ui_workbench.tscn`，检查标题页在 紧凑横屏 / 竖屏宿主中的效果。
 12. 最后按 `F5`，确认 `TitleFullBleedBackdrop` 覆盖整个窗口、`EmbeddedBackdrop` 已隐藏且四周
     没有深色边框。
 
@@ -326,7 +314,7 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 ```gdscript
 @export_category("Editable Copy")
 @export var game_title := "宝可梦卡牌对战"
-@export var brand_subtitle := "P T C G  ·  TABLETOP EDITION"
+@export var brand_subtitle := "挑选牌组，准备下一场对战。"
 ```
 
 `@export` 会把普通脚本变量暴露到 Inspector。适合导出的内容包括尺寸、间距、
@@ -336,13 +324,13 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 
 | 想改什么 | 选中节点 | 推荐改法 |
 |---|---|---|
-| 主字标与 `PTCG` 副标 | `TitleLabel`、对应副标 Label | Text、Noto 700、描边与字号；不要烘焙进背景 |
-| 午夜竞技场背景 | `TitleFullBleedBackdrop`、`EmbeddedBackdrop` | 深海军蓝渐变、舞台光、徽记、能量刻度和竞技场环；两份背景不要同时叠加 |
-| 八种基本能量 | `TypeOrbsCenter/TypeOrbs` | 使用 `EnergyIconCatalog`；保持素材透明边缘，不增加黑色底圈或交互 |
-| 三个轮换展示槽 | `HeroPanel/CardStage` | 最小尺寸、旋转、重叠与阴影；卡牌只展示，由脚本定时轮换 |
-| 三个主入口 | `ModesPanel/ModeStack` 下的 `LocalTwoPlayerButton`、`AIButton`、`NetworkButton` | `TitleModeButton` 配色、最小高度和入口间距；不增加模式总外框或顶部装饰线 |
-| 设置 / 帮助 / 版本号 | `FooterRow` 下的 `SettingsButton`、`HelpButton`、`VersionLabel` | separation、文字、最小尺寸与动态版本号 |
-| Wide / Compact / Dense | `title_page.gd::_apply_responsive_layout()` | 修改断点、字号和卡宽时同步更新布局 contract |
+| 标题与副标题 | `TitleLabel`、`BrandSubtitle` | 修改文字、字号和间距 |
+| 木纹与织物背景 | `TitleFullBleedBackdrop`、`EmbeddedBackdrop` | 修改 `FrontendPalette` 与静态背景绘制，保持低对比 |
+| 八种基本能量 | `HeroPanel/TypeOrbs` | 沿用 `EnergyIconCatalog`，不添加交互 |
+| 三维展示台 | `HeroPanel/CardStage` | 调整公开卡 ID、相机与尺寸；不可绑定对局私有数据 |
+| 三个主入口 | `ModesPanel/ModeStack` | 调整圆角按钮、间距和指针状态 |
+| 设置 / 帮助 / 版本号 | `FooterRow` | 检查底栏与版本文字不被遮挡 |
+| 横竖屏布局 | `title_page.gd::_apply_responsive_layout()` | 同步检查五种验收尺寸与连续缩放 |
 
 如果 Inspector 里找不到某个属性，可以用顶部搜索框输入 `custom`、`separation`、
 `margin` 或 `font`。Godot 的属性很多，搜索比一层层展开更稳。
@@ -801,8 +789,8 @@ Main -> GameEngine.apply_action/apply_choice()
 不要把 Node、Texture 或其他 Godot 场景对象传入 AI 线程。产品只注册原生
 `ChallengeController`，不存在 Deep 模式或第二套运行时回退策略。
 
-标题页只显示一个“挑战 AI”入口，并以 `challenge` 作为进入牌组页的默认模式。AI 类型由
-牌组选择页的 `AIModeOption` 固定为 `challenge`。`FirstPlayerOption` 只显示“由硬币胜者选择”，
+标题页只显示一个“挑战 AI”入口，并以 `challenge` 作为进入牌组页的默认模式。牌组选择页用
+说明文字提示先后攻由硬币胜者决定，不提供无可选项的模式或先后手下拉框，
 最终通过 `start_requested(mode, deck1, deck2, forced_first, apply_type_matchups)` 把
 `forced_first=-1` 和默认关闭的弱点/抗性选项交给 `Main`，不要在 UI 内提前决定先攻方或启动 AI。
 
@@ -945,9 +933,9 @@ battle transition、Workbench transition、网络协议和前台布局 contract�
 1280×720、1600×900、1024×768、2000×900、标题页
 720×1280 / 800×1280 竖屏兜底、
 窄 Workbench 宿主和模拟四边 48px 安全区下检查关键控件边界、重叠、横向滚动与最小命中区。
-标题页会覆盖 Wide、Compact landscape、Dense 三档，并验证主入口、本地/AI/联机后续路径、
+标题页会覆盖宽屏、紧凑横屏与竖屏，并验证主入口、本地/AI/联机后续路径、
 鼠标/触控交互和至少 48px 的命中区；其他前台页面仍验证各自的 wide/compact 切换。测试还覆盖
-弹窗历史恢复、Theme 隔离、关键对比度、AI 类型切换状态保留，以及 LAN/Relay 切换时的字段
+弹窗历史恢复、Theme 隔离、关键对比度、牌组浏览与分配状态保留，以及 LAN/Relay 切换时的字段
 锁定和 transport 清理。布局 contract 是结构回归，仍需配合截图观察视觉层级、长文案与卡图构图。
 
 战斗布局 contract 还必须单独覆盖 1280×720、1600×900、2000×900、紧凑横屏和四边安全区。
@@ -996,15 +984,15 @@ battle transition、Workbench transition、网络协议和前台布局 contract�
 | `attack.png`、`impact.png`、`ko.png`、`end.png` | 攻击、命中、气绝和胜利表现不破坏牌桌布局 |
 
 其中 `battle-main.png` 是更新 `docs/images/godot-guide/battle-preview.png` 的候选来源；必须在三种
-宽高比、日志、详情和牌堆专项截图全部审核通过后，才替换正式文档图片。标题截图还要确认午夜背景没有意外边框、
-大块空白或重复层，八枚能量没有黑色底圈，三入口没有总外框或顶部装饰线，并用
+宽高比、日志、详情和牌堆专项截图全部审核通过后，才替换正式文档图片。标题截图还要确认织物与木纹背景没有重复图层、
+三维卡图完整，八枚能量图标清晰，三个入口保持可见，并用
 `title-rotated.png` 检查展示卡确实完成替换。截图用于检查遮挡、溢出和布局，不能代替 Android
 横屏安全区、触控与真机帧率测试。
 
 本手册使用的稳定图片位于 `docs/images/godot-guide/`。修改场景结构或动画面板后，
 应重新生成运行时截图，并在 Godot 4.7 编辑器中更新对应界面截图；不要直接引用
 会被清理的 `build/ui-preview/` 文件。当前标题页正式基线为
-`title-midnight-arena.png` 与 `title-midnight-arena-dense.png`；战斗页正式基线为
+`title-club.png` 与 `title-club-portrait.png`；战斗页正式基线为
 `battle-preview.png`，其来源和替换条件见上方审核清单。
 
 Windows 与 Android 调试构建：
@@ -1323,14 +1311,12 @@ Godot UI 修改先判断节点属于哪一种布局：
 1. 打开 `res://scenes/title/title_page.tscn`。
 2. 选择 `HeaderPanel`，调整“宝可梦卡牌对战”与 `PTCG` 双层字标；文字继续使用 Noto 700，
    不要烘焙进背景图。
-3. 选择 `TypeOrbsCenter/TypeOrbs`，调整八种基本能量的间距和响应式尺寸。图标必须继续通过
+3. 选择 `HeroPanel/TypeOrbs`，调整八种基本能量的间距和响应式尺寸。图标必须继续通过
    `EnergyIconCatalog` 加载，外层不能增加黑色底圈，也不能加入无色或夜光能量。
-4. 选择 `HeroPanel/CardStage`，修改三个展示槽的尺寸和重叠。卡牌不可交互，也不要在背景层
-   再复制一组；实际卡面由 `title_page.gd` 从有效宝可梦卡池定时轮换。
-5. 选择 `ModesPanel/ModeStack`，修改三个纵向入口的间距；`ModesGlass` 只能负责留白，不能显示
-   包住三种模式的外框。
+4. 选择 `HeroPanel/CardStage`，调整三维展示台尺寸、相机和公开卡牌；隐藏或被弹窗覆盖后停止更新。
+5. 选择 `ModesPanel/ModeStack`，修改三个入口的间距，保持独立按钮与一致的视觉层级。
 6. 选择 `LocalTwoPlayerButton`、`AIButton` 或 `NetworkButton`，修改 `custom_minimum_size.y` 或
-   `TitleModeButton` 的标题专用斜切样式。首页不要重新加入 Deep、LAN、Relay 独立按钮。
+   `TitleModeButton` 的圆角样式。首页不要重新加入 Deep、LAN、Relay 独立按钮。
    保留正常、hover、pressed、disabled 反馈，不要恢复按钮顶部的长装饰线或任何默认高亮。
 7. 选择 `FooterRow`，调整 `SettingsButton`、`HelpButton` 和右侧 `VersionLabel`；版本文字由
    `configure(version_text)` 动态注入，不要在场景中写死发布版本。
@@ -1350,10 +1336,10 @@ Godot UI 修改先判断节点属于哪一种布局：
    `res://ui/frontend/deck_gallery_tile.tscn`。tile 根节点使用专用 `DeckGalleryTileButton`
    variation：普通、hover、pressed 与 disabled 负责交互状态；能量属性色只用于 `EnergyBadge`
    和卡图细边框，不要恢复每张 tile 顶部的全宽彩色横线。`AssignmentBadge` 只表示已分配槽位，
-   pressed 仍只表示当前正在配置的槽位所选牌组，两种状态不能合并。
+   pressed 表示当前浏览的牌组，分配通过明确按钮完成，两种状态不能合并。
 4. 选择 `MasterDetail/DetailPanel`，调整选中牌组的摘要和最多四张核心卡。
-5. 选择 `ActionBar`，调整独立底部 CTA、固定的 Challenge `AIModeOption` 与“由硬币胜者选择”
-   先后攻提示，不要把它们放入画廊滚动区。不要重新暴露旧 Deep 入口或手动指定先攻。
+5. 选择 `ActionBar`，调整固定的对局摘要、规则开关和开始按钮，不要把它们放入卡册滚动区。
+   先后攻说明由页面展示，保持开局硬币流程。
 6. wide 模式使用画廊/详情主从布局；compact 在全幅画廊与详情之间切换并恢复滚动位置。
    切换逻辑在 `deck_select_page.gd::_apply_responsive_layout()`。
 7. 按 `F6` 预览；再从标题页用 `F5` 分别进入本地和 AI 模式，验证两个槽位、同牌组选择、

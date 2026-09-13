@@ -32,8 +32,8 @@ func _render_previews() -> void:
 	var ui := packed.instantiate()
 	root.add_child(ui)
 	ui.initialize_ui()
-	if root.min_size != Vector2i(900, 540):
-		push_error("Desktop UI did not enforce the validated 900x540 minimum window")
+	if root.min_size != Vector2i(640, 540):
+		push_error("Desktop UI must allow the validated portrait width and compact landscape height")
 		harness._finish(1)
 		return
 	Input.warp_mouse(Vector2(4, 4))

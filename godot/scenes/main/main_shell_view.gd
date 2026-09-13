@@ -18,6 +18,7 @@ const SCREEN_GAME := "game"
 const DESIGN_CANVAS_SIZE := Vector2i(1600, 900)
 const MIN_RESPONSIVE_LANDSCAPE_SIZE := Vector2i(900, 540)
 const MIN_RESPONSIVE_PORTRAIT_SIZE := Vector2i(640, 960)
+const MIN_DESKTOP_WINDOW_SIZE := Vector2i(640, 540)
 const SYNTHETIC_WINDOW_FLOOR := Vector2i(320, 240)
 
 @onready var safe_area: MarginContainer = %SafeArea
@@ -49,6 +50,18 @@ func configure(owner: Control) -> void:
 	loading_label = owner.get_node_or_null(
 		"LoadingLayer/Center/Panel/Margin/Content/LoadingLabel"
 	) as Label
+	var modal := owner.get_node_or_null("ModalLayer") as Control
+	if modal != null and not modal.visibility_changed.is_connected(_refresh_background_activity):
+		modal.visibility_changed.connect(_refresh_background_activity)
+
+
+func _refresh_background_activity() -> void:
+	if screen_host == null:
+		return
+	var modal := main.get_node_or_null("ModalLayer") as Control
+	for page in screen_host.get_children():
+		if page is TitlePage:
+			page.set_background_active(modal == null or not modal.visible)
 
 
 func _exit_tree() -> void:
@@ -84,6 +97,7 @@ func mount(scene: PackedScene) -> Node:
 	clear_screen()
 	var page := scene.instantiate()
 	screen_host.add_child(page)
+	call_deferred("_refresh_background_activity")
 	return page
 
 
@@ -214,7 +228,7 @@ func configure_responsive_canvas() -> void:
 		and not OS.has_feature("mobile")
 		and not OS.has_feature("web")
 	):
-		window.min_size = MIN_RESPONSIVE_LANDSCAPE_SIZE
+		window.min_size = MIN_DESKTOP_WINDOW_SIZE
 	if not window.size_changed.is_connected(_on_responsive_window_size_changed):
 		window.size_changed.connect(_on_responsive_window_size_changed)
 	apply_responsive_canvas()
@@ -249,7 +263,7 @@ func restore_responsive_canvas() -> void:
 		== _last_responsive_content_scale_size
 	):
 		_responsive_canvas_window.content_scale_size = _original_content_scale_size
-	if _responsive_canvas_window.min_size == MIN_RESPONSIVE_LANDSCAPE_SIZE:
+	if _responsive_canvas_window.min_size == MIN_DESKTOP_WINDOW_SIZE:
 		_responsive_canvas_window.min_size = _original_window_min_size
 	if _responsive_canvas_window.size_changed.is_connected(
 		_on_responsive_window_size_changed

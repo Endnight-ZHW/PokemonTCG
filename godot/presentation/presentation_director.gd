@@ -179,12 +179,16 @@ func register_feedback_motion(handle: MotionHandle) -> bool:
 	return true
 
 
+func has_seen_event(event_id: String) -> bool:
+	return not event_id.is_empty() and _seen_event_ids.has(event_id)
+
+
 func play(events: Array[Dictionary]) -> void:
 	if not is_inside_tree():
 		return
 	for event in events:
 		var event_id := str(event.get("event_id", ""))
-		if not event_id.is_empty() and _seen_event_ids.has(event_id):
+		if has_seen_event(event_id):
 			continue
 		if not event_id.is_empty():
 			_seen_event_ids[event_id] = true

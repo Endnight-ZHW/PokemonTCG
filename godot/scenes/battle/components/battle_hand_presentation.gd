@@ -28,6 +28,58 @@ func pending_hand_transition_count() -> int:
 	return _hand_transition_sequences.size() if table else 0
 
 
+func plan_hand_sources(
+	events: Array[Dictionary],
+	previous_snapshot: Dictionary,
+	final_hand: Array[String],
+) -> Dictionary:
+	var plan: Dictionary = {}
+	if int(previous_snapshot.get("view_player", -1)) != table.view_player:
+		return plan
+	var virtual_rows: Array[Dictionary] = []
+	var remaining: Dictionary = {}
+	for value in previous_snapshot.get("hand", []):
+		var row: Dictionary = Dictionary(value).duplicate(true)
+		row["snapshot_key"] = "snapshot:%d" % virtual_rows.size()
+		virtual_rows.append(row)
+		var card_id := str(row.get("card_id", ""))
+		remaining[card_id] = int(remaining.get(card_id, 0)) + 1
+	# Choice continuations can report the whole action after earlier views have
+	# already removed its trainer/cost. Only retire cards still accounted for by
+	# before + incoming - after. Including incoming copies preserves same-ID
+	# discard/redraw identity without stealing an untouched duplicate trainer.
+	for event in events:
+		if _is_own_hand(event.get("target", {})) and not _is_own_hand(event.get("source", {})):
+			for card_id in table.motion_geometry._event_card_ids(event):
+				remaining[card_id] = int(remaining.get(card_id, 0)) + 1
+	for card_id in final_hand:
+		remaining[card_id] = int(remaining.get(card_id, 0)) - 1
+	for event in events:
+		if not _is_own_hand(event.get("source", {})) or _is_own_hand(event.get("target", {})):
+			continue
+		var event_id := str(event.get("event_id", ""))
+		var selected: Array[Dictionary] = []
+		for row in _select_virtual_hand_source_rows(event, virtual_rows):
+			var card_id := str(row.get("card_id", ""))
+			if int(remaining.get(card_id, 0)) <= 0:
+				continue
+			selected.append(row)
+			remaining[card_id] = int(remaining[card_id]) - 1
+		for row in selected:
+			virtual_rows.erase(row)
+		var card_ids := table.motion_geometry._event_card_ids(event)
+		var already_applied := not card_ids.is_empty() and card_ids.all(
+			func(card_id: String) -> bool: return int(remaining.get(card_id, 0)) <= 0,
+		)
+		if not selected.is_empty() or already_applied:
+			plan[event_id] = selected
+	return plan
+
+
+func _is_own_hand(endpoint: Dictionary) -> bool:
+	return str(endpoint.get("zone", "")) == "hand" and int(endpoint.get("player", -1)) == table.view_player
+
+
 func _stage_snapshot_hand_sources(
 	events: Array[Dictionary],
 	previous_snapshot: Dictionary,
@@ -39,9 +91,6 @@ func _stage_snapshot_hand_sources(
 	):
 		return
 	var snapshot_hand: Array = previous_snapshot.get("hand", [])
-	if snapshot_hand.is_empty():
-		return
-	var virtual_rows: Array[Dictionary] = []
 	for snapshot_index in range(snapshot_hand.size()):
 		if not snapshot_hand[snapshot_index] is Dictionary:
 			continue
@@ -49,40 +98,20 @@ func _stage_snapshot_hand_sources(
 		var key := "snapshot:%d" % snapshot_index
 		row["snapshot_key"] = key
 		row["snapshot_index"] = snapshot_index
-		virtual_rows.append(row)
 		table.presentation_runtime.hand_snapshot_rows[key] = row
 		_presentation_hand_virtual_keys.append(key)
 
 	var staged_keys: Dictionary = {}
-	for event in events:
-		var source := table.presentation_runtime._event_source_endpoint(event)
-		var target := table.presentation_runtime._event_target_endpoint(event)
-		if (
-			int(source.get("player", table.view_player)) != table.view_player
-			or str(source.get("zone", "")) != "hand"
-			or str(target.get("zone", "")) == "hand"
-		):
-			continue
-		var event_id := str(event.get("event_id", ""))
-		if event_id.is_empty():
-			continue
-		var selected_rows := _select_virtual_hand_source_rows(event, virtual_rows)
-		if selected_rows.is_empty():
-			continue
+	var plan := plan_hand_sources(events, previous_snapshot, table.state_ref.get_player(table.view_player).hand)
+	for event_id in plan:
 		var event_keys: Array[String] = []
-		for row in selected_rows:
+		for row in plan[event_id]:
 			var key := str(row.get("snapshot_key", ""))
 			if key.is_empty():
 				continue
 			event_keys.append(key)
 			staged_keys[key] = true
 		table.presentation_runtime.event_hand_sources[event_id] = event_keys
-		for row in selected_rows:
-			var key := str(row.get("snapshot_key", ""))
-			for virtual_index in range(virtual_rows.size() - 1, -1, -1):
-				if str(virtual_rows[virtual_index].get("snapshot_key", "")) == key:
-					virtual_rows.remove_at(virtual_index)
-					break
 
 	var drag_snapshot_key := ""
 	if table._presentation_drag_proxy != null and table._drag_session != null:
@@ -588,32 +617,38 @@ func _select_virtual_hand_source_rows(
 	if raw_indices is Array:
 		for value in raw_indices:
 			var index := int(value)
-			if index >= 0 and index < virtual_rows.size() and index not in requested_indices:
-				requested_indices.append(index)
+			requested_indices.append(index)
 	if requested_indices.is_empty():
 		var source_index := int(table.presentation_runtime._event_source_endpoint(event).get("index", -1))
 		if source_index >= 0:
 			for offset in range(amount):
 				var index := source_index + offset
-				if index >= 0 and index < virtual_rows.size():
-					requested_indices.append(index)
+				requested_indices.append(index)
 
 	var used_keys: Dictionary = {}
-	for requested_index in requested_indices:
-		if result.size() >= amount:
-			break
+	for ordinal in range(amount):
 		var target_id := (
-			str(card_ids[result.size()])
-			if result.size() < card_ids.size()
+			str(card_ids[mini(ordinal, card_ids.size() - 1)])
+			if ordinal < card_ids.size() or card_ids.size() == 1
 			else ""
 		)
-		var row: Dictionary = virtual_rows[requested_index]
-		if not target_id.is_empty() and str(row.get("card_id", "")) != target_id:
+		var requested_index := requested_indices[ordinal] if ordinal < requested_indices.size() else -1
+		var row: Dictionary = {}
+		if requested_index >= 0 and requested_index < virtual_rows.size():
+			var candidate := virtual_rows[requested_index]
+			if not used_keys.has(str(candidate.get("snapshot_key", ""))) and (target_id.is_empty() or str(candidate.get("card_id", "")) == target_id):
+				row = candidate
+		if row.is_empty() and not target_id.is_empty():
 			row = _first_virtual_hand_row_for_card(
 				virtual_rows,
 				target_id,
 				used_keys,
 			)
+		if row.is_empty() and card_ids.is_empty() and requested_indices.is_empty():
+			for candidate in virtual_rows:
+				if not used_keys.has(str(candidate.get("snapshot_key", ""))):
+					row = candidate
+					break
 		if row.is_empty():
 			continue
 		var key := str(row.get("snapshot_key", ""))
@@ -622,28 +657,6 @@ func _select_virtual_hand_source_rows(
 		used_keys[key] = true
 		result.append(row)
 
-	for card_id_value in card_ids:
-		if result.size() >= amount:
-			break
-		var row := _first_virtual_hand_row_for_card(
-			virtual_rows,
-			str(card_id_value),
-			used_keys,
-		)
-		if row.is_empty():
-			continue
-		var key := str(row.get("snapshot_key", ""))
-		used_keys[key] = true
-		result.append(row)
-
-	for row in virtual_rows:
-		if result.size() >= amount:
-			break
-		var key := str(row.get("snapshot_key", ""))
-		if key.is_empty() or used_keys.has(key):
-			continue
-		used_keys[key] = true
-		result.append(row)
 	return result
 
 func _first_virtual_hand_row_for_card(
@@ -772,6 +785,10 @@ func _schedule_hand_transition_for_event(event: Dictionary, duration: float) -> 
 		and int(source.get("player", table.view_player)) == table.view_player
 		and str(target.get("zone", "")) != "hand"
 	):
+		if table.presentation_runtime.event_hand_sources.has(event_id):
+			amount = Array(table.presentation_runtime.event_hand_sources[event_id]).size()
+		if amount <= 0:
+			return
 		var removal_sequence := _begin_hand_transition_sequence(event_id, generation)
 		_run_hand_removal(
 			amount,

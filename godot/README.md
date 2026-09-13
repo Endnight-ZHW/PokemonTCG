@@ -81,11 +81,12 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   `LocalTwoPlayerButton`、`AIButton`、`NetworkButton`，另保留 `SettingsButton`、`HelpButton`；
   标题页发出的默认模式分别为 `local`、`challenge` 和 `lan`。
 - `DeckSelectPage`：使用 `selected_deck_key(player_idx)`、`select_deck(player_idx, key)` 和
-  `deck_count()`；发布版 `AIModeOption` 固定为 `challenge`，先后攻由开局硬币胜者选择。
+  `deck_count()`；挑战模式固定为 `challenge`，先后攻由开局硬币胜者选择。
+  点击卡册仅浏览，点击“分配给玩家”后才更新对应槽位；紧凑布局返回卡册会恢复滚动位置。
   `start_requested(mode, deck1, deck2, forced_first, apply_type_matchups)` 中 `forced_first` 传 `-1`，
   最后一个参数来自默认关闭的项目规则开关。
   两个槽位允许选择同一牌组。
-  画廊 tile 使用中性深蓝交互层级，属性色仅保留在徽章和卡图细边框中。
+  卡册使用哑光面板与清晰卡图，已分配标签与当前浏览高亮相互独立。
 - `NetworkLobbyPage`：使用 `ConnectionState` 的 `IDLE`、`VALIDATING`、`CONNECTING`、
   `WAITING`、`CONNECTED`、`ERROR`，通过 `NetworkKindOption` 选择 LAN / Relay，并通过
   `set_connection_state(state, message, room_code)` 更新固定状态区；`kind_changed(kind)` 只在
@@ -132,12 +133,12 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 .\tools\smoke_godot_build.ps1
 ```
 
-`test_godot.ps1` 包含标题页三档布局、前台多分辨率、四边安全区、鼠标/触控专用输入契约、
+`test_godot.ps1` 包含标题页横竖屏布局、前台多分辨率、四边安全区、鼠标/触控专用输入契约、
 弹窗历史、Android 系统返回、Theme 隔离、原生会话/搜索和交互 contract。本地、Challenge、
 LAN 与 Relay 另有完整实战回归；研究模型不参与产品门禁。
 截图输出到 `build/ui-preview/`，其中 `title.png`、`title-1280x720.png`、
-`title-compact.png`、`title-portrait.png` 覆盖午夜竞技场的 Wide/Compact/Dense 布局，
-`title-hover.png` 检查鼠标悬停，`title-rotated.png` 检查动态展示卡，
+`title-compact.png`、`title-portrait.png` 覆盖实体卡牌俱乐部的横屏与竖屏布局，
+`title-hover.png` 检查鼠标悬停，`title-rotated.png` 检查三维展示卡替换，
 `title-low-reduced.png` 检查静态降级；目录还包含 LAN/Relay 概览、网络状态、设置滚动、加载和
 Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 `choice-energy-compact.png` 的逐张能量分配基线，用于人工检查全屏背景、视觉层级、目标状态、
@@ -146,6 +147,16 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 学习装置的真实语义选择；`choice-deck-search-valid.png`、`choice-deck-search-all.png` 与
 `choice-deck-search-compact.png` 覆盖牌库检索的可选/全部切换、只读卡牌和紧凑滚动。它不代替 Windows/Android
 调试导出与真机烟雾测试。
+
+前台专项图形验收：`./tools/test_frontend_club_graphics.ps1`，快速检查布局可加
+`-SkipPerformance`。它覆盖五种尺寸、同一页面连续缩放、弹窗遮挡三维展示、八次进出页面，
+并在真实图形下采集首页三档帧时间。截图与 JSON 位于 `build/frontend-club/`；
+设计、对比截图和本轮验证记录见 [`../docs/FRONTEND_CLUB_REDESIGN.md`](../docs/FRONTEND_CLUB_REDESIGN.md)。
+
+首页使用 `FrontendCardShowcase3D.set_cards(card_ids)` / `set_active(active)`，最多展示三张公开卡。
+该组件复用实体卡网格与纹理缓存，拥有独立 SubViewport；低画质、减少动画时静态渲染，
+弹窗覆盖或页面隐藏时停止更新，不参与对局自动画质会话。所有弹窗统一前台主题，
+`ModalSpec` 继续负责尺寸、遮罩、取消权限与返回恢复；对战 HUD 仍使用独立的游戏主题。
 
 发布包构建：
 

@@ -784,6 +784,68 @@ func _reposition_slot_state_covers() -> void:
 		cover.remember_base_position()
 
 
+func events_for_snapshot(events: Array[Dictionary], previous_snapshot: Dictionary) -> Array[Dictionary]:
+	var movements: Array[Dictionary] = []
+	for index in range(events.size()):
+		if not _selection_repeats_attachment(events, index) and not table.director.has_seen_event(str(events[index].get("event_id", ""))):
+			movements.append(events[index])
+	if table.state_ref == null:
+		return movements
+	var hand_plan := table.hand_presentation.plan_hand_sources(
+		movements, previous_snapshot, table.state_ref.get_player(table.view_player).hand,
+	)
+	var opponent_departures := -1
+	var snapshot_state: Dictionary = previous_snapshot.get("state", {})
+	if not snapshot_state.is_empty():
+		var opponent := 1 - table.view_player
+		var before := GameState.from_dict(snapshot_state)
+		opponent_departures = before.get_player(opponent).hand.size() - table.state_ref.get_player(opponent).hand.size()
+		for event in movements:
+			opponent_departures += maxi(0, table.hand_presentation._opponent_hand_event_delta(event))
+	var result: Array[Dictionary] = []
+	for event in movements:
+		var event_id := str(event.get("event_id", ""))
+		if hand_plan.has(event_id) and Array(hand_plan[event_id]).is_empty():
+			continue
+		# Hidden hands have no identity to match, but a zero departure budget
+		# proves these cumulative events were already reflected before the choice.
+		if opponent_departures == 0 and table.hand_presentation._opponent_hand_event_delta(event) < 0:
+			continue
+		result.append(event)
+	return result
+
+
+func _selection_repeats_attachment(events: Array[Dictionary], index: int) -> bool:
+	var selection := events[index]
+	if str(selection.get("event_type", "")) != "cards_selected" or str(selection.get("visibility", "")) == PresentationEvent.PUBLIC:
+		return false
+	var selected_target: Dictionary = selection.get("target", {})
+	if str(selected_target.get("attachment_type", "")) != "energy":
+		return false
+	# Selection confirms the owner's choice; the following public attachment
+	# owns its physical movement. Playing both subtracts the same deck cards
+	# twice and sends the same energies through the table twice.
+	for next_index in range(index + 1, events.size()):
+		var attachment := events[next_index]
+		if str(attachment.get("event_type", "")) != "energy_attached":
+			continue
+		if int(selection.get("amount", 0)) <= 0 or int(selection.get("amount", 0)) != int(attachment.get("amount", 0)):
+			continue
+		var same_location := true
+		for endpoint_name in ["source", "target"]:
+			var selected: Dictionary = selection.get(endpoint_name, {})
+			var attached: Dictionary = attachment.get(endpoint_name, {})
+			for field in ["player", "zone", "slot", "attachment_type"]:
+				if selected.get(field, "") != attached.get(field, ""): same_location = false
+			if int(selected.get("index", -1)) >= 0 and selected.get("index") != attached.get("index"):
+				same_location = false
+		if not same_location: continue
+		var selected_ids := table.motion_geometry._event_card_ids(selection)
+		if selected_ids.is_empty() or selected_ids == table.motion_geometry._event_card_ids(attachment):
+			return true
+	return false
+
+
 func _stage_presentation_targets(
 	events: Array[Dictionary],
 	previous_snapshot: Dictionary,
@@ -801,12 +863,6 @@ func _stage_presentation_targets(
 	table.hand_presentation._stage_attachment_source_proxies(events)
 	_stage_presentation_zone_states(events, previous_snapshot)
 	_stage_slot_visual_transactions(events, previous_snapshot)
-	for event in events:
-		if PresentationEvent.canonical_event_type(
-			str(event.get("event_type", "")),
-		) == "deck_shuffled":
-			table.hand_view.invalidate_hand_visual_identities()
-			break
 	for event in events:
 		var event_id := str(event.get("event_id", ""))
 		if event_id.is_empty():

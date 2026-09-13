@@ -103,10 +103,10 @@ func _reveal_destination(row: Dictionary, fallback_player: int) -> Dictionary:
 
 func _event_amount(event: Dictionary, card_ids: Array) -> int:
 	var data: Dictionary = event.get("data", {})
-	return maxi(1, int(event.get(
+	return maxi(card_ids.size(), maxi(0, int(event.get(
 		"amount",
 		data.get("count", card_ids.size()),
-	)))
+	))))
 
 func _append_unique_control(result: Array[Control], node: Control) -> void:
 	if node == null or not is_instance_valid(node):

@@ -1,31 +1,14 @@
-[gd_scene load_steps=16 format=3]
-
-[ext_resource type="Script" path="res://scenes/title/title_page.gd" id="1_page"]
-[ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2_theme"]
-[ext_resource type="PackedScene" path="res://ui/frontend/title_backdrop.tscn" id="3_backdrop"]
-[ext_resource type="Script" path="res://ui/frontend/title_mode_button.gd" id="4_mode_button"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/users.svg" id="5_users"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/robot.svg" id="6_robot"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/network.svg" id="7_network"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/settings.svg" id="8_settings"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/help.svg" id="9_help"]
-[ext_resource type="Texture2D" path="res://assets/cards/svg2-tort.webp" id="10_grass"]
-[ext_resource type="Texture2D" path="res://assets/cards/sv2-grex.webp" id="11_water"]
-[ext_resource type="Texture2D" path="res://assets/cards/svi-ente.webp" id="12_fire"]
-
-[sub_resource type="StyleBoxEmpty" id="EnergyBadgeEmpty"]
-
-[sub_resource type="Gradient" id="CardGlowGradient"]
-offsets = PackedFloat32Array(0, 0.48, 1)
-colors = PackedColorArray(0.31, 0.84, 1, 0.34, 0.16, 0.54, 0.9, 0.15, 0.04, 0.12, 0.24, 0)
-
-[sub_resource type="GradientTexture2D" id="CardGlowTexture"]
-gradient = SubResource("CardGlowGradient")
-width = 512
-height = 512
-fill = 1
-fill_from = Vector2(0.5, 0.5)
-fill_to = Vector2(1, 0.5)
+[gd_scene load_steps=11 format=3]
+[ext_resource type="Script" path="res://scenes/title/title_page.gd" id="1"]
+[ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2"]
+[ext_resource type="PackedScene" path="res://ui/frontend/frontend_backdrop.tscn" id="3"]
+[ext_resource type="Script" path="res://ui/frontend/title_mode_button.gd" id="4"]
+[ext_resource type="Script" path="res://ui/frontend/frontend_card_showcase_3d.gd" id="5"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/users.svg" id="6"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/robot.svg" id="7"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/network.svg" id="8"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/settings.svg" id="9"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/help.svg" id="10"]
 
 [node name="TitlePage" type="Control"]
 layout_mode = 3
@@ -34,18 +17,12 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme = ExtResource("2_theme")
-editor_description = "午夜竞技场式深色标题页。首页仅保留本地、AI、联机三入口，具体 AI/网络类型在下一页选择。"
-script = ExtResource("1_page")
+theme = ExtResource("2")
+script = ExtResource("1")
 
-[node name="EmbeddedBackdrop" parent="." instance=ExtResource("3_backdrop")]
+[node name="EmbeddedBackdrop" parent="." instance=ExtResource("3")]
 unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+variant = "title"
 
 [node name="SafeContent" type="MarginContainer" parent="."]
 unique_name_in_owner = true
@@ -55,438 +32,130 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 24
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 24
-theme_override_constants/margin_bottom = 10
 
 [node name="PageFrame" type="VBoxContainer" parent="SafeContent"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 24
 
-[node name="HeaderPanel" type="Control" parent="SafeContent/PageFrame"]
+[node name="HeaderPanel" type="VBoxContainer" parent="SafeContent/PageFrame"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 176)
 layout_mode = 2
-mouse_filter = 2
+theme_override_constants/separation = 8
 
-[node name="HeaderContent" type="VBoxContainer" parent="SafeContent/PageFrame/HeaderPanel"]
+[node name="TitleLabel" type="Label" parent="SafeContent/PageFrame/HeaderPanel"]
 unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 3
-alignment = 1
-
-[node name="TitleStack" type="Control" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 92)
 layout_mode = 2
-mouse_filter = 2
-
-[node name="TitleShadow" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TitleStack"]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_top = 4.0
-offset_bottom = 4.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
 theme_type_variation = &"TitleLogoLabel"
-theme_override_colors/font_color = Color(0.008, 0.027, 0.075, 0.84)
-theme_override_colors/font_outline_color = Color(0.004, 0.016, 0.051, 0.74)
-theme_override_constants/outline_size = 8
-theme_override_font_sizes/font_size = 70
 text = "宝可梦卡牌对战"
-horizontal_alignment = 1
-vertical_alignment = 1
 
-[node name="TitleLabel" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TitleStack"]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-theme_type_variation = &"TitleLogoLabel"
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_colors/font_outline_color = Color(0.38, 0.84, 1, 0.92)
-theme_override_colors/font_shadow_color = Color(0.004, 0.02, 0.063, 0.92)
-theme_override_constants/outline_size = 2
-theme_override_constants/shadow_offset_x = 0
-theme_override_constants/shadow_offset_y = 4
-theme_override_constants/shadow_outline_size = 5
-theme_override_font_sizes/font_size = 70
-text = "宝可梦卡牌对战"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="BrandSubtitle" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent"]
+[node name="BrandSubtitle" type="Label" parent="SafeContent/PageFrame/HeaderPanel"]
 unique_name_in_owner = true
 layout_mode = 2
-mouse_filter = 2
-theme_type_variation = &"TitleSubtitleLabel"
-theme_override_colors/font_color = Color(0.68, 0.75, 0.85, 1)
-theme_override_font_sizes/font_size = 18
-text = "P T C G  ·  TABLETOP EDITION"
-horizontal_alignment = 1
-
-[node name="TypeOrbsCenter" type="CenterContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent"]
-unique_name_in_owner = true
-layout_mode = 2
-mouse_filter = 2
-
-[node name="TypeOrbs" type="GridContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 10
-theme_override_constants/h_separation = 10
-theme_override_constants/v_separation = 4
-columns = 8
-
-[node name="GrassEnergyBadge" type="PanelContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(28, 28)
-layout_mode = 2
-mouse_filter = 2
-focus_mode = 0
-theme_override_styles/panel = SubResource("EnergyBadgeEmpty")
-
-[node name="GrassEnergyIcon" type="TextureRect" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs/GrassEnergyBadge"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="FireEnergyBadge" type="PanelContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(28, 28)
-layout_mode = 2
-mouse_filter = 2
-focus_mode = 0
-theme_override_styles/panel = SubResource("EnergyBadgeEmpty")
-
-[node name="FireEnergyIcon" type="TextureRect" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs/FireEnergyBadge"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="WaterEnergyBadge" type="PanelContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(28, 28)
-layout_mode = 2
-mouse_filter = 2
-focus_mode = 0
-theme_override_styles/panel = SubResource("EnergyBadgeEmpty")
-
-[node name="WaterEnergyIcon" type="TextureRect" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs/WaterEnergyBadge"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="LightningEnergyBadge" type="PanelContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(28, 28)
-layout_mode = 2
-mouse_filter = 2
-focus_mode = 0
-theme_override_styles/panel = SubResource("EnergyBadgeEmpty")
-
-[node name="LightningEnergyIcon" type="TextureRect" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs/LightningEnergyBadge"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="PsychicEnergyBadge" type="PanelContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(28, 28)
-layout_mode = 2
-mouse_filter = 2
-focus_mode = 0
-theme_override_styles/panel = SubResource("EnergyBadgeEmpty")
-
-[node name="PsychicEnergyIcon" type="TextureRect" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs/PsychicEnergyBadge"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="FightingEnergyBadge" type="PanelContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(28, 28)
-layout_mode = 2
-mouse_filter = 2
-focus_mode = 0
-theme_override_styles/panel = SubResource("EnergyBadgeEmpty")
-
-[node name="FightingEnergyIcon" type="TextureRect" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs/FightingEnergyBadge"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="DarknessEnergyBadge" type="PanelContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(28, 28)
-layout_mode = 2
-mouse_filter = 2
-focus_mode = 0
-theme_override_styles/panel = SubResource("EnergyBadgeEmpty")
-
-[node name="DarknessEnergyIcon" type="TextureRect" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs/DarknessEnergyBadge"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="MetalEnergyBadge" type="PanelContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(28, 28)
-layout_mode = 2
-mouse_filter = 2
-focus_mode = 0
-theme_override_styles/panel = SubResource("EnergyBadgeEmpty")
-
-[node name="MetalEnergyIcon" type="TextureRect" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs/MetalEnergyBadge"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
+theme_type_variation = &"FrontMutedLabel"
+text = "挑选牌组，准备下一场对战。"
 
 [node name="BodyGrid" type="GridContainer" parent="SafeContent/PageFrame"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/h_separation = 34
-theme_override_constants/v_separation = 12
 columns = 2
 
-[node name="HeroPanel" type="Control" parent="SafeContent/PageFrame/BodyGrid"]
+[node name="HeroPanel" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(430, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-size_flags_stretch_ratio = 0.46
-mouse_filter = 2
+theme_override_constants/separation = 14
 
 [node name="CardStage" type="Control" parent="SafeContent/PageFrame/BodyGrid/HeroPanel"]
 unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="CardGlow" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -36.0
-offset_top = -36.0
-offset_right = 36.0
-offset_bottom = 36.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-texture = SubResource("CardGlowTexture")
-expand_mode = 1
-stretch_mode = 6
-
-[node name="GrassCardShadow" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
-unique_name_in_owner = true
-layout_mode = 0
-texture_filter = 4
-mouse_filter = 2
-self_modulate = Color(0.025, 0.09, 0.20, 0.42)
-texture = ExtResource("10_grass")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="WaterCardShadow" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
-unique_name_in_owner = true
-layout_mode = 0
-texture_filter = 4
-mouse_filter = 2
-self_modulate = Color(0.025, 0.09, 0.20, 0.42)
-texture = ExtResource("11_water")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="FireCardShadow" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
-unique_name_in_owner = true
-layout_mode = 0
-texture_filter = 4
-mouse_filter = 2
-self_modulate = Color(0.025, 0.09, 0.20, 0.42)
-texture = ExtResource("12_fire")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="GrassCard" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
-unique_name_in_owner = true
-layout_mode = 0
-texture_filter = 4
-mouse_filter = 2
-texture = ExtResource("10_grass")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="WaterCard" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
-unique_name_in_owner = true
-layout_mode = 0
-texture_filter = 4
-mouse_filter = 2
-texture = ExtResource("11_water")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="FireCard" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
-unique_name_in_owner = true
-layout_mode = 0
-texture_filter = 4
-mouse_filter = 2
-texture = ExtResource("12_fire")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="ModesPanel" type="MarginContainer" parent="SafeContent/PageFrame/BodyGrid"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(470, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-size_flags_stretch_ratio = 0.54
-theme_override_constants/margin_left = 18
-theme_override_constants/margin_top = 18
-theme_override_constants/margin_right = 18
-theme_override_constants/margin_bottom = 18
-
-[node name="ModeCenter" type="CenterContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
-layout_mode = 2
 mouse_filter = 2
+script = ExtResource("5")
 
-[node name="ModesGlass" type="MarginContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeCenter"]
+[node name="HeroCaption" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-mouse_filter = 2
+theme_type_variation = &"FrontMutedLabel"
+text = "熟悉的卡牌，真实的桌面对战"
+horizontal_alignment = 1
 
-[node name="ModeInset" type="MarginContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeCenter/ModesGlass"]
-layout_mode = 2
-theme_override_constants/margin_left = 18
-theme_override_constants/margin_top = 16
-theme_override_constants/margin_right = 18
-theme_override_constants/margin_bottom = 16
-
-[node name="ModeStack" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeCenter/ModesGlass/ModeInset"]
+[node name="TypeOrbs" type="HBoxContainer" parent="SafeContent/PageFrame/BodyGrid/HeroPanel"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 18
 alignment = 1
 
-[node name="LocalTwoPlayerButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeCenter/ModesGlass/ModeInset/ModeStack"]
+[node name="ModesPanel" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 116)
 layout_mode = 2
 size_flags_horizontal = 3
-focus_mode = 0
-accessibility_name = "本地对战，同屏交接，完整规则"
-script = ExtResource("4_mode_button")
+size_flags_vertical = 3
+theme_override_constants/separation = 16
+alignment = 1
+
+[node name="ModeHeading" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+text = "选择对战方式"
+
+[node name="ModeStack" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="LocalTwoPlayerButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeStack"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 112)
+layout_mode = 2
+script = ExtResource("4")
 title_text = "本地对战"
-subtitle_text = "同屏交接 · 完整规则"
-mode_icon = ExtResource("5_users")
-accent_color = Color(0.384314, 0.843137, 1, 1)
-fill_color = Color(0.062745, 0.109804, 0.176471, 1)
-foreground_color = Color(0.956863, 0.968627, 1, 1)
+subtitle_text = "与身边的朋友一起对战"
+mode_icon = ExtResource("6")
 
-[node name="AIButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeCenter/ModesGlass/ModeInset/ModeStack"]
+[node name="AIButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeStack"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 116)
+custom_minimum_size = Vector2(0, 112)
 layout_mode = 2
-size_flags_horizontal = 3
-focus_mode = 0
-accessibility_name = "挑战 Challenge AI"
-script = ExtResource("4_mode_button")
+script = ExtResource("4")
 title_text = "挑战 AI"
-subtitle_text = "稳健策略或深度搜索"
-mode_icon = ExtResource("6_robot")
-accent_color = Color(0.956863, 0.784314, 0.290196, 1)
-fill_color = Color(0.062745, 0.109804, 0.176471, 1)
-foreground_color = Color(0.956863, 0.968627, 1, 1)
+subtitle_text = "与电脑对手练习"
+mode_icon = ExtResource("7")
 
-[node name="NetworkButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeCenter/ModesGlass/ModeInset/ModeStack"]
+[node name="NetworkButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeStack"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 116)
+custom_minimum_size = Vector2(0, 112)
 layout_mode = 2
-size_flags_horizontal = 3
-focus_mode = 0
-accessibility_name = "联机对战，可选择 LAN 或 Relay"
-script = ExtResource("4_mode_button")
+script = ExtResource("4")
 title_text = "联机对战"
-subtitle_text = "LAN 或 Relay 联机"
-mode_icon = ExtResource("7_network")
-accent_color = Color(0.717647, 0.54902, 1, 1)
-fill_color = Color(0.062745, 0.109804, 0.176471, 1)
-foreground_color = Color(0.956863, 0.968627, 1, 1)
+subtitle_text = "通过局域网或房间码连接"
+mode_icon = ExtResource("8")
 
 [node name="FooterRow" type="HBoxContainer" parent="SafeContent/PageFrame"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
-theme_override_constants/separation = 10
-alignment = 1
+theme_override_constants/separation = 12
 
 [node name="SettingsButton" type="Button" parent="SafeContent/PageFrame/FooterRow"]
 focus_mode = 0
 unique_name_in_owner = true
-custom_minimum_size = Vector2(116, 48)
+custom_minimum_size = Vector2(120, 52)
 layout_mode = 2
 theme_type_variation = &"TitleUtilityButton"
-tooltip_text = "调整音频、动效、辅助功能和画质"
 text = "设置"
-icon = ExtResource("8_settings")
+icon = ExtResource("9")
 
 [node name="HelpButton" type="Button" parent="SafeContent/PageFrame/FooterRow"]
 focus_mode = 0
 unique_name_in_owner = true
-custom_minimum_size = Vector2(136, 48)
+custom_minimum_size = Vector2(120, 52)
 layout_mode = 2
 theme_type_variation = &"TitleUtilityButton"
-tooltip_text = "查看规则、回合流程和联机帮助"
 text = "玩法帮助"
-icon = ExtResource("9_help")
+icon = ExtResource("10")
 
 [node name="FooterSpacer" type="Control" parent="SafeContent/PageFrame/FooterRow"]
 layout_mode = 2
@@ -495,10 +164,6 @@ mouse_filter = 2
 
 [node name="VersionLabel" type="Label" parent="SafeContent/PageFrame/FooterRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(112, 48)
 layout_mode = 2
-mouse_filter = 2
 theme_type_variation = &"TitleFooterLabel"
-text = "v0.0.0"
-horizontal_alignment = 2
-vertical_alignment = 1
+text = "v0.8.0"

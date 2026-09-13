@@ -60,6 +60,7 @@ $contracts = @(
     @('card_view_layers_contract', 'CARD_VIEW_LAYERS_OK', 'Card view layers contract'),
     @('view_model_ownership_contract', 'VIEW_MODEL_OWNERSHIP_OK', 'Player view privacy and queued snapshot ownership'),
     @('battle_drag_lifecycle_contract', 'BATTLE_DRAG_LIFECYCLE_OK', 'Drag tracking, stale completions, cancellation and resync'),
+    @('battle_card_effect_hand_contract', 'BATTLE_CARD_EFFECT_HAND_OK', 'Native card effects, pending choices, hand identity, duplicate packets and hidden-hand rendering'),
     @('battle_3d_contract', 'BATTLE_3D_CONTRACT_OK', 'Physical cards, projection, hidden faces, motion, pooling and adaptive quality'),
     @('battle_usability_contract', 'BATTLE_USABILITY_CONTRACT_OK', 'Pointer gestures, cancellation, browsing anchors and safe confirmations'),
     @('attachment_visual_contract', 'ATTACHMENT_VISUAL_CONTRACT_OK', 'Attachment visual descriptor and badge contract'),

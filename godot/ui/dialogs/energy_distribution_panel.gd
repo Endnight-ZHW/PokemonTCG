@@ -72,7 +72,7 @@ func _on_energy_preview_card_activated(
 	if not interactive_distribution:
 		return
 	if panel._compact_choice_layout and energy_index >= panel._last_selected_ids.size():
-		panel._compact_preview_expanded = true
+		panel._open_compact_preview()
 		panel._queue_responsive_layout()
 		return
 	panel.energy_index_requested.emit(energy_index)
@@ -126,6 +126,7 @@ func _add_energy_target_tile(model: Dictionary) -> void:
 
 	var card := panel.CARD_SCENE.instantiate() as CardView
 	card.custom_minimum_size = Vector2(82, 116)
+	card.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.selected_lift = 0.0
 	card.selected_scale = 1.0
@@ -156,23 +157,23 @@ func _add_energy_target_tile(model: Dictionary) -> void:
 	title.tooltip_text = ""
 	title.accessibility_name = title.text
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	title.add_theme_font_size_override("font_size", 15)
-	title.add_theme_color_override("font_color", DesignTokens.TEXT)
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", FrontendPalette.TEXT)
 	summary.add_child(title)
 
 	var location := Label.new()
 	location.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	location.text = str(model.get("location", "目标"))
 	location.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	location.add_theme_font_size_override("font_size", 11)
-	location.add_theme_color_override("font_color", DesignTokens.CYAN)
+	location.add_theme_font_size_override("font_size", 16)
+	location.add_theme_color_override("font_color", FrontendPalette.GOLD)
 	summary.add_child(location)
 
 	var hp_label := Label.new()
 	hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hp_label.text = _pokemon_hp_text(pokemon)
-	hp_label.add_theme_font_size_override("font_size", 11)
-	hp_label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
+	hp_label.add_theme_font_size_override("font_size", 16)
+	hp_label.add_theme_color_override("font_color", FrontendPalette.MUTED)
 	summary.add_child(hp_label)
 
 	var existing_row := HFlowContainer.new()
@@ -194,7 +195,7 @@ func _add_energy_target_tile(model: Dictionary) -> void:
 	status.custom_minimum_size.y = 28.0
 	status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	status.add_theme_font_size_override("font_size", 11)
+	status.add_theme_font_size_override("font_size", 16)
 	summary.add_child(status)
 
 	panel.card_grid.add_child(tile)
@@ -294,7 +295,7 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 				status.text = "不可选择 · %s" % PlayerFacingText.message(blocked_reason, true)
 				status.tooltip_text = ""
 				status.accessibility_description = blocked_reason
-				status.add_theme_color_override("font_color", DesignTokens.RED)
+				status.add_theme_color_override("font_color", FrontendPalette.DANGER)
 			elif current_index >= panel._selection_max:
 				status.text = (
 					"✓ 本次分配 +%d 张" % assigned_count
@@ -305,7 +306,7 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 				status.accessibility_description = status.text
 				status.add_theme_color_override(
 					"font_color",
-					DesignTokens.GOLD if assigned_count > 0 else DesignTokens.TEXT_MUTED,
+					FrontendPalette.GOLD if assigned_count > 0 else FrontendPalette.MUTED,
 				)
 			else:
 				status.text = "%s点击分配第 %d 张" % [
@@ -314,7 +315,7 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 				]
 				status.tooltip_text = ""
 				status.accessibility_description = status.text
-				status.add_theme_color_override("font_color", DesignTokens.CYAN)
+				status.add_theme_color_override("font_color", FrontendPalette.GOLD)
 		var status_description := blocked_reason if not blocked_reason.is_empty() else str(
 			status.text if status else model.get("label", "分配目标")
 		)
@@ -341,16 +342,16 @@ func _populate_energy_summary(
 	var prefix_label := Label.new()
 	prefix_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	prefix_label.text = prefix
-	prefix_label.add_theme_font_size_override("font_size", 10)
-	prefix_label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
+	prefix_label.add_theme_font_size_override("font_size", 16)
+	prefix_label.add_theme_color_override("font_color", FrontendPalette.MUTED)
 	row.add_child(prefix_label)
 	var grouped: Array = panel.ATTACHMENT_VISUALS.grouped_energy(card_ids, panel.catalog)
 	if grouped.is_empty():
 		var empty := Label.new()
 		empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		empty.text = "无"
-		empty.add_theme_font_size_override("font_size", 10)
-		empty.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
+		empty.add_theme_font_size_override("font_size", 16)
+		empty.add_theme_color_override("font_color", FrontendPalette.MUTED)
 		row.add_child(empty)
 		return
 	for descriptor_value in grouped:
@@ -371,14 +372,14 @@ func _energy_summary_chip(
 	var chip := PanelContainer.new()
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var border_color := (
-		DesignTokens.GOLD
+		FrontendPalette.GOLD
 		if highlighted
 		else DesignTokens.type_color(descriptor.energy_type)
 	)
 	chip.add_theme_stylebox_override(
 		"panel",
 		DesignTokens.panel_style(
-			Color(0.035, 0.075, 0.12, 0.94),
+			FrontendPalette.INSET,
 			8,
 			Color(border_color, 0.86),
 			1,
@@ -404,7 +405,7 @@ func _energy_summary_chip(
 		fallback.text = descriptor.fallback_label
 		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		fallback.add_theme_font_size_override("font_size", 9)
+		fallback.add_theme_font_size_override("font_size", 16)
 		content.add_child(fallback)
 	var count := Label.new()
 	count.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -414,9 +415,9 @@ func _energy_summary_chip(
 		if descriptor.is_special_energy or provided_count != descriptor.count
 		else "×%d" % descriptor.count
 	)
-	count.add_theme_font_size_override("font_size", 9)
+	count.add_theme_font_size_override("font_size", 16)
 	count.add_theme_color_override(
-		"font_color", DesignTokens.GOLD if highlighted else DesignTokens.TEXT)
+		"font_color", FrontendPalette.GOLD if highlighted else FrontendPalette.TEXT)
 	content.add_child(count)
 	chip.tooltip_text = ""
 	chip.accessibility_name = "%s：附着 %d 张，提供 %d 个能量%s" % [
@@ -478,25 +479,25 @@ func _apply_energy_target_style(
 	hovered: bool,
 	blocked: bool,
 ) -> void:
-	var background := Color(0.045, 0.085, 0.14, 0.96)
-	var border := DesignTokens.BORDER
+	var background := FrontendPalette.INSET
+	var border := FrontendPalette.BORDER
 	var width := 1
 	if selected:
-		background = Color(0.10, 0.12, 0.14, 0.98)
-		border = DesignTokens.GOLD
+		background = FrontendPalette.INSET
+		border = FrontendPalette.GOLD
 		width = 2
 	elif blocked:
-		background = Color(0.045, 0.065, 0.10, 0.92)
-		border = Color(DesignTokens.RED, 0.62 if hovered else 0.38)
+		background = FrontendPalette.INSET
+		border = Color(FrontendPalette.DANGER, 0.62 if hovered else 0.38)
 		width = 2 if hovered else 1
 	elif hovered:
-		background = Color(0.065, 0.13, 0.21, 0.98)
-		border = DesignTokens.CYAN
+		background = FrontendPalette.INSET
+		border = FrontendPalette.GOLD
 		width = 2
 	var style := DesignTokens.panel_style(
 		background, DesignTokens.RADIUS_MEDIUM, border, width, 8)
 	if selected:
-		style.shadow_color = Color(DesignTokens.GOLD, 0.22)
+		style.shadow_color = Color(FrontendPalette.GOLD, 0.22)
 		style.shadow_size = 6
 		style.shadow_offset = Vector2.ZERO
 	tile.add_theme_stylebox_override("panel", style)
@@ -522,21 +523,21 @@ func _refresh_energy_assignment_labels(selected_ids: Array[String]) -> void:
 			label.text = "第 %d 张 → %s" % [index + 1, target_label]
 			label.tooltip_text = "第 %d 张能量已分配给%s" % [index + 1, target_label]
 			label.accessibility_name = label.tooltip_text
-			label.add_theme_color_override("font_color", DesignTokens.GOLD)
+			label.add_theme_color_override("font_color", FrontendPalette.GOLD)
 			if card:
 				card.set_selected(true)
 		elif index == selected_ids.size():
-			label.text = "第 %d 张 · 请选择目标" % (index + 1)
+			label.text = "第 %d 张 · 待分配" % (index + 1)
 			label.tooltip_text = "现在为第 %d 张能量选择目标" % (index + 1)
 			label.accessibility_name = label.tooltip_text
-			label.add_theme_color_override("font_color", DesignTokens.CYAN)
+			label.add_theme_color_override("font_color", FrontendPalette.GOLD)
 			if card:
 				card.set_selected(true)
 		else:
 			label.text = "第 %d 张 · 等待" % (index + 1)
 			label.tooltip_text = "第 %d 张能量尚未分配" % (index + 1)
 			label.accessibility_name = label.tooltip_text
-			label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
+			label.add_theme_color_override("font_color", FrontendPalette.MUTED)
 			if card:
 				card.set_selected(false)
 	var preview_index := mini(selected_ids.size(), _energy_source_card_ids.size() - 1)

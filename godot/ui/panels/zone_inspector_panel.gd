@@ -18,7 +18,7 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 		add_child(DesignTokens.label(
 			"这是隐藏区域。这里只显示数量，不显示具体卡牌身份。",
 			16,
-			DesignTokens.TEXT_MUTED,
+			FrontendPalette.MUTED,
 		))
 		_add_card_grid_section("隐藏卡牌（%d）" % count, _hidden_card_rows(count), true)
 		return
@@ -28,7 +28,7 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 		if not card_id.is_empty():
 			card_ids.append(card_id)
 	if card_ids.is_empty():
-		add_child(DesignTokens.label("这里没有公开卡牌。", 16, DesignTokens.TEXT_MUTED))
+		add_child(DesignTokens.label("这里没有公开卡牌。", 16, FrontendPalette.MUTED))
 	else:
 		_add_card_grid_section("公开卡牌（%d）" % card_ids.size(), card_ids, false)
 

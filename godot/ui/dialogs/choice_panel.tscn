@@ -15,7 +15,7 @@ script = ExtResource("2_energy")
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
+theme_override_colors/font_color = Color(0.933, 0.91, 0.863, 1.0)
 theme_override_font_sizes/font_size = 17
 text = "请选择一张卡牌。"
 autowrap_mode = 2
@@ -23,8 +23,8 @@ autowrap_mode = 2
 [node name="MetadataLabel" type="Label" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.788, 0.651, 0.396, 1.0)
+theme_override_font_sizes/font_size = 16
 text = "请选择 1 项"
 autowrap_mode = 2
 
@@ -33,8 +33,8 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 custom_minimum_size = Vector2(0, 20)
-theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1.0)
+theme_override_font_sizes/font_size = 16
 text = "单选模式 · 点击任意卡牌进行选择"
 vertical_alignment = 1
 autowrap_mode = 2
@@ -44,8 +44,8 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 custom_minimum_size = Vector2(0, 24)
-theme_override_colors/font_color = Color(0.937, 0.396, 0.447, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.929, 0.667, 0.62, 1.0)
+theme_override_font_sizes/font_size = 16
 text = "当前不能选择此项。"
 vertical_alignment = 1
 autowrap_mode = 2
@@ -54,46 +54,63 @@ autowrap_mode = 2
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1.0)
 text = "点击确认继续结算。"
+
+[node name="PreviewReturnButton" type="Button" parent="."]
+unique_name_in_owner = true
+focus_mode = 0
+visible = false
+layout_mode = 2
+custom_minimum_size = Vector2(0, 48)
+theme_type_variation = &"FrontGhostButton"
+text = "← 返回选择列表"
 
 [node name="ContentRow" type="BoxContainer" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+size_flags_horizontal = 3
 theme_override_constants/separation = 14
 
-[node name="ChoiceColumn" type="VBoxContainer" parent="ContentRow"]
+[node name="OptionsScroll" type="ScrollContainer" parent="ContentRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ChoiceColumn" type="VBoxContainer" parent="ContentRow/OptionsScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
-[node name="EnergyPreview" type="VBoxContainer" parent="ContentRow/ChoiceColumn"]
+[node name="EnergyPreview" type="VBoxContainer" parent="ContentRow/OptionsScroll/ChoiceColumn"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="EnergyPreviewLabel" type="Label" parent="ContentRow/ChoiceColumn/EnergyPreview"]
+[node name="EnergyPreviewLabel" type="Label" parent="ContentRow/OptionsScroll/ChoiceColumn/EnergyPreview"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1.0)
+theme_override_font_sizes/font_size = 16
 text = "待分配能量"
 
-[node name="EnergyGrid" type="HFlowContainer" parent="ContentRow/ChoiceColumn/EnergyPreview"]
+[node name="EnergyGrid" type="HFlowContainer" parent="ContentRow/OptionsScroll/ChoiceColumn/EnergyPreview"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/h_separation = 6
 theme_override_constants/v_separation = 6
 
-[node name="EnergyActions" type="HBoxContainer" parent="ContentRow/ChoiceColumn/EnergyPreview"]
+[node name="EnergyActions" type="HBoxContainer" parent="ContentRow/OptionsScroll/ChoiceColumn/EnergyPreview"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="UndoButton" type="Button" parent="ContentRow/ChoiceColumn/EnergyPreview/EnergyActions"]
+[node name="UndoButton" type="Button" parent="ContentRow/OptionsScroll/ChoiceColumn/EnergyPreview/EnergyActions"]
 unique_name_in_owner = true
 focus_mode = 0
 custom_minimum_size = Vector2(0, 48)
@@ -101,7 +118,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "撤销上一张"
 
-[node name="ClearButton" type="Button" parent="ContentRow/ChoiceColumn/EnergyPreview/EnergyActions"]
+[node name="ClearButton" type="Button" parent="ContentRow/OptionsScroll/ChoiceColumn/EnergyPreview/EnergyActions"]
 unique_name_in_owner = true
 focus_mode = 0
 custom_minimum_size = Vector2(0, 48)
@@ -109,21 +126,22 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "清空分配"
 
-[node name="BrowseModeRow" type="HBoxContainer" parent="ContentRow/ChoiceColumn"]
+[node name="BrowseModeRow" type="HBoxContainer" parent="ContentRow/OptionsScroll/ChoiceColumn"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="BrowseModeLabel" type="Label" parent="ContentRow/ChoiceColumn/BrowseModeRow"]
+[node name="BrowseModeLabel" type="Label" parent="ContentRow/OptionsScroll/ChoiceColumn/BrowseModeRow"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1.0)
+theme_override_font_sizes/font_size = 16
 text = "牌库视图"
 vertical_alignment = 1
 
-[node name="BrowseValidButton" type="Button" parent="ContentRow/ChoiceColumn/BrowseModeRow"]
+[node name="BrowseValidButton" type="Button" parent="ContentRow/OptionsScroll/ChoiceColumn/BrowseModeRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(118, 48)
 layout_mode = 2
@@ -132,7 +150,7 @@ focus_mode = 0
 toggle_mode = true
 text = "可选（0）"
 
-[node name="BrowseAllButton" type="Button" parent="ContentRow/ChoiceColumn/BrowseModeRow"]
+[node name="BrowseAllButton" type="Button" parent="ContentRow/OptionsScroll/ChoiceColumn/BrowseModeRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(118, 48)
 layout_mode = 2
@@ -141,7 +159,7 @@ focus_mode = 0
 toggle_mode = true
 text = "全部（0）"
 
-[node name="PreviewToggleButton" type="Button" parent="ContentRow/ChoiceColumn"]
+[node name="PreviewToggleButton" type="Button" parent="ContentRow/OptionsScroll/ChoiceColumn"]
 unique_name_in_owner = true
 visible = false
 focus_mode = 0
@@ -151,14 +169,14 @@ text = "查看卡牌说明"
 tooltip_text = "展开当前卡牌的图片与规则说明"
 accessibility_name = "查看当前卡牌说明"
 
-[node name="CardGrid" type="HFlowContainer" parent="ContentRow/ChoiceColumn"]
+[node name="CardGrid" type="HFlowContainer" parent="ContentRow/OptionsScroll/ChoiceColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/h_separation = 10
 theme_override_constants/v_separation = 10
 
-[node name="OptionList" type="VBoxContainer" parent="ContentRow/ChoiceColumn"]
+[node name="OptionList" type="VBoxContainer" parent="ContentRow/OptionsScroll/ChoiceColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
@@ -186,7 +204,7 @@ stretch_mode = 5
 [node name="PreviewTitle" type="Label" parent="ContentRow/PreviewPanel/PreviewContent"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
+theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1.0)
 theme_override_font_sizes/font_size = 16
 text = "卡牌预览"
 horizontal_alignment = 1
@@ -196,7 +214,7 @@ autowrap_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_font_sizes/normal_font_size = 12
+theme_override_font_sizes/normal_font_size = 16
 bbcode_enabled = true
 scroll_active = true
 autowrap_mode = 3

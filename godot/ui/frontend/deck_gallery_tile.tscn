@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://ui/frontend/deck_gallery_tile.gd" id="1_tile"]
 
 [node name="DeckGalleryTile" type="Button"]
-custom_minimum_size = Vector2(244, 136)
+custom_minimum_size = Vector2(244, 320)
 layout_mode = 2
 mouse_default_cursor_shape = 2
 focus_mode = 0
@@ -25,17 +25,17 @@ offset_bottom = -11.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Content" type="HBoxContainer" parent="Margin"]
+[node name="Content" type="VBoxContainer" parent="Margin"]
 mouse_filter = 2
 layout_mode = 2
 theme_override_constants/separation = 12
 
 [node name="ArtworkFrame" type="PanelContainer" parent="Margin/Content"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(80, 110)
+custom_minimum_size = Vector2(0, 184)
 mouse_filter = 2
 layout_mode = 2
-theme_type_variation = &"FrontCardFrame"
+theme_type_variation = &"FrontQuietPanel"
 
 [node name="Artwork" type="TextureRect" parent="Margin/Content/ArtworkFrame"]
 unique_name_in_owner = true
@@ -65,20 +65,20 @@ theme_override_font_sizes/font_size = 19
 text = "牌组名称"
 text_overrun_behavior = 3
 
-[node name="AssignmentBadge" type="PanelContainer" parent="Margin/Content/Info/TitleRow"]
+[node name="AssignmentBadge" type="PanelContainer" parent="Margin/Content/Info"]
 unique_name_in_owner = true
 visible = false
 mouse_filter = 2
 layout_mode = 2
 theme_type_variation = &"FrontCardFrame"
 
-[node name="AssignmentLabel" type="Label" parent="Margin/Content/Info/TitleRow/AssignmentBadge"]
+[node name="AssignmentLabel" type="Label" parent="Margin/Content/Info/AssignmentBadge"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(44, 0)
 mouse_filter = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(0.984, 0.812, 0.329, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 16
 text = "玩家 1"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -92,7 +92,7 @@ theme_override_constants/separation = 8
 
 [node name="EnergyBadge" type="PanelContainer" parent="Margin/Content/Info/MetaRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(76, 0)
+custom_minimum_size = Vector2(96, 0)
 mouse_filter = 2
 layout_mode = 2
 theme_type_variation = &"FrontCardFrame"
@@ -114,10 +114,10 @@ stretch_mode = 5
 
 [node name="EnergyLabel" type="Label" parent="Margin/Content/Info/MetaRow/EnergyBadge/EnergyContent"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(48, 0)
+custom_minimum_size = Vector2(62, 0)
 mouse_filter = 2
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 16
 text = "草属性"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -125,11 +125,11 @@ text_overrun_behavior = 3
 
 [node name="CardCountLabel" type="Label" parent="Margin/Content/Info/MetaRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(52, 0)
+custom_minimum_size = Vector2(80, 0)
 mouse_filter = 2
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 16
 text = "· 60 张"
 vertical_alignment = 1
 text_overrun_behavior = 3
@@ -140,7 +140,7 @@ mouse_filter = 2
 layout_mode = 2
 size_flags_vertical = 3
 theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 16
 text = "牌组节奏说明"
 vertical_alignment = 2
 autowrap_mode = 3

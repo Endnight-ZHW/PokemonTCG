@@ -2,7 +2,6 @@ extends SceneTree
 
 const FrontendContractContextScript = preload("res://tests/frontend_contract_context.gd")
 const ShellChoiceSuite = preload("res://tests/frontend_shell_choice_contract_suite.gd")
-const ResponsiveSuite = preload("res://tests/frontend_responsive_contract_suite.gd")
 const ThemeAccessibilitySuite = preload("res://tests/frontend_theme_accessibility_contract_suite.gd")
 
 
@@ -30,8 +29,9 @@ func _run_contract() -> void:
 	var shell_suite := ShellChoiceSuite.new()
 	shell_suite.configure(context)
 	await shell_suite._check_main_shell_contract()
-	var responsive_suite := ResponsiveSuite.new()
+	var responsive_suite = load("res://tests/frontend_responsive_contract_suite.gd").new()
 	responsive_suite.configure(context)
+	await load("res://tests/frontend_club_flow_contract.gd").new().run(context)
 	await responsive_suite._check_shared_backdrop_contract()
 	await responsive_suite._check_network_intro_contract(catalog)
 	await responsive_suite._check_network_scrollbar_width_contract(catalog)

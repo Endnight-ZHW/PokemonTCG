@@ -1828,14 +1828,14 @@ func _show_pause_overlay(resume_choice_context: Dictionary = {}) -> void:
 		ModalSpec.ButtonRole.PRIMARY,
 		ModalSpec.ButtonRole.DANGER,
 	)
-	modal_host_controller.open("对局菜单", "继续对局", "返回标题", true, pause_spec)
+	modal_host_controller.open("对局菜单", "继续对局", "返回首页", true, pause_spec)
 	var pause_panel := PAUSE_PANEL_SCENE.instantiate() as PausePanel
 	modal_body.add_child(pause_panel)
 	pause_panel.configure(
 		(
-			"返回标题会断开当前联机对局。"
+			"返回首页会断开当前联机对局。"
 			if game_mode == MODE_NETWORK
-			else "返回标题会结束当前本地对局。"
+			else "返回首页会结束当前本地对局。"
 		)
 	)
 	pause_panel.help_requested.connect(func() -> void:
@@ -1872,7 +1872,7 @@ func _show_exit_confirmation(field_choice_context: Dictionary = {}) -> void:
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.text = (
 		"离开将向对手认输并断开连接。当前对局无法继续。"
-		if network_match else "当前对局进度不会保留。确定结束对局并返回标题吗？"
+		if network_match else "当前对局进度不会保留。确定结束对局并返回首页吗？"
 	)
 	modal_body.add_child(body)
 	var return_to_menu := _show_pause_overlay.bind(field_choice_context)

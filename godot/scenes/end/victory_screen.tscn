@@ -30,21 +30,21 @@ tracks/1/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Arr
 
 [sub_resource type="Animation" id="Animation_enter"]
 resource_name = "enter"
-length = 0.38
+length = 0.22
 tracks/0/type = "value"
 tracks/0/imported = false
 tracks/0/enabled = true
 tracks/0/path = NodePath("SafeContent/Center/VictoryPanel:modulate")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
-tracks/0/keys = {"times": PackedFloat32Array(0, 0.38), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
+tracks/0/keys = {"times": PackedFloat32Array(0, 0.22), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
 tracks/1/type = "value"
 tracks/1/imported = false
 tracks/1/enabled = true
 tracks/1/path = NodePath("SafeContent/Center/VictoryPanel:scale")
 tracks/1/interp = 1
 tracks/1/loop_wrap = true
-tracks/1/keys = {"times": PackedFloat32Array(0, 0.38), "transitions": PackedFloat32Array(0.62, 1), "update": 0, "values": [Vector2(0.94, 0.94), Vector2(1, 1)]}
+tracks/1/keys = {"times": PackedFloat32Array(0, 0.22), "transitions": PackedFloat32Array(0.62, 1), "update": 0, "values": [Vector2(0.992, 0.992), Vector2(1, 1)]}
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_victory"]
 _data = {
@@ -124,8 +124,8 @@ stretch_mode = 5
 [node name="Eyebrow" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/CelebrationHeader"]
 layout_mode = 2
 theme_type_variation = &"FrontSectionLabel"
-theme_override_font_sizes/font_size = 15
-text = "MATCH COMPLETE · 对局结算"
+theme_override_font_sizes/font_size = 16
+text = "对局结算"
 vertical_alignment = 1
 
 [node name="WinnerLabel" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
@@ -141,8 +141,8 @@ autowrap_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
-text = "PLAYER 1 · MATCH COMPLETE"
+theme_override_font_sizes/font_size = 16
+text = "对局已结束"
 horizontal_alignment = 1
 
 [node name="HeaderDivider" type="HSeparator" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
@@ -160,7 +160,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(300, 304)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_type_variation = &"FrontSectionPanel"
+theme_type_variation = &"FrontQuietPanel"
 
 [node name="CardStageContent" type="VBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage"]
 layout_mode = 2
@@ -216,7 +216,7 @@ text_overrun_behavior = 3
 [node name="MatchPanel" type="PanelContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_type_variation = &"FrontSectionPanel"
+theme_type_variation = &"FrontQuietPanel"
 
 [node name="MatchContent" type="VBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel"]
 layout_mode = 2
@@ -232,7 +232,7 @@ text = "本局摘要"
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 15
+theme_override_font_sizes/font_size = 16
 text = "玩家 1 在第 0 回合锁定胜局。代表卡与本局信息已经为你整理完毕。"
 autowrap_mode = 2
 
@@ -259,7 +259,7 @@ theme_override_constants/separation = 0
 [node name="ModeCaption" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/ModeRow/ModeCopy"]
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 16
 text = "对战模式"
 
 [node name="ModeValue" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/ModeRow/ModeCopy"]
@@ -289,7 +289,7 @@ theme_override_constants/separation = 0
 [node name="DeckCaption" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/DeckRow/DeckCopy"]
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 16
 text = "获胜牌组"
 
 [node name="DeckValue" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/DeckRow/DeckCopy"]
@@ -319,7 +319,7 @@ theme_override_constants/separation = 0
 [node name="TurnCaption" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/TurnRow/TurnCopy"]
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 16
 text = "总回合数"
 
 [node name="TurnValue" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/TurnRow/TurnCopy"]
@@ -352,15 +352,15 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(218, 56)
 layout_mode = 2
 theme_type_variation = &"FrontSecondaryButton"
-tooltip_text = "结束当前流程并返回标题页"
-text = "返回标题"
+tooltip_text = "结束当前流程并返回首页"
+text = "返回首页"
 icon = ExtResource("8_arrow_left")
 
 [node name="FooterHint" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 16
 text = "点击或轻触按钮继续"
 horizontal_alignment = 1
 

@@ -30,21 +30,6 @@ func _check_shared_backdrop_contract() -> void:
 	backdrop.queue_free()
 	await context._settle_layout(2)
 
-	var title_backdrop_scene := load(
-		"res://ui/frontend/title_backdrop.tscn"
-	) as PackedScene
-	context._check(title_backdrop_scene != null, "Title backdrop scene is unavailable")
-	if title_backdrop_scene == null:
-		return
-	var title_backdrop := title_backdrop_scene.instantiate() as Control
-	context.tree.root.add_child(title_backdrop)
-	await context._settle_layout(2)
-	context._check(
-		title_backdrop.get_node_or_null("%CardBackLayer") == null,
-		"Title and modal backdrops must not contain decorative edge cards",
-	)
-	title_backdrop.queue_free()
-	await context._settle_layout(2)
 
 
 func _check_network_intro_contract(catalog: CardCatalog) -> void:
@@ -99,7 +84,7 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 	)
 	context._check(
 		kind_label.text == "局域网直连"
-		and kind_code.text.begins_with("LAN")
+		and kind_code.text.contains("同一网络")
 		and intro_icon.texture.resource_path.ends_with("lan.svg")
 		and role_badge.text == "房主 · 创建",
 		"LAN overview presentation is stale or incomplete",
@@ -123,7 +108,7 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 	await context._settle_layout(3)
 	context._check(
 		kind_label.text == "远程中继"
-		and kind_code.text.begins_with("RELAY")
+		and kind_code.text.contains("房间码")
 		and intro_icon.texture.resource_path.ends_with("globe.svg")
 		and (page.get_node("%FeatureOne") as Label).text.contains("跨网络")
 		and tip.text.contains("房间码"),
@@ -158,63 +143,28 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 
 func _check_network_wide_first_screen(page: NetworkLobbyPage, label: String) -> void:
 	var scroll := page.page_scroll
-	context._check(scroll != null, "%s: network scroll host is missing" % label)
-	if scroll == null:
-		return
-	var viewport_rect := scroll.get_global_rect()
-	var page_rect := page.page.get_global_rect()
-	var scrollbar := scroll.get_v_scroll_bar()
-	context._check(
-		scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED
-		and not scroll.follow_focus
-		and not scrollbar.visible
-		and scroll.scroll_vertical == 0,
-		"1600x900 %s must be top-aligned without scrollbars (scroll=%d max=%.1f visible=%s)" % [
-			label, scroll.scroll_vertical, scrollbar.max_value, scrollbar.visible,
-		],
-	)
-	var left_gutter := page_rect.position.x - viewport_rect.position.x
-	var right_gutter := viewport_rect.end.x - page_rect.end.x
-	var top_gutter := page_rect.position.y - viewport_rect.position.y
-	context._check(
-		left_gutter >= -context.EPSILON
-		and right_gutter >= -context.EPSILON
-		and absf(left_gutter - right_gutter) <= 2.0
-		and absf(page_rect.get_center().x - viewport_rect.get_center().x) <= 1.0
-		and absf(top_gutter) <= 1.0
-		and page.page.get_parent() == page.page_center,
-		"1600x900 %s must top-align and horizontally center the network page (left=%.1f right=%.1f top=%.1f page=%s viewport=%s)" % [
-			label, left_gutter, right_gutter, top_gutter, page_rect, viewport_rect,
-		],
-	)
-	for node_name in [
-		"Page", "TopBar", "Steps", "Body", "FormPanel", "StatusPanel",
-		"NetworkConnectButton",
-	]:
-		var control := page.find_child(node_name, true, false) as Control
-		context._check(control != null, "%s: missing %s" % [label, node_name])
-		if control == null or not control.is_visible_in_tree():
-			continue
-		context._check(
-			context._rect_inside(control.get_global_rect(), viewport_rect),
-			"1600x900 %s clipped %s: rect=%s viewport=%s" % [
-				label, node_name, control.get_global_rect(), viewport_rect,
-			],
-		)
-	context._check(
-		page.connect_button.get_global_rect().size.y >= context.MIN_TARGET_SIZE,
-		"1600x900 %s reduced the primary action below 48px" % label,
-	)
+	context._check(scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED
+		and not scroll.follow_focus and scroll.scroll_vertical == 0,
+		"Wide lobby must start at the beginning without horizontal scroll")
+	var frame := page.page.get_global_rect()
+	context._check(context._rect_inside(frame, page.get_global_rect()), "Lobby page escaped its root")
+	for control in [page.back_button, page.form_panel, page.status_panel, page.connect_button]:
+		context._check(context._rect_inside(control.get_global_rect(), frame),
+			"%s: lobby content or fixed action escaped the page" % label)
+	context._check(page.connect_button.size.y >= 56, "Lobby primary action must retain its 56px target")
+	context._check_pair_not_overlapping(scroll, page.status_panel, "lobby fixed status")
+	context._check_pair_not_overlapping(scroll, page.connect_button, "lobby fixed action")
 
 
 func _check_network_scrollbar_width_contract(catalog: CardCatalog) -> void:
+	context.tree.root.size = Vector2i(1024, 600)
 	var mounted := await context._mount(context.PAGE_SCENES.network, Vector2i(1024, 600))
 	var page := mounted.page as NetworkLobbyPage
 	if page == null:
 		context._unmount(mounted)
 		return
 	page.configure(catalog, "lan", "wss://relay.example.test")
-	page._set_compact_step(2)
+	page._set_compact_step(1)
 	page.set_connection_state(
 		NetworkLobbyPage.ConnectionState.ERROR,
 		"连接失败：请确认房主地址、端口、防火墙和局域网连接状态后重新尝试。",
@@ -226,7 +176,7 @@ func _check_network_scrollbar_width_contract(catalog: CardCatalog) -> void:
 	# font metric changes: its purpose is the fallback's scrollbar geometry, so
 	# explicitly make the content taller than the available viewport.
 	if not scrollbar.visible:
-		page.page.custom_minimum_size.y = scroll.size.y + 96.0
+		page.form_panel.custom_minimum_size.y = scroll.size.y + 96.0
 		await context._settle_layout(3)
 	context._check(
 		scrollbar.visible
@@ -243,7 +193,7 @@ func _check_network_scrollbar_width_contract(catalog: CardCatalog) -> void:
 		else visible_rect.end.x
 	)
 	for node_name in [
-		"Page", "FormPanel", "RuleRow", "NetworkDeckOption", "NetworkConnectButton",
+		"FormPanel", "RuleRow", "NetworkDeckOption",
 	]:
 		var control := page.find_child(node_name, true, false) as Control
 		context._check(control != null, "Compact network scrollbar fixture lacks %s" % node_name)
@@ -352,9 +302,9 @@ func _check_deck_tile_visual_contract(catalog: CardCatalog) -> void:
 	context._check(
 		first.is_pressed()
 		and assignment_badge.visible
-		and assignment_label.text == "P1"
+		and assignment_label.text == "✓ 玩家 1"
 		and not second.is_pressed()
-		and (second.get_node("%AssignmentLabel") as Label).text == "P2"
+		and (second.get_node("%AssignmentLabel") as Label).text == "✓ 玩家 2"
 		and not (third.get_node("%AssignmentBadge") as PanelContainer).visible,
 		"Deck tile pressed and assignment states are no longer independent",
 	)
@@ -366,10 +316,10 @@ func _check_deck_tile_visual_contract(catalog: CardCatalog) -> void:
 		"Deck tiles must keep selection without exposing GUI focus",
 	)
 	var shared_keys: Array[String] = [first.deck_key, first.deck_key]
-	first.set_assignment_state(0, shared_keys, "玩家 2")
+	first.set_assignment_state(shared_keys, "玩家 2")
 	context._check(
 		first.is_pressed()
-		and assignment_label.text == "P1 · P2"
+		and assignment_label.text == "✓ 玩家 1 / 玩家 2"
 		and first.accessibility_description.contains("玩家 1")
 		and first.accessibility_description.contains("玩家 2"),
 		"Deck tile cannot represent one deck assigned to both players",
@@ -447,7 +397,7 @@ func _check_workbench_compact() -> void:
 	context._check(title != null, "Workbench narrow preview did not mount the title page")
 	if title:
 		context._check_named_inside(title, preview_host.get_global_rect(), [
-			"TitleStack", "CardStage", "LocalTwoPlayerButton", "AIButton",
+			"HeaderPanel", "CardStage", "LocalTwoPlayerButton", "AIButton",
 			"NetworkButton", "FooterRow",
 		], "workbench-title-preview")
 		context._check_no_horizontal_scroll(title, "workbench-title-preview")
@@ -580,212 +530,54 @@ func _check_viewport(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 
 func _check_title(viewport_size: Vector2i) -> void:
 	var mounted := await context._mount(context.PAGE_SCENES.title, viewport_size)
-	var page := mounted.page as Control
+	var page := mounted.page as TitlePage
 	if page == null:
 		context._unmount(mounted)
 		return
-	page.call("configure", "Layout contract")
-	await context._settle_layout()
+	page.configure("Layout contract")
+	await context._settle_layout(6)
 	var label := context._case_label("title", viewport_size)
 	context._check_full_page(page, mounted.safe_host, label)
 	context._check_named_inside(page, context._simulated_safe_rect(mounted.safe_host), [
-		"PageFrame", "TitleStack", "TypeOrbs", "CardStage", "LocalTwoPlayerButton",
+		"PageFrame", "HeaderPanel", "TypeOrbs", "CardStage", "LocalTwoPlayerButton",
 		"AIButton", "NetworkButton", "FooterRow", "SettingsButton", "HelpButton",
 	], label)
 	context._check_named_non_overlapping(page, [
-		"LocalTwoPlayerButton", "AIButton", "NetworkButton",
-		"SettingsButton", "HelpButton",
+		"LocalTwoPlayerButton", "AIButton", "NetworkButton", "SettingsButton", "HelpButton",
 	], label)
-	for legacy_name in [
-		"ChallengeAIButton", "DeepAIButton", "LANButton", "RelayButton", "OnlineCard",
-	]:
-		context._check(
-			page.find_child(legacy_name, true, false) == null,
-			"%s: legacy title control remains: %s" % [label, legacy_name],
-		)
-	var expected_tier := context.TITLE_TIER_DENSE
-	if (
-		page.size.x >= 1180.0
-		and page.size.y >= 650.0
-		and page.size.x / maxf(page.size.y, 1.0) >= 1.5
-	):
-		expected_tier = context.TITLE_TIER_WIDE
-	elif (
-		page.size.x >= 900.0
-		and page.size.y >= 600.0
-		and page.size.x / maxf(page.size.y, 1.0) >= 1.15
-	):
-		expected_tier = context.TITLE_TIER_COMPACT_LANDSCAPE
-	context._check(
-		int(page.get("_layout_tier")) == expected_tier,
-		"%s: title responsive tier does not match the documented breakpoints" % label,
-	)
-	_check_title_energy_badges(page, label, expected_tier)
-	var modes_wrapper := page.find_child("ModesGlass", true, false) as Control
-	context._check(
-		modes_wrapper is MarginContainer and not (modes_wrapper is PanelContainer),
-		"%s: title mode buttons must not be enclosed by a visible panel frame" % label,
-	)
-	if viewport_size == Vector2i(1600, 900):
-		_check_title_showcase_rotation(page, label)
-	var expected_button_height := (
-		116.0
-		if expected_tier == context.TITLE_TIER_WIDE
-		else 96.0
-		if expected_tier == context.TITLE_TIER_COMPACT_LANDSCAPE
-		else 84.0
-	)
+	context._check(page.body_grid.columns == (1 if page.size.x < page.size.y * 1.05 else 2),
+		"Title must place the real showcase above mode entries in portrait")
 	for node_name in ["LocalTwoPlayerButton", "AIButton", "NetworkButton"]:
-		var mode_button := page.find_child(node_name, true, false) as Button
-		context._check(
-			mode_button != null
-			and mode_button.focus_mode == Control.FOCUS_NONE
-			and is_equal_approx(
-				mode_button.custom_minimum_size.y,
-				expected_button_height,
-			),
-			"%s: %s has the wrong height or still accepts navigation focus"
-			% [label, node_name],
-		)
-		if mode_button:
-			var foreground: Color = mode_button.get("foreground_color")
-			var subtitle: Color = mode_button.get("subtitle_color")
-			var fill: Color = mode_button.get("fill_color")
-			var accent: Color = mode_button.get("accent_color")
-			var hover_fill := fill.lightened(0.065)
-			context._check(
-				context._contrast_ratio(foreground, fill) >= 4.5
-				and context._contrast_ratio(foreground, hover_fill) >= 4.5
-				and context._contrast_ratio(subtitle, fill) >= 4.5
-				and context._contrast_ratio(subtitle, hover_fill) >= 4.5,
-				"%s: %s title/subtitle contrast must be at least 4.5:1"
-				% [label, node_name],
-			)
-			context._check(
-				context._relative_luminance(fill) <= 0.04,
-				"%s: %s must keep the midnight dark-surface treatment"
-				% [label, node_name],
-			)
-			context._check(
-				context._contrast_ratio(accent, fill) >= 3.0
-				and context._contrast_ratio(Color.WHITE, hover_fill) >= 3.0,
-				"%s: %s accent and hover treatment must remain distinguishable"
-				% [label, node_name],
-			)
+		var button := page.find_child(node_name, true, false) as TitleModeButton
+		context._check(button.size.y >= 56 and button.focus_mode == Control.FOCUS_NONE,
+			"Title modes must keep readable pointer targets")
+		context._check(context._contrast_ratio(button.foreground_color, button.fill_color) >= 4.5
+			and context._contrast_ratio(button.subtitle_color, button.fill_color.lightened(0.065)) >= 4.5,
+			"Title mode text must keep 4.5:1 contrast in normal and hover states")
+	context._check(page.type_orbs.get_child_count() == 8, "Title must retain eight existing energy icons")
+	for index in range(context.TITLE_ENERGY_TYPES.size()):
+		var icon := page.type_orbs.get_child(index) as TextureRect
+		context._check(icon.texture.resource_path == context.ENERGY_ICON_CATALOG.path_for(context.TITLE_ENERGY_TYPES[index])
+			and icon.mouse_filter == Control.MOUSE_FILTER_IGNORE, "Title energy icons changed identity or intercept input")
+	var stage := page.card_stage
+	context._check(stage.viewport.own_world_3d and stage.cards.size() == 3
+		and stage.card_ids.size() == 3 and stage.viewport.gui_disable_input,
+		"Title must own one independent public 3D showcase capped at three entities")
+	for card in stage.cards:
+		context._check(card is CardEntity3D and card.visible, "Title showcase must use physical card entities")
+	page.set_background_active(false)
+	await context._settle_layout(2)
+	context._check(not stage.is_processing() and stage.viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED,
+		"Modal coverage must stop showcase processing and rendering")
+	stage.set_cards(["svi-ente", "svg2-tort"])
+	page.set_background_active(true)
+	await context._settle_layout(6)
+	context._check(stage.card_ids.size() == 2 and not stage.cards[2].visible,
+		"Replacing showcase cards while covered must discard obsolete visible entities")
 	context._check_pointer_only_controls(page, label, context._simulated_safe_rect(mounted.safe_host))
 	context._check_no_horizontal_scroll(page, label)
 	context._unmount(mounted)
 	await context._settle_layout(2)
-
-
-func _check_title_energy_badges(
-	page: Control,
-	label: String,
-	expected_tier: int,
-) -> void:
-	var grid := page.find_child("TypeOrbs", true, false) as GridContainer
-	var expected_columns := 4 if expected_tier == context.TITLE_TIER_DENSE else 8
-	var expected_size := (
-		28.0
-		if expected_tier == context.TITLE_TIER_WIDE
-		else 24.0
-		if expected_tier == context.TITLE_TIER_COMPACT_LANDSCAPE
-		else 20.0
-	)
-	context._check(grid != null, "%s: energy badge grid is missing" % label)
-	if grid == null:
-		return
-	context._check(
-		grid.columns == expected_columns and grid.get_child_count() == 8,
-		"%s: energy badges must use 8 columns or a dense 4x2 grid" % label,
-	)
-	for index in range(context.TITLE_ENERGY_TYPES.size()):
-		var energy_type := context.TITLE_ENERGY_TYPES[index]
-		var badge := page.find_child("%sEnergyBadge" % energy_type, true, false) as PanelContainer
-		var icon := page.find_child("%sEnergyIcon" % energy_type, true, false) as TextureRect
-		context._check(
-			badge != null and icon != null,
-			"%s: missing %s basic-energy badge" % [label, energy_type],
-		)
-		if badge == null or icon == null:
-			continue
-		context._check(
-			str(badge.get_meta("energy_type", "")) == energy_type
-			and grid.get_child(index) == badge,
-			"%s: %s energy badge order/type metadata changed" % [label, energy_type],
-		)
-		context._check(
-			badge.custom_minimum_size.is_equal_approx(Vector2.ONE * expected_size),
-			"%s: %s energy badge has the wrong responsive size" % [label, energy_type],
-		)
-		context._check(
-			icon.custom_minimum_size.is_equal_approx(Vector2.ONE * expected_size)
-			and badge.get_theme_stylebox(&"panel") is StyleBoxEmpty,
-			"%s: %s energy icon must not have a dark backing ring"
-			% [label, energy_type],
-		)
-		context._check(
-			badge.focus_mode == Control.FOCUS_NONE
-			and badge.mouse_filter == Control.MOUSE_FILTER_IGNORE
-			and icon.mouse_filter == Control.MOUSE_FILTER_IGNORE,
-			"%s: decorative energy badge must not enter pointer/focus navigation"
-			% label,
-		)
-		var expected_path := context.ENERGY_ICON_CATALOG.path_for(energy_type)
-		context._check(
-			icon.texture != null and icon.texture.resource_path == expected_path,
-			"%s: %s energy badge must load through EnergyIconCatalog"
-			% [label, energy_type],
-		)
-
-
-func _check_title_showcase_rotation(page: Control, label: String) -> void:
-	var catalog := CardCatalog.shared()
-	var pool: Array = page.get("_showcase_card_pool")
-	var before: Array = page.get("_showcase_card_ids").duplicate()
-	context._check(pool.size() >= 3, "%s: Pokémon showcase rotation pool is empty" % label)
-	for card_id_value in pool:
-		var card_id := str(card_id_value)
-		var image_path := str(catalog.get_card(card_id).get("image_path", ""))
-		context._check(
-			catalog.is_pokemon(card_id)
-			and not image_path.is_empty()
-			and ResourceLoader.exists(image_path, "Texture2D"),
-			"%s: showcase pool contains a non-Pokémon or missing texture: %s"
-			% [label, card_id],
-		)
-	var rotated := bool(page.call("_rotate_showcase_card", 0))
-	var after: Array = page.get("_showcase_card_ids").duplicate()
-	var unique_after := {}
-	for card_id_value in after:
-		unique_after[str(card_id_value)] = true
-	var cards: Array = page.get("cards")
-	var shadows: Array = page.get("card_shadows")
-	var rotated_path := (
-		str(catalog.get_card(str(after[0])).get("image_path", ""))
-		if not after.is_empty()
-		else ""
-	)
-	var rotated_texture := (
-		(cards[0] as TextureRect).texture
-		if not cards.is_empty()
-		else null
-	)
-	context._check(
-		rotated
-		and after.size() == 3
-		and str(after[0]) != str(before[0])
-		and unique_after.size() == 3,
-		"%s: showcase rotation must replace one slot without duplicates" % label,
-	)
-	context._check(
-		cards.size() == 3
-		and shadows.size() == 3
-		and rotated_texture != null
-		and rotated_texture == (shadows[0] as TextureRect).texture
-		and rotated_texture.resource_path == rotated_path,
-		"%s: showcase card and shadow must share the catalog texture" % label,
-	)
 
 
 func _check_decks(viewport_size: Vector2i, catalog: CardCatalog) -> void:
@@ -883,28 +675,15 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 		int(page.call("deck_count")) == catalog.decks.size(),
 		"DeckSelect.deck_count must expose every release deck",
 	)
-	var first_player_option := page.get_node("%FirstPlayerOption") as OptionButton
-	var ai_mode_option := page.get_node("%AIModeOption") as OptionButton
 	var matchup_toggle := page.get_node("%TypeMatchupToggle") as CheckButton
-	context._check(
-		ai_mode_option.item_count == 1
-		and str(ai_mode_option.get_item_metadata(0)) == "challenge"
-		and ai_mode_option.disabled,
-		"DeckSelect must expose only the Challenge AI release mode",
-	)
-	context._check(
-		first_player_option.item_count == 1
-		and int(first_player_option.get_item_metadata(0)) == -1
-		and first_player_option.disabled,
-		"DeckSelect must defer turn order to the setup coin winner",
-	)
+	context._check(str(page.get("mode")) == "challenge", "DeckSelect must retain the authorized AI mode")
 	context._check(
 		not matchup_toggle.button_pressed
 		and matchup_toggle.theme_type_variation == &"FrontRuleToggle"
 		and matchup_toggle.text.contains("已关闭")
-		and matchup_toggle.tooltip_text.contains("项目默认")
+		and matchup_toggle.tooltip_text.contains("当前已关闭")
 		and matchup_toggle.get_theme_color(&"font_color").is_equal_approx(
-			DesignTokens.TEXT_MUTED
+			FrontendPalette.MUTED
 		),
 		"DeckSelect must use the dedicated rule-toggle style and present an explicit disabled state",
 	)
@@ -924,7 +703,7 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 		and enabled_hover_style.get_border_width(SIDE_BOTTOM) >= 2
 		and enabled_hover_style.border_color.a >= 0.9
 		and matchup_toggle.get_theme_color(&"font_color").is_equal_approx(
-			DesignTokens.GREEN
+			FrontendPalette.SUCCESS
 		),
 		"DeckSelect matchup toggle did not expose a bordered enabled-hover state",
 	)
@@ -937,7 +716,6 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 		"first": page.call("selected_deck_key", 0),
 		"second": page.call("selected_deck_key", 1),
 		"active": page.get("_active_player_idx"),
-		"first_player": first_player_option.selected,
 		"scroll": gallery_scroll.scroll_vertical,
 		"detail": detail_title.text,
 	}
@@ -946,7 +724,6 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 		and page.call("selected_deck_key", 0) == preserved_state["first"]
 		and page.call("selected_deck_key", 1) == preserved_state["second"]
 		and page.get("_active_player_idx") == preserved_state["active"]
-		and first_player_option.selected == preserved_state["first_player"]
 		and gallery_scroll.scroll_vertical == preserved_state["scroll"]
 		and detail_title.text == preserved_state["detail"]
 		and page.get_viewport().gui_get_focus_owner() == null,
@@ -999,7 +776,7 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 		and rule_status_badge.text.contains("已关闭")
 		and rule_status_badge.text.contains("可修改")
 		and rule_status_badge.get_theme_color(&"font_color").is_equal_approx(
-			DesignTokens.TEXT_MUTED
+			FrontendPalette.MUTED
 		),
 		"Network host must see the default disabled matchup state explicitly",
 	)
@@ -1012,7 +789,7 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 		]
 		and matchup_toggle.accessibility_name.contains("已开启")
 		and rule_status_badge.get_theme_color(&"font_color").is_equal_approx(
-			DesignTokens.GREEN
+			FrontendPalette.SUCCESS
 		),
 		"Network host matchup toggle did not expose its enabled visual state",
 	)
@@ -1058,10 +835,10 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 			and rule_status_badge.text.contains("已开启")
 			and rule_status_badge.text.contains("房主锁定")
 			and rule_status_badge.get_theme_color(&"font_color").is_equal_approx(
-				DesignTokens.GREEN
+				FrontendPalette.SUCCESS
 			)
 			and not matchup_toggle.get_theme_color(&"font_disabled_color").is_equal_approx(
-				DesignTokens.GREEN
+				FrontendPalette.SUCCESS
 			),
 			"Network challenger must see the host-locked enabled matchup state explicitly",
 		)
@@ -1117,24 +894,13 @@ func _check_network_compact_pointer_flow(page: Control) -> void:
 		and not rule_row.visible,
 		"Network compact flow must start at network kind and identity",
 	)
+	context._check(deck_option.is_visible_in_tree(), "First lobby step must include deck selection")
 	next_button.pressed.emit()
 	await context._settle_layout()
-	context._check(
-		address_input.is_visible_in_tree()
-		and not rule_row.is_visible_in_tree()
-		and address_input.focus_mode == Control.FOCUS_CLICK
+	context._check(address_input.is_visible_in_tree() and rule_row.is_visible_in_tree()
+		and not deck_option.is_visible_in_tree() and address_input.focus_mode == Control.FOCUS_CLICK
 		and page.get_viewport().gui_get_focus_owner() == null,
-		"Network compact flow must expose click-only connection information",
-	)
-	next_button.pressed.emit()
-	await context._settle_layout()
-	context._check(
-		deck_option.is_visible_in_tree()
-		and rule_row.is_visible_in_tree()
-		and deck_option.focus_mode == Control.FOCUS_NONE
-		and page.get_viewport().gui_get_focus_owner() == null,
-		"Network compact flow must expose pointer-only deck selection",
-	)
+		"Second lobby step must combine click-only connection fields with room rules")
 	page.call("show_locked_rules_options", {"apply_type_matchups": true})
 	page.call("set_connection_state", 3, "等待测试玩家", "ROOM42")
 	await context._settle_layout()
@@ -1157,7 +923,7 @@ func _check_network_compact_pointer_flow(page: Control) -> void:
 	)
 	await context._settle_layout()
 	context._check(
-		address_input.is_visible_in_tree()
+		deck_option.is_visible_in_tree()
 		and page.get_viewport().gui_get_focus_owner() == null,
 		"Network compact back did not restore the unfocused connection-information step",
 	)
@@ -1173,7 +939,7 @@ func _check_scrolling_panel(viewport_size: Vector2i, page_key: String) -> void:
 		page.call("configure")
 		for control_name in [
 			"MasterVolumeSlider", "MusicVolumeSlider", "SFXVolumeSlider",
-			"MutedToggle", "ReducedMotionToggle", "AnimationModeOption",
+			"MutedToggle", "AnimationModeOption",
 			"QualityProfileOption", "CardCacheOption",
 		]:
 			var form_control := page.find_child(control_name, true, false) as Control
@@ -1209,9 +975,9 @@ func _check_scrolling_panel(viewport_size: Vector2i, page_key: String) -> void:
 			"%s: modal body exposes a horizontal scrollbar" % label,
 		)
 	var section_names := (
-		["AudioSection", "MotionSection", "PerformanceSection"]
+		["AudioSection", "PictureSection"]
 		if page_key == "settings"
-		else ["Intro", "CategoryBar", "ContentPanel"]
+		else ["CategoryBar", "ContentBody"]
 	)
 	context._check_named_non_overlapping(page, section_names, label)
 	context._unmount(mounted)
@@ -1287,7 +1053,7 @@ func _check_victory(viewport_size: Vector2i) -> void:
 	await context._settle_layout()
 	context._check(
 		(page.get_node("%WinnerLabel") as Label).text == "本局平局"
-		and (page.get_node("%ResultSubtitle") as Label).text.begins_with("DRAW")
+		and (page.get_node("%ResultSubtitle") as Label).text.contains("没有胜者")
 		and (page.get_node("%CardNameLabel") as Label).text.contains("无胜者"),
 		"Victory screen did not render DRAW as a distinct result without a winner",
 	)

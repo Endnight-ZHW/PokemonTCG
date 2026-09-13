@@ -8,8 +8,8 @@ script = ExtResource("1_panel")
 
 [node name="Message" type="Label" parent="."]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
-text = "返回标题会结束当前对局。"
+theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1)
+text = "返回首页会结束当前对局。"
 autowrap_mode = 2
 
 [node name="HelpButton" type="Button" parent="."]
@@ -17,5 +17,5 @@ focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
-theme_type_variation = &"BattleSecondaryButton"
+theme_type_variation = &"FrontSecondaryButton"
 text = "查看规则与操作帮助"

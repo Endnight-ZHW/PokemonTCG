@@ -53,20 +53,19 @@ func configure(
 
 
 func _resolve_nodes() -> void:
-	artwork = get_node("Margin/Content/ArtworkFrame/Artwork") as TextureRect
-	artwork_frame = get_node("Margin/Content/ArtworkFrame") as PanelContainer
-	deck_name_label = get_node("Margin/Content/Info/TitleRow/DeckName") as Label
-	assignment_badge = get_node("Margin/Content/Info/TitleRow/AssignmentBadge") as PanelContainer
-	assignment_label = assignment_badge.get_node("AssignmentLabel") as Label
-	energy_badge = get_node("Margin/Content/Info/MetaRow/EnergyBadge") as PanelContainer
-	energy_icon = energy_badge.get_node("EnergyContent/EnergyIcon") as TextureRect
-	energy_label = energy_badge.get_node("EnergyContent/EnergyLabel") as Label
-	card_count_label = get_node("Margin/Content/Info/MetaRow/CardCountLabel") as Label
-	tagline_label = get_node("Margin/Content/Info/TaglineLabel") as Label
+	artwork = %Artwork
+	artwork_frame = %ArtworkFrame
+	deck_name_label = %DeckName
+	energy_badge = %EnergyBadge
+	energy_icon = %EnergyIcon
+	energy_label = %EnergyLabel
+	card_count_label = %CardCountLabel
+	tagline_label = %TaglineLabel
+	assignment_badge = %AssignmentBadge
+	assignment_label = %AssignmentLabel
 
 
 func set_assignment_state(
-	active_player_idx: int,
 	selected_keys: Array[String],
 	second_slot_name: String,
 ) -> void:
@@ -75,23 +74,8 @@ func set_assignment_state(
 		assignments.append("玩家 1")
 	if selected_keys.size() > 1 and selected_keys[1] == deck_key:
 		assignments.append(second_slot_name)
-	var compact_assignments: Array[String] = []
-	for assignment in assignments:
-		if assignment == "玩家 1":
-			compact_assignments.append("P1")
-		elif assignment.contains("AI"):
-			compact_assignments.append("AI")
-		else:
-			compact_assignments.append("P2")
-	assignment_label.text = " · ".join(compact_assignments)
-	assignment_label.tooltip_text = " / ".join(assignments)
-	assignment_badge.custom_minimum_size.x = 46.0 if assignments.size() <= 1 else 72.0
+	assignment_label.text = "✓ " + " / ".join(assignments)
 	assignment_badge.visible = not assignments.is_empty()
-	set_pressed_no_signal(
-		active_player_idx >= 0
-		and active_player_idx < selected_keys.size()
-		and selected_keys[active_player_idx] == deck_key
-	)
 	accessibility_description = (
 		"已分配给%s" % "、".join(assignments)
 		if not assignments.is_empty()
@@ -111,24 +95,14 @@ func _configure_energy_badge(energy_type: String) -> void:
 
 
 func _apply_energy_style(type_color: Color) -> void:
-	energy_label.add_theme_color_override("font_color", Color("#e3f0ff"))
+	energy_label.add_theme_color_override("font_color", FrontendPalette.TEXT)
 	energy_badge.add_theme_stylebox_override(
 		"panel",
 		_badge_style(type_color, 0.13, 0.62, 8.0, Vector4(7, 3, 7, 3)),
 	)
-	var base_artwork_style := artwork_frame.get_theme_stylebox("panel")
-	var artwork_style := (
-		base_artwork_style.duplicate() as StyleBoxFlat
-		if base_artwork_style != null
-		else null
-	)
-	if artwork_style:
-		artwork_style.border_color = Color(type_color.r, type_color.g, type_color.b, 0.72)
-		artwork_style.bg_color = artwork_style.bg_color.lerp(type_color, 0.045)
-		artwork_frame.add_theme_stylebox_override("panel", artwork_style)
 	assignment_badge.add_theme_stylebox_override(
 		"panel",
-		_badge_style(DesignTokens.GOLD, 0.1, 0.5, 8.0, Vector4(7, 3, 7, 3)),
+		_badge_style(FrontendPalette.GOLD, 0.1, 0.5, 8.0, Vector4(7, 3, 7, 3)),
 	)
 
 

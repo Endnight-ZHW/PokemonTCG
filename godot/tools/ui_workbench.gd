@@ -427,34 +427,30 @@ func _show_network() -> void:
 
 func _show_settings() -> void:
 	preview_caption.text = "设置面板 · 前台主题、分区表单与实时数值"
-	var panel := _centered_panel(Vector2(700, 650), true)
+	var panel := _centered_panel(Vector2(700, 650))
 	var settings := SETTINGS_SCENE.instantiate() as SettingsPanel
 	panel.add_child(settings)
 	settings.configure()
 
 
 func _show_choice() -> void:
-	preview_caption.text = "复杂选择 · 卡图网格与文本选项"
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	preview_host.add_child(center)
-	var panel_container := PanelContainer.new()
-	panel_container.custom_minimum_size = Vector2(720, 560)
-	center.add_child(panel_container)
+	preview_caption.text = "选择卡牌 · 固定选择进度与独立滚动列表"
+	var content := _centered_panel(Vector2(820, 600))
 	var panel := CHOICE_SCENE.instantiate() as ChoicePanel
-	panel_container.add_child(panel)
-	panel.configure("选择 1～2 张卡牌；此预览不会提交规则响应。", true)
+	content.add_child(panel)
+	panel.configure("选择 1～2 张卡牌", true, catalog,
+		{"min_select": 1, "max_select": 2, "request_type": "search_deck"})
 	for card_id in ["sv1-151", "sv1-189", "svf-potion", "svi-jete"]:
-		var card := load("res://ui/card_view.tscn").instantiate() as CardView
-		card.custom_minimum_size = Vector2(86, 121)
-		card.configure(card_id, null, false, -1, 0, "", true)
-		panel.card_grid.add_child(card)
-	for text in ["选择第一项", "选择第二项", "取消并返回"]:
-		var button := Button.new()
-		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size.y = 48
-		button.text = text
-		panel.option_list.add_child(button)
+		panel.add_card_option(card_id, card_id, catalog.card_name(card_id), 0)
+	var selected: Array[String] = []
+	panel.option_toggled.connect(func(option_id: String) -> void:
+		if option_id in selected:
+			selected.erase(option_id)
+		elif selected.size() < 2:
+			selected.append(option_id)
+		panel.refresh_selection(selected, 2, false)
+	)
+	panel.refresh_selection(selected, 2, false)
 
 
 func _show_energy_choice() -> void:
@@ -536,7 +532,7 @@ func _show_energy_choice() -> void:
 
 func _show_help() -> void:
 	preview_caption.text = "帮助面板 · 四类导航与单一纵向滚动区"
-	var panel := _centered_panel(Vector2(860, 650), true)
+	var panel := _centered_panel(Vector2(860, 650))
 	var content := HELP_PANEL_SCENE.instantiate() as HelpPanel
 	panel.add_child(content)
 	content.configure()
@@ -546,6 +542,7 @@ func _show_inspector() -> void:
 	preview_caption.text = "卡牌检查器 · 大图、完整卡文和附属卡"
 	var panel := _centered_panel(Vector2(860, 650))
 	var content := CARD_INSPECTOR_PANEL_SCENE.instantiate() as CardInspectorPanel
+	content.art_requested.connect(_show_card_art_preview)
 	panel.add_child(content)
 	var pokemon := PokemonState.new("svi-hrot")
 	pokemon.energy_card_ids.assign(["sv1-ener-2", "sv1-ener-2"])
@@ -554,6 +551,15 @@ func _show_inspector() -> void:
 		"location": "加热洛托姆 · 我方战斗区",
 		"pokemon": pokemon,
 	})
+
+
+func _show_card_art_preview() -> void:
+	_clear_preview()
+	preview_caption.text = "卡牌原图 · 统一弹窗内容"
+	var content := _centered_panel(Vector2(720, 700))
+	var art := CardArtPanel.new()
+	art.texture = CardTextureCache.get_texture(str(catalog.get_card("svi-hrot").get("image_path", "")))
+	content.add_child(art)
 
 
 func _show_zone() -> void:
@@ -570,7 +576,7 @@ func _show_zone() -> void:
 
 func _show_deck_detail() -> void:
 	preview_caption.text = "牌组详情 · 核心卡与 Pokémon/Trainer/Energy 分组"
-	var panel := _centered_panel(Vector2(900, 680), true)
+	var panel := _centered_panel(Vector2(900, 680))
 	var content := DECK_DETAIL_PANEL_SCENE.instantiate() as DeckDetailPanel
 	panel.add_child(content)
 	content.configure(catalog, "fire")
@@ -958,7 +964,7 @@ func _set_checkpoint_status(text_value: String) -> void:
 		checkpoint_status.text = text_value
 
 
-func _centered_panel(min_size: Vector2, frontend_surface: bool = false) -> Container:
+func _centered_panel(min_size: Vector2) -> Container:
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	preview_host.add_child(center)
@@ -970,8 +976,7 @@ func _centered_panel(min_size: Vector2, frontend_surface: bool = false) -> Conta
 		minf(min_size.x, maxf(320.0, available.x - 32.0)),
 		minf(min_size.y, maxf(320.0, available.y - 32.0)),
 	)
-	if frontend_surface:
-		panel.theme = FRONTEND_THEME
+	panel.theme = FRONTEND_THEME
 	center.add_child(panel)
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -979,7 +984,12 @@ func _centered_panel(min_size: Vector2, frontend_surface: bool = false) -> Conta
 	scroll.follow_focus = false
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_child(scroll)
+	var padding := MarginContainer.new()
+	for side in ["left", "top", "right", "bottom"]:
+		padding.add_theme_constant_override("margin_" + side, 18)
+	panel.add_child(padding)
+	padding.add_child(scroll)
+	FrontendPalette.style_scrollbar(scroll.get_v_scroll_bar())
 	var content := VBoxContainer.new()
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override("separation", 12)

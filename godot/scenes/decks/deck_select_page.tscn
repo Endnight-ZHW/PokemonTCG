@@ -77,7 +77,7 @@ autowrap_mode = 2
 
 [node name="SlotPanel" type="PanelContainer" parent="ContentMargin/PageContent"]
 layout_mode = 2
-theme_type_variation = &"FrontSectionPanel"
+theme_type_variation = &"FrontQuietPanel"
 
 [node name="SlotMargin" type="MarginContainer" parent="ContentMargin/PageContent/SlotPanel"]
 unique_name_in_owner = true
@@ -132,7 +132,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 size_flags_stretch_ratio = 1.35
-theme_type_variation = &"FrontSectionPanel"
+theme_type_variation = &"FrontQuietPanel"
 
 [node name="GalleryMargin" type="MarginContainer" parent="ContentMargin/PageContent/MasterDetail/GalleryPanel"]
 layout_mode = 2
@@ -149,7 +149,7 @@ theme_override_constants/separation = 10
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontSectionLabel"
-text = "全部牌组 · 选择后分配给当前槽位"
+text = "牌组卡册 · 点击浏览"
 
 [node name="GalleryScroll" type="ScrollContainer" parent="ContentMargin/PageContent/MasterDetail/GalleryPanel/GalleryMargin/GalleryContent"]
 focus_mode = 0
@@ -198,29 +198,47 @@ visible = false
 custom_minimum_size = Vector2(150, 48)
 layout_mode = 2
 theme_type_variation = &"FrontGhostButton"
-text = "← 返回牌组画廊"
+text = "← 返回卡册"
 
 [node name="DetailAssignment" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailNav"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"FrontMutedLabel"
-text = "正在配置 · 玩家 1"
+text = "正在浏览"
 horizontal_alignment = 2
 vertical_alignment = 1
 
-[node name="DetailTitleRow" type="HBoxContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+[node name="DetailScroll" type="ScrollContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PreviewBody" type="BoxContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+vertical = true
+
+[node name="DetailInfo" type="VBoxContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll/PreviewBody"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="DetailTitleRow" type="HBoxContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll/PreviewBody/DetailInfo"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="DetailAccent" type="ColorRect" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTitleRow"]
+[node name="DetailAccent" type="ColorRect" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll/PreviewBody/DetailInfo/DetailTitleRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(5, 32)
 layout_mode = 2
 mouse_filter = 2
 color = Color(0.384, 0.843, 1, 1)
 
-[node name="DetailTitle" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTitleRow"]
+[node name="DetailTitle" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll/PreviewBody/DetailInfo/DetailTitleRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -229,7 +247,7 @@ theme_override_font_sizes/font_size = 28
 text = "牌组名称"
 text_overrun_behavior = 3
 
-[node name="DetailTagline" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+[node name="DetailTagline" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll/PreviewBody/DetailInfo"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
@@ -237,28 +255,28 @@ text = "牌组节奏说明"
 autowrap_mode = 3
 max_lines_visible = 2
 
-[node name="DetailMeta" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+[node name="DetailMeta" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll/PreviewBody/DetailInfo"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontSectionLabel"
 theme_override_font_sizes/font_size = 16
-text = "属性 · 60 张 · 发布牌组"
+text = "属性 · 60 张"
 
-[node name="DetailCounts" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+[node name="DetailCounts" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll/PreviewBody/DetailInfo"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
-text = "Pokémon 0　 Trainer 0　 Energy 0"
+theme_override_font_sizes/font_size = 16
+text = "宝可梦 0 · 训练家 0 · 能量 0"
 autowrap_mode = 2
 
-[node name="CoreLabel" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+[node name="CoreLabel" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll/PreviewBody/DetailInfo"]
 layout_mode = 2
 theme_type_variation = &"FrontSectionLabel"
 theme_override_font_sizes/font_size = 17
 text = "核心卡牌"
 
-[node name="DetailCardGrid" type="GridContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+[node name="DetailCardGrid" type="GridContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll/PreviewBody"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -266,10 +284,26 @@ theme_override_constants/h_separation = 8
 theme_override_constants/v_separation = 8
 columns = 4
 
-[node name="DetailsButton" type="Button" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+[node name="DetailActions" type="BoxContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+unique_name_in_owner = true
+layout_mode = 2
+vertical = true
+theme_override_constants/separation = 8
+
+[node name="AssignDeckButton" type="Button" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailActions"]
+focus_mode = 0
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 56)
+theme_type_variation = &"FrontPrimaryButton"
+text = "分配给玩家 1"
+
+[node name="DetailsButton" type="Button" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailActions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
+size_flags_horizontal = 3
 focus_mode = 0
 theme_type_variation = &"FrontSecondaryButton"
 text = "查看完整牌组构成"
@@ -299,40 +333,6 @@ theme_type_variation = &"FrontMutedLabel"
 text = "牌组 1  对战  牌组 2"
 vertical_alignment = 1
 text_overrun_behavior = 3
-
-[node name="AISettings" type="GridContainer" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_constants/h_separation = 8
-theme_override_constants/v_separation = 8
-columns = 3
-
-[node name="AIModeLabel" type="Label" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-text = "AI 类型"
-vertical_alignment = 1
-
-[node name="AIModeOption" type="OptionButton" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 50)
-layout_mode = 2
-focus_mode = 0
-
-[node name="FirstPlayerLabel" type="Label" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"]
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-text = "先后手"
-vertical_alignment = 1
-
-[node name="FirstPlayerOption" type="OptionButton" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(180, 50)
-layout_mode = 2
-focus_mode = 0
 
 [node name="TypeMatchupToggle" type="CheckButton" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"]
 unique_name_in_owner = true

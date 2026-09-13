@@ -169,62 +169,19 @@ func _assign_new_hand_visual_id(view: CardView) -> void:
 		table._hand_visual_sequence,
 	])
 
-func invalidate_hand_visual_identities() -> void:
-	for view in table.hand_views:
-		if view != null and view.visible:
-			_assign_new_hand_visual_id(view)
-
 func prepare_hand_identity_transition(
 	raw_events: Array,
 	previous_snapshot: Dictionary,
+	final_hand: Array[String],
 ) -> void:
 	table._pending_removed_hand_visual_ids.clear()
-	var snapshot_hand: Array = previous_snapshot.get("hand", [])
-	var virtual_rows: Array[Dictionary] = []
-	for snapshot_index in range(snapshot_hand.size()):
-		if not snapshot_hand[snapshot_index] is Dictionary:
-			continue
-		var row: Dictionary = Dictionary(snapshot_hand[snapshot_index]).duplicate(true)
-		row["snapshot_key"] = "snapshot:%d" % snapshot_index
-		row["snapshot_index"] = snapshot_index
-		virtual_rows.append(row)
-	for event_index in range(raw_events.size()):
-		var raw_event_value: Variant = raw_events[event_index]
-		if not raw_event_value is Dictionary:
-			continue
-		var event := PresentationEvent.normalize(
-			raw_event_value,
-			table.state_ref.revision if table.state_ref != null else -1,
-			table.view_player,
-			event_index,
-		)
-		var source: Dictionary = event.get("source", {})
-		var target: Dictionary = event.get("target", {})
-		if (
-			int(source.get("player", -1)) != table.view_player
-			or str(source.get("zone", "")) != "hand"
-			or str(target.get("zone", "")) == "hand"
-		):
-			continue
-		var selected_rows := table.hand_presentation._select_virtual_hand_source_rows(event, virtual_rows)
-		for row in selected_rows:
-			_mark_snapshot_hand_visual_removed(
-				snapshot_hand,
-				int(row.get("snapshot_index", -1)),
-			)
-			var key := str(row.get("snapshot_key", ""))
-			for virtual_index in range(virtual_rows.size() - 1, -1, -1):
-				if str(virtual_rows[virtual_index].get("snapshot_key", "")) == key:
-					virtual_rows.remove_at(virtual_index)
-					break
-
-func _mark_snapshot_hand_visual_removed(snapshot_hand: Array, index: int) -> void:
-	if index < 0 or index >= snapshot_hand.size():
-		return
-	var row := snapshot_hand[index] as Dictionary
-	var visual_id := str(row.get("visual_id", ""))
-	if not visual_id.is_empty():
-		table._pending_removed_hand_visual_ids[visual_id] = true
+	var events := PresentationEvent.normalize_all(raw_events, table.state_ref.revision if table.state_ref else -1, table.view_player)
+	var plan := table.hand_presentation.plan_hand_sources(events, previous_snapshot, final_hand)
+	for rows in plan.values():
+		for row in rows:
+			var visual_id := str(row.get("visual_id", ""))
+			if not visual_id.is_empty():
+				table._pending_removed_hand_visual_ids[visual_id] = true
 
 func _refresh_opponent_hand() -> void:
 	if table.opponent_hand_surface == null or table.state_ref == null:

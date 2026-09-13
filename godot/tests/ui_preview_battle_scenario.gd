@@ -638,15 +638,20 @@ func run(ui: Control) -> void:
 		return
 	inspector_panel._image_button.pressed.emit()
 	await harness._settle_rendered(3)
-	if inspector_panel.get_node_or_null("CardArtZoom") == null:
+	if ui.modal_body.get_node_or_null("CardArtZoom") == null:
 		push_error("Card inspector image action did not open the art zoom surface")
 		harness._finish(1)
 		return
 	if not harness._capture("card-inspector-art-zoom.png"):
 		harness._finish(1)
 		return
-	(inspector_panel.get_node("CardArtZoom") as PopupPanel).hide()
-	await harness._settle_rendered(2)
+	ui._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+	await harness._settle_rendered(3)
+	inspector_panel = ui.modal_body.get_child(0) as CardInspectorPanel
+	if inspector_panel == null:
+		push_error("Android back from art must restore the card inspector")
+		harness._finish(1)
+		return
 	harness.tree.root.size = Vector2i(900, 720)
 	await harness._settle_rendered(4)
 	inspector_panel._apply_responsive_layout()

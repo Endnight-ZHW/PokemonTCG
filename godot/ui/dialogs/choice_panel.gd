@@ -8,11 +8,11 @@ signal clear_requested
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 const ATTACHMENT_VISUALS := preload("res://ui/attachment_visual_descriptor.gd")
-const CARD_TILE_SIZE := Vector2(112, 172)
-const CHOICE_CARD_SIZE := Vector2(92, 130)
+const CARD_TILE_SIZE := Vector2(136, 214)
+const CHOICE_CARD_SIZE := Vector2(112, 156)
 const ENERGY_CARD_SIZE := Vector2(54, 76)
 const REVEALED_CARD_SIZE := Vector2(78, 110)
-const ENERGY_TARGET_TILE_SIZE := Vector2(256, 164)
+const ENERGY_TARGET_TILE_SIZE := Vector2(272, 196)
 const CARD_GRID_GAP := 10.0
 const NARROW_PREVIEW_MIN_WIDTH := 120.0
 const NARROW_PREVIEW_MAX_WIDTH := 176.0
@@ -31,10 +31,11 @@ const NARROW_PREVIEW_MAX_WIDTH := 176.0
 @onready var undo_button: Button = %UndoButton
 @onready var clear_button: Button = %ClearButton
 @onready var browse_mode_row: HBoxContainer = %BrowseModeRow
-@onready var browse_mode_label: Label = $ContentRow/ChoiceColumn/BrowseModeRow/BrowseModeLabel
+@onready var browse_mode_label: Label = %BrowseModeLabel
 @onready var browse_valid_button: Button = %BrowseValidButton
 @onready var browse_all_button: Button = %BrowseAllButton
 @onready var preview_toggle_button: Button = %PreviewToggleButton
+@onready var preview_return_button: Button = %PreviewReturnButton
 @onready var card_grid: HFlowContainer = %CardGrid
 @onready var option_list: VBoxContainer = %OptionList
 @onready var preview_panel: PanelContainer = %PreviewPanel
@@ -236,16 +237,16 @@ func add_card_option(
 	badge.accessibility_name = "已选择"
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	badge.add_theme_font_size_override("font_size", 12)
-	badge.add_theme_color_override("font_color", Color("#07101d"))
+	badge.add_theme_font_size_override("font_size", 16)
+	badge.add_theme_color_override("font_color", FrontendPalette.INK)
 	badge.add_theme_color_override("font_outline_color", Color(1, 1, 1, 0.28))
 	badge.add_theme_constant_override("outline_size", 1)
 	badge.add_theme_stylebox_override(
 		"normal",
 		DesignTokens.panel_style(
-			DesignTokens.GOLD,
+			FrontendPalette.GOLD,
 			10,
-			Color("#fff2a6"),
+			FrontendPalette.GOLD,
 			1,
 			2,
 		),
@@ -266,14 +267,14 @@ func add_card_option(
 		read_only_badge.accessibility_name = "仅可查看"
 		read_only_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		read_only_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		read_only_badge.add_theme_font_size_override("font_size", 10)
-		read_only_badge.add_theme_color_override("font_color", DesignTokens.TEXT)
+		read_only_badge.add_theme_font_size_override("font_size", 16)
+		read_only_badge.add_theme_color_override("font_color", FrontendPalette.TEXT)
 		read_only_badge.add_theme_stylebox_override(
 			"normal",
 			DesignTokens.panel_style(
-				Color(0.055, 0.085, 0.13, 0.96),
+				FrontendPalette.INSET,
 				8,
-				Color(DesignTokens.TEXT_MUTED, 0.62),
+				Color(FrontendPalette.MUTED, 0.62),
 				1,
 				3,
 			),
@@ -297,8 +298,8 @@ func add_card_option(
 	caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	caption.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	caption.add_theme_font_size_override("font_size", 12)
-	caption.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
+	caption.add_theme_font_size_override("font_size", 16)
+	caption.add_theme_color_override("font_color", FrontendPalette.MUTED)
 	content.add_child(caption)
 
 	card_grid.add_child(tile)
@@ -504,9 +505,9 @@ func _add_preview_cards(
 			placeholder.add_theme_stylebox_override(
 				"panel",
 				DesignTokens.panel_style(
-					DesignTokens.SURFACE_ELEVATED,
+					FrontendPalette.RAISED,
 					DesignTokens.RADIUS_SMALL,
-					DesignTokens.BORDER,
+					FrontendPalette.BORDER,
 					1,
 					4,
 				),
@@ -516,7 +517,7 @@ func _add_preview_cards(
 			placeholder_label.text = "能量\n%d" % (index + 1)
 			placeholder_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			placeholder_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			placeholder_label.add_theme_font_size_override("font_size", 11)
+			placeholder_label.add_theme_font_size_override("font_size", 16)
 			placeholder.add_child(placeholder_label)
 			placeholder.gui_input.connect(
 				energy_distribution._on_energy_placeholder_gui_input.bind(preview_index)
@@ -537,8 +538,7 @@ func _add_preview_cards(
 			card.detail_requested.connect(func(_card_id: String) -> void:
 				_preview_card(preview_card_id)
 				if interactive_distribution and _compact_choice_layout:
-					_compact_preview_expanded = true
-					_queue_responsive_layout()
+					_open_compact_preview()
 			)
 			card.activated.connect(func(
 				_card_id: String,
@@ -560,8 +560,8 @@ func _add_preview_cards(
 		assignment.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		assignment.tooltip_text = ""
 		assignment.accessibility_description = "尚未分配"
-		assignment.add_theme_font_size_override("font_size", 10)
-		assignment.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
+		assignment.add_theme_font_size_override("font_size", 16)
+		assignment.add_theme_color_override("font_color", FrontendPalette.MUTED)
 		assignment.text = "第 %d 张 · 等待" % (index + 1)
 		assignment.visible = interactive_distribution
 		tile.add_child(assignment)
@@ -675,56 +675,39 @@ func previewed_card_id() -> String:
 
 func _resolve_nodes() -> void:
 	_ensure_energy_distribution()
-	prompt_label = get_node("PromptLabel") as Label
-	metadata_label = get_node("MetadataLabel") as Label
-	selection_hint_label = get_node("SelectionHintLabel") as Label
-	blocked_reason_label = get_node("BlockedReasonLabel") as Label
-	empty_label = get_node("EmptyLabel") as Label
-	content_row = get_node("ContentRow") as BoxContainer
-	choice_column = get_node("ContentRow/ChoiceColumn") as VBoxContainer
-	energy_preview = get_node("ContentRow/ChoiceColumn/EnergyPreview") as VBoxContainer
-	energy_preview_label = get_node(
-		"ContentRow/ChoiceColumn/EnergyPreview/EnergyPreviewLabel"
-	) as Label
-	energy_grid = get_node(
-		"ContentRow/ChoiceColumn/EnergyPreview/EnergyGrid"
-	) as HFlowContainer
-	energy_actions = get_node(
-		"ContentRow/ChoiceColumn/EnergyPreview/EnergyActions"
-	) as HBoxContainer
-	undo_button = get_node(
-		"ContentRow/ChoiceColumn/EnergyPreview/EnergyActions/UndoButton"
-	) as Button
-	clear_button = get_node(
-		"ContentRow/ChoiceColumn/EnergyPreview/EnergyActions/ClearButton"
-	) as Button
-	browse_mode_row = get_node(
-		"ContentRow/ChoiceColumn/BrowseModeRow"
-	) as HBoxContainer
-	browse_mode_label = get_node(
-		"ContentRow/ChoiceColumn/BrowseModeRow/BrowseModeLabel"
-	) as Label
-	browse_valid_button = get_node(
-		"ContentRow/ChoiceColumn/BrowseModeRow/BrowseValidButton"
-	) as Button
-	browse_all_button = get_node(
-		"ContentRow/ChoiceColumn/BrowseModeRow/BrowseAllButton"
-	) as Button
-	preview_toggle_button = get_node(
-		"ContentRow/ChoiceColumn/PreviewToggleButton"
-	) as Button
-	card_grid = get_node("ContentRow/ChoiceColumn/CardGrid") as HFlowContainer
-	option_list = get_node("ContentRow/ChoiceColumn/OptionList") as VBoxContainer
-	preview_panel = get_node("ContentRow/PreviewPanel") as PanelContainer
-	preview_image = get_node(
-		"ContentRow/PreviewPanel/PreviewContent/PreviewImage"
-	) as TextureRect
-	preview_title = get_node(
-		"ContentRow/PreviewPanel/PreviewContent/PreviewTitle"
-	) as Label
-	preview_text = get_node(
-		"ContentRow/PreviewPanel/PreviewContent/PreviewText"
-	) as RichTextLabel
+	prompt_label = %PromptLabel
+	metadata_label = %MetadataLabel
+	selection_hint_label = %SelectionHintLabel
+	blocked_reason_label = %BlockedReasonLabel
+	empty_label = %EmptyLabel
+	content_row = %ContentRow
+	choice_column = %ChoiceColumn
+	energy_preview = %EnergyPreview
+	energy_preview_label = %EnergyPreviewLabel
+	energy_grid = %EnergyGrid
+	energy_actions = %EnergyActions
+	undo_button = %UndoButton
+	clear_button = %ClearButton
+	browse_mode_row = %BrowseModeRow
+	browse_mode_label = %BrowseModeLabel
+	browse_valid_button = %BrowseValidButton
+	browse_all_button = %BrowseAllButton
+	preview_toggle_button = %PreviewToggleButton
+	preview_return_button = %PreviewReturnButton
+	card_grid = %CardGrid
+	option_list = %OptionList
+	preview_panel = %PreviewPanel
+	preview_image = %PreviewImage
+	preview_title = %PreviewTitle
+	preview_text = %PreviewText
+	var outer_scroll := _outer_scroll_container()
+	if outer_scroll and not outer_scroll.resized.is_connected(_queue_responsive_layout):
+		outer_scroll.resized.connect(_queue_responsive_layout)
+	if not content_row.resized.is_connected(_queue_responsive_layout):
+		content_row.resized.connect(_queue_responsive_layout)
+	if not preview_return_button.pressed.is_connected(_toggle_compact_preview):
+		preview_return_button.pressed.connect(_toggle_compact_preview)
+	FrontendPalette.style_scrollbar(%OptionsScroll.get_v_scroll_bar())
 	if energy_actions and not energy_actions.has_meta("choice_panel_connected"):
 		energy_actions.set_meta("choice_panel_connected", true)
 		undo_button.pressed.connect(func() -> void:
@@ -754,7 +737,19 @@ func _toggle_compact_preview() -> void:
 	_queue_responsive_layout()
 
 
+func _open_compact_preview() -> void:
+	if _compact_preview_expanded:
+		return
+	_preview_return_scroll = _choice_scroll_container().scroll_vertical
+	_compact_preview_expanded = true
+	_queue_responsive_layout()
+
+
 func _choice_scroll_container() -> ScrollContainer:
+	return %OptionsScroll
+
+
+func _outer_scroll_container() -> ScrollContainer:
 	var ancestor := get_parent()
 	while ancestor != null:
 		if ancestor is ScrollContainer:
@@ -771,9 +766,7 @@ func _restore_preview_scroll(generation: int) -> void:
 	var scroll := _choice_scroll_container()
 	if scroll == null:
 		return
-	if _compact_preview_expanded and preview_panel.visible:
-		scroll.ensure_control_visible(preview_panel)
-	else:
+	if not _compact_preview_expanded:
 		scroll.scroll_vertical = _preview_return_scroll
 
 
@@ -782,9 +775,9 @@ func _configure_preview_panel() -> void:
 		preview_panel.add_theme_stylebox_override(
 			"panel",
 			DesignTokens.panel_style(
-				Color(0.055, 0.10, 0.17, 0.94),
+				FrontendPalette.INSET,
 				DesignTokens.RADIUS_SMALL,
-				DesignTokens.BORDER_SOFT,
+				FrontendPalette.BORDER,
 				1,
 				8,
 			),
@@ -794,7 +787,7 @@ func _configure_preview_panel() -> void:
 		preview_text.focus_mode = Control.FOCUS_NONE
 		preview_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		preview_text.scroll_active = true
-		DesignTokens.style_scrollbar(preview_text.get_v_scroll_bar())
+		FrontendPalette.style_scrollbar(preview_text.get_v_scroll_bar())
 
 
 func _preview_card(card_id: String) -> void:
@@ -841,7 +834,7 @@ func _hide_preview() -> void:
 
 func _card_detail_bbcode(card_id: String) -> String:
 	var card := _card_data(card_id)
-	return "[color=#9eb0ca]%s[/color]\n\n%s" % [
+	return "[color=#a9babd]%s[/color]\n\n%s" % [
 		CardPresentation.meta_text(card),
 		CardPresentation.detail_bbcode(
 			card,
@@ -985,17 +978,17 @@ func _refresh_card_tile_visual(option_id: String) -> void:
 	if caption:
 		caption.add_theme_color_override(
 			"font_color",
-			DesignTokens.GOLD
+			FrontendPalette.GOLD
 			if selected
-			else DesignTokens.RED
+			else FrontendPalette.DANGER
 			if blocked
-			else DesignTokens.TEXT
+			else FrontendPalette.TEXT
 			if read_only and hovered
-			else DesignTokens.TEXT_MUTED
+			else FrontendPalette.MUTED
 			if read_only
-			else DesignTokens.TEXT
+			else FrontendPalette.TEXT
 			if hovered
-			else DesignTokens.TEXT_MUTED,
+			else FrontendPalette.MUTED,
 		)
 		caption.tooltip_text = ""
 		caption.accessibility_description = (
@@ -1016,23 +1009,23 @@ func _apply_card_tile_style(
 	read_only: bool = false,
 ) -> void:
 	var background := Color(0.06, 0.11, 0.18, 0.88)
-	var border := DesignTokens.BORDER_SOFT
+	var border := FrontendPalette.BORDER
 	var border_width := 1
 	if selected:
-		background = Color(0.085, 0.125, 0.18, 0.96)
-		border = Color(DesignTokens.GOLD, 0.92)
+		background = FrontendPalette.INSET
+		border = Color(FrontendPalette.GOLD, 0.92)
 		border_width = 2
 	elif blocked:
-		background = Color(0.06, 0.10, 0.16, 0.92)
-		border = Color(DesignTokens.RED, 0.58 if hovered else 0.34)
+		background = FrontendPalette.INSET
+		border = Color(FrontendPalette.DANGER, 0.58 if hovered else 0.34)
 		border_width = 2 if hovered else 1
 	elif read_only:
-		background = Color(0.045, 0.07, 0.105, 0.90)
-		border = Color(DesignTokens.TEXT_MUTED, 0.46 if hovered else 0.22)
+		background = FrontendPalette.INSET
+		border = Color(FrontendPalette.MUTED, 0.46 if hovered else 0.22)
 		border_width = 2 if hovered else 1
 	elif hovered:
-		background = Color(0.075, 0.14, 0.215, 0.94)
-		border = Color(DesignTokens.CYAN, 0.72)
+		background = FrontendPalette.INSET
+		border = Color(FrontendPalette.GOLD, 0.72)
 		border_width = 2
 	var style := DesignTokens.panel_style(
 		background,
@@ -1042,7 +1035,7 @@ func _apply_card_tile_style(
 		6,
 	)
 	if selected:
-		style.shadow_color = Color(DesignTokens.GOLD, 0.20)
+		style.shadow_color = Color(FrontendPalette.GOLD, 0.20)
 		style.shadow_size = 7
 		style.shadow_offset = Vector2.ZERO
 	tile.add_theme_stylebox_override("panel", style)
@@ -1081,35 +1074,35 @@ func _apply_text_option_style(option_id: String) -> void:
 	var normal_style: StyleBoxFlat
 	var hover_style: StyleBoxFlat
 	var pressed_style: StyleBoxFlat
-	var font_color := DesignTokens.TEXT
-	var hover_font_color := DesignTokens.TEXT
-	var pressed_font_color := DesignTokens.TEXT
+	var font_color := FrontendPalette.TEXT
+	var hover_font_color := FrontendPalette.TEXT
+	var pressed_font_color := FrontendPalette.TEXT
 	if selected:
 		normal_style = DesignTokens.panel_style(
-			Color(0.16, 0.20, 0.23, 0.98), 10, DesignTokens.GOLD, 2, 12)
+			FrontendPalette.INSET, 10, FrontendPalette.GOLD, 2, 12)
 		hover_style = DesignTokens.panel_style(
-			Color(0.20, 0.25, 0.27, 1.0), 10, Color("#ffe27a"), 2, 12)
+			FrontendPalette.INSET, 10, FrontendPalette.GOLD, 2, 12)
 		pressed_style = DesignTokens.panel_style(
-			Color(DesignTokens.GOLD, 0.28), 10, DesignTokens.GOLD, 3, 12)
-		font_color = DesignTokens.GOLD
-		hover_font_color = Color("#ffe27a")
-		pressed_font_color = Color("#fff1b0")
+			Color(FrontendPalette.GOLD, 0.28), 10, FrontendPalette.GOLD, 3, 12)
+		font_color = FrontendPalette.GOLD
+		hover_font_color = FrontendPalette.GOLD
+		pressed_font_color = FrontendPalette.TEXT
 	elif blocked:
 		normal_style = DesignTokens.panel_style(
-			Color(0.045, 0.075, 0.12, 0.94), 10, Color(DesignTokens.RED, 0.34), 1, 12)
+			FrontendPalette.INSET, 10, Color(FrontendPalette.DANGER, 0.34), 1, 12)
 		hover_style = DesignTokens.panel_style(
-			Color(0.065, 0.095, 0.14, 0.98), 10, Color(DesignTokens.RED, 0.64), 2, 12)
+			FrontendPalette.INSET, 10, Color(FrontendPalette.DANGER, 0.64), 2, 12)
 		pressed_style = hover_style
-		font_color = DesignTokens.TEXT_MUTED
-		hover_font_color = DesignTokens.RED
-		pressed_font_color = DesignTokens.RED
+		font_color = FrontendPalette.MUTED
+		hover_font_color = FrontendPalette.DANGER
+		pressed_font_color = FrontendPalette.DANGER
 	else:
 		normal_style = DesignTokens.panel_style(
-			DesignTokens.PANEL_RAISED, 10, DesignTokens.BORDER, 1, 12)
+			FrontendPalette.RAISED, 10, FrontendPalette.BORDER, 1, 12)
 		hover_style = DesignTokens.panel_style(
-			Color("#213754"), 10, DesignTokens.CYAN, 2, 12)
+			FrontendPalette.RAISED, 10, FrontendPalette.GOLD, 2, 12)
 		pressed_style = DesignTokens.panel_style(
-			Color(DesignTokens.CYAN, 0.20), 10, DesignTokens.CYAN, 2, 12)
+			Color(FrontendPalette.GOLD, 0.20), 10, FrontendPalette.GOLD, 2, 12)
 	button.add_theme_stylebox_override("normal", normal_style)
 	button.add_theme_stylebox_override("hover", hover_style)
 	button.add_theme_stylebox_override("pressed", pressed_style)
@@ -1125,12 +1118,12 @@ func _apply_choice_selection_ring(card_view: CardView) -> void:
 	var style := DesignTokens.panel_style(
 		Color.TRANSPARENT,
 		11,
-		DesignTokens.GOLD,
+		FrontendPalette.GOLD,
 		3,
 		0,
 	)
 	style.draw_center = false
-	style.shadow_color = Color(DesignTokens.GOLD, 0.62)
+	style.shadow_color = Color(0, 0, 0, 0.2)
 	style.shadow_size = 8
 	style.shadow_offset = Vector2.ZERO
 	ring.add_theme_stylebox_override("panel", style)
@@ -1233,12 +1226,13 @@ func _flush_responsive_layout() -> void:
 
 func _apply_responsive_layout() -> void:
 	_resolve_nodes()
-	var available_width := _responsive_available_width()
+	var outer_scroll := _outer_scroll_container()
+	custom_minimum_size.y = outer_scroll.size.y if outer_scroll and content_row.visible else 0.0
+	var available_width := _responsive_available_width() - 12.0
 	if available_width <= 1.0:
 		return
 	var has_preview := not _previewed_card_id.is_empty()
-	var choice_scroll := _choice_scroll_container()
-	var compact_preview := available_width < 820.0 or (choice_scroll != null and choice_scroll.size.y < 460.0)
+	var compact_preview := available_width < 820.0 or (outer_scroll != null and outer_scroll.size.y < 350.0)
 	_compact_choice_layout = compact_preview
 	# On a short viewport the actual choices take precedence over a duplicate
 	# source-card image and its full-width details toggle.
@@ -1271,6 +1265,8 @@ func _apply_responsive_layout() -> void:
 	var show_preview := has_preview and (
 		not compact_preview or _compact_preview_expanded
 	)
+	%OptionsScroll.visible = not (compact_preview and _compact_preview_expanded and has_preview)
+	preview_return_button.visible = compact_preview and _compact_preview_expanded and has_preview
 	if content_row:
 		content_row.vertical = compact_preview
 	if preview_toggle_button:
@@ -1289,25 +1285,20 @@ func _apply_responsive_layout() -> void:
 		)
 		preview_toggle_button.accessibility_name = preview_toggle_button.text
 	var preview_width := 0.0
-	var preview_height := 0.0
 	var image_size := Vector2.ZERO
 	if available_width >= 840.0:
 		preview_width = 270.0
-		preview_height = 430.0
 		image_size = Vector2(206, 288)
 	elif available_width >= 640.0:
 		preview_width = 220.0
-		preview_height = 370.0
 		image_size = Vector2(166, 232)
 	elif available_width >= 500.0:
 		preview_width = available_width if compact_preview else 176.0
-		preview_height = 315.0
 		image_size = Vector2(132, 184)
 	else:
 		preview_width = available_width
 		var narrow_image_width := clampf(available_width * 0.42, 96.0, 150.0)
 		image_size = Vector2(narrow_image_width, narrow_image_width * 1.4)
-		preview_height = maxf(260.0, image_size.y + 120.0)
 	if compact_preview:
 		preview_width = available_width
 	energy_distribution._update_energy_action_buttons(_last_selected_ids.size())
@@ -1317,11 +1308,11 @@ func _apply_responsive_layout() -> void:
 		# its modal/scroll viewport from shrinking later.
 		preview_panel.custom_minimum_size = Vector2(
 			0.0 if compact_preview else NARROW_PREVIEW_MIN_WIDTH,
-			preview_height,
+			0.0,
 		)
 		preview_panel.visible = show_preview
 	if preview_image:
-		preview_image.custom_minimum_size = Vector2(88.0, image_size.y)
+		preview_image.custom_minimum_size = Vector2(88.0, minf(image_size.y, maxf(96.0, content_row.size.y * 0.65)))
 	var row_gap := (
 		float(content_row.get_theme_constant("separation"))
 		if content_row

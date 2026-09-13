@@ -34,16 +34,8 @@ func run(ui: Control) -> void:
 	reset_hover_event.global_position = Vector2(4, 4)
 	Input.parse_input_event(reset_hover_event)
 	var title_page := ui.find_child("TitlePage", true, false)
-	var showcase_rng: Variant = (
-		title_page.get("_showcase_rng")
-		if title_page != null
-		else null
-	)
-	if showcase_rng != null and showcase_rng.has_method("set_state"):
-		showcase_rng.call("set_state", 5)
 	if title_page != null:
-		for slot in range(3):
-			title_page.call("_rotate_showcase_card", slot)
+		(title_page as TitlePage).card_stage.set_cards(["svi-ente", "sv2-grex", "svg2-tort"])
 	await harness._settle_frontend(2)
 	if not harness._capture("title-rotated.png"):
 		harness._finish(1)
@@ -378,7 +370,7 @@ func run(ui: Control) -> void:
 	if not harness._capture("network-compact.png"):
 		harness._finish(1)
 		return
-	ui.current_network_page.call("_set_compact_step", 2)
+	ui.current_network_page.call("_set_compact_step", 1)
 	ui.current_network_page.show_locked_rules_options({"apply_type_matchups": true})
 	await harness._settle_frontend(3)
 	var compact_rule_toggle := ui.current_network_page.matchup_toggle as CheckButton

@@ -442,8 +442,9 @@ func active_drag_context() -> Dictionary:
 func prepare_hand_identity_transition(
 	events: Array,
 	previous_snapshot: Dictionary,
+	final_hand: Array[String],
 ) -> void:
-	hand_view.prepare_hand_identity_transition(events, previous_snapshot)
+	hand_view.prepare_hand_identity_transition(events, previous_snapshot, final_hand)
 
 
 func mark_drag_pending(origin_action_id: String, await_authoritative_view: bool) -> String:
@@ -804,6 +805,7 @@ func play_presentation(
 		var visible_event := PresentationEvent.for_player(event, view_player)
 		if not visible_event.is_empty():
 			normalized.append(visible_event)
+	normalized = presentation_runtime.events_for_snapshot(normalized, previous_snapshot)
 	if normalized.is_empty():
 		return
 	presentation_runtime._stage_presentation_targets(normalized, previous_snapshot)

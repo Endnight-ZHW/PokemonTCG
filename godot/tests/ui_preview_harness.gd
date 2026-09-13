@@ -416,48 +416,12 @@ func _assert_network_first_screen(page: NetworkLobbyPage, label: String) -> bool
 	if page == null or page.page_scroll == null or page.connect_button == null:
 		push_error("%s preview is missing its network layout controls" % label)
 		return false
+	var frame := page.page.get_global_rect().grow(1.0)
 	var scroll := page.page_scroll
-	var viewport_rect := scroll.get_global_rect()
-	var button_rect := page.connect_button.get_global_rect()
-	var page_rect := page.page.get_global_rect()
-	var top_bar := page.page.get_node("TopBar") as Control
-	var steps := page.page.get_node("Steps") as Control
-	var top_bar_rect := top_bar.get_global_rect()
-	var steps_rect := steps.get_global_rect()
-	var scrollbar := scroll.get_v_scroll_bar()
-	var left_gutter := page_rect.position.x - viewport_rect.position.x
-	var right_gutter := viewport_rect.end.x - page_rect.end.x
-	var top_gutter := page_rect.position.y - viewport_rect.position.y
-	var fits := (
-		not scrollbar.visible
-		and scroll.scroll_vertical == 0
-		and viewport_rect.encloses(page_rect)
-		and viewport_rect.encloses(top_bar_rect)
-		and viewport_rect.encloses(steps_rect)
-		and viewport_rect.encloses(button_rect)
-		and left_gutter >= -0.5
-		and right_gutter >= -0.5
-		and absf(left_gutter - right_gutter) <= 2.0
-		and absf(page_rect.get_center().x - viewport_rect.get_center().x) <= 1.0
-		and absf(top_gutter) <= 1.0
-		and page.page.get_parent() == page.page_center
-	)
+	var fits := page.get_global_rect().grow(1.0).encloses(frame.grow(-1.0))
+	for control in [page.back_button, page.form_panel, page.status_panel, page.connect_button]:
+		fits = fits and frame.encloses(control.get_global_rect())
+	fits = fits and not scroll.get_global_rect().intersects(page.connect_button.get_global_rect())
 	if not fits:
-		push_error(
-			"%s must fit, top-align and remain horizontally centered at 1600x900 without vertical scrolling: viewport=%s page=%s top=%s steps=%s button=%s gutters=%.1f/%.1f/%.1f scroll=%d max=%.1f visible=%s"
-			% [
-				label,
-				viewport_rect,
-				page_rect,
-				top_bar_rect,
-				steps_rect,
-				button_rect,
-				left_gutter,
-				right_gutter,
-				top_gutter,
-				scroll.scroll_vertical,
-				scrollbar.max_value,
-				scrollbar.visible,
-			]
-		)
+		push_error("%s: lobby form or fixed footer escaped its page" % label)
 	return fits

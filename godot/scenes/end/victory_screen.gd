@@ -6,8 +6,8 @@ const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
 signal rematch_requested
 signal title_requested
 
-const WIDE_MIN_WIDTH := 1360.0
-const WIDE_MIN_ASPECT := 1.5
+const WIDE_MIN_WIDTH := 760.0
+const WIDE_MIN_ASPECT := 1.4
 const MAX_PANEL_WIDTH := 1120.0
 
 var winner := 0
@@ -89,9 +89,12 @@ func _connect_actions() -> void:
 
 
 func _refresh() -> void:
+	var network := str(context.get("mode", "")) in ["network", "lan", "relay"]
+	rematch_button.text = "返回联机大厅" if network else "重新选牌"
+	footer_hint.text = "选择下一场对战，或返回首页。"
 	if _is_draw():
 		winner_label.text = "本局平局"
-		result_subtitle.text = "DRAW · MATCH COMPLETE"
+		result_subtitle.text = "本局没有胜者"
 		mode_value.text = _mode_label()
 		deck_value.text = "双方牌组"
 		turn_value.text = "%d 回合" % maxi(0, turn_count)
@@ -102,14 +105,14 @@ func _refresh() -> void:
 	if display_name.is_empty():
 		display_name = "玩家 %d" % (winner + 1)
 	winner_label.text = "%s，胜利！" % display_name
-	result_subtitle.text = "PLAYER %d · MATCH COMPLETE" % (winner + 1)
+	result_subtitle.text = "对局已结束"
 
 	var mode_label := _mode_label()
 	var deck_label := _winner_deck_label()
 	mode_value.text = mode_label
 	deck_value.text = deck_label
 	turn_value.text = "%d 回合" % maxi(0, turn_count)
-	summary_label.text = "%s 在第 %d 回合锁定胜局。代表卡与本局信息已经为你整理完毕。" % [
+	summary_label.text = "%s 在第 %d 回合赢得对局。" % [
 		display_name,
 		maxi(0, turn_count),
 	]
@@ -151,10 +154,10 @@ func _mode_label() -> String:
 	var mode := str(context.get("mode", "")).strip_edges().to_lower()
 	return {
 		"local": "本地双人",
-		"challenge": "Challenge AI",
+		"challenge": "挑战 AI",
 		"network": "联机对战",
-		"lan": "LAN 联机",
-		"relay": "Relay 联机",
+		"lan": "局域网联机",
+		"relay": "互联网联机",
 	}.get(mode, "自定义对局")
 
 
@@ -204,6 +207,7 @@ func _apply_responsive_layout() -> void:
 		return
 	var aspect := size.x / maxf(1.0, size.y)
 	var wide := size.x >= WIDE_MIN_WIDTH and aspect >= WIDE_MIN_ASPECT
+	var short := size.y < 680.0
 	var base_margin := 24 if wide else 14
 	var horizontal_margin := maxi(
 		base_margin,
@@ -222,19 +226,20 @@ func _apply_responsive_layout() -> void:
 	result_grid.add_theme_constant_override("v_separation", 22 if wide else 10)
 	panel_margin.add_theme_constant_override("margin_left", 34 if wide else 18)
 	panel_margin.add_theme_constant_override("margin_right", 34 if wide else 18)
-	panel_margin.add_theme_constant_override("margin_top", 28 if wide else 12)
-	panel_margin.add_theme_constant_override("margin_bottom", 28 if wide else 12)
-	content.add_theme_constant_override("separation", 12 if wide else 6)
-	winner_label.add_theme_font_size_override("font_size", 46 if wide else 34)
-	result_subtitle.visible = wide
-	summary_label.visible = wide
-	footer_hint.visible = wide
-	card_stage.custom_minimum_size = Vector2(300, 304) if wide else Vector2(0, 168)
-	card_frame.custom_minimum_size = Vector2(172, 242) if wide else Vector2(100, 140)
+	panel_margin.add_theme_constant_override("margin_top", 12 if short else 28)
+	panel_margin.add_theme_constant_override("margin_bottom", 12 if short else 28)
+	content.add_theme_constant_override("separation", 8 if short else 12)
+	winner_label.add_theme_font_size_override("font_size", 32 if short else 46 if wide else 34)
+	content.get_node("CelebrationHeader").visible = not short
+	result_subtitle.visible = not short
+	summary_label.visible = not short
+	footer_hint.visible = not short
+	card_stage.custom_minimum_size = Vector2(260, 260) if wide else Vector2(0, 244)
+	card_frame.custom_minimum_size = Vector2(160, 224) if wide else Vector2(150, 210)
 	for row: HBoxContainer in [mode_row, deck_row, turn_row]:
 		row.custom_minimum_size.y = 44 if wide else 36
-	rematch_button.custom_minimum_size = Vector2(248 if wide else 214, 56 if wide else 52)
-	title_button.custom_minimum_size = Vector2(218 if wide else 194, 56 if wide else 52)
+	rematch_button.custom_minimum_size = Vector2(248 if wide else 214, 56)
+	title_button.custom_minimum_size = Vector2(218 if wide else 194, 56)
 	call_deferred("_center_panel_pivot")
 
 
@@ -255,7 +260,7 @@ func _start_entrance() -> void:
 		animation_player.get_animation("enter") if animation_player else null
 	)
 	if animation == null:
-		FRONTEND_MOTION.play_enter(victory_panel, 0.38, 0.94)
+		FRONTEND_MOTION.play_enter(victory_panel, 0.22, 0.992)
 		return
 	var duration := FRONTEND_MOTION.duration(animation.length)
 	animation_player.speed_scale = animation.length / maxf(duration, 0.001)

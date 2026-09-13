@@ -376,7 +376,9 @@ static func _merge_endpoint_defaults(
 	var endpoint := _dictionary_or_empty(event.get(key, {})).duplicate(true)
 	if int(endpoint.get("player", -1)) < 0:
 		endpoint["player"] = player
-	if str(endpoint.get("zone", "")).is_empty() and not zone.is_empty():
+	# A Pokemon slot is already a location. Adding a default hand/deck zone
+	# changes an attachment transfer into an unrelated hidden-zone movement.
+	if str(endpoint.get("zone", "")).is_empty() and str(endpoint.get("slot", "")).is_empty() and not zone.is_empty():
 		endpoint["zone"] = zone
 	if str(endpoint.get("slot", "")).is_empty() and not slot.is_empty():
 		endpoint["slot"] = slot
@@ -390,13 +392,20 @@ static func _has_endpoint_hint(
 	data: Dictionary,
 	key: String,
 ) -> bool:
-	var explicit: Variant = raw_event.get(key, {})
-	if explicit is Dictionary and not Dictionary(explicit).is_empty():
+	var explicit := _dictionary_or_empty(raw_event.get(key, {}))
+	# Normalization fills in player and empty address fields even for a bare
+	# effect notification. Those placeholders must remain empty on replay and
+	# network round trips; they are not evidence that a card left the hand.
+	if (
+		not str(explicit.get("zone", "")).is_empty()
+		or not str(explicit.get("slot", "")).is_empty()
+		or int(explicit.get("index", -1)) >= 0
+	):
 		return true
 	return (
-		data.has("%s_zone" % key)
-		or data.has("%s_slot" % key)
-		or data.has("%s_index" % key)
+		not str(data.get("%s_zone" % key, "")).is_empty()
+		or not str(data.get("%s_slot" % key, "")).is_empty()
+		or int(data.get("%s_index" % key, -1)) >= 0
 	)
 
 

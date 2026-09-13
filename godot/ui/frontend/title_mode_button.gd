@@ -2,7 +2,7 @@
 class_name TitleModeButton
 extends Button
 
-## Focusable title-screen CTA whose chrome is drawn in code so it stays crisp
+## Rounded mode entry drawn in code so it stays crisp
 ## across desktop, ultrawide and Android canvas scales.
 
 const TITLE_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_bold.tres")
@@ -21,19 +21,19 @@ const ARROW_RIGHT := preload("res://assets/ui/icons/arrow_right.svg")
 	set(value):
 		mode_icon = value
 		queue_redraw()
-@export var accent_color := Color("#62d7ff"):
+@export var accent_color := FrontendPalette.GOLD:
 	set(value):
 		accent_color = value
 		queue_redraw()
-@export var fill_color := Color("#101c2d"):
+@export var fill_color := FrontendPalette.PANEL:
 	set(value):
 		fill_color = value
 		queue_redraw()
-@export var foreground_color := Color("#f4f7ff"):
+@export var foreground_color := FrontendPalette.TEXT:
 	set(value):
 		foreground_color = value
 		queue_redraw()
-@export var subtitle_color := Color("#afc0d8"):
+@export var subtitle_color := FrontendPalette.MUTED:
 	set(value):
 		subtitle_color = value
 		queue_redraw()
@@ -76,44 +76,20 @@ func _draw() -> void:
 		state_fill = state_fill.lightened(0.065)
 		state_accent = state_accent.lightened(0.12)
 
-	var shadow_points := _banner_points(Rect2(Vector2(0, 8), size - Vector2(0, 9)))
-	var shadow_color := Color(0.0, 0.015, 0.045, 0.55 if not disabled_state else 0.28)
-	draw_colored_polygon(shadow_points, shadow_color)
-	var outer_points := _banner_points(Rect2(Vector2.ZERO, size - Vector2(0, 3)))
-	var border_color := state_accent
-	border_color.a = 1.0 if hover_state or pressed_state else 0.72
-	if disabled_state:
-		border_color.a = 0.36
-	draw_colored_polygon(outer_points, border_color)
-	var inset := 4.0
-	var inner_rect := Rect2(Vector2(inset, inset), size - Vector2(inset * 2.0, inset * 2.0 + 3.0))
-	var inner_points := _banner_points(inner_rect)
-	draw_colored_polygon(inner_points, state_fill)
-	if hover_state and not disabled_state:
-		var glow := state_accent
-		glow.a = 0.07
-		draw_colored_polygon(inner_points, glow)
-
+	var style := FrontendPalette.panel(state_fill, 14, state_accent if hover_state or pressed_state else FrontendPalette.BORDER, 1, 0)
+	style.shadow_color = Color(0, 0, 0, 0.18)
+	style.shadow_size = 5
+	style.shadow_offset = Vector2(0, 3)
+	draw_style_box(style, Rect2(Vector2(1, 1), size - Vector2(2, 6)))
+	draw_line(Vector2(2, 20), Vector2(2, size.y - 24), Color(state_accent, 0.75 if hover_state else 0.35), 3.0, true)
 	var icon_zone := minf(102.0, size.y * 0.88)
 	var divider_x := icon_zone
 	var divider := state_accent
 	divider.a = 0.30 if not disabled_state else 0.13
-	draw_line(Vector2(divider_x, 14), Vector2(divider_x, size.y - 17), divider, 2.0, true)
+	draw_line(Vector2(divider_x, 14), Vector2(divider_x, size.y - 17), divider, 1.0, true)
 	_draw_icon(icon_zone, state_accent, disabled_state)
 	_draw_copy(icon_zone, disabled_state)
 	_draw_chevron(state_accent, disabled_state)
-
-func _banner_points(rect: Rect2) -> PackedVector2Array:
-	var notch := minf(rect.size.y * 0.28, 30.0)
-	return PackedVector2Array([
-		rect.position + Vector2(notch, 0),
-		rect.position + Vector2(rect.size.x - notch, 0),
-		rect.position + Vector2(rect.size.x, rect.size.y * 0.5),
-		rect.position + Vector2(rect.size.x - notch, rect.size.y),
-		rect.position + Vector2(notch, rect.size.y),
-		rect.position + Vector2(0, rect.size.y * 0.5),
-	])
-
 
 func _draw_icon(icon_zone: float, state_accent: Color, disabled_state: bool) -> void:
 	if mode_icon == null:
@@ -133,8 +109,8 @@ func _draw_copy(icon_zone: float, disabled_state: bool) -> void:
 	title_color.a = 0.42 if disabled_state else 1.0
 	var available_width := maxf(80.0, size.x - icon_zone - 82.0)
 	var title_size := clampi(int(round(size.y * 0.26)), 22, 31)
-	var subtitle_size := clampi(int(round(size.y * 0.145)), 13, 17)
-	var copy_left := icon_zone + 25.0
+	var subtitle_size := clampi(int(round(size.y * 0.145)), 16, 18)
+	var copy_left := icon_zone + 16.0
 	var title_y := size.y * 0.49
 	draw_string(
 		TITLE_FONT,

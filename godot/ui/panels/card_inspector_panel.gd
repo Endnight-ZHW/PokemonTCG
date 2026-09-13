@@ -2,6 +2,7 @@ class_name CardInspectorPanel
 extends VBoxContainer
 
 signal card_requested(context: Dictionary)
+signal art_requested
 
 const CARD_GRID_SECTION := preload("res://ui/panels/card_grid_section.tscn")
 
@@ -24,12 +25,12 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 	add_theme_constant_override("separation", 12)
 	var card_id := str(context.get("card_id", ""))
 	if card_id.is_empty():
-		add_child(DesignTokens.label("没有可查看的卡牌。", 16, DesignTokens.TEXT_MUTED))
+		add_child(DesignTokens.label("没有可查看的卡牌。", 16, FrontendPalette.MUTED))
 		return
 	var card := catalog.get_card(card_id)
 	var location := str(context.get("location", ""))
 	if not location.is_empty():
-		add_child(DesignTokens.label(location, 15, DesignTokens.TEXT_MUTED))
+		add_child(DesignTokens.label(location, 16, FrontendPalette.MUTED))
 	_content_grid = GridContainer.new()
 	_content_grid.columns = 2
 	_content_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -47,22 +48,24 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 	_image_button.accessibility_name = "放大查看%s卡图" % str(card.get("name", card_id))
 	_image_button.add_theme_stylebox_override(
 		"normal",
-		DesignTokens.panel_style(Color("#0e1b2c"), 6, DesignTokens.BORDER, 1, 0),
+		DesignTokens.panel_style(FrontendPalette.INSET, 6, FrontendPalette.BORDER, 1, 0),
 	)
 	_image_button.add_theme_stylebox_override(
 		"hover",
-		DesignTokens.panel_style(Color("#132740"), 6, DesignTokens.CYAN, 2, 0),
+		DesignTokens.panel_style(FrontendPalette.RAISED, 6, FrontendPalette.GOLD, 2, 0),
 	)
-	_image_button.pressed.connect(_show_art_zoom.bind(card))
+	_image_button.pressed.connect(art_requested.emit)
 	_content_grid.add_child(_image_button)
 	var detail := RichTextLabel.new()
 	_detail_text = detail
 	detail.custom_minimum_size = Vector2(500, 363)
 	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail.fit_content = true
+	detail.fit_content = false
+	detail.scroll_active = true
+	FrontendPalette.style_scrollbar(detail.get_v_scroll_bar())
 	detail.bbcode_enabled = true
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail.text = "[color=#9eb0ca]%s[/color]\n\n%s" % [
+	detail.text = "[color=#a9babd]%s[/color]\n\n%s" % [
 		CardPresentation.meta_text(card),
 		_card_detail_bbcode(card_id, context.get("pokemon") as PokemonState),
 	]
@@ -102,68 +105,15 @@ func _apply_responsive_layout() -> void:
 	_content_grid.columns = 1 if compact_layout else 2
 	if _image_button:
 		_image_button.custom_minimum_size = (
-			Vector2(148, 207) if short_landscape else Vector2(180, 251) if compact_layout else Vector2(260, 363)
+			Vector2(148, 207) if short_landscape else Vector2(216, 302) if compact_layout else Vector2(260, 363)
 		)
 	if _detail_text:
+		_detail_text.fit_content = compact_layout
+		_detail_text.scroll_active = not compact_layout
 		_detail_text.custom_minimum_size = (
 			Vector2(0, 240) if short_landscape else Vector2(0, 280) if compact_layout else Vector2(0, 363)
 		)
 		_detail_text.add_theme_font_size_override("normal_font_size", 16 if short_landscape else 18)
-
-
-func _show_art_zoom(card: Dictionary) -> void:
-	var texture := _texture_for_path(str(card.get("image_path", "")))
-	if texture == null:
-		return
-	var viewport_size := get_viewport_rect().size
-	var available := Vector2(
-		maxf(180.0, viewport_size.x - 64.0),
-		maxf(251.0, viewport_size.y - 118.0),
-	)
-	var image_size := Vector2(300.0, 419.0)
-	var scale_factor := minf(
-		1.0,
-		minf(available.x / image_size.x, available.y / image_size.y),
-	)
-	image_size *= scale_factor
-	var popup := PopupPanel.new()
-	popup.name = "CardArtZoom"
-	popup.exclusive = true
-	popup.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(Color("#081321"), 12, DesignTokens.CYAN, 1, 12),
-	)
-	add_child(popup)
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 18)
-	margin.add_theme_constant_override("margin_top", 18)
-	margin.add_theme_constant_override("margin_right", 18)
-	margin.add_theme_constant_override("margin_bottom", 18)
-	popup.add_child(margin)
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 12)
-	margin.add_child(column)
-	var title := Label.new()
-	title.text = str(card.get("name", "卡牌原图"))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 20)
-	title.add_theme_color_override("font_color", DesignTokens.GOLD)
-	column.add_child(title)
-	var image := TextureRect.new()
-	image.custom_minimum_size = image_size
-	image.texture = texture
-	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	column.add_child(image)
-	var close_button := Button.new()
-	close_button.custom_minimum_size = Vector2(0, 48)
-	close_button.focus_mode = Control.FOCUS_NONE
-	close_button.text = "关闭原图"
-	close_button.accessibility_name = "关闭卡牌原图"
-	close_button.pressed.connect(popup.hide)
-	column.add_child(close_button)
-	popup.popup_hide.connect(popup.queue_free)
-	popup.popup_centered_clamped(Vector2i(image_size + Vector2(36, 104)), 0.92)
 
 
 func _add_card_grid_section(

@@ -7,7 +7,6 @@ signal save_requested(values: Dictionary)
 @onready var music_volume_slider: HSlider = %MusicVolumeSlider
 @onready var sfx_volume_slider: HSlider = %SFXVolumeSlider
 @onready var muted_toggle: CheckButton = %MutedToggle
-@onready var reduced_motion_toggle: CheckButton = %ReducedMotionToggle
 @onready var animation_mode_option: OptionButton = %AnimationModeOption
 @onready var quality_profile_option: OptionButton = %QualityProfileOption
 @onready var card_cache_option: OptionButton = %CardCacheOption
@@ -16,7 +15,8 @@ signal save_requested(values: Dictionary)
 @onready var sfx_volume_value: Label = %SFXVolumeValue
 @onready var reset_defaults_button: Button = %ResetDefaultsButton
 
-var _syncing_motion_controls := false
+@onready var advanced_button: Button = %AdvancedButton
+@onready var advanced_options: VBoxContainer = %AdvancedOptions
 
 
 func _ready() -> void:
@@ -82,7 +82,8 @@ func _resolve_nodes() -> void:
 	music_volume_slider = %MusicVolumeSlider
 	sfx_volume_slider = %SFXVolumeSlider
 	muted_toggle = %MutedToggle
-	reduced_motion_toggle = %ReducedMotionToggle
+	advanced_button = %AdvancedButton
+	advanced_options = %AdvancedOptions
 	animation_mode_option = %AnimationModeOption
 	quality_profile_option = %QualityProfileOption
 	card_cache_option = %CardCacheOption
@@ -96,7 +97,6 @@ func _resolve_nodes() -> void:
 	music_volume_slider.accessibility_name = "音乐音量"
 	sfx_volume_slider.accessibility_name = "音效音量"
 	muted_toggle.accessibility_name = "静音全部声音"
-	reduced_motion_toggle.accessibility_name = "减少动画"
 	animation_mode_option.accessibility_name = "动画模式"
 	quality_profile_option.accessibility_name = "画质方案"
 	card_cache_option.accessibility_name = "卡图缓存数量"
@@ -117,24 +117,25 @@ func _ensure_connections() -> void:
 			slider.value_changed.connect(callback)
 	if not reset_defaults_button.pressed.is_connected(reset_form_to_defaults):
 		reset_defaults_button.pressed.connect(reset_form_to_defaults)
-	if not reduced_motion_toggle.toggled.is_connected(_on_reduced_motion_toggled):
-		reduced_motion_toggle.toggled.connect(_on_reduced_motion_toggled)
-	if not animation_mode_option.item_selected.is_connected(_on_animation_mode_selected):
-		animation_mode_option.item_selected.connect(_on_animation_mode_selected)
+	if not advanced_button.toggled.is_connected(_toggle_advanced):
+		advanced_button.toggled.connect(_toggle_advanced)
+
+
+func _toggle_advanced(expanded: bool) -> void:
+	advanced_options.visible = expanded
+	advanced_button.text = "收起高级选项 −" if expanded else "高级选项 +"
 
 
 func _apply_form_values(source: Dictionary) -> void:
-	_syncing_motion_controls = true
 	master_volume_slider.value = float(source.get("master_volume", 0.8))
 	music_volume_slider.value = float(source.get("music_volume", 0.55))
 	sfx_volume_slider.value = float(source.get("sfx_volume", 0.8))
 	muted_toggle.button_pressed = bool(source.get("muted", false))
-	var requested_animation_mode := str(source.get("animation_mode", "cinematic"))
+	var requested_animation_mode := str(source.get("animation_mode", AppSettings.DEFAULT_ANIMATION_MODE))
 	var reduced_motion := (
 		bool(source.get("reduced_motion", false))
 		or requested_animation_mode == "reduced"
 	)
-	reduced_motion_toggle.set_pressed_no_signal(reduced_motion)
 	_fill_option(
 		animation_mode_option,
 		[
@@ -152,7 +153,11 @@ func _apply_form_values(source: Dictionary) -> void:
 	)
 	card_cache_option.clear()
 	var desired_cache := int(source.get("card_cache_size", 24))
-	for cache_size in [12, 24, 48]:
+	var cache_sizes := [12, 24, 48]
+	if desired_cache not in cache_sizes:
+		cache_sizes.append(desired_cache)
+		cache_sizes.sort()
+	for cache_size in cache_sizes:
 		card_cache_option.add_item("%d 张卡图" % cache_size)
 		card_cache_option.set_item_metadata(card_cache_option.item_count - 1, cache_size)
 		if cache_size == desired_cache:
@@ -160,7 +165,6 @@ func _apply_form_values(source: Dictionary) -> void:
 	_update_percent_label(master_volume_slider.value, master_volume_value)
 	_update_percent_label(music_volume_slider.value, music_volume_value)
 	_update_percent_label(sfx_volume_slider.value, sfx_volume_value)
-	_syncing_motion_controls = false
 
 
 func _fill_option(option: OptionButton, rows: Array, selected_value: Variant) -> void:
@@ -174,32 +178,3 @@ func _fill_option(option: OptionButton, rows: Array, selected_value: Variant) ->
 
 func _update_percent_label(value: float, label: Label) -> void:
 	label.text = "%d%%" % roundi(value * 100.0)
-
-
-func _on_reduced_motion_toggled(enabled: bool) -> void:
-	if _syncing_motion_controls:
-		return
-	_syncing_motion_controls = true
-	if enabled:
-		_select_option_metadata(animation_mode_option, "reduced")
-	elif str(animation_mode_option.get_item_metadata(animation_mode_option.selected)) == "reduced":
-		_select_option_metadata(animation_mode_option, "standard")
-	_syncing_motion_controls = false
-
-
-func _on_animation_mode_selected(_index: int) -> void:
-	if _syncing_motion_controls or animation_mode_option.item_count == 0:
-		return
-	_syncing_motion_controls = true
-	reduced_motion_toggle.set_pressed_no_signal(
-		str(animation_mode_option.get_item_metadata(animation_mode_option.selected))
-		== "reduced"
-	)
-	_syncing_motion_controls = false
-
-
-func _select_option_metadata(option: OptionButton, metadata: Variant) -> void:
-	for index in range(option.item_count):
-		if option.get_item_metadata(index) == metadata:
-			option.select(index)
-			return

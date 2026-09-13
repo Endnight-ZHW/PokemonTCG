@@ -22,8 +22,6 @@ const MODE_CHALLENGE := "challenge"
 var catalog: CardCatalog
 var mode := MODE_LOCAL
 
-@onready var ai_mode_option: OptionButton = %AIModeOption
-@onready var first_player_option: OptionButton = %FirstPlayerOption
 @onready var mode_description: Label = %ModeDescription
 
 @onready var content_margin: MarginContainer = %ContentMargin
@@ -47,10 +45,9 @@ var mode := MODE_LOCAL
 @onready var detail_meta: Label = %DetailMeta
 @onready var detail_counts: Label = %DetailCounts
 @onready var detail_card_grid: GridContainer = %DetailCardGrid
+@onready var assign_deck_button: Button = %AssignDeckButton
 @onready var details_button: Button = %DetailsButton
 @onready var action_content: BoxContainer = %ActionContent
-@onready var ai_settings: GridContainer = %AISettings
-@onready var ai_mode_label: Label = %AIModeLabel
 @onready var matchup_toggle: CheckButton = %TypeMatchupToggle
 @onready var start_button: Button = %StartButton
 @onready var action_summary: Label = %ActionSummary
@@ -61,6 +58,7 @@ var _deck_keys: Array[String] = []
 var _selected_keys: Array[String] = ["", ""]
 var _tiles: Dictionary = {}
 var _active_player_idx := 0
+var _preview_deck_key := ""
 var _compact := false
 var _compact_detail_visible := false
 var _gallery_scroll_position := 0.0
@@ -81,18 +79,17 @@ func configure(p_catalog: CardCatalog, p_mode: String) -> void:
 	_deck_keys = DeckVisualCatalog.ordered_deck_keys(catalog)
 	_active_player_idx = 0
 	_compact_detail_visible = false
-	_populate_ai_mode_options()
 	matchup_toggle.set_pressed_no_signal(false)
 	_refresh_matchup_toggle_presentation()
 	_refresh_mode_copy()
 	_populate_gallery()
-	_populate_first_player_options()
 	_selected_keys = [
 		_deck_keys[0] if not _deck_keys.is_empty() else "",
 		_deck_keys[1] if _deck_keys.size() > 1 else (
 			_deck_keys[0] if not _deck_keys.is_empty() else ""
 		),
 	]
+	_preview_deck_key = _selected_keys[0]
 	_refresh_all()
 	_configured = true
 	call_deferred("_apply_responsive_layout")
@@ -100,96 +97,43 @@ func configure(p_catalog: CardCatalog, p_mode: String) -> void:
 
 
 func _resolve_nodes() -> void:
-	ai_mode_option = get_node(
-		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings/AIModeOption"
-	) as OptionButton
-	ai_mode_option.accessibility_name = "AI 类型"
-	first_player_option = get_node(
-		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings/FirstPlayerOption"
-	) as OptionButton
-	first_player_option.accessibility_name = "先后手设置"
-	for option in [ai_mode_option, first_player_option]:
-		option.get_popup().allow_search = false
-	mode_description = get_node("ContentMargin/PageContent/ModeDescription") as Label
-	content_margin = get_node("ContentMargin") as MarginContainer
-	page_content = get_node("ContentMargin/PageContent") as VBoxContainer
-	top_bar = get_node("ContentMargin/PageContent/TopBar") as HBoxContainer
-	heading = get_node("ContentMargin/PageContent/TopBar/Heading") as Label
-	player_one_slot_button = get_node(
-		"ContentMargin/PageContent/SlotPanel/SlotMargin/Slots/PlayerOneSlotButton"
-	) as Button
-	player_two_slot_button = get_node(
-		"ContentMargin/PageContent/SlotPanel/SlotMargin/Slots/PlayerTwoSlotButton"
-	) as Button
-	slot_hint = get_node(
-		"ContentMargin/PageContent/SlotPanel/SlotMargin/Slots/SlotHint"
-	) as Label
-	slot_margin = get_node("ContentMargin/PageContent/SlotPanel/SlotMargin") as MarginContainer
-	gallery_panel = get_node("ContentMargin/PageContent/MasterDetail/GalleryPanel") as PanelContainer
-	gallery_scroll = get_node(
-		"ContentMargin/PageContent/MasterDetail/GalleryPanel/GalleryMargin/GalleryContent/GalleryScroll"
-	) as ScrollContainer
-	gallery_grid = get_node(
-		"ContentMargin/PageContent/MasterDetail/GalleryPanel/GalleryMargin/GalleryContent/GalleryScroll/GalleryGrid"
-	) as GridContainer
-	gallery_heading = get_node(
-		"ContentMargin/PageContent/MasterDetail/GalleryPanel/GalleryMargin/GalleryContent/GalleryHeading"
-	) as Label
-	detail_panel = get_node("ContentMargin/PageContent/MasterDetail/DetailPanel") as PanelContainer
-	back_to_gallery_button = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailNav/BackToGalleryButton"
-	) as Button
-	detail_assignment = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailNav/DetailAssignment"
-	) as Label
-	detail_accent = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTitleRow/DetailAccent"
-	) as ColorRect
-	detail_title = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTitleRow/DetailTitle"
-	) as Label
-	detail_tagline = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTagline"
-	) as Label
-	detail_meta = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailMeta"
-	) as Label
-	detail_counts = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailCounts"
-	) as Label
-	detail_card_grid = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailCardGrid"
-	) as GridContainer
-	details_button = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailsButton"
-	) as Button
-	action_content = get_node(
-		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"
-	) as BoxContainer
-	ai_settings = get_node(
-		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"
-	) as GridContainer
-	ai_mode_label = get_node(
-		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings/AIModeLabel"
-	) as Label
-	matchup_toggle = get_node(
-		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/TypeMatchupToggle"
-	) as CheckButton
+	mode_description = %ModeDescription
+	content_margin = %ContentMargin
+	page_content = %PageContent
+	top_bar = %TopBar
+	heading = %Heading
+	player_one_slot_button = %PlayerOneSlotButton
+	player_two_slot_button = %PlayerTwoSlotButton
+	slot_hint = %SlotHint
+	gallery_panel = %GalleryPanel
+	gallery_scroll = %GalleryScroll
+	gallery_grid = %GalleryGrid
+	gallery_heading = %GalleryHeading
+	slot_margin = %SlotMargin
+	detail_panel = %DetailPanel
+	back_to_gallery_button = %BackToGalleryButton
+	detail_assignment = %DetailAssignment
+	detail_accent = %DetailAccent
+	detail_title = %DetailTitle
+	detail_tagline = %DetailTagline
+	detail_meta = %DetailMeta
+	detail_counts = %DetailCounts
+	detail_card_grid = %DetailCardGrid
+	assign_deck_button = %AssignDeckButton
+	details_button = %DetailsButton
+	action_content = %ActionContent
+	matchup_toggle = %TypeMatchupToggle
+	start_button = %StartButton
+	action_summary = %ActionSummary
+	action_margin = %ActionMargin
+	master_detail = %MasterDetail
 	matchup_toggle.accessibility_name = "弱点与抗性规则"
-	start_button = get_node(
-		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/StartButton"
-	) as Button
-	action_summary = get_node(
-		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/ActionSummary"
-	) as Label
-	action_margin = get_node(
-		"ContentMargin/PageContent/ActionBar/ActionMargin"
-	) as MarginContainer
-	master_detail = get_node("ContentMargin/PageContent/MasterDetail") as HBoxContainer
+	FrontendPalette.style_scrollbar(gallery_scroll.get_v_scroll_bar())
+	FrontendPalette.style_scrollbar(%DetailScroll.get_v_scroll_bar())
 
 
 func _ensure_connections() -> void:
-	var back_button := get_node("ContentMargin/PageContent/TopBar/BackButton") as Button
+	var back_button := %BackButton as Button
 	var back_callable := Callable(self, "_emit_back_requested")
 	if not back_button.pressed.is_connected(back_callable):
 		back_button.pressed.connect(back_callable)
@@ -205,8 +149,8 @@ func _ensure_connections() -> void:
 		details_button.pressed.connect(_emit_active_deck_details)
 	if not start_button.pressed.is_connected(_emit_start_requested):
 		start_button.pressed.connect(_emit_start_requested)
-	if not ai_mode_option.item_selected.is_connected(_on_ai_mode_selected):
-		ai_mode_option.item_selected.connect(_on_ai_mode_selected)
+	if not assign_deck_button.pressed.is_connected(_assign_preview):
+		assign_deck_button.pressed.connect(_assign_preview)
 	if not matchup_toggle.toggled.is_connected(_on_matchup_toggled):
 		matchup_toggle.toggled.connect(_on_matchup_toggled)
 	if not resized.is_connected(_apply_responsive_layout):
@@ -225,12 +169,12 @@ func _refresh_matchup_toggle_presentation() -> void:
 		return
 	var enabled := matchup_toggle.button_pressed
 	var state_copy := "已开启" if enabled else "已关闭"
-	var state_color := DesignTokens.GREEN if enabled else DesignTokens.TEXT_MUTED
+	var state_color := FrontendPalette.SUCCESS if enabled else FrontendPalette.MUTED
 	matchup_toggle.text = "弱点/抗性：%s" % state_copy
 	matchup_toggle.tooltip_text = (
 		"当前已开启：攻击伤害会按中国大陆官方步骤计算弱点与抗性。点击可关闭。"
 		if enabled
-		else "当前已关闭（项目默认）：攻击伤害不计算弱点与抗性。点击可开启。"
+		else "当前已关闭：攻击伤害不计算弱点与抗性。点击可开启。"
 	)
 	matchup_toggle.accessibility_name = "弱点与抗性规则，%s" % state_copy
 	_apply_matchup_toggle_color(matchup_toggle, state_color)
@@ -273,6 +217,8 @@ func select_deck(player_idx: int, deck_key: String) -> bool:
 	):
 		return false
 	_selected_keys[player_idx] = deck_key
+	if player_idx == _active_player_idx:
+		_preview_deck_key = deck_key
 	_refresh_all()
 	return true
 
@@ -306,78 +252,43 @@ func _populate_gallery() -> void:
 		_tiles[deck_key] = tile
 
 
-func _populate_first_player_options() -> void:
-	first_player_option.clear()
-	first_player_option.add_item("由硬币胜者选择")
-	first_player_option.set_item_metadata(0, -1)
-	first_player_option.select(0)
-	first_player_option.disabled = true
-
-
-func _populate_ai_mode_options() -> void:
-	ai_mode_option.clear()
-	ai_mode_option.add_item("Challenge AI")
-	ai_mode_option.set_item_metadata(0, MODE_CHALLENGE)
-	ai_mode_option.select(0)
-	mode = MODE_LOCAL if mode == MODE_LOCAL else MODE_CHALLENGE
-	ai_mode_option.disabled = true
-	ai_mode_option.tooltip_text = "发布客户端仅使用原生 Challenge AI。"
-
-
-func _on_ai_mode_selected(index: int) -> void:
-	if index < 0 or index >= ai_mode_option.item_count:
-		return
-	var selected_mode := str(ai_mode_option.get_item_metadata(index))
-	if selected_mode != MODE_CHALLENGE or selected_mode == mode:
-		return
-	mode = selected_mode
-	_refresh_mode_copy()
-	_refresh_ai_slot_copy()
-
-
 func _refresh_mode_copy() -> void:
 	match mode:
 		MODE_LOCAL:
-			heading.text = "选择本地双人牌组"
+			heading.text = "选择牌组"
 			mode_description.text = (
-				"为两个玩家分别挑选牌组。允许双方使用同一套牌；交接回合时会自动保护手牌隐私。"
+				"为两位玩家分配牌组，可使用同一套牌。先后手由开局硬币决定。"
 			)
 		_:
-			heading.text = "选择 Challenge AI 牌组"
+			heading.text = "挑战 AI · 选择牌组"
 			mode_description.text = (
-				"玩家固定为玩家 1，Challenge AI 为玩家 2；双方都只通过公开规则接口行动。"
+				"为自己与电脑对手分配牌组。先后手由开局硬币决定。"
 			)
 	player_two_slot_button.accessibility_name = "%s 牌组" % _second_slot_name()
 
 
-func _refresh_ai_slot_copy() -> void:
-	# Mode switching is intentionally copy-only: it must not rebuild the gallery,
-	# recreate detail cards, or reset deck/turn/scroll state.
-	_refresh_slot_buttons()
-	_refresh_tiles()
-	if first_player_option.item_count >= 3:
-		first_player_option.set_item_text(2, "%s 先攻" % _second_slot_name())
-	var deck_key := selected_deck_key(_active_player_idx)
-	var deck := catalog.get_deck(deck_key) if catalog else {}
-	if not deck.is_empty():
-		detail_assignment.text = "正在配置 · %s" % (
-			"玩家 1" if _active_player_idx == 0 else _second_slot_name()
-		)
-
-
 func _on_deck_tile_pressed(deck_key: String) -> void:
-	if not select_deck(_active_player_idx, deck_key):
+	if catalog == null or catalog.get_deck(deck_key).is_empty():
 		return
+	_preview_deck_key = deck_key
+	_refresh_tiles()
+	_refresh_detail()
 	if _compact:
 		_gallery_scroll_position = gallery_scroll.scroll_vertical
 		_compact_detail_visible = true
 		_apply_master_detail_visibility()
 
 
+func _assign_preview() -> void:
+	if select_deck(_active_player_idx, _preview_deck_key) and _compact:
+		_show_compact_gallery()
+
+
 func _set_active_player(player_idx: int) -> void:
 	if player_idx < 0 or player_idx > 1:
 		return
 	_active_player_idx = player_idx
+	_preview_deck_key = selected_deck_key(player_idx)
 	_refresh_all()
 
 
@@ -395,9 +306,11 @@ func _refresh_slot_buttons() -> void:
 		second_slot_name,
 		_deck_display_name(_selected_keys[1]),
 	]
+	var active_slot := player_one_slot_button if _active_player_idx == 0 else player_two_slot_button
+	active_slot.text = "当前 · " + active_slot.text
 	player_one_slot_button.set_pressed_no_signal(_active_player_idx == 0)
 	player_two_slot_button.set_pressed_no_signal(_active_player_idx == 1)
-	slot_hint.text = "正在为 %s 选择牌组" % (
+	slot_hint.text = "分配目标 · %s" % (
 		"玩家 1" if _active_player_idx == 0 else second_slot_name
 	)
 
@@ -405,15 +318,17 @@ func _refresh_slot_buttons() -> void:
 func _refresh_tiles() -> void:
 	for tile_value in _tiles.values():
 		(tile_value as DeckGalleryTile).set_assignment_state(
-			_active_player_idx,
 			_selected_keys,
 			_second_slot_name(),
+		)
+		(tile_value as DeckGalleryTile).set_pressed_no_signal(
+			(tile_value as DeckGalleryTile).deck_key == _preview_deck_key
 		)
 
 
 func _refresh_detail() -> void:
 	_clear_detail_cards()
-	var deck_key := selected_deck_key(_active_player_idx)
+	var deck_key := _preview_deck_key
 	var deck := catalog.get_deck(deck_key) if catalog else {}
 	if deck.is_empty():
 		detail_assignment.text = "尚未选择牌组"
@@ -421,22 +336,24 @@ func _refresh_detail() -> void:
 		detail_tagline.text = "选择后会在这里显示核心卡与牌组构成。"
 		detail_meta.text = ""
 		detail_counts.text = ""
+		assign_deck_button.disabled = true
 		details_button.disabled = true
 		return
-	var second_slot_name := _second_slot_name()
-	detail_assignment.text = "正在配置 · %s" % (
-		"玩家 1" if _active_player_idx == 0 else second_slot_name
-	)
+	var slot_name := "玩家 1" if _active_player_idx == 0 else _second_slot_name()
+	var assigned := selected_deck_key(_active_player_idx) == deck_key
+	detail_assignment.text = "正在浏览"
+	assign_deck_button.text = ("✓ 已分配给 %s" if assigned else "分配给 %s") % slot_name
+	assign_deck_button.disabled = assigned
 	detail_title.text = str(deck.get("name", deck_key))
 	detail_tagline.text = DeckVisualCatalog.tagline(deck_key)
 	var energy_type := str(deck.get("energy_type", "Colorless"))
 	detail_accent.color = DesignTokens.type_color(energy_type)
-	detail_meta.text = "%s · %d 张 · 发布牌组" % [
+	detail_meta.text = "%s · %d 张" % [
 		EnergyIconCatalog.type_display_name_for(energy_type),
 		int(deck.get("card_count", 0)),
 	]
 	var counts := _deck_supertype_counts(deck)
-	detail_counts.text = "Pokémon %d　 Trainer %d　 Energy %d" % [
+	detail_counts.text = "宝可梦 %d · 训练家 %d · 能量 %d" % [
 		int(counts.get("Pokémon", 0)),
 		int(counts.get("Trainer", 0)),
 		int(counts.get("Energy", 0)),
@@ -451,7 +368,7 @@ func _refresh_detail() -> void:
 func _add_detail_card(card_id: String) -> void:
 	var card := catalog.get_card(card_id)
 	var frame := PanelContainer.new()
-	frame.custom_minimum_size = Vector2(94, 132)
+	frame.custom_minimum_size = Vector2(112, 156)
 	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	frame.theme_type_variation = &"FrontCardFrame"
 	frame.tooltip_text = ""
@@ -500,7 +417,6 @@ func _refresh_start_state() -> void:
 		and not catalog.get_deck(_selected_keys[1]).is_empty()
 	)
 	start_button.disabled = not ready
-	ai_settings.visible = mode != MODE_LOCAL
 	action_summary.text = (
 		"%s  对战  %s" % [
 			_deck_display_name(_selected_keys[0]),
@@ -512,13 +428,8 @@ func _refresh_start_state() -> void:
 
 
 func _emit_active_deck_details() -> void:
-	_emit_deck_details_for_player(_active_player_idx)
-
-
-func _emit_deck_details_for_player(player_idx: int) -> void:
-	var deck_key := selected_deck_key(player_idx)
-	if not deck_key.is_empty():
-		deck_details_requested.emit(deck_key)
+	if not _preview_deck_key.is_empty():
+		deck_details_requested.emit(_preview_deck_key)
 
 
 func _emit_start_requested() -> void:
@@ -566,28 +477,23 @@ func _apply_responsive_layout() -> void:
 		action_margin.add_theme_constant_override(
 			"margin_" + side, 4 if short_landscape else 10
 		)
-	start_button.custom_minimum_size = Vector2(192, 50 if short_landscape else 54)
+	start_button.custom_minimum_size = Vector2(208, 56)
 	var dense_action_layout := _compact and size.x < 680.0
 	action_content.vertical = dense_action_layout
-	ai_mode_label.visible = dense_action_layout
-	ai_settings.columns = 2 if dense_action_layout else 3
-	ai_mode_option.custom_minimum_size = Vector2(
-		180 if dense_action_layout else 150,
-		48 if short_landscape else 50,
-	)
-	first_player_option.custom_minimum_size = Vector2(
-		180,
-		48 if short_landscape else 50,
-	)
+	slot_hint.visible = size.x >= 800.0
+	for slot_button in [player_one_slot_button, player_two_slot_button]:
+		slot_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		slot_button.custom_minimum_size.x = 0
 	heading.add_theme_font_size_override("font_size", 26 if _compact else 32)
 	mode_description.max_lines_visible = 2 if _compact else -1
-	action_summary.visible = not _compact or size.x >= 900.0
+	mode_description.visible = size.y >= 650.0
+	action_summary.visible = true
 	master_detail.add_theme_constant_override("separation", 24 if not _compact else 0)
 	var gallery_width := maxf(300.0, size.x - horizontal_margin * 2.0 - 44.0)
 	gallery_grid.columns = (
 		2
 		if not _compact
-		else clampi(int(floor(gallery_width / 266.0)), 1, 3)
+		else clampi(int(floor(gallery_width / 280.0)), 1, 3)
 	)
 	_apply_master_detail_visibility()
 	_refresh_detail_columns()
@@ -598,9 +504,9 @@ func _apply_master_detail_visibility() -> void:
 	detail_panel.visible = not _compact or _compact_detail_visible
 	back_to_gallery_button.visible = _compact
 	gallery_heading.text = (
-		"全部牌组 · 选择后分配给当前槽位"
+		"牌组卡册 · 点击浏览"
 		if not _compact
-		else "全部牌组 · 轻触查看并分配"
+		else "牌组卡册 · 轻触浏览"
 	)
 
 
@@ -618,7 +524,20 @@ func _refresh_detail_columns() -> void:
 	var available := detail_panel.size.x
 	if available <= 0.0:
 		available = size.x * (0.42 if not _compact else 1.0)
-	detail_card_grid.columns = clampi(int(floor((available - 52.0) / 108.0)), 1, 4)
+	%DetailActions.vertical = available < 500.0
+	var short := _compact and size.y < 650.0
+	var preview_body := detail_card_grid.get_parent() as BoxContainer
+	preview_body.vertical = not short
+	preview_body.get_node("DetailInfo/CoreLabel").visible = not short
+	preview_body.move_child(detail_card_grid, 0 if short else 1)
+	detail_card_grid.columns = 1 if short else clampi(int(floor((available - 52.0) / 122.0)), 1, 4)
+	for index in range(detail_card_grid.get_child_count()):
+		var frame := detail_card_grid.get_child(index) as Control
+		frame.visible = not short or index == 0
+		frame.custom_minimum_size = Vector2(86, 120) if short else Vector2(112, 156)
+		frame.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if short else Control.SIZE_EXPAND_FILL
+	detail_panel.get_node("DetailMargin").add_theme_constant_override("margin_top", 10 if short else 18)
+	detail_panel.get_node("DetailMargin").add_theme_constant_override("margin_bottom", 10 if short else 18)
 
 
 func _play_enter_animation() -> void:
@@ -638,4 +557,4 @@ func _second_slot_name() -> String:
 		MODE_LOCAL:
 			return "玩家 2"
 		_:
-			return "Challenge AI"
+			return "AI 对手"
