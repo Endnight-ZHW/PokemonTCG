@@ -193,6 +193,8 @@ func initialize_ui() -> void:
 	_build_shell()
 	if not AppSettings.changed.is_connected(_apply_runtime_settings):
 		AppSettings.changed.connect(_apply_runtime_settings)
+	if not AppSettings.runtime_quality_changed.is_connected(_apply_runtime_settings):
+		AppSettings.runtime_quality_changed.connect(_apply_runtime_settings)
 	_apply_runtime_settings()
 	shell_view.show_title()
 	shell_view.apply_safe_area()
@@ -1437,7 +1439,6 @@ func _execute_action_now(action: GameAction) -> StepResult:
 	selected_entity_identity = ""
 	if battle_screen:
 		battle_screen.hide_card_detail()
-	shell_view.show_toast(result.message if not result.message.is_empty() else "动作完成。")
 	var presented_revision := state.revision
 	var local_handoff := LocalHandoffPlan.create(
 		state, current_view_player, ai_thinking, game_mode,
@@ -1669,11 +1670,6 @@ func _submit_choice_response(
 			return
 		if network_controller.host:
 			_poll_network()
-		shell_view.show_toast(
-			"取消请求已提交，等待房主同步。"
-			if response.cancelled
-			else "选择已提交，等待房主同步。"
-		)
 		return
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
@@ -1682,8 +1678,6 @@ func _submit_choice_response(
 		shell_view.show_toast(result.message, true)
 		_refresh_game()
 		return
-	if response.cancelled:
-		shell_view.show_toast(result.message, false)
 	var presentation_events: Array = _choice_presentation_events(request, result.events)
 	var presented_revision := state.revision
 	var local_handoff := LocalHandoffPlan.create(
@@ -1758,7 +1752,6 @@ func _continue_after_choice_transition(
 ) -> void:
 	if _route_step_pending_choice(result):
 		return
-	shell_view.show_toast(result.message if not result.message.is_empty() else "选择已结算。")
 	_after_step(previous_active, previous_phase)
 
 func _cancel_choice() -> void:
@@ -2155,7 +2148,7 @@ func _schedule_ai_action() -> void:
 	_pending_ai_resume_revision = -1
 	var query := _rules_legal_actions(1)
 	if not query.success:
-		shell_view.show_toast("AI 合法动作查询失败：%s" % query.code, true)
+		shell_view.show_toast("AI 合法动作查询失败：%s" % PlayerFacingText.message(query.code, true), true)
 		return
 	var actions := query.concrete_actions()
 	if actions.is_empty():
@@ -2275,9 +2268,8 @@ func _apply_ai_result(result: Dictionary) -> void:
 		origin_action_id = action.action_id
 		step = _rules_apply_action(action)
 	if not step.success:
-		_show_ai_failure("AI 决策被规则拒绝：%s" % step.message)
+		_show_ai_failure("AI 决策被规则拒绝：%s" % PlayerFacingText.message(step.message, true))
 		return
-	shell_view.show_toast(step.message if not step.message.is_empty() else "AI 完成动作。")
 	var handle := _submit_battle_transition(
 		step.events,
 		1,

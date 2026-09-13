@@ -74,5 +74,15 @@ func run(ui: Control) -> void:
 	if not harness._capture("battle-ui-low-reduced.png"):
 		harness._finish(1)
 		return
+	harness._set_preview_quality("high")
+	var stress := UIPreviewStateFactory.battle_stress_state()
+	ui.battle_screen.set_local_hand_privacy_hidden(false)
+	for dimensions in [Vector2i(1600, 900), Vector2i(900, 540)]:
+		harness.tree.root.size = dimensions
+		harness._update_battle_preview(ui, stress, UIPreviewStateFactory.action_rows(stress))
+		await harness._settle_rendered(5)
+		if not harness._capture("battle-ui-audit-%dx%d.png" % [dimensions.x, dimensions.y]):
+			harness._finish(1)
+			return
 	print("BATTLE_USABILITY_PREVIEWS_OK")
 	harness._finish(0)

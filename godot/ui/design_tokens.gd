@@ -89,14 +89,6 @@ static func panel_style(
 	return style
 
 
-static func shadow_style(radius: int = RADIUS_MEDIUM) -> StyleBoxFlat:
-	var style := panel_style(Color(0.0, 0.0, 0.0, 0.34), radius, Color.TRANSPARENT, 0, 0)
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.48)
-	style.shadow_size = 10
-	style.shadow_offset = Vector2(0, 5)
-	return style
-
-
 static func style_scrollbar(scrollbar: ScrollBar) -> void:
 	if scrollbar == null:
 		return
@@ -115,3 +107,13 @@ static func style_scrollbar(scrollbar: ScrollBar) -> void:
 	else:
 		scrollbar.custom_minimum_size.y = 12.0
 
+
+static func label(text_value: String, font_size: int, color: Color) -> Label:
+	var result := Label.new()
+	result.text = text_value
+	result.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	result.add_theme_font_size_override("font_size", font_size)
+	result.add_theme_color_override("font_color", color)
+	result.add_theme_constant_override("outline_size", 0)
+	result.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
+	return result

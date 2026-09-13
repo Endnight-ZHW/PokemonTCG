@@ -172,10 +172,6 @@ func set_log_drawer_open(is_open: bool, emit_change: bool = true) -> void:
 			log_panel.modulate.a = 1.0
 
 
-func toggle_log_drawer() -> void:
-	set_log_drawer_open(not _log_drawer_open)
-
-
 func close_log_drawer() -> void:
 	set_log_drawer_open(false)
 

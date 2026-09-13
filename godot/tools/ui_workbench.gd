@@ -57,6 +57,12 @@ func show_preview(kind: String) -> void:
 			_show_energy_choice()
 		"ai_thinking":
 			_show_ai_thinking()
+		"battle_stress":
+			_show_battle_stress()
+		"startup_shuffle":
+			_show_startup_shuffle()
+		"mulligan", "opponent_mulligan":
+			_show_mulligan(1 if kind == "opponent_mulligan" else 0)
 		"help":
 			_show_help()
 		"inspector":
@@ -357,6 +363,8 @@ func _bind_toolbar() -> void:
 		"ChoicePreview",
 		"EnergyChoicePreview",
 		"BattlePreview",
+		"BattleStressPreview",
+		"ShufflePreview",
 		"AIThinkingPreview",
 		"VictoryPreview",
 		"HelpPreview",
@@ -372,6 +380,8 @@ func _bind_toolbar() -> void:
 		button.pressed.connect(show_preview.bind(key))
 	for button_name in [
 		"DrawEvent",
+		"OpeningDrawEvent",
+		"OpponentDrawEvent",
 		"EnergyAttachEvent",
 		"EvolveEvent",
 		"AttackEvent",
@@ -583,6 +593,41 @@ func _show_battle() -> void:
 	_set_checkpoint_status("选择表现事件，然后捕获 0% / 50% / 100%")
 
 
+func _show_battle_stress() -> void:
+	_show_battle()
+	preview_caption.text = "三维细节检查 · 满备战、20 张手牌、多附件与复合状态；可缩放窗口检查布局"
+	sample_state = UIPreviewStateFactory.battle_stress_state()
+	current_battle.set_local_hand_privacy_hidden(false)
+	current_battle.update_view(sample_state, 0, UIPreviewStateFactory.action_rows(sample_state), "", false, "preview")
+
+
+func _show_startup_shuffle() -> void:
+	_show_battle()
+	preview_caption.text = "三维洗牌 · 双方实体牌堆拆分、交错与落桌；再次点击可重放"
+	current_battle.update_view(sample_state, 0, [], "", false, "preview")
+	var generation := _checkpoint_generation
+	for frame in range(4):
+		await get_tree().process_frame
+		if generation != _checkpoint_generation or not is_instance_valid(current_battle): return
+	current_battle.play_startup_shuffle()
+
+func _show_mulligan(viewer: int) -> void:
+	_show_battle()
+	preview_caption.text = "连续再战三次 · 抽牌、公开、洗回与重抽；再次点击可重放"
+	var session := AuthoritativeSession.new("workbench-mulligan")
+	var started := session.start_match("fire", "water", 2026071608, 0)
+	var before := GameState.new()
+	for player in before.players:
+		for index in range(60): player.deck.append("sv1-151")
+	current_battle.update_view(before, viewer, [], "", false, "preview")
+	var generation := _checkpoint_generation
+	for frame in range(4):
+		await get_tree().process_frame
+		if generation != _checkpoint_generation or not is_instance_valid(current_battle): return
+	var view := BattleViewModel.capture(session.state, viewer, [], "", false, "preview")
+	current_battle.submit_transition(BattleTransitionRequest.create(view, started.events, 0, BattleTransitionRequest.CAUSE_REFRESH, "workbench-mulligan"))
+
+
 func _show_ai_thinking() -> void:
 	preview_caption.text = "AI 思考 · 轻量状态层与对手侧牌位反馈"
 	sample_state = UIPreviewStateFactory.battle_state()
@@ -619,6 +664,16 @@ func _presentation_event(kind: String) -> Dictionary:
 		"visibility": "public",
 	}
 	match kind:
+		"opening_draw", "opponent_opening_draw":
+			var player := 1 if kind == "opponent_opening_draw" else 0
+			base.merge({"event_type": "cards_drawn", "amount": 7,
+				"source": {"player": player, "zone": "deck"}, "target": {"player": player, "zone": "hand"},
+				"data": {"player": player, "count": 7, "card_ids": ["sv1-151", "sv1-151", "sv1-151", "sv1-151", "sv1-151", "sv1-151", "sv1-151"],
+					"purpose": "opening_hand", "final_opening_hand": true}})
+			base["actor"] = player
+		"search_results":
+			base.merge({"event_type": "cards_selected", "amount": 2, "source": {"player": 0, "zone": "deck"}, "target": {"player": 0, "zone": "hand"},
+				"data": {"player": 0, "count": 2, "card_ids": ["sv1-151", "svi-chim"]}})
 		"draw", "draw_sparse", "cross_owner_draw":
 			base.merge({
 				"event_type": "cards_drawn",
@@ -712,8 +767,18 @@ func _presentation_event(kind: String) -> Dictionary:
 func _build_presentation_fixture(kind: String) -> Dictionary:
 	event_sequence += 1
 	var before := UIPreviewStateFactory.battle_state(20260623 + event_sequence)
+	if kind == "opponent_opening_draw":
+		before = GameState.new()
+		for player in before.players:
+			for index in range(60): player.deck.append("sv1-151")
 	before.revision = event_sequence * 2
 	match kind:
+		"search_results":
+			before.players[0].deck.append_array(["svi-chim", "sv1-151"])
+		"opening_draw":
+			before.players[0].hand.clear()
+			before.players[0].deck.clear()
+			for index in range(60): before.players[0].deck.append("sv1-151")
 		"draw", "draw_sparse", "cross_owner_draw":
 			before.players[0].deck[-1] = "sv1-151"
 		"evolve":
@@ -725,6 +790,12 @@ func _build_presentation_fixture(kind: String) -> Dictionary:
 			before.players[0].bench[0].placed_this_turn = false
 	var after := before.clone_state()
 	match kind:
+		"search_results":
+			for index in range(2): after.players[0].hand.append(after.players[0].deck.pop_back())
+		"opening_draw", "opponent_opening_draw":
+			var player := 1 if kind == "opponent_opening_draw" else 0
+			for index in range(7): after.players[player].hand.append(after.players[player].deck.pop_back())
+			after.log_action("预览对手连续抽取了 7 张手牌。" if player == 1 else "预览玩家连续抽取了 7 张手牌。")
 		"draw", "draw_sparse", "cross_owner_draw":
 			if not after.players[0].deck.is_empty():
 				after.players[0].hand.append(after.players[0].deck.pop_back())
@@ -765,11 +836,15 @@ func _build_presentation_fixture(kind: String) -> Dictionary:
 			after.players[1].active.damage_counters += 9
 			after.log_action("预览对手的战斗宝可梦受到了 90 点伤害。")
 	after.revision = before.revision + 1
+	var before_actions: Array[Dictionary] = []
+	if before.players[0].active != null and before.players[1].active != null:
+		before_actions = UIPreviewStateFactory.action_rows(before)
+	var selection := "" if kind == "opponent_opening_draw" else "pokemon:0:active"
 	var before_view := BattleViewModel.capture(
 		before,
 		0,
-		UIPreviewStateFactory.action_rows(before),
-		"pokemon:0:active",
+		before_actions,
+		selection,
 		false,
 		"preview",
 	)
@@ -780,7 +855,7 @@ func _build_presentation_fixture(kind: String) -> Dictionary:
 		after,
 		0,
 		after_action_rows,
-		"pokemon:0:active",
+		selection,
 		false,
 		"preview",
 	)
@@ -855,6 +930,9 @@ func _normalize_checkpoint(percent: float) -> int:
 func _presentation_label(kind: String) -> String:
 	return {
 		"draw": "抽牌",
+		"opening_draw": "连续抽 7 张",
+		"opponent_opening_draw": "对手开局抽 7 张",
+		"search_results": "公开检索结果",
 		"attach_energy": "附能",
 		"evolve": "进化",
 		"attack": "攻击蓄力",
@@ -907,26 +985,6 @@ func _centered_panel(min_size: Vector2, frontend_surface: bool = false) -> Conta
 	content.add_theme_constant_override("separation", 12)
 	scroll.add_child(content)
 	return content
-
-
-func _label(text_value: String, font_size: int, color: Color) -> Label:
-	var label := Label.new()
-	label.text = text_value
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", color)
-	label.add_theme_constant_override("outline_size", 0)
-	label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
-	return label
-
-
-func _card_thumb(card_id: String, hidden: bool) -> CardView:
-	var card := load("res://ui/card_view.tscn").instantiate() as CardView
-	card.custom_minimum_size = Vector2(76, 107)
-	card.configure(card_id, null, hidden, -1, -1, "", true)
-	card.tooltip_text = ""
-	card.accessibility_name = "隐藏卡牌" if hidden else catalog.card_name(card_id)
-	return card
 
 
 func _clear_preview() -> void:

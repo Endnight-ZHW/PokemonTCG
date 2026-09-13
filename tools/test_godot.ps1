@@ -51,6 +51,7 @@ if ($joinedImportOutput -match $fatalGodotErrorPattern) {
 $contracts = @(
     @('card_catalog_contract', 'CARD_CATALOG_CONTRACT_OK', 'Card catalog contract'),
     @('card_presentation_contract', 'CARD_PRESENTATION_CONTRACT_OK', 'Card visual audit coverage and shared presentation contract'),
+    @('player_facing_text_contract', 'PLAYER_FACING_TEXT_OK', 'Chinese UI notifications with stable native result keys'),
     @('network_protocol_contract', 'NETWORK_PROTOCOL_CONTRACT_OK', 'Network protocol contract'),
     @('native_rules_session_contract_test', 'NATIVE_RULES_SESSION_CONTRACT_OK', 'Native ABI 2 stateful rules session, privacy, rollback, Snapshot and journal contract'),
     @('vm_descriptor_contract_test', 'VM_DESCRIPTOR_CONTRACT_OK', 'Generated VM IR descriptor and negative-schema contract'),
@@ -59,6 +60,7 @@ $contracts = @(
     @('card_view_layers_contract', 'CARD_VIEW_LAYERS_OK', 'Card view layers contract'),
     @('view_model_ownership_contract', 'VIEW_MODEL_OWNERSHIP_OK', 'Player view privacy and queued snapshot ownership'),
     @('battle_drag_lifecycle_contract', 'BATTLE_DRAG_LIFECYCLE_OK', 'Drag tracking, stale completions, cancellation and resync'),
+    @('battle_3d_contract', 'BATTLE_3D_CONTRACT_OK', 'Physical cards, projection, hidden faces, motion, pooling and adaptive quality'),
     @('battle_usability_contract', 'BATTLE_USABILITY_CONTRACT_OK', 'Pointer gestures, cancellation, browsing anchors and safe confirmations'),
     @('attachment_visual_contract', 'ATTACHMENT_VISUAL_CONTRACT_OK', 'Attachment visual descriptor and badge contract'),
     @('ui_workbench_transition_contract', 'UI_WORKBENCH_TRANSITION_OK', 'UI Workbench transition contract')

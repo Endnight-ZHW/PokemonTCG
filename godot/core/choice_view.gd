@@ -204,11 +204,11 @@ static func _normalize_presentation_value(field: String, value: Variant) -> Vari
 		"source_player", "target_player", "owner", "required_units",
 		"max_per_target", "pokemon_count", "energy_count", "amount", "count",
 	]:
-		return int(value) if _is_wire_integer(value) else value
+		return int(value) if WireValue.is_integer(value) else value
 	if field == "category_limits" and value is Dictionary:
 		var limits := Dictionary(value).duplicate(true)
 		for category in limits:
-			if _is_wire_integer(limits[category]):
+			if WireValue.is_integer(limits[category]):
 				limits[category] = int(limits[category])
 		return limits
 	if field in ["attachment_refs", "browse_card_refs"] and value is Array:
@@ -219,7 +219,7 @@ static func _normalize_presentation_value(field: String, value: Variant) -> Vari
 				continue
 			var ref := Dictionary(ref_value).duplicate(true)
 			for integer_field in ["player", "index", "units"]:
-				if ref.has(integer_field) and _is_wire_integer(ref[integer_field]):
+				if ref.has(integer_field) and WireValue.is_integer(ref[integer_field]):
 					ref[integer_field] = int(ref[integer_field])
 			refs.append(ref)
 		return refs
@@ -341,18 +341,6 @@ static func _presentation_value_is_valid(
 				return false
 		return true
 	return false
-
-
-static func _is_wire_integer(value: Variant) -> bool:
-	if value is int:
-		return true
-	return (
-		value is float
-		and is_finite(value)
-		and value >= -2147483648.0
-		and value <= 2147483647.0
-		and value == floorf(value)
-	)
 
 
 static func _json_copy(value: Variant) -> Variant:

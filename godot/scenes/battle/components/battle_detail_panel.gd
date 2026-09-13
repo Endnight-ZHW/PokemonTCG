@@ -137,10 +137,6 @@ func hide_card() -> void:
 	clear()
 
 
-func hide_preview() -> void:
-	clear()
-
-
 func is_showing_card() -> bool:
 	return visible and not current_card_id.is_empty()
 

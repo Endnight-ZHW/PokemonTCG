@@ -364,8 +364,8 @@ func _check_motion_card_faces(
 		if flyer == null or not bool(flyer.get_meta("paper_card_token", false)):
 			continue
 		paper_flyers += 1
-		var image := flyer.get_node_or_null("PaperImage") as TextureRect
-		_check(image != null, "%s flyer has no PaperImage" % context)
+		var image := flyer as CardMotionEntity
+		_check(image != null, "%s flyer has no physical card surface" % context)
 		if image == null:
 			continue
 		_check(image.texture != null, "%s flyer lost its card texture" % context)

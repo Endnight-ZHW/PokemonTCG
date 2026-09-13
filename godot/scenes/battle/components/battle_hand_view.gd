@@ -6,6 +6,7 @@ var table: BattleTable
 var tween_registry: Dictionary = {}
 var _scroll_positions: Dictionary = {}
 var _scroll_player := -1
+var _scroll_width := 0.0
 
 
 func configure(p_host: Node) -> void:
@@ -27,6 +28,7 @@ func move_card(
 	var instance_id := view.get_instance_id()
 	_cancel_entry(instance_id)
 	if duration <= 0.0 or host == null:
+		if view.has_meta("physical_pose"): view.remove_meta("physical_pose")
 		view.position = target_position
 		view.rotation_degrees = target_rotation
 		view.remember_base_position()
@@ -35,6 +37,8 @@ func move_card(
 		handle.finish()
 		return handle
 	var tween := host.create_tween().set_parallel(true)
+	if table.render3d != null:
+		table.render3d.hand_fan.reflow_card(view, target_position, target_rotation, tween, duration)
 	tween_registry[instance_id] = tween
 	tween.tween_property(view, "position", target_position, duration).set_trans(
 		Tween.TRANS_QUAD,
@@ -50,6 +54,9 @@ func move_card(
 
 
 func cancel_all() -> void:
+	if table != null:
+		for view in table.hand_views:
+			if is_instance_valid(view) and view.has_meta("physical_pose"): view.remove_meta("physical_pose")
 	if tween_registry == null:
 		return
 	for tween_value in tween_registry.values():
@@ -57,10 +64,6 @@ func cancel_all() -> void:
 		if tween != null and tween.is_valid():
 			tween.kill()
 	tween_registry.clear()
-
-
-func pending_transition_count() -> int:
-	return tween_registry.size() if tween_registry != null else 0
 
 
 func _cancel_entry(instance_id: int) -> void:
@@ -80,6 +83,7 @@ func _finish_entry(
 	if tween_registry != null:
 		tween_registry.erase(instance_id)
 	if view != null and is_instance_valid(view):
+		if view.has_meta("physical_pose"): view.remove_meta("physical_pose")
 		view.remember_base_position()
 	if completion.is_valid():
 		completion.call()
@@ -275,7 +279,7 @@ func _layout_player_hands(metrics: Dictionary) -> void:
 	)
 	table.opponent_hand_count_badge.size = Vector2(34.0, 34.0)
 	table.opponent_info.position = Vector2(
-		float(metrics["field_left"]),
+		float(metrics["side_margin"]),
 		float(metrics["opponent_info_y"]),
 	)
 	table.opponent_info.size = Vector2(304.0, 24.0)
@@ -338,15 +342,17 @@ func _apply_hand_layout_geometry(plan: Dictionary, card_size: Vector2) -> void:
 	var target_scroll := maxi(0, roundi(float(plan.get("center_scroll", 0.0))))
 	if _scroll_player == table.view_player and not _scroll_positions.is_empty():
 		var old_scroll := float(table.hand_scroll.scroll_horizontal)
+		var old_width := _scroll_width if _scroll_width > 0.0 else table.hand_scroll.size.x
 		var nearest_distance := INF
 		for identity in next_positions:
 			if not _scroll_positions.has(identity):
 				continue
 			var screen_x := float(_scroll_positions[identity]) - old_scroll
-			var distance := absf(screen_x - table.hand_scroll.size.x * 0.5)
+			var distance := absf(screen_x - old_width * 0.5)
 			if distance < nearest_distance:
 				nearest_distance = distance
-				target_scroll = maxi(0, roundi(float(next_positions[identity]) - screen_x))
+				var next_screen_x := screen_x * table.hand_scroll.size.x / old_width
+				target_scroll = maxi(0, roundi(float(next_positions[identity]) - next_screen_x))
 	var geometry_signature := "%d|%d|%d|%d|%d|%d" % [
 		items.size(),
 		roundi(table.hand_scroll.size.x * 100.0),
@@ -358,6 +364,7 @@ func _apply_hand_layout_geometry(plan: Dictionary, card_size: Vector2) -> void:
 	var same_player := _scroll_player == table.view_player
 	_scroll_positions = next_positions
 	_scroll_player = table.view_player
+	_scroll_width = table.hand_scroll.size.x
 	if geometry_signature == table._hand_layout_geometry_signature and same_player:
 		return
 	table._hand_layout_geometry_signature = geometry_signature
@@ -596,7 +603,13 @@ func _on_hand_drag_started(hand_index: int) -> void:
 	table._drag_session.actor = table.view_player
 	table._drag_session.hand_index = hand_index
 	table._drag_session.card_id = source_view.card_id
-	table._drag_session.visual_id = "%s:%s" % [table._drag_session.session_id, source_view.card_id]
+	table._drag_session.visual_id = source_view.local_visual_id if not source_view.local_visual_id.is_empty() else table._drag_session.session_id
+	if table.render3d != null and table.render3d.is_projection_ready():
+		table.render3d.global_bounds(source_view)
+		var entity := table.render3d.world.entities.get(table.render3d._key(source_view)) as CardEntity3D
+		if entity != null:
+			table._drag_session.source_pose = entity.transform
+			table._drag_session.physical_entity = weakref(entity)
 	table._drag_session.source_view = source_view
 	table._drag_session.source_position = source_view.position
 	table._drag_session.source_size = source_view.size
@@ -648,6 +661,9 @@ func mark_drag_pending(action_id: String, network_pending: bool) -> String:
 		_return_drag_session("stale_drag")
 		return ""
 	table._drag_session.origin_action_id = action_id
+	var physical_proxy := table._drag_session.proxy as CardMotionEntity
+	if physical_proxy != null and is_instance_valid(physical_proxy.physical_entity):
+		table._drag_session.release_pose = physical_proxy.physical_entity.transform
 	table._drag_session.state = (
 		table.CARD_DRAG_SESSION.PENDING_AUTHORITY
 		if network_pending
@@ -747,8 +763,9 @@ func _ensure_drag_proxy(start: Vector2) -> Control:
 	proxy.set_meta("drag_session_id", table._drag_session.session_id)
 	proxy.set_meta("motion_card_id", table._drag_session.card_id)
 	proxy.set_meta("card_motion_entity", true)
+	# Keep held cards nearly level, including cards picked from either fan end.
+	proxy.rotation_degrees = clampf(table._drag_session.source_rotation, -3.0, 3.0)
 	proxy.position = _drag_proxy_position_for_pointer(start, proxy)
-	proxy.rotation_degrees = table._drag_session.source_rotation
 	proxy.modulate.a = 1.0
 	table.card_motion_layer.add(proxy)
 	table._drag_session.proxy = proxy
@@ -829,6 +846,8 @@ func _animate_drag_proxy(
 		return
 	var tween := create_tween().set_parallel(true)
 	table.card_motion_layer.bind_tween(proxy, tween)
+	if table.render3d != null and table._drag_session != null and table._drag_session.state == table.CARD_DRAG_SESSION.RETURNING:
+		table.render3d.hand_fan.return_drag(proxy as CardMotionEntity, table._drag_session.source_view, finish, tween, duration)
 	tween.tween_property(
 		proxy,
 		"position",

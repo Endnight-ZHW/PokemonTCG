@@ -172,13 +172,17 @@ func _run_fast_feedback_barrier(settings: Node) -> void:
 	var director := PresentationDirector.new()
 	var layer := BattleEffectLayer.new()
 	var camera := BattleCameraRig.new()
-	var camera_target := Control.new()
-	camera_target.position = Vector2(80.0, 120.0)
-	root.add_child(camera_target)
+	var camera_viewport := SubViewport.new()
+	camera_viewport.size = Vector2i(640, 480)
+	root.add_child(camera_viewport)
+	var camera_target := BattleWorld3D.new()
+	camera_viewport.add_child(camera_target)
+	camera_target.resize(camera_viewport, Vector2(640, 480))
+	var original_transform := camera_target.camera.transform
 	root.add_child(layer)
 	root.add_child(camera)
 	root.add_child(director)
-	camera.configure([camera_target])
+	camera.configure(camera_target)
 	director.set_speed_mode("fast")
 	director.floating_text_requested.connect(func(
 		text: String,
@@ -212,7 +216,7 @@ func _run_fast_feedback_barrier(settings: Node) -> void:
 		if not director.is_playing():
 			break
 		await process_frame
-	var camera_position := camera_target.position
+	var camera_transform := camera_target.camera.transform
 	var text_position := (
 		Vector2(layer.floating_texts[0].get("position", Vector2.ZERO))
 		if not layer.floating_texts.is_empty()
@@ -228,15 +232,15 @@ func _run_fast_feedback_barrier(settings: Node) -> void:
 	_expect(
 		not director.is_playing()
 		and camera._impulse_handle == null
-		and camera_position.distance_to(Vector2(80.0, 120.0)) < 0.01
-		and camera_target.position.distance_to(camera_position) < 0.01
+		and camera_transform.is_equal_approx(original_transform)
+		and camera_target.camera.transform.is_equal_approx(camera_transform)
 		and stable_text_position.distance_to(text_position) < 0.01,
 		"fast camera/floating feedback wrote position after its event barrier",
 	)
 	director.queue_free()
 	camera.queue_free()
 	layer.queue_free()
-	camera_target.queue_free()
+	camera_viewport.queue_free()
 	await process_frame
 
 

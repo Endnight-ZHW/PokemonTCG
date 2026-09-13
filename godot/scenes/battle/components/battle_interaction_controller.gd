@@ -27,31 +27,24 @@ const CARD_ACTIONS := {
 	"PROMOTE": true,
 }
 
-var selected_source_key := ""
 
-var _action_rows: Array[Dictionary] = []
 var _rows_by_source: Dictionary = {}
 var _groups_by_source: Dictionary = {}
 var _unreachable_rows: Array[Dictionary] = []
-var _system_rows: Dictionary = {}
 
 
-func rebuild(action_rows: Array[Dictionary], selected_key := "") -> void:
-	_action_rows = action_rows.duplicate()
-	selected_source_key = selected_key
+func rebuild(action_rows: Array[Dictionary]) -> void:
 	_rows_by_source.clear()
 	_groups_by_source.clear()
 	_unreachable_rows.clear()
-	_system_rows.clear()
 
-	for input_row in _action_rows:
+	for input_row in action_rows:
 		var row := _normalized_row(input_row)
 		var action: GameAction = row.get("action") as GameAction
 		if action == null:
 			_unreachable_rows.append(row)
 			continue
 		if is_system_action(action):
-			_system_rows[action.kind] = row
 			continue
 		if not is_supported_card_action(action):
 			_unreachable_rows.append(row)
@@ -65,19 +58,6 @@ func rebuild(action_rows: Array[Dictionary], selected_key := "") -> void:
 		(_rows_by_source[source_key] as Array).append(row)
 
 	_build_groups()
-
-
-## Alias kept for callers that describe this operation as configuration.
-func configure(action_rows: Array[Dictionary], selected_key := "") -> void:
-	rebuild(action_rows, selected_key)
-
-
-func set_selected_source(selected_key: String) -> void:
-	selected_source_key = selected_key
-
-
-func rows() -> Array[Dictionary]:
-	return _action_rows.duplicate()
 
 
 func source_keys() -> Array[String]:
@@ -107,62 +87,11 @@ func actions_for_source(source_key: String) -> Array[GameAction]:
 	return result
 
 
-func rows_for_selected_source() -> Array[Dictionary]:
-	return rows_for_source(selected_source_key)
-
-
-func actions_for_selected_source() -> Array[GameAction]:
-	return actions_for_source(selected_source_key)
-
-
-## Returns UI-ready groups. Actions that differ only by legal target share a group;
-## attacks and abilities remain distinct buttons.
 func action_groups_for_source(source_key: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for value in _groups_by_source.get(source_key, []):
 		result.append((value as Dictionary).duplicate())
 	return result
-
-
-func action_groups_for_selected_source() -> Array[Dictionary]:
-	return action_groups_for_source(selected_source_key)
-
-
-func direct_rows_for_source(source_key: String) -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	for row in rows_for_source(source_key):
-		var action: GameAction = row.get("action") as GameAction
-		if action and target_key_for_action(action, row).is_empty():
-			result.append(row)
-	return result
-
-
-func targeted_rows_for_source(source_key: String) -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	for row in rows_for_source(source_key):
-		var action: GameAction = row.get("action") as GameAction
-		if action and not target_key_for_action(action, row).is_empty():
-			result.append(row)
-	return result
-
-
-func target_keys_for_source(source_key: String) -> Array[String]:
-	var result: Array[String] = []
-	var seen: Dictionary = {}
-	for row in rows_for_source(source_key):
-		var action: GameAction = row.get("action") as GameAction
-		if action == null:
-			continue
-		var target_keys := target_keys_for_action(action, row)
-		for target_key in target_keys:
-			if not target_key.is_empty() and not seen.has(target_key):
-				seen[target_key] = true
-				result.append(target_key)
-	return result
-
-
-func target_keys_for_selected_source() -> Array[String]:
-	return target_keys_for_source(selected_source_key)
 
 
 func is_target_legal(source_key: String, target_key: String) -> bool:
@@ -228,34 +157,10 @@ func is_drop_legal(
 	return not matching_drag_actions(hand_index, target_player, target_slot).is_empty()
 
 
-func system_row(action_name: String) -> Dictionary:
-	return (_system_rows.get(action_name, {}) as Dictionary).duplicate()
-
-
-func system_action(action_name: String) -> GameAction:
-	return system_row(action_name).get("action") as GameAction
-
-
-## Structural reachability: every non-system action must resolve to a card source.
 func unreachable_rows() -> Array[Dictionary]:
 	return _unreachable_rows.duplicate()
 
 
-func unreachable_actions() -> Array[GameAction]:
-	var result: Array[GameAction] = []
-	for row in _unreachable_rows:
-		var action: GameAction = row.get("action") as GameAction
-		if action:
-			result.append(action)
-	return result
-
-
-func all_card_actions_reachable() -> bool:
-	return _unreachable_rows.is_empty()
-
-
-## UI reachability additionally checks that each indexed source is currently
-## represented by a visible card/zone control.
 func unreachable_rows_for_sources(visible_source_keys: Array[String]) -> Array[Dictionary]:
 	var visible: Dictionary = {}
 	for source_key in visible_source_keys:
@@ -334,11 +239,6 @@ static func source_key_for_action(action: GameAction, row: Dictionary = {}) -> S
 	if not slot.is_empty():
 		return pokemon_key(action.actor, slot)
 	return ""
-
-
-static func target_key_for_action(action: GameAction, row: Dictionary = {}) -> String:
-	var keys := target_keys_for_action(action, row)
-	return keys[0] if not keys.is_empty() else ""
 
 
 static func drag_target_keys_for_action(

@@ -160,7 +160,7 @@ func _infer_visible_motion_card_id(
 func _set_paper_card_texture(flying: Control, texture: Texture2D) -> void:
 	if flying == null or texture == null or not is_instance_valid(flying):
 		return
-	var image := flying.get_node_or_null("PaperImage") as TextureRect
+	var image := flying as CardMotionEntity
 	if image == null:
 		return
 	image.texture = texture
@@ -226,6 +226,9 @@ func _motion_entity_finish(flying: Control, fallback: Vector2) -> Vector2:
 		"",
 	))
 	if landing_view is CardView and not attachment_type.is_empty():
+		if table.render3d != null and table.render3d.is_projection_ready():
+			var pose := table.render3d.attachment_pose(landing_view as CardView, attachment_type, int(flying.get_meta("motion_landing_attachment_index", -1)))
+			return table.effects.get_global_transform_with_canvas().affine_inverse() * (table.get_global_transform_with_canvas() * table.render3d.world.projection.world_to_screen(pose.origin))
 		return table._effects_local(
 			(landing_view as CardView).prospective_attachment_visual_global_rect(
 				attachment_type,
@@ -235,6 +238,13 @@ func _motion_entity_finish(flying: Control, fallback: Vector2) -> Vector2:
 		)
 	if landing_view is CardView:
 		return table._effects_local((landing_view as CardView).global_center())
+	if landing_view is CardMotionEntity and (landing_view as CardMotionEntity).has_world_pose and table.render3d != null:
+		var point := table.render3d.world.projection.world_to_screen((landing_view as CardMotionEntity).world_pose.origin)
+		return table.effects.get_global_transform_with_canvas().affine_inverse() * (table.get_global_transform_with_canvas() * point)
+	if landing_view is ZoneView and (landing_view as ZoneView).stack_visual_mode == "prizes":
+		# The fallback already names the individual slot in the fan. Its reserved
+		# six-card Control midpoint would collapse every incoming prize to one spot.
+		return fallback
 	return table._effects_local(landing_view.get_global_rect().get_center())
 
 
@@ -245,6 +255,10 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 	var target := table.presentation_runtime._event_target_endpoint(event)
 	var event_type := str(event.get("event_type", ""))
 	var actor := int(event.get("actor", table.view_player))
+	if table.render3d != null and table.render3d.is_projection_ready() and BattleMulligan3D.handles(event):
+		_register_event_motion_handle(motion_event_id, table.render3d.mulligan.play(event, duration))
+		_finish_event_motion_dispatch(motion_event_id)
+		return
 	if event_type == "pokemon_ko":
 		if bool(data.get("defer_leave_play", false)):
 			_finish_event_motion_dispatch(motion_event_id)
@@ -475,29 +489,6 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 				if target_hidden
 				else _public_motion_texture_for_card_id(card_id)
 			)
-		var target_attachment_type := str(target.get("attachment_type", ""))
-		var source_is_badge_proxy := (
-			existing_flyer != null
-			and bool(existing_flyer.get_meta("attachment_badge_proxy", false))
-		)
-		if source_is_badge_proxy and target_attachment_type.is_empty():
-			flip_texture = (
-				_texture_for_card_id("")
-				if target_hidden
-				else _public_motion_texture_for_card_id(card_id)
-			)
-		elif not source_is_badge_proxy and not target_attachment_type.is_empty():
-			var target_descriptor := AttachmentVisualDescriptor.resolve(
-				target_attachment_type,
-				card_id,
-				index,
-				table.catalog,
-			)
-			flip_texture = (
-				target_descriptor.icon
-				if target_descriptor.icon != null
-				else _neutral_public_card_texture()
-			)
 		if texture == null:
 			table.hand_presentation._dispose_snapshot_hand_source(existing_flyer)
 			continue
@@ -519,13 +510,7 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		motion_specs.append({
 			"texture": texture,
 			"card_id": card_id,
-			"texture_authoritative": (
-				source_hidden
-				or (
-					not card_id.is_empty()
-					and not source_is_badge_proxy
-				)
-			),
+			"texture_authoritative": source_hidden or not card_id.is_empty(),
 			"start": start,
 			"finish": finish,
 			"duration": float(timing.get("duration", 0.0)),
@@ -545,6 +530,7 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 				finish_rotations[index] if index < finish_rotations.size() else 0.0
 			),
 			"landing_view": landing_view,
+			"source_zone": geometry._zone_view_for_endpoint(source),
 			"existing_flyer": existing_flyer,
 			"landing_attachment_type": landing_attachment_type,
 			"landing_attachment_card_id": (
@@ -692,6 +678,13 @@ func _spawn_card_motion_spec(
 		int(spec.get("opponent_hand_stage_count_delta", 0)),
 	)
 	if flying != null:
+		var source_zone := spec.get("source_zone") as ZoneView
+		if source_zone != null and existing_flyer == null and table.render3d != null and table.render3d.is_projection_ready():
+			var to_table := table.get_global_transform_with_canvas().affine_inverse() * table.effects.get_global_transform_with_canvas()
+			var pose := table.render3d.zone_pose_at_screen_point(source_zone, to_table * Vector2(spec["start"]))
+			flying.set_meta("physical_start_pose", pose)
+			(flying as CardMotionEntity).world_pose = pose
+			(flying as CardMotionEntity).has_world_pose = true
 		var motion_card_id := str(spec.get("card_id", ""))
 		if not motion_card_id.is_empty():
 			flying.set_meta("motion_card_id", motion_card_id)
@@ -874,9 +867,10 @@ func _complete_event_motion_entity(flying: Control) -> void:
 	if not flying.has_meta("motion_handle"):
 		return
 	var handle := flying.get_meta("motion_handle") as MotionHandle
+	# Completion listeners may synchronously dispose this entity and its siblings.
+	flying.remove_meta("motion_handle")
 	if handle != null:
 		handle.cancel()
-	flying.remove_meta("motion_handle")
 
 
 func _finish_all_event_motions() -> void:
@@ -1131,6 +1125,8 @@ func _spawn_slot_composite_motion(
 	mover.set_meta("motion_start", start)
 	mover.set_meta("motion_finish", finish)
 	mover.set_meta("motion_landing_view", landing_view)
+	if table.render3d != null and table.render3d.is_projection_ready():
+		mover.set_meta("physical_motion_start", table.render3d.card_pose(mover))
 	mover.set_meta("slot_composite_start_rotation", start_rotation)
 	if not destination_queue.is_empty():
 		mover.set_meta("slot_composite_retain_key", destination_key)
@@ -1152,6 +1148,7 @@ func _spawn_slot_composite_motion(
 	mover.rotation_degrees = start_rotation
 	mover.scale = Vector2.ONE
 	mover.modulate.a = 1.0
+	mover.set_meta("physical_lift", 0.0)
 	mover.z_index = 100 + index
 	mover.set_table_depth(geometry._motion_depth_for_point((start + finish) * 0.5), true)
 	self.add(mover)
@@ -1231,6 +1228,7 @@ func _update_slot_composite_motion(
 	)
 	var target_scale := geometry._slot_composite_target_scale(mover, landing_view)
 	var lift := 1.0 + sin(progress * PI) * table.SLOT_COMPOSITE_LIFT_SCALE
+	mover.set_meta("physical_lift", sin(progress * PI) * 0.45)
 	mover.position = point - mover.size * 0.5
 	mover.rotation_degrees = (
 		lerpf(start_rotation, finish_rotation, progress)
@@ -1238,6 +1236,16 @@ func _update_slot_composite_motion(
 	)
 	mover.scale = Vector2.ONE.lerp(target_scale, progress) * lift
 	mover.modulate.a = 1.0
+	if mover.has_meta("physical_motion_start") and landing_view != null:
+		var source: Transform3D = mover.get_meta("physical_motion_start")
+		var target := table.render3d.card_pose(landing_view)
+		var pose := source.interpolate_with(target, progress)
+		var bend := control.x - (start.x + dynamic_finish.x) * 0.5
+		var projection := table.render3d.world.projection
+		var units := projection.screen_to_world(Vector2(bend, 0)).x - projection.screen_to_world(Vector2.ZERO).x
+		pose.origin.x += sin(progress * PI) * units * 0.65
+		pose.origin.y += sin(progress * PI) * 0.45
+		mover.set_meta("physical_pose", pose)
 
 
 func _begin_slot_composite_handoff(
@@ -1270,6 +1278,8 @@ func _update_slot_composite_handoff(
 		mover.rotation_degrees = landing_view.rotation_degrees
 		mover.scale = geometry._slot_composite_target_scale(mover, landing_view)
 		landing_view.modulate.a = progress
+		if table.render3d != null and table.render3d.is_projection_ready():
+			mover.set_meta("physical_pose", table.render3d.card_pose(landing_view))
 	mover.modulate.a = 1.0 - progress
 
 
@@ -1512,6 +1522,7 @@ func _spawn_reveal_motion(
 		summary,
 		duration,
 		MotionPolicy.reduced(),
+		BattleRevealTransfer3D.start.bind(table, event) if table.render3d != null and table.render3d.is_projection_ready() else Callable(),
 	)
 	_register_event_motion_handle(motion_event_id, handle)
 	return true
@@ -1528,7 +1539,7 @@ func _spawn_shuffle_motion(
 	var texture := _texture_for_card_id("")
 	if texture == null:
 		return false
-	var count := _shuffle_card_count()
+	var count := mini(6, _shuffle_card_count())
 	var source_zone := geometry._zone_view_for_endpoint(endpoint)
 	if source_zone != null:
 		# Shuffle proxies represent physical cards already staged in this exact
@@ -1570,16 +1581,6 @@ func _spawn_shuffle_motion(
 		)
 		var start: Vector2 = origin + pile_extent * depth_ratio
 		var side: float = -1.0 if index % 2 == 0 else 1.0
-		var row: float = floor(float(index) * 0.5)
-		var pile_count := ceili(float(count) * 0.5)
-		var split: Vector2 = start + Vector2(
-			side * (card_size.x * 0.34 + row * 2.4),
-			(row - float(pile_count - 1) * 0.5) * 2.8,
-		)
-		var riffle: Vector2 = origin + Vector2(
-			(float(index) - float(count - 1) * 0.5) * 1.8,
-			absf(float(index) - float(count - 1) * 0.5) * 0.9,
-		)
 		var finish: Vector2 = origin + pile_extent * depth_ratio
 		var flyer := motion_entities._create_paper_card_token(
 			texture,
@@ -1600,19 +1601,16 @@ func _spawn_shuffle_motion(
 		flyer.position = start - flyer.size * 0.5
 		flyer.rotation_degrees = side * -1.5
 		flyer.modulate.a = 1.0
+		flyer.visible = false
 		self.add(flyer)
+		if flyer is CardMotionEntity and table.render3d != null and table.render3d.is_projection_ready():
+			BattleShuffle3D.apply(0.0, flyer, table.render3d, index, count)
 		_retain_shuffle_source_zone(source_zone, flyer)
 		var tween := create_tween()
 		self.bind_tween(flyer, tween)
 		tween.tween_method(
 			_update_shuffle_card.bind(
 				flyer,
-				start,
-				split,
-				riffle,
-				finish,
-				side,
-				int(row),
 				index,
 				count,
 			),
@@ -1629,71 +1627,18 @@ func _spawn_shuffle_motion(
 func _update_shuffle_card(
 	progress: float,
 	flying_value: Variant,
-	start: Vector2,
-	split: Vector2,
-	riffle: Vector2,
-	finish: Vector2,
-	side: float,
-	pile_index: int,
 	index: int,
 	count: int,
 ) -> void:
 	if not is_instance_valid(flying_value):
 		return
-	var flying := flying_value as Control
+	var flying := flying_value as CardMotionEntity
 	if flying == null:
 		return
-	var normalized := clampf(progress, 0.0, 1.0)
-	var point := finish
-	var rotation_value := 0.0
-	var scale_value := Vector2.ONE
-	if normalized < 0.24:
-		var split_progress := geometry._shuffle_ease_in_out_cubic(normalized / 0.24)
-		point = start.lerp(split, split_progress)
-		rotation_value = lerpf(side * -1.5, side * 7.0, split_progress)
-	elif normalized < 0.58:
-		# Each half releases from its inside edge in a short alternating cascade.
-		var pile_count := ceili(float(count) * 0.5)
-		var release_offset := (
-			float(pile_index) / float(maxi(1, pile_count - 1)) * 0.11
-		)
-		var riffle_progress := clampf(
-			(normalized - 0.24 - release_offset) / (0.34 - release_offset),
-			0.0,
-			1.0,
-		)
-		riffle_progress = geometry._shuffle_ease_out_cubic(riffle_progress)
-		point = split.lerp(riffle, riffle_progress)
-		rotation_value = lerpf(side * 7.0, side * 1.2, riffle_progress)
-		scale_value = Vector2(
-			1.0 + sin(riffle_progress * PI) * 0.025,
-			1.0 - sin(riffle_progress * PI) * 0.035,
-		)
-	elif normalized < 0.82:
-		# The interleaved packet arches and settles like a light bridge shuffle.
-		var bridge_progress := geometry._shuffle_ease_in_out_cubic((normalized - 0.58) / 0.24)
-		point = riffle.lerp(finish, bridge_progress)
-		var center_distance := absf(float(index) - float(count - 1) * 0.5)
-		point.y -= sin(bridge_progress * PI) * (10.0 + center_distance * 1.2)
-		rotation_value = lerpf(side * 1.2, 0.0, bridge_progress)
-		scale_value = Vector2(
-			1.0 + sin(bridge_progress * PI) * 0.045,
-			1.0 - sin(bridge_progress * PI) * 0.055,
-		)
+	if table.render3d.is_projection_ready():
+		BattleShuffle3D.apply(clampf(progress, 0.0, 1.0), flying, table.render3d, index, count)
 	else:
-		# Finish with one compact cut: the upper packet slides out and returns.
-		var cut_progress := clampf((normalized - 0.82) / 0.18, 0.0, 1.0)
-		var upper_packet := index >= int(floor(float(count) * 0.5))
-		var cut_offset := Vector2(
-			24.0 if upper_packet else -7.0,
-			-8.0 if upper_packet else 3.0,
-		) * sin(cut_progress * PI)
-		point = finish + cut_offset
-		rotation_value = (4.0 if upper_packet else -1.5) * sin(cut_progress * PI)
-	flying.position = point - flying.size * 0.5
-	flying.rotation_degrees = rotation_value
-	flying.scale = scale_value
-	flying.modulate.a = 1.0
+		flying.visible = false
 
 
 func _finish_shuffle_card(
@@ -1716,6 +1661,8 @@ func _finish_shuffle_card(
 	_release_shuffle_source_zone(flying)
 	flying.visible = false
 	flying.modulate.a = 0.0
+	if int(flying.get_meta("shuffle_packet_index", -1)) == int(flying.get_meta("shuffle_packet_count", 0)) - 1 and table.director != null:
+		table.director.audio_requested.emit("card_place")
 
 
 func _retain_shuffle_source_zone(zone: ZoneView, flying: Control) -> void:
@@ -1762,6 +1709,8 @@ func _clear_shuffle_source_masks() -> void:
 
 
 func _clear_transient_visuals() -> void:
+	if table.render3d != null:
+		table.render3d.mulligan.clear()
 	if table.camera_rig != null:
 		table.camera_rig.cancel()
 	table._cancel_startup_shuffle()

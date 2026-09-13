@@ -137,14 +137,6 @@ func is_frozen() -> bool:
 	return _frozen and _definitions.is_read_only()
 
 
-func operation_kinds() -> Array[String]:
-	var result: Array[String] = []
-	for value in _definitions.keys():
-		result.append(str(value))
-	result.sort()
-	return result
-
-
 func validation_error(value: Variant) -> String:
 	if not value is Dictionary:
 		return "ModifierDescriptor必须是对象。"
@@ -224,35 +216,23 @@ func wire_validation_error(value: Variant) -> String:
 		return validation_error(value)
 	var normalized: Dictionary = Dictionary(value).duplicate(true)
 	for field in ["priority", "controller"]:
-		if normalized.has(field) and _is_wire_integer(normalized[field]):
+		if normalized.has(field) and WireValue.is_integer(normalized[field]):
 			normalized[field] = int(normalized[field])
 	if normalized.get("condition") is Dictionary:
 		var condition: Dictionary = normalized["condition"]
 		for field in condition:
 			if (
 				CONDITION_TYPES.get(str(field), TYPE_NIL) == TYPE_INT
-				and _is_wire_integer(condition[field])
+				and WireValue.is_integer(condition[field])
 			):
 				condition[field] = int(condition[field])
 	if normalized.get("operation") is Dictionary:
 		var operation: Dictionary = normalized["operation"]
 		var definition: Dictionary = _definitions.get(str(operation.get("kind", "")), {})
 		for field in definition.get("integer_keys", []):
-			if operation.has(field) and _is_wire_integer(operation[field]):
+			if operation.has(field) and WireValue.is_integer(operation[field]):
 				operation[field] = int(operation[field])
 	return validation_error(normalized)
-
-
-static func _is_wire_integer(value: Variant) -> bool:
-	if value is int:
-		return true
-	return (
-		value is float
-		and is_finite(value)
-		and value >= -2147483648.0
-		and value <= 2147483647.0
-		and value == floorf(value)
-	)
 
 
 static func _deep_make_read_only(value: Variant) -> void:

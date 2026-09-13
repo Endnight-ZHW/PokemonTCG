@@ -66,20 +66,12 @@ static func validate_instance(
 	return ActionDefinitionRegistry.shared().validate_action(value, public_only)
 
 
-static func is_known_kind(value: String) -> bool:
-	return ActionDefinitionRegistry.shared().has(value)
-
-
 static func encoder_kinds() -> Array[String]:
 	return ActionDefinitionRegistry.shared().encoder_kinds()
 
 
 static func encoding_index(value: String) -> int:
 	return ActionDefinitionRegistry.shared().encoding_index(value)
-
-
-static func is_terminal_kind(value: String) -> bool:
-	return ActionDefinitionRegistry.shared().is_terminal(value)
 
 
 func to_dict() -> Dictionary:

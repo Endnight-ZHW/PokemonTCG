@@ -45,10 +45,6 @@ func configure(
 	queue_redraw()
 
 
-func is_animating() -> bool:
-	return active and not reduced_motion
-
-
 func _process(delta: float) -> void:
 	_time += delta
 	_update_status_label()

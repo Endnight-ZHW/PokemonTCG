@@ -134,6 +134,7 @@ static var _touch_owner: WeakRef
 var _long_press_timer: Timer
 var _long_press_fired := false
 var _press_card_id := ""
+var _press_moved := false
 var _touch_pointer := -1
 var _touch_scrolling := false
 var _hovered := false
@@ -177,6 +178,33 @@ func set_local_visual_id(value: String) -> void:
 		set_meta("local_visual_id", value)
 
 
+func _physical_presenter() -> Battle3DPresenter:
+	if not has_meta("physical_presenter"):
+		return null
+	var value := get_meta("physical_presenter") as WeakRef
+	return value.get_ref() as Battle3DPresenter if value != null else null
+
+
+func _register_physical_surface() -> void:
+	var cache := _root_child("CardTextureCache")
+	if cache != null and not cache.texture_ready.is_connected(_on_physical_texture_ready):
+		cache.texture_ready.connect(_on_physical_texture_ready)
+	var ancestor := get_parent()
+	while ancestor != null:
+		if ancestor.has_method("register_3d_surface"):
+			ancestor.register_3d_surface(self)
+			return
+		ancestor = ancestor.get_parent()
+
+
+func _on_physical_texture_ready(path: String, texture: Texture2D) -> void:
+	if image == null or is_hidden_card or empty:
+		return
+	if str(_card_data(card_id).get("image_path", "")) == path:
+		image.texture = texture
+		empty_label.visible = false
+
+
 func _ready() -> void:
 	set_process(false)
 	_long_press_timer = Timer.new()
@@ -200,6 +228,7 @@ func _ready() -> void:
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
 	_on_resized()
+	_register_physical_surface()
 	_refresh()
 	_sync_detached_selection_ring()
 	target_glow.visible = targetable
@@ -324,14 +353,6 @@ func set_disabled_reason(reason: String) -> void:
 
 func set_legal_target_hint(text: String) -> void:
 	_legal_target_hint = text
-	set_targetable(
-		not _legal_target_hint.is_empty()
-		or not _allowed_drop_hand_indices.is_empty()
-	)
-
-
-func set_allowed_drop_hand_indices(indices: Array) -> void:
-	_replace_allowed_drop_hand_indices(indices)
 	set_targetable(
 		not _legal_target_hint.is_empty()
 		or not _allowed_drop_hand_indices.is_empty()
@@ -477,6 +498,9 @@ func cancel_drag_state() -> void:
 
 
 func global_center() -> Vector2:
+	var physical := _physical_presenter()
+	if physical != null:
+		return physical.global_bounds(self).get_center()
 	# Hand and table cards can be rotated, scaled and lifted around their center.
 	# Transforming the local midpoint keeps presentation flights anchored to the
 	# actual rendered card instead of the unrotated layout rectangle.
@@ -486,6 +510,9 @@ func global_center() -> Vector2:
 
 
 func visual_global_bounds() -> Rect2:
+	var physical := _physical_presenter()
+	if physical != null:
+		return physical.global_bounds(self)
 	# Selection and hover deliberately transform InteractionRoot rather than the
 	# layout-owned CardView root. Expose that rendered rectangle to table overlays
 	# and hit tests so they follow the card the player actually sees.
@@ -508,6 +535,9 @@ func visual_global_bounds() -> Rect2:
 
 
 func contains_visual_global_point(global_point: Vector2) -> bool:
+	var physical := _physical_presenter()
+	if physical != null:
+		return physical.contains_global_point(self, global_point)
 	_resolve_scene_nodes()
 	var visual_root := interaction_root if interaction_root != null else self
 	var local_point := (
@@ -578,6 +608,9 @@ func attachment_anchor_global(
 
 
 func _has_point(point: Vector2) -> bool:
+	var physical := _physical_presenter()
+	if physical != null:
+		return physical.contains_global_point(self, get_global_transform_with_canvas() * point)
 	# Input arrives in the layout root's local space, while hover/selection lift
 	# and scale InteractionRoot. Transform through canvas space so the visible
 	# raised edge remains clickable and the old, vacated rectangle does not.
@@ -706,7 +739,7 @@ func _refresh() -> void:
 		var card := _card_data(card_id)
 		current_card = card
 		image.texture = (
-			texture_cache.call("get_texture", str(card.get("image_path", ""))) as Texture2D
+			texture_cache.call("get_cached_or_request" if _physical_presenter() != null else "get_texture", str(card.get("image_path", ""))) as Texture2D
 			if texture_cache
 			else null
 		)
@@ -787,13 +820,14 @@ func _gui_input(event: InputEvent) -> void:
 			if not _pressed:
 				return
 			var moved: float = Vector2(event.position).distance_to(_press_position)
-			var activate := not _long_press_fired and moved < MOUSE_DRAG_THRESHOLD
+			var activate := not _long_press_fired and not _press_moved and moved < MOUSE_DRAG_THRESHOLD and _has_point(event.position)
 			cancel_pointer_gesture()
 			if activate:
 				activated.emit(card_id, hand_index, owner_player, slot)
 			accept_event()
 	elif event is InputEventMouseMotion and _pressed:
 		if Vector2(event.position).distance_to(_press_position) >= MOUSE_DRAG_THRESHOLD:
+			_press_moved = true
 			_long_press_timer.stop()
 			if hand_index >= 0 and not _long_press_fired:
 				_begin_forced_drag()
@@ -802,6 +836,7 @@ func _gui_input(event: InputEvent) -> void:
 
 func _begin_pointer_press(at_position: Vector2) -> void:
 	_pressed = true
+	_press_moved = false
 	_long_press_fired = false
 	_press_card_id = card_id
 	_press_position = at_position
@@ -810,7 +845,7 @@ func _begin_pointer_press(at_position: Vector2) -> void:
 
 
 func _on_long_press_timeout() -> void:
-	if not _pressed or _dragging or _touch_scrolling or not is_visible_in_tree():
+	if not _pressed or _press_moved or _dragging or _touch_scrolling or not is_visible_in_tree():
 		return
 	if card_id.is_empty() or card_id != _press_card_id:
 		cancel_pointer_gesture()
@@ -825,6 +860,7 @@ func cancel_pointer_gesture() -> void:
 	if _touch_owner != null and _touch_owner.get_ref() == self:
 		_touch_owner = null
 	_pressed = false
+	_press_moved = false
 	_long_press_fired = false
 	_touch_pointer = -1
 	_touch_scrolling = false
@@ -845,8 +881,8 @@ func _handle_screen_touch(event: InputEventScreenTouch) -> void:
 	var moved := event.position.distance_to(_press_position)
 	var activate := (
 		_pressed and not _touch_scrolling and not _dragging
-		and not _long_press_fired and not event.canceled
-		and moved < TOUCH_DRAG_THRESHOLD
+		and not _long_press_fired and not _press_moved and not event.canceled
+		and moved < TOUCH_DRAG_THRESHOLD and _has_point(event.position)
 	)
 	cancel_pointer_gesture()
 	if activate:
@@ -866,6 +902,7 @@ func _handle_screen_drag(event: InputEventScreenDrag) -> void:
 	var displacement := event.position - _press_position
 	if displacement.length() < TOUCH_DRAG_THRESHOLD:
 		return
+	_press_moved = true
 	_long_press_timer.stop()
 	if _long_press_fired:
 		return

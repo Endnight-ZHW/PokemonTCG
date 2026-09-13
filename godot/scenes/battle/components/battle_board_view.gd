@@ -133,7 +133,7 @@ func _refresh_field_zones(own: PlayerState, opponent: PlayerState) -> void:
 
 
 func _refresh_actions() -> void:
-	table.interaction_router.rebuild(_routed_action_rows(), table.selected_entity_key)
+	table.interaction_router.rebuild(_routed_action_rows())
 	if table.hud:
 		table.hud.update_phase(table.state_ref, table.view_player, table.ai_thinking, table.game_mode, table.action_rows)
 	table.phase_advance_button = table.hud.phase_advance_button if table.hud else null
@@ -355,8 +355,6 @@ func _layout_board() -> void:
 	_layout_coin_showcase()
 	table.hand_view._reconcile_drag_after_layout_change()
 	table._refresh_ai_thinking_indicator()
-	if table.playmat:
-		table.playmat.queue_redraw()
 	if table.effects:
 		table.effects.queue_redraw()
 	if table.world_feedback:
@@ -393,8 +391,6 @@ func _layout_field_slots(metrics: Dictionary, plan: Dictionary) -> void:
 	var bench_size: Vector2 = plan["bench_size"]
 	var opponent_bench_centers: Array[Vector2] = plan["opponent_bench_centers"]
 	var own_bench_centers: Array[Vector2] = plan["own_bench_centers"]
-	var opponent_bench_rects: Array[Rect2] = plan["opponent_bench_rects"]
-	var own_bench_rects: Array[Rect2] = plan["own_bench_rects"]
 	for index in range(5):
 		_place_perspective_card(
 			table.opponent_bench[index],
@@ -427,13 +423,6 @@ func _layout_field_slots(metrics: Dictionary, plan: Dictionary) -> void:
 		metrics,
 		1.2,
 		34,
-	)
-	_update_playmat_field_guides(
-		opponent_bench_rects,
-		own_bench_rects,
-		plan["opponent_active_rect"],
-		plan["own_active_rect"],
-		metrics,
 	)
 
 
@@ -550,9 +539,6 @@ func _visual_rect_in_control(
 
 
 func _layout_pile_docks(metrics: Dictionary) -> void:
-	if table.playmat == null:
-		return
-	var guides: Array[Dictionary] = []
 	var layout_scale := float(metrics["layout_scale"])
 	var horizontal_padding := clampf(4.8 * layout_scale, 4.0, 5.5)
 	var vertical_padding := clampf(7.5 * layout_scale, 6.0, 9.0)
@@ -596,16 +582,6 @@ func _layout_pile_docks(metrics: Dictionary) -> void:
 		# Use transformed AABBs for both the top-card recess and full paper stack.
 		# ZoneView carries a subtle perspective rotation and draws shadows outside
 		# its raw rect, so position/table.size merging alone clips the lower-left depth.
-		var deck_rect := _visual_rect_in_control(
-			deck,
-			deck.get_stack_face_rect().grow(2.5),
-			table.board_canvas,
-		)
-		var discard_rect := _visual_rect_in_control(
-			discard,
-			discard.get_stack_face_rect().grow(2.5),
-			table.board_canvas,
-		)
 		var deck_visual := _visual_rect_in_control(
 			deck,
 			deck.get_stack_visual_max_rect().grow(6.0),
@@ -631,17 +607,7 @@ func _layout_pile_docks(metrics: Dictionary) -> void:
 		if not safe_shift.is_zero_approx():
 			deck.position += safe_shift
 			discard.position += safe_shift
-			deck_rect.position += safe_shift
-			discard_rect.position += safe_shift
-			dock_rect.position += safe_shift
-		guides.append({
-			"rect": dock_rect,
-			"deck_rect": deck_rect,
-			"discard_rect": discard_rect,
-			"side": str(row["side"]),
-			"depth": (deck.table_depth + discard.table_depth) * 0.5,
-		})
-	table.playmat.set_pile_guides(guides)
+
 
 
 func _place_perspective_card(
@@ -671,53 +637,6 @@ func _perspective_card_rect(
 	metrics: Dictionary,
 ) -> Dictionary:
 	return BattleTableLayout.perspective_card_rect(center, base_size, metrics)
-
-
-func _update_playmat_field_guides(
-	opponent_bench_rects: Array[Rect2],
-	own_bench_rects: Array[Rect2],
-	opponent_active_rect: Rect2,
-	own_active_rect: Rect2,
-	metrics: Dictionary,
-) -> void:
-	if table.playmat == null:
-		return
-	var guides: Array[Dictionary] = []
-	guides.append({
-		"kind": "bench",
-		"side": "opponent",
-		"rect": _union_rects(opponent_bench_rects).grow(
-			12.0 * float(metrics["layout_scale"])
-		),
-		"slots": opponent_bench_rects,
-		"depth": _perspective_depth(_union_rects(opponent_bench_rects).get_center().y, metrics),
-	})
-	guides.append({
-		"kind": "bench",
-		"side": "own",
-		"rect": _union_rects(own_bench_rects).grow(
-			12.0 * float(metrics["layout_scale"])
-		),
-		"slots": own_bench_rects,
-		"depth": _perspective_depth(_union_rects(own_bench_rects).get_center().y, metrics),
-	})
-	guides.append({
-		"kind": "active",
-		"side": "opponent",
-		"rect": opponent_active_rect,
-		"depth": _perspective_depth(opponent_active_rect.get_center().y, metrics),
-	})
-	guides.append({
-		"kind": "active",
-		"side": "own",
-		"rect": own_active_rect,
-		"depth": _perspective_depth(own_active_rect.get_center().y, metrics),
-	})
-	table.playmat.set_field_guides(guides)
-
-
-func _union_rects(rects: Array[Rect2]) -> Rect2:
-	return BattleTableLayout.union_rects(rects)
 
 
 func _place_perspective_zone(

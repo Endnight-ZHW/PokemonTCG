@@ -165,6 +165,14 @@ func _pump() -> void:
 	_active = row
 	handle.mark_running()
 	transition_started.emit(handle)
+	if run_generation != _generation or _table == null:
+		return
+	var assets := _table.render3d.prefetch_transition_assets(request.target_view, request.events)
+	if not assets.is_finished():
+		set_preflight(assets)
+		await assets.completed
+	if run_generation != _generation or _table == null:
+		return
 	var previous_snapshot := _table.capture_presentation_snapshot()
 	_table.prepare_hand_identity_transition(request.events, previous_snapshot)
 	if not request.drag_session_id.is_empty():

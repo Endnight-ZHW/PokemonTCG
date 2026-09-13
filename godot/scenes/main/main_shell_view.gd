@@ -58,6 +58,13 @@ func _exit_tree() -> void:
 
 
 func clear_screen() -> void:
+	_toast_generation += 1
+	if _toast_tween and _toast_tween.is_valid():
+		_toast_tween.kill()
+	_toast_tween = null
+	if toast_label:
+		toast_label.hide()
+		toast_label.text = ""
 	if main:
 		main._startup_choreography_generation += 1
 		main._startup_choreography_running = false
@@ -92,6 +99,11 @@ func hide_loading() -> void:
 		loading_layer.visible = false
 
 func show_toast(message: String, is_error: bool = false) -> void:
+	# Battle actions already have animation and log feedback. Only failures need
+	# an additional notification while playing.
+	if main.current_screen == SCREEN_GAME and not is_error:
+		return
+	message = PlayerFacingText.message(message, is_error)
 	if message.strip_edges().is_empty():
 		return
 	_toast_generation += 1

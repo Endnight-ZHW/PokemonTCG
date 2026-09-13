@@ -126,10 +126,6 @@ func is_compact_layout() -> bool:
 	return _compact
 
 
-func option_count() -> int:
-	return _options.size()
-
-
 func _build_nodes() -> void:
 	if _panel != null:
 		return

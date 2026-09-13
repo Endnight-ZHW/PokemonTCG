@@ -647,7 +647,7 @@ func set_option_disabled_reasons(reasons: Dictionary) -> void:
 
 func show_blocked_reason(reason: String) -> void:
 	_resolve_nodes()
-	var clean_reason := reason.strip_edges()
+	var clean_reason := PlayerFacingText.message(reason.strip_edges(), true)
 	if clean_reason.is_empty():
 		_clear_blocked_reason()
 		return
@@ -657,20 +657,12 @@ func show_blocked_reason(reason: String) -> void:
 	blocked_reason_label.visible = true
 
 
-func option_disabled_reason(option_id: String) -> String:
-	return str(_option_disabled_reasons.get(option_id, ""))
-
-
 func card_option_count() -> int:
 	return (
 		energy_distribution._energy_target_models.size()
 		if energy_distribution._energy_distribution_mode and not energy_distribution._energy_target_models.is_empty()
 		else _option_cards.size()
 	)
-
-
-func text_option_count() -> int:
-	return _option_buttons.size()
 
 
 func selected_count_for(option_id: String) -> int:
@@ -938,7 +930,7 @@ func _blocked_reason_for_unselected(option_id: String) -> String:
 		return ""
 	if int(_selection_counts.get(option_id, 0)) > 0 and not _allow_duplicates:
 		return ""
-	return str(_option_disabled_reasons.get(option_id, ""))
+	return PlayerFacingText.message(str(_option_disabled_reasons.get(option_id, "")), true)
 
 
 func _clear_blocked_reason() -> void:
@@ -1362,10 +1354,6 @@ func _apply_responsive_layout() -> void:
 			"responsive_preview_width",
 			preview_width if show_preview else 0.0,
 		)
-
-
-func responsive_column_count() -> int:
-	return int(card_grid.get_meta("responsive_columns", 1)) if card_grid else 1
 
 
 func responsive_preview_width() -> float:

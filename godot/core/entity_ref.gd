@@ -120,7 +120,7 @@ static func validate_dict(value: Variant) -> String:
 	if not value is Dictionary:
 		return "实体引用必须是对象。"
 	var data: Dictionary = value
-	if not data.get("kind") is String or not _is_wire_integer(data.get("player")):
+	if not data.get("kind") is String or not WireValue.is_integer(data.get("player")):
 		return "实体引用基础字段无效。"
 	var kind_value := str(data["kind"])
 	var expected: Array[String]
@@ -143,7 +143,7 @@ static func validate_dict(value: Variant) -> String:
 		if not data.has(field):
 			return "实体引用缺少字段：%s" % field
 	for integer_field in ["index"]:
-		if data.has(integer_field) and not _is_wire_integer(data[integer_field]):
+		if data.has(integer_field) and not WireValue.is_integer(data[integer_field]):
 			return "实体引用索引类型无效。"
 	for string_field in ["zone", "slot", "attachment_type", "card_id"]:
 		if data.has(string_field) and not data[string_field] is String:
@@ -170,15 +170,3 @@ static func _valid_slot(value: String) -> bool:
 		return false
 	var suffix := value.trim_prefix("bench_")
 	return suffix.is_valid_int() and int(suffix) >= 0 and int(suffix) < 5
-
-
-static func _is_wire_integer(value: Variant) -> bool:
-	if value is int:
-		return true
-	return (
-		value is float
-		and is_finite(value)
-		and value >= -2147483648.0
-		and value <= 2147483647.0
-		and value == floorf(value)
-	)

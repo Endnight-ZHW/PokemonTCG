@@ -72,7 +72,7 @@ static func validate(
 	]:
 		if not row.has(field):
 			return _invalid("missing_field", "消息缺少字段：%s" % field)
-	if not _is_integer_number(row["protocol_version"]):
+	if not WireValue.is_integer(row["protocol_version"]):
 		return _invalid("invalid_field_type", "协议版本字段类型错误。")
 	if int(row.get("protocol_version", -1)) != VERSION:
 		var received := int(row.get("protocol_version", -1))
@@ -97,9 +97,9 @@ static func validate(
 	):
 		return _invalid("invalid_field_value", "消息标识符过长。")
 	if (
-		not _is_integer_number(row["sender"])
-		or not _is_integer_number(row["sequence"])
-		or not _is_integer_number(row["state_revision"])
+		not WireValue.is_integer(row["sender"])
+		or not WireValue.is_integer(row["sequence"])
+		or not WireValue.is_integer(row["state_revision"])
 		or not row["action_id"] is String
 		or not row["request_id"] is String
 	):

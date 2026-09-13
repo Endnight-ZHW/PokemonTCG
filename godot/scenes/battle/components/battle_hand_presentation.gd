@@ -111,7 +111,7 @@ func _stage_snapshot_hand_sources(
 		if texture == null:
 			continue
 		var size_value := table.motion_geometry._vector_or_default(row.get("size"), table.hand_view._current_hand_card_size())
-		var center := table.motion_geometry._vector_or_default(row.get("center"), table._own_hand_center())
+		var center := table.motion_geometry._vector_or_default(row.get("anchor_center", row.get("center")), table._own_hand_center())
 		var proxy := table.motion_entities._create_paper_card_token(
 			texture,
 			size_value,
@@ -123,15 +123,13 @@ func _stage_snapshot_hand_sources(
 		proxy.rotation_degrees = float(row.get("rotation_degrees", 0.0))
 		var motion_proxy := proxy as CardMotionEntity
 		if motion_proxy != null:
-			motion_proxy.configure_motion(
-				str(row.get("visual_id", key)),
-				{
-					"position": proxy.position,
-					"size": size_value,
-					"rotation_degrees": proxy.rotation_degrees,
-				},
-			)
+			motion_proxy.configure_motion(str(row.get("visual_id", key)))
 		proxy.set_meta("snapshot_hand_key", key)
+		if motion_proxy != null and row.get("world_pose") is Transform3D:
+			motion_proxy.world_pose = row.world_pose
+			motion_proxy.has_world_pose = true
+			proxy.set_meta("snapshot_world_pose", row.world_pose)
+			proxy.set_meta("snapshot_screen_center", center)
 		proxy.set_meta("snapshot_card_id", card_id)
 		table.effects.add_child(proxy)
 		_presentation_hand_source_proxies.append(proxy)
@@ -147,6 +145,8 @@ func _stage_opponent_hand_transaction(
 	var opponent := 1 - table.view_player
 	var incoming_count := 0
 	for event in events:
+		if table.render3d != null and BattleMulligan3D.handles(event):
+			continue
 		if _opponent_hand_event_amount(event) <= 0:
 			continue
 		var source := table.presentation_runtime._event_source_endpoint(event)
@@ -203,6 +203,11 @@ func _stage_opponent_hand_transaction(
 		proxy.position = center - size_value * 0.5
 		proxy.rotation_degrees = float(row.get("rotation_degrees", 0.0))
 		proxy.set_meta("snapshot_opponent_hand_index", index)
+		if proxy is CardMotionEntity and row.get("world_pose") is Transform3D:
+			(proxy as CardMotionEntity).world_pose = row.world_pose
+			(proxy as CardMotionEntity).has_world_pose = true
+			proxy.set_meta("snapshot_world_pose", row.world_pose)
+			proxy.set_meta("snapshot_screen_center", center)
 		table.effects.add_child(proxy)
 		_presentation_opponent_hand_proxies.append(proxy)
 	var state_value: Variant = previous_snapshot.get("state", {})
@@ -215,6 +220,9 @@ func _stage_opponent_hand_transaction(
 	else:
 		_presentation_opponent_hand_stage_count = snapshot_rows.size()
 	_reconcile_opponent_hand_proxy_count()
+	for proxy in _presentation_opponent_hand_proxies:
+		if proxy is CardMotionEntity and not (proxy as CardMotionEntity).has_world_pose:
+			_initialize_opponent_hand_proxy(proxy, _presentation_opponent_hand_stage_count)
 
 func _opponent_hand_event_amount(event: Dictionary) -> int:
 	var card_ids := table.motion_geometry._event_card_ids(event)
@@ -382,6 +390,7 @@ func _adopt_opponent_hand_landing_flyer(flyer: Control) -> bool:
 	flyer.remove_meta("motion_landing_view")
 	flyer.remove_meta("opponent_hand_staged_landing")
 	flyer.remove_meta("opponent_hand_stage_count_delta")
+	if flyer.has_meta("physical_attachment_source"): flyer.remove_meta("physical_attachment_source")
 	flyer.set_meta("battle_transient_kind", "SnapshotOpponentHandProxy")
 	flyer.z_index = 86 + _presentation_opponent_hand_proxies.size()
 	_presentation_opponent_hand_proxies.append(flyer)
@@ -432,6 +441,19 @@ func _reconcile_opponent_hand_proxy_count() -> void:
 		proxy.position = center - size_value * 0.5
 		table.effects.add_child(proxy)
 		_presentation_opponent_hand_proxies.append(proxy)
+		_initialize_opponent_hand_proxy(proxy, desired)
+
+func _initialize_opponent_hand_proxy(proxy: Control, count: int) -> void:
+	var index := _presentation_opponent_hand_proxies.find(proxy)
+	var plan := BattleTableLayout.opponent_hand_plan(count, table.opponent_hand_surface.size.x,
+		proxy.size, table.opponent_hand_minimum_spacing, table.opponent_hand_rotation_degrees)
+	var item: Dictionary = plan.items[index]
+	var center: Vector2 = item.position + proxy.size * 0.5
+	proxy.position = table._effects_local(table.opponent_hand_surface.get_global_transform_with_canvas() * center) - proxy.size * 0.5
+	proxy.rotation_degrees = float(item.rotation_degrees)
+	proxy.set_meta("snapshot_opponent_hand_index", index)
+	if table.render3d != null:
+		table.render3d.hand_fan.reflow_proxy(proxy, proxy.position, proxy.rotation_degrees, null, 0.0)
 
 func _reflow_opponent_hand_proxies() -> void:
 	if _presentation_opponent_hand_proxies.is_empty() or table.opponent_hand_surface == null:
@@ -453,6 +475,7 @@ func _reflow_opponent_hand_proxies() -> void:
 		var item: Dictionary = items[index]
 		var local_center: Vector2 = item.get("position", Vector2.ZERO) + size_value * 0.5
 		var global_center := table.opponent_hand_surface.get_global_transform_with_canvas() * local_center
+		proxy.set_meta("snapshot_opponent_hand_index", index)
 		_move_snapshot_hand_source(
 			proxy,
 			table._effects_local(global_center),
@@ -515,6 +538,8 @@ func _reposition_opponent_hand_proxies() -> void:
 		var global_center := table.opponent_hand_surface.get_global_transform_with_canvas() * local_center
 		proxy.position = table._effects_local(global_center) - size_value * 0.5
 		proxy.rotation_degrees = float(item.get("rotation_degrees", 0.0))
+		if table.render3d != null:
+			table.render3d.hand_fan.reflow_proxy(proxy, proxy.position, proxy.rotation_degrees, null, 0.0)
 
 func _stage_attachment_source_proxies(events: Array[Dictionary]) -> void:
 	_clear_attachment_source_proxies()
@@ -692,7 +717,9 @@ func _stage_hand_transition_geometry(previous_snapshot: Dictionary) -> void:
 		if previous_size is Vector2:
 			matched.custom_minimum_size = previous_size
 			matched.size = previous_size
-		var center_value: Variant = row.get("center", Vector2.ZERO)
+		if row.get("world_pose") is Transform3D:
+			matched.set_meta("physical_pose", row.world_pose)
+		var center_value: Variant = row.get("anchor_center", row.get("center", Vector2.ZERO))
 		if center_value is Vector2 and table.effects != null and table.hand_surface != null:
 			var previous_center: Vector2 = center_value
 			var global_center: Vector2 = (
@@ -738,6 +765,7 @@ func _schedule_hand_transition_for_event(event: Dictionary, duration: float) -> 
 			generation,
 			event_id,
 			insertion_sequence,
+			table.render3d != null and str(event.get("event_type", "")) not in ["cards_drawn", "prize_taken"],
 		)
 	elif (
 		str(source.get("zone", "")) == "hand"
@@ -839,9 +867,10 @@ func _run_hand_insertions(
 	generation: int,
 	event_id: String,
 	sequence: MotionHandle,
+	reserve_together: bool = false,
 ) -> void:
 	var delay := flight_duration * 0.55
-	if MotionPolicy.reduced():
+	if MotionPolicy.reduced() or reserve_together:
 		delay = 0.0
 	if delay > 0.0:
 		await get_tree().create_timer(delay).timeout
@@ -856,22 +885,24 @@ func _run_hand_insertions(
 	# preserves the physical "incoming card pushes the hand" behaviour, but must
 	# finish just before the following card reaches the hand.
 	var insertion_reflow_duration := -1.0
-	if amount > 1 and not MotionPolicy.reduced():
+	if amount > 1 and not MotionPolicy.reduced() and not reserve_together:
 		insertion_reflow_duration = minf(
 			MotionPolicy.duration("hand_reflow"),
 			MotionPolicy.duration("multi_card_stagger") * 0.82,
 		)
-	for index in range(amount):
+	# Selected/recovered cards arrive as a batch. Open their slots together so
+	# the landing target cannot jump sideways as the next card makes room.
+	for index in range(1 if reserve_together else amount):
 		_presentation_hand_stage_count = mini(
 			_presentation_hand_final_count,
-			_presentation_hand_stage_count + 1,
+			_presentation_hand_stage_count + (amount if reserve_together else 1),
 		)
 		latest_reflow_handles = _tween_hand_to_stage_count(
 			_presentation_hand_stage_count,
 			insertion_reflow_duration,
 		)
 		_set_hand_sequence_handles(event_id, "reflow_handles", latest_reflow_handles)
-		if index + 1 < amount and not MotionPolicy.reduced():
+		if not reserve_together and index + 1 < amount and not MotionPolicy.reduced():
 			await get_tree().create_timer(
 				MotionPolicy.duration("multi_card_stagger")).timeout
 			if generation != _presentation_hand_stage_generation:
@@ -984,9 +1015,13 @@ func _move_snapshot_hand_source(
 	if duration <= 0.0:
 		proxy.position = target_position
 		proxy.rotation_degrees = target_rotation
+		if table.render3d != null:
+			table.render3d.hand_fan.reflow_proxy(proxy, target_position, target_rotation, null, 0.0)
 		handle.finish()
 		return handle
 	var tween := create_tween().set_parallel(true)
+	if table.render3d != null:
+		table.render3d.hand_fan.reflow_proxy(proxy, target_position, target_rotation, tween, duration)
 	tween.tween_property(proxy, "position", target_position, duration).set_trans(
 		Tween.TRANS_QUAD,
 	).set_ease(Tween.EASE_OUT)
@@ -1411,17 +1446,8 @@ func _activate_attachment_source_proxies(event: Dictionary) -> void:
 			if source_view != null
 			else table.resolve_endpoint_center(exact_source)
 		)
-		var descriptor := AttachmentVisualDescriptor.resolve(
-			str(source.get("attachment_type", "")),
-			card_id,
-			attachment_index,
-			table.catalog,
-		)
-		var texture := (
-			descriptor.icon
-			if descriptor.icon != null
-			else table.card_motion_layer._neutral_public_card_texture()
-		)
+		var texture := table.card_motion_layer._public_motion_texture_for_card_id(card_id)
+		var physical_source := table.render3d.is_projection_ready() and source_view != null
 		if texture == null:
 			continue
 		var proxy := table.motion_entities._create_paper_card_token(
@@ -1436,10 +1462,13 @@ func _activate_attachment_source_proxies(event: Dictionary) -> void:
 		proxy.visible = true
 		proxy.set_meta("motion_start", center)
 		proxy.set_meta("attachment_source_event_id", event_id)
-		proxy.set_meta("attachment_badge_proxy", true)
 		proxy.set_meta("motion_card_id", card_id)
 		proxy.set_meta("attachment_source_index", attachment_index)
-		table.motion_entities._configure_attachment_badge_marker(proxy, descriptor)
+		if physical_source:
+			var physical := proxy as CardMotionEntity
+			physical.world_pose = table.render3d.attachment_pose(source_view, str(source.get("attachment_type", "")), attachment_index)
+			physical.has_world_pose = true
+			proxy.set_meta("physical_attachment_source", true)
 		table.effects.add_child(proxy)
 		proxies.append(proxy)
 	if not proxies.is_empty():

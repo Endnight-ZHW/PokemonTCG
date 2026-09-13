@@ -5,86 +5,6 @@ const IR_VERSION := 3
 const MAX_VM_STEPS := 4096
 const MAX_FRAME_DEPTH := 64
 const COMMAND_KEYS := ["op", "args", "branches"]
-const SUPPORTED_EFFECT_TYPES: Array[String] = [
-	"ability_discard_revive",
-	"any_pokemon_damage",
-	"arven",
-	"apply_outgoing_damage_reduction",
-	"attach_from_discard",
-	"attack_fail",
-	"attack_flags",
-	"attack_damage_formula",
-	"attack_lock_basic",
-	"aura_damage_reduction",
-	"aura_damage_boost",
-	"bench_damage",
-	"clara",
-	"coin_flip",
-	"coin_flip_double_ko",
-	"coin_flip_energy_discard",
-	"coin_flip_triple",
-	"coin_flip_until_tails",
-	"conditional",
-	"conditional_damage_bonus",
-	"conditional_damage_heal",
-	"conditional_hp_boost",
-	"conditional_search_extra",
-	"conditional_status",
-	"conditional_zero_retreat",
-	"damage",
-	"damage_and_self_heal",
-	"damage_counter_self",
-	"damage_per_discard_psychic",
-	"damage_per_energy",
-	"damage_per_evolved",
-	"damage_per_hand_size",
-	"damage_per_self_damage",
-	"damage_per_self_energy",
-	"damage_per_self_energy_type",
-	"damage_plus_bench",
-	"damage_self_penalty",
-	"dazzling_beam",
-	"discard",
-	"discard_draw",
-	"discard_fighting_energy_damage",
-	"discard_hand_conditional_bonus",
-	"discard_then_draw",
-	"draw",
-	"draw_and_attach_energy",
-	"draw_until",
-	"draw_until_more",
-	"energy_attach",
-	"energy_discard",
-	"energy_relocate",
-	"evolve_skip_stage",
-	"hand_to_bottom_draw",
-	"heal",
-	"heal_all",
-	"houb",
-	"judge",
-	"look_top_deck",
-	"look_top_attach_energy",
-	"mill_and_damage_per_energy",
-	"place_counters_and_self_discard",
-	"potion_heal",
-	"prevent_all",
-	"prevent_damage",
-	"prevent_effects",
-	"reactive_thorns",
-	"return_to_hand",
-	"search",
-	"search_any_and_switch",
-	"self_attack_lock",
-	"shuffle_draw",
-	"shuffle_from_discard",
-	"status",
-	"switch_opponent",
-	"switch_self",
-	"tool",
-	"tool_exp_share",
-	"trekking_shoes",
-	"zinnia_resolve",
-]
 const DESCRIPTOR_PATH := "res://data/vm_command_descriptors.json"
 const DESCRIPTOR_SCHEMA_VERSION := 1
 const BRANCH_KEYS := {
@@ -102,10 +22,6 @@ static var _descriptor_load_attempted := false
 static var _descriptor_load_error := ""
 
 
-static func supports_effect_type(effect_type: String) -> bool:
-	return effect_type in SUPPORTED_EFFECT_TYPES
-
-
 static func native_command_ops() -> Array[String]:
 	var result: Array[String] = []
 	var descriptors: Variant = _load_descriptor_payload().get("descriptors", {})
@@ -117,38 +33,6 @@ static func native_command_ops() -> Array[String]:
 	return result
 
 
-static func command_descriptor(op: String) -> Dictionary:
-	var native := _native_descriptor(op)
-	if not native.is_empty():
-		return native.duplicate(true)
-	# Test harnesses may build a closed custom registry. Production commands
-	# always come from the generated descriptor payload above.
-	return {
-		"op": op,
-		"args_schema": {
-			"type": "object",
-			"properties": {},
-			"required": [],
-			"additional_properties": false,
-		},
-		"branch_schema": {
-			"type": "object",
-			"allowed_keys": [],
-			"required": [],
-			"additional_properties": false,
-		},
-		"semantic_kind": "test_only",
-		"allowed_contexts": ["ability", "attack", "trainer", "trigger", "test"],
-		"attack_timing": "none",
-		"preflight_evaluator": "always",
-		"may_suspend": false,
-		"replaces_base_damage": false,
-		"internal": false,
-		"implementation_kind": "test_only",
-		"requires_boolean_success": true,
-	}
-
-
 static func native_command_descriptors() -> Dictionary:
 	var payload := _load_descriptor_payload()
 	var descriptors: Variant = payload.get("descriptors", {})
@@ -157,35 +41,9 @@ static func native_command_descriptors() -> Dictionary:
 	return Dictionary(descriptors).duplicate(true)
 
 
-static func golden_command_ops() -> Array[String]:
-	var payload := _load_descriptor_payload()
-	var raw: Variant = payload.get("golden_ops", [])
-	var result: Array[String] = []
-	if not raw is Array:
-		return result
-	for value in Array(raw):
-		if not value is String or str(value).is_empty():
-			return []
-		result.append(str(value))
-	result.sort()
-	return result
-
-
 static func descriptor_load_error() -> String:
 	_load_descriptor_payload()
 	return _descriptor_load_error
-
-
-static func command_semantic_kind(op: String) -> String:
-	return str(_native_descriptor(op).get("semantic_kind", ""))
-
-
-static func command_preflight_evaluator(op: String) -> String:
-	return str(_native_descriptor(op).get("preflight_evaluator", ""))
-
-
-static func command_attack_timing(op: String) -> String:
-	return str(_native_descriptor(op).get("attack_timing", "none"))
 
 
 static func command_replaces_base_damage(op: String, args: Dictionary = {}) -> bool:
@@ -378,51 +236,6 @@ static func _validate_field_descriptor(schema: Dictionary, path: String) -> Arra
 		else:
 			errors.append_array(_validate_field_descriptor(
 				Dictionary(schema["items"]), "%s[]" % path))
-	return errors
-
-
-static func validate_command_registry(
-	descriptors: Dictionary,
-	handlers: Dictionary,
-	expected_ops: Array = [],
-) -> Array[String]:
-	var errors: Array[String] = []
-	var expected: Dictionary = {}
-	for op_value in expected_ops:
-		var op := str(op_value)
-		if expected.has(op):
-			errors.append("duplicate expected VM op: %s" % op)
-		expected[op] = true
-	if expected.is_empty():
-		for op_value in descriptors:
-			expected[str(op_value)] = true
-
-	var descriptor_ops: Array[String] = []
-	for op_value in descriptors:
-		descriptor_ops.append(str(op_value))
-	descriptor_ops.sort()
-	for op in descriptor_ops:
-		errors.append_array(validate_command_descriptor(op, Dictionary(descriptors[op])))
-		if not expected.has(op):
-			errors.append("unexpected VM command descriptor: %s" % op)
-		if not handlers.has(op):
-			errors.append("VM command descriptor is missing a handler: %s" % op)
-
-	var handler_ops: Array[String] = []
-	for op_value in handlers:
-		handler_ops.append(str(op_value))
-	handler_ops.sort()
-	for op in handler_ops:
-		if not descriptors.has(op):
-			errors.append("VM command handler is missing a descriptor: %s" % op)
-
-	var expected_names: Array[String] = []
-	for op_value in expected:
-		expected_names.append(str(op_value))
-	expected_names.sort()
-	for op in expected_names:
-		if not descriptors.has(op):
-			errors.append("expected VM command descriptor is missing: %s" % op)
 	return errors
 
 

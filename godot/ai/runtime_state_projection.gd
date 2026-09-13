@@ -111,10 +111,6 @@ static func validate(snapshot: Dictionary, perspective: int) -> String:
 	return ""
 
 
-static func is_projected(snapshot: Dictionary) -> bool:
-	return str(snapshot.get("ai_runtime_projection", "")) == BOUNDARY_ID
-
-
 static func _hidden_cards(count: int, marker: String) -> Array[String]:
 	var result: Array[String] = []
 	result.resize(maxi(0, count))

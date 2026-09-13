@@ -16,6 +16,9 @@ var actor := -1
 var hand_index := -1
 var card_id := ""
 var visual_id := ""
+var source_pose := Transform3D.IDENTITY
+var release_pose := Transform3D.IDENTITY
+var physical_entity: WeakRef
 var source_view: CardView
 var source_position := Vector2.ZERO
 var source_size := Vector2.ZERO

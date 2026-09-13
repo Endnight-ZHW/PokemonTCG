@@ -398,7 +398,7 @@ func run(ui: Control) -> void:
 	await harness._settle_rendered(4)
 	harness._update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
 	await harness._settle_rendered(3)
-	ui.shell_view.show_toast("能量已附着。")
+	ui.shell_view.show_toast("insufficient_energy", true)
 	await harness._settle_rendered(4)
 	if not harness._capture("battle-toast.png"):
 		harness._finish(1)
@@ -1004,7 +1004,7 @@ func run(ui: Control) -> void:
 		harness._finish(1)
 		return
 	for mover in switch_movers:
-		if mover.get_node_or_null("PaperImage") != null:
+		if mover is CardMotionEntity:
 			push_error("Switch preview regressed to a paper-card attachment flyer")
 			harness._finish(1)
 			return

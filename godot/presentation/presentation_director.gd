@@ -113,7 +113,7 @@ const EVENT_DURATIONS := {
 	"promoted": 0.48,
 	"pokemon_ko": 0.75,
 	"prize_taken": 0.42,
-	"deck_shuffled": 1.20,
+	"deck_shuffled": 0.85,
 	"deck_exhausted": 0.42,
 	"coin_flip": 0.50,
 	"turn_order_chosen": 0.42,
@@ -156,10 +156,6 @@ func is_playing() -> bool:
 
 func pending_count() -> int:
 	return _queue.size()
-
-
-func has_handler(event_type: String) -> bool:
-	return PresentationEvent.canonical_event_type(event_type) in EVENT_DURATIONS
 
 
 func wait_until_idle() -> void:

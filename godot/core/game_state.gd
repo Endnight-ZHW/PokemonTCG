@@ -57,10 +57,6 @@ func get_player(index: int) -> PlayerState:
 	return players[index]
 
 
-func get_opponent(index: int = active_player_idx) -> PlayerState:
-	return players[1 - index]
-
-
 func log_action(message: String) -> void:
 	action_log.append(message)
 	if action_log.size() > 256:
@@ -73,39 +69,8 @@ func is_player_first_turn(player_idx: int) -> bool:
 	return turn_number == 2
 
 
-func set_type_matchups_enabled(enabled: bool) -> void:
-	apply_type_matchups = enabled
-	rules_options["apply_type_matchups"] = enabled
-
-
 func is_terminal() -> bool:
 	return result_status != RESULT_ONGOING or phase == "GAME_OVER"
-
-
-func had_knockout_last_turn(defeated_player_idx: int) -> bool:
-	var previous: Dictionary = turn_fact_book.get("previous_turn", {})
-	for fact_value in previous.get("knockouts", []):
-		var fact: Dictionary = fact_value
-		if (
-			int(fact.get("defeated_player", -1)) == defeated_player_idx
-			and int(fact.get("source_player", -1)) >= 0
-		):
-			return true
-	return false
-
-
-func had_attack_knockout_last_turn(defeated_player_idx: int) -> bool:
-	var previous: Dictionary = turn_fact_book.get("previous_turn", {})
-	for fact_value in previous.get("knockouts", []):
-		var fact: Dictionary = fact_value
-		if (
-			int(fact.get("defeated_player", -1)) == defeated_player_idx
-			and int(fact.get("source_player", defeated_player_idx)) != defeated_player_idx
-			and str(fact.get("source_kind", "")) == "attack_damage"
-			and str(fact.get("cause_kind", "")) == "damage"
-		):
-			return true
-	return false
 
 
 func to_dict() -> Dictionary:

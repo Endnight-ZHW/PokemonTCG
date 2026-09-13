@@ -190,7 +190,7 @@ static func _validate_player_payload(
 				not attack_name_value is String
 				or not _bounded_string(attack_name, MAX_IDENTIFIER_BYTES)
 				or attack_name.is_empty()
-				or not _is_integer_number(expires_value)
+				or not WireValue.is_integer(expires_value)
 				or int(expires_value) < 0
 				or int(expires_value) > 2147483647
 			):
@@ -249,7 +249,7 @@ static func _validate_pokemon(value: Variant) -> bool:
 		if pokemon.has(flag) and not pokemon[flag] is bool:
 			return false
 	for integer_field in ["paralyzed_since_turn"]:
-		if pokemon.has(integer_field) and not _is_integer_number(pokemon[integer_field]):
+		if pokemon.has(integer_field) and not WireValue.is_integer(pokemon[integer_field]):
 			return false
 	return true
 

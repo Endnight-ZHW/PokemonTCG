@@ -38,18 +38,6 @@ func clear() -> void:
 		registry.clear()
 
 
-func active_mask_count() -> int:
-	return mask_counts.size()
-
-
-func active_cover_count() -> int:
-	return covers.size() + slot_covers.size()
-
-
-func staged_hand_event_count() -> int:
-	return event_hand_targets.size() + event_hand_sources.size()
-
-
 func _registries() -> Array[Dictionary]:
 	return [
 		reveals, mask_counts, feedbacks, landing_feedbacks, covers, cover_tweens,
@@ -453,6 +441,8 @@ func _spawn_slot_state_cover(
 	cover.rotation_degrees = float(row.get("rotation_degrees", 0.0))
 	cover.set_table_depth(table.motion_geometry._motion_depth_for_point(cover.position + size_value * 0.5), true)
 	cover.remember_base_position()
+	if row.get("world_pose") is Transform3D:
+		cover.set_meta("physical_pose", row.world_pose)
 	return cover
 
 
@@ -788,6 +778,8 @@ func _reposition_slot_state_covers() -> void:
 		cover.custom_minimum_size = slot_view.size
 		cover.size = slot_view.size
 		cover.position = table._effects_local(slot_view.global_center()) - cover.size * 0.5
+		if table.render3d != null and table.render3d.is_projection_ready():
+			cover.set_meta("physical_pose", table.render3d.card_pose(slot_view))
 		cover.rotation_degrees = slot_view.rotation_degrees
 		cover.remember_base_position()
 

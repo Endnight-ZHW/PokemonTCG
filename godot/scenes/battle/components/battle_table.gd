@@ -102,9 +102,6 @@ const ZERO_CARD_SEMANTIC_MOTION_TYPES: Array[String] = [
 @export_group("Refresh")
 @export var resync_fade_duration := 0.16
 @export_group("Dynamic Card Motion")
-@export var motion_arc_height_min := 74.0
-@export var motion_arc_distance_ratio := 0.22
-@export var motion_arc_stagger_height := 8.0
 @export var motion_stagger_delay := 0.10
 var state_ref: GameState
 var catalog: CardCatalog = CardCatalog.shared()
@@ -116,7 +113,6 @@ var ai_thinking := false
 
 var board_panel: PanelContainer
 var board_canvas: Control
-var playmat: BattlePlaymat
 var header: BattleHeader
 var ai_thinking_overlay: AIThinkingOverlay
 var hud: BattlePhaseHud
@@ -206,6 +202,7 @@ var _shuffle_source_masks: Dictionary = {}
 var _local_hand_privacy_hidden := false
 var _resync_tween: Tween
 var presentation_coordinator: BattlePresentationCoordinator
+var render3d: Battle3DPresenter
 
 
 func _ready() -> void:
@@ -239,6 +236,7 @@ func initialize_ui() -> void:
 	_initialized = true
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_bind_scene_nodes()
+	render3d = Battle3DPresenter.attach(self)
 	if director and not director.audio_requested.is_connected(_on_director_audio_requested):
 		director.audio_requested.connect(_on_director_audio_requested)
 	var settings := _settings_node()
@@ -247,6 +245,8 @@ func initialize_ui() -> void:
 		and not settings.is_connected("changed", _apply_runtime_settings)
 	):
 		settings.connect("changed", _apply_runtime_settings)
+	if settings != null and not settings.is_connected("runtime_quality_changed", _apply_runtime_settings):
+		settings.connect("runtime_quality_changed", _apply_runtime_settings)
 	_apply_runtime_settings()
 	if not resized.is_connected(board_view._layout_board):
 		resized.connect(board_view._layout_board)
@@ -255,6 +255,11 @@ func initialize_ui() -> void:
 	board_view.call_deferred("_layout_board")
 	if not _settings_reduced_motion():
 		animation_player.play("enter")
+
+
+func register_3d_surface(surface: Control) -> void:
+	if render3d != null:
+		render3d.register_surface(surface)
 
 
 func _on_director_audio_requested(cue: String) -> void:
@@ -283,10 +288,8 @@ func is_compact_layout() -> bool:
 
 func cancel_pointer_gestures() -> void:
 	_blank_selection_key = ""
-	for view in hand_views:
+	for view in hand_views + slot_views.values() + zones.values():
 		view.cancel_pointer_gesture()
-	for view_value in slot_views.values():
-		(view_value as CardView).cancel_pointer_gesture()
 
 
 func cancel_unsubmitted_drag() -> void:
@@ -501,16 +504,8 @@ func snap_to_authoritative_view(
 
 
 func _apply_runtime_settings() -> void:
-	if not _initialized:
-		return
-	var profile := _settings_quality_profile()
-	if playmat:
-		playmat.quality_profile = profile
-	if effects:
-		effects.quality_profile = profile
-	if world_feedback:
-		world_feedback.quality_profile = profile
-	_refresh_ai_thinking_indicator()
+	if _initialized:
+		_refresh_ai_thinking_indicator()
 
 
 func _settings_node() -> Node:
@@ -546,7 +541,6 @@ func _settings_quality_profile() -> String:
 func _resolve_scene_nodes() -> void:
 	board_panel = get_node("BattleRoot/Body/BoardPanel") as PanelContainer
 	board_canvas = get_node("BattleRoot/Body/BoardPanel/BoardCanvas") as Control
-	playmat = get_node("BattleRoot/Body/BoardPanel/BoardCanvas/Playmat") as BattlePlaymat
 	header = get_node("BattleRoot/Header") as BattleHeader
 	ai_thinking_overlay = get_node(
 		"BattleRoot/Body/BoardPanel/BoardCanvas/AIThinkingOverlay"
@@ -636,7 +630,7 @@ func update_view(
 	_last_selected_source_key = selected_entity_key
 	_last_action_rows_signature = next_action_rows_signature
 	_last_selected_entity_identity = next_selected_entity_identity
-	interaction_router.rebuild(board_view._routed_action_rows(), selected_entity_key)
+	interaction_router.rebuild(board_view._routed_action_rows())
 	_update_ai_thinking_clock(p_ai_thinking)
 	ai_thinking = p_ai_thinking
 	game_mode = p_game_mode
@@ -841,7 +835,7 @@ func play_startup_shuffle(mulligan_counts: Array = []) -> MotionHandle:
 		"reduced": 0.0,
 	}.get(_settings_animation_mode(), 0.82))
 	var reduced := MotionPolicy.reduced()
-	var duration := 0.22 if reduced else maxf(0.46, 0.80 * mode_scale)
+	var duration := 0.22 if reduced else maxf(0.46, 0.85 * mode_scale)
 	for player_idx in [0, 1]:
 		var endpoint := {"player": player_idx, "zone": "deck"}
 		if reduced:
@@ -1234,6 +1228,7 @@ func capture_presentation_snapshot() -> Dictionary:
 			"count": zone.count,
 			"hidden": zone.is_hidden_zone,
 		}
+	if render3d != null and render3d.is_projection_ready(): render3d.capture_world_poses(snapshot)
 	return snapshot
 
 
@@ -1371,9 +1366,8 @@ func _bind_scene_nodes() -> void:
 		log_panel.z_index = 0
 		log_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		log_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	playmat.quality_profile = _settings_quality_profile()
-	effects.quality_profile = _settings_quality_profile()
-	world_feedback.quality_profile = _settings_quality_profile()
+	effects.configure(self)
+	world_feedback.configure(self)
 	card_motion_layer.configure(self, effects)
 	if reveal_layer == null:
 		reveal_layer = BattleRevealLayer.new()
@@ -1386,8 +1380,6 @@ func _bind_scene_nodes() -> void:
 		coin_showcase.visible = false
 		coin_showcase.audio_requested.connect(card_motion_layer._on_coin_showcase_audio_requested)
 		add_child(coin_showcase)
-	if camera_rig != null:
-		camera_rig.configure([board_panel, effects, world_feedback])
 	opponent_hand_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	opponent_hand_surface.z_index = 6
 	opponent_hand_count_badge.z_index = 90
@@ -1557,6 +1549,8 @@ func set_startup_blocked(value: bool) -> void:
 
 func set_local_hand_privacy_hidden(value: bool) -> void:
 	_local_hand_privacy_hidden = value
+	if value and render3d != null:
+		render3d.clear_private_faces()
 	_sync_local_hand_privacy()
 
 

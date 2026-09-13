@@ -1,9 +1,8 @@
-[gd_scene load_steps=26 format=3]
+[gd_scene load_steps=25 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_table.gd" id="1_battle"]
 [ext_resource type="PackedScene" path="res://ui/card_view.tscn" id="2_card"]
 [ext_resource type="PackedScene" path="res://ui/zone_view.tscn" id="3_zone"]
-[ext_resource type="Script" path="res://scenes/battle/playmat.gd" id="4_playmat"]
 [ext_resource type="Script" path="res://scenes/battle/effect_layer.gd" id="5_effect"]
 [ext_resource type="Script" path="res://presentation/presentation_director.gd" id="6_director"]
 [ext_resource type="PackedScene" path="res://scenes/battle/components/battle_header.tscn" id="7_header"]
@@ -132,17 +131,6 @@ mouse_filter = 2
 layout_mode = 2
 clip_contents = true
 editor_description = "牌桌坐标空间。运行时根据可用尺寸重排，但可以在这里查看所有固定牌位和牌区。"
-
-[node name="Playmat" type="Control" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
-unique_name_in_owner = true
-mouse_filter = 2
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-script = ExtResource("4_playmat")
 
 [node name="AIThinkingOverlay" type="Control" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
 unique_name_in_owner = true

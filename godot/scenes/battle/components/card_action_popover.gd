@@ -35,6 +35,7 @@ var _avoid_control_refs: Array[WeakRef] = []
 var _uses_viewport_safe_rect := false
 var _compact_layout := false
 var _compact_preferred := false
+var _hand_anchor := false
 var _last_tracked_source_rect := Rect2()
 var _icon_thumbnail_cache: Dictionary[int, Texture2D] = {}
 var _visibility_tween: Tween
@@ -71,6 +72,7 @@ func show_actions(
 	hint := "",
 ) -> void:
 	_source_control_ref = null
+	_hand_anchor = false
 	_avoid_control_refs.clear()
 	set_process(false)
 	_present(rows, source_rect, safe_rect, _rect_array(avoid_rects), title, hint)
@@ -88,6 +90,7 @@ func show_for_control(
 	if source_control == null or not is_instance_valid(source_control):
 		return
 	_source_control_ref = weakref(source_control)
+	_hand_anchor = source_control is CardView and (source_control as CardView).hand_index >= 0
 	_avoid_control_refs.clear()
 	for value in avoid_controls:
 		if value is Control and is_instance_valid(value):
@@ -103,18 +106,6 @@ func show_for_control(
 	)
 	_last_tracked_source_rect = _control_global_bounds(source_control)
 	set_process(true)
-
-
-## Compatibility alias for callers that use "present" terminology.
-func present(
-	rows: Array[Dictionary],
-	source_rect: Rect2,
-	safe_rect: Rect2 = Rect2(),
-	avoid_rects: Array = [],
-	title := "可执行动作",
-	hint := "",
-) -> void:
-	show_actions(rows, source_rect, safe_rect, avoid_rects, title, hint)
 
 
 func reposition(
@@ -144,6 +135,7 @@ func reposition_for_control(
 	if source_control == null or not is_instance_valid(source_control):
 		return
 	_source_control_ref = weakref(source_control)
+	_hand_anchor = source_control is CardView and (source_control as CardView).hand_index >= 0
 	_avoid_control_refs.clear()
 	for value in avoid_controls:
 		if value is Control and is_instance_valid(value):
@@ -155,11 +147,6 @@ func reposition_for_control(
 		_tracked_avoid_rects(),
 	)
 	set_process(visible)
-
-
-func refresh_position() -> void:
-	if visible:
-		_layout_popover()
 
 
 func dismiss(emit_dismissed := true) -> void:
@@ -237,14 +224,6 @@ func source_contains_global_point(global_point: Vector2) -> bool:
 				local_point
 			)
 	return _source_rect.has_point(global_point)
-
-
-func overlaps_avoid_rects() -> bool:
-	var panel_rect := panel_global_rect()
-	for avoid_rect in _avoid_rects:
-		if panel_rect.intersects(avoid_rect):
-			return true
-	return false
 
 
 func _present(
@@ -383,9 +362,12 @@ func _thumbnail_icon(texture: Texture2D) -> Texture2D:
 func _layout_popover() -> void:
 	if panel == null or _safe_rect.size.x <= 0.0 or _safe_rect.size.y <= 0.0:
 		return
-	_set_compact_layout(_compact_preferred)
+	_set_compact_layout(_compact_preferred or _hand_anchor)
+	# Hand actions stay in one predictable toolbar above the selected card.
+	# Full details remain available from the header and the card's long press.
+	title_label.get_parent().visible = not _hand_anchor
 	var panel_size := _desired_panel_size(_compact_layout)
-	var placement := _preferred_placement(panel_size)
+	var placement := _hand_placement(panel_size) if _hand_anchor else _preferred_placement(panel_size)
 	if not bool(placement.get("valid", false)) and _compact_layout:
 		_set_compact_layout(false)
 		panel_size = _desired_panel_size(false)
@@ -408,7 +390,7 @@ func _layout_popover() -> void:
 
 
 func _desired_panel_size(compact_layout: bool) -> Vector2:
-	var width := clampf(preferred_width, minimum_width, maximum_width)
+	var width := COMPACT_ACTION_WIDTH + PANEL_CONTENT_HORIZONTAL_MARGIN if _hand_anchor else clampf(preferred_width, minimum_width, maximum_width)
 	if compact_layout and not _rows.is_empty():
 		var visible_columns := mini(2, _rows.size())
 		width = maxf(
@@ -426,13 +408,21 @@ func _desired_panel_size(compact_layout: bool) -> Vector2:
 			+ float(maxi(0, visible_count - 1)) * 4.0
 		)
 	var height := 20.0 + content_height
-	height += 48.0
+	if not _hand_anchor: height += 48.0
 	if hint_label.visible:
 		height += 34.0
-	if title_label.visible or hint_label.visible:
+	if (title_label.visible and not _hand_anchor) or hint_label.visible:
 		height += 6.0
 	height = minf(height, _safe_rect.size.y)
 	return Vector2(width, height)
+
+
+func _hand_placement(panel_size: Vector2) -> Dictionary:
+	# Board occupancy must not flip this toolbar to another side. Clamp only
+	# to the safe area, which already excludes the header and turn controls.
+	return {"valid": true, "direction": "above", "position": _clamp_to_safe_rect(
+		Vector2(_source_rect.get_center().x - panel_size.x * 0.5,
+			_source_rect.position.y - anchor_gap - panel_size.y), panel_size)}
 
 
 ## Try the four adjacent anchors, reserving the selected card and visible board

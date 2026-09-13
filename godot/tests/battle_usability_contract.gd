@@ -40,6 +40,7 @@ func _run() -> void:
 	root.get_node("AppSettings").set("reduced_motion", true)
 	root.get_node("AppSettings").set("animation_mode", "reduced")
 	await _check_gestures()
+	await _check_zone_gestures()
 	await _check_table()
 	await _check_confirmations()
 	if failures.is_empty():
@@ -88,6 +89,18 @@ func _check_gestures() -> void:
 	card._gui_input(drag)
 	card._gui_input(touch(false))
 	check(clicks[0] == 2, "Horizontal scrolling became a click")
+	card._gui_input(touch(true))
+	drag.position = Vector2(28, 78)
+	drag.relative = Vector2(0, 50)
+	card._gui_input(drag)
+	card._gui_input(touch(false))
+	check(clicks[0] == 2, "Dragging away and returning to a field card became a tap")
+	card._gui_input(mouse(true))
+	var mouse_move := InputEventMouseMotion.new()
+	mouse_move.position = Vector2(78, 28)
+	card._gui_input(mouse_move)
+	card._gui_input(mouse(false))
+	check(clicks[0] == 2, "A cancelled mouse movement became a field-card click")
 	card._gui_input(mouse(true))
 	card._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	await create_timer(0.40).timeout
@@ -99,6 +112,48 @@ func _check_gestures() -> void:
 	check(clicks[0] == 2, "Rebinding a pressed card activated its replacement")
 	card.queue_free()
 	other.queue_free()
+	await settle()
+
+
+func _check_zone_gestures() -> void:
+	var zone := load("res://ui/zone_view.tscn").instantiate() as ZoneView
+	var card := load("res://ui/card_view.tscn").instantiate() as CardView
+	root.add_child(zone)
+	root.add_child(card)
+	zone.configure("弃牌区", "sv1-ener-2", 1)
+	card.configure("sv1-ener-1")
+	var counts := [0, 0, 0]
+	zone.inspected.connect(func(_context: Dictionary) -> void: counts[0] += 1)
+	zone.detail_requested.connect(func(_id: String) -> void: counts[1] += 1)
+	card.activated.connect(func(_id: String, _hand: int, _player: int, _slot: String) -> void: counts[2] += 1)
+	zone._on_gui_input(touch(true))
+	card._gui_input(touch(true, 1))
+	card._gui_input(touch(false, 1))
+	zone._on_gui_input(mouse(true, Vector2(28, 28), InputEvent.DEVICE_ID_EMULATION))
+	zone._on_gui_input(mouse(false, Vector2(28, 28), InputEvent.DEVICE_ID_EMULATION))
+	zone._on_gui_input(touch(false))
+	check(counts == [1, 0, 0], "Zone touch duplicated via emulation or a second card finger")
+	card._gui_input(touch(true))
+	zone._on_gui_input(touch(true, 1))
+	zone._on_gui_input(touch(false, 1))
+	card._gui_input(touch(false))
+	check(counts == [1, 0, 1], "A zone stole another card's active touch")
+	zone._on_gui_input(touch(true))
+	await create_timer(0.40).timeout
+	check(counts == [1, 1, 1], "Zone long press did not open details at 350ms before release")
+	zone._on_gui_input(touch(false))
+	check(counts == [1, 1, 1], "Zone long-press release also inspected the stack")
+	zone._on_gui_input(touch(true))
+	zone._on_gui_input(touch(false, 0, true))
+	zone._on_gui_input(mouse(true))
+	zone._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+	zone._on_gui_input(mouse(false))
+	zone._on_gui_input(mouse(true))
+	zone.configure("弃牌区", "sv1-ener-3", 2)
+	zone._on_gui_input(mouse(false))
+	check(counts == [1, 1, 1], "Cancelled, unfocused or rebound zone retained its press")
+	zone.queue_free()
+	card.queue_free()
 	await settle()
 
 
@@ -145,6 +200,17 @@ func _check_table() -> void:
 	table.update_view(state, 0, [], "", false, "local")
 	await settle()
 	check(anchor.local_visual_id == identity and absf(anchor.position.x - table.hand_scroll.scroll_horizontal - previous_x) <= 2.0, "Drawing a card moved the retained hand browsing anchor")
+	var browse_center := table.hand_scroll.scroll_horizontal + table.hand_scroll.size.x * 0.5
+	var centered := table.hand_views[0]
+	for view in table.hand_views:
+		if absf(view.position.x + view.size.x * 0.5 - browse_center) < absf(centered.position.x + centered.size.x * 0.5 - browse_center):
+			centered = view
+	var center_fraction := (centered.position.x + centered.size.x * 0.5 - table.hand_scroll.scroll_horizontal) / table.hand_scroll.size.x
+	root.size = Vector2i(900, 540)
+	await settle(5)
+	var resized_fraction := (centered.position.x + centered.size.x * 0.5 - table.hand_scroll.scroll_horizontal) / table.hand_scroll.size.x
+	check(absf(center_fraction - resized_fraction) < 0.08, "Resizing lost the hand's visible browsing identity")
+	root.size = Vector2i(1600, 900)
 	table.queue_free()
 	await settle()
 

@@ -59,6 +59,22 @@ static func battle_state(seed: int = DEFAULT_SEED) -> GameState:
 	return state
 
 
+static func battle_stress_state() -> GameState:
+	var state := battle_state()
+	for player in state.players:
+		player.active.damage_counters = 2
+		player.active.attached_tool_id = "sv1-202"
+		player.active.evolution_stack_ids.assign(["svi-chim", "svi-ente"])
+		player.active.status_conditions.assign(["POISONED", "BURNED", "CONFUSED"])
+		player.active.energy_card_ids.assign(["sv1-ener-2", "sv1-ener-2", "sv1-ener-2", "sv1-ener-2", "sv1-ener-1", "sv1-ener-3"])
+		for index in range(5):
+			player.bench[index] = PokemonState.new(["svi-chim", "svi-ente", "sv2-starm", "sv2-keldeo", "svi-hrot"][index])
+	state.players[0].hand.clear()
+	for index in range(20):
+		state.players[0].hand.append(["sv1-ener-2", "sv1-189", "svf-potion", "sv1-151", "svi-jete"][index % 5])
+	return state
+
+
 static func setup_state(seed: int = DEFAULT_SEED) -> GameState:
 	var state := battle_state(seed)
 	state.setup_stage = GameState.SETUP_INITIAL_PLACEMENT

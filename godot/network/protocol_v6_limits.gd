@@ -30,20 +30,8 @@ static func _invalid(code: String, message: String) -> Dictionary:
 	return {"ok": false, "code": code, "message": message}
 
 
-static func _is_integer_number(value: Variant) -> bool:
-	if value is int:
-		return true
-	return (
-		value is float
-		and is_finite(value)
-		and value >= -2147483648.0
-		and value <= 2147483647.0
-		and value == floorf(value)
-	)
-
-
 static func _has_integer(row: Dictionary, field: String) -> bool:
-	return row.has(field) and _is_integer_number(row[field])
+	return row.has(field) and WireValue.is_integer(row[field])
 
 
 
@@ -119,7 +107,7 @@ static func _bounded_integer_array(
 		return false
 	for item in Array(value):
 		if (
-			not _is_integer_number(item)
+			not WireValue.is_integer(item)
 			or int(item) < minimum
 			or int(item) > maximum
 		):
@@ -148,7 +136,7 @@ static func _fixed_int_array(
 	if not value is Array or Array(value).size() != expected_items:
 		return false
 	for item in value:
-		if not _is_integer_number(item) or int(item) < minimum or int(item) > maximum:
+		if not WireValue.is_integer(item) or int(item) < minimum or int(item) > maximum:
 			return false
 	return true
 
@@ -166,7 +154,7 @@ static func _bounded_player_index_array(value: Variant, max_items: int) -> bool:
 	if not value is Array or Array(value).size() > max_items:
 		return false
 	for item in value:
-		if not _is_integer_number(item) or int(item) not in [0, 1]:
+		if not WireValue.is_integer(item) or int(item) not in [0, 1]:
 			return false
 	return true
 

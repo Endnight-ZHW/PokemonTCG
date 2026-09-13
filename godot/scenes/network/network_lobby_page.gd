@@ -513,7 +513,7 @@ func set_connection_state(
 		ConnectionState.CONNECTED: "对手已连接，正在同步牌组和对局……",
 		ConnectionState.ERROR: "连接失败，请检查信息后重试。",
 	}.get(state, ""))
-	status_label.text = message if not message.is_empty() else default_message
+	status_label.text = PlayerFacingText.message(message, state == ConnectionState.ERROR) if not message.is_empty() else default_message
 	var state_color: Color = {
 		ConnectionState.IDLE: DesignTokens.TEXT_MUTED,
 		ConnectionState.VALIDATING: DesignTokens.CYAN,

@@ -291,7 +291,7 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 		var status := _energy_target_status_labels.get(target_key) as Label
 		if status:
 			if not blocked_reason.is_empty():
-				status.text = "不可选择 · %s" % blocked_reason
+				status.text = "不可选择 · %s" % PlayerFacingText.message(blocked_reason, true)
 				status.tooltip_text = ""
 				status.accessibility_description = blocked_reason
 				status.add_theme_color_override("font_color", DesignTokens.RED)

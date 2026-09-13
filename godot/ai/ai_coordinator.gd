@@ -120,12 +120,6 @@ func cancel_request() -> void:
 
 
 ## Test tools use the same worker as asynchronous gameplay.
-func decide_sync_for_evaluation(
-	request: Dictionary,
-) -> Dictionary:
-	return _decide(request, Callable())
-
-
 func _worker_main(
 	request: Dictionary,
 	generation: int,

@@ -10,7 +10,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 - ENet LAN 与 WebSocket Relay Protocol v6 联机；旧 Protocol 5 房间明确拒绝且不提供桥接。
 - Native ABI 2 `ptcg_core` 是唯一规则引擎；GDScript 只负责会话绑定、UI、网络和表现，
   同一 C++ 核心通过研究目录中的显式 pybind 服务离线实验。
-- 响应式实体牌桌、卡图、动画、音频和移动端画质分档。
+- 响应式三维实体牌桌、卡牌正反面与厚度、空间动画、三维硬币、音频和移动端自动画质分档。
 - 深色“午夜竞技场”全屏标题页，使用深海军蓝、青蓝舞台光、金色点缀和八种基础能量；
   首页只保留本地对战、挑战 AI、联机对战三个主入口，LAN/Relay 在网络大厅中选择。
 - 前台导航仅支持鼠标与触控，交互目标仍遵循至少 48px 的触控尺寸；网络文本框可在点击或
@@ -31,6 +31,10 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 工具链安装在仓库的 `.tools/`，不会修改系统 `PATH`。
 
 ### 可视化编辑与学习入口
+
+- 三维对战的结构、资源边界、画质策略和验证命令见
+  [`../docs/BATTLE_3D_REFACTOR.md`](../docs/BATTLE_3D_REFACTOR.md)。新安装默认标准动画；
+  Android 对局自动从中画质 60 FPS 开始，持续性能不足时在动作完成后降至低画质 30 FPS。
 
 - 打开 `res://tools/ui_workbench.tscn` 后按 `F6`，可安全预览标题、选牌、
   网络、设置、复杂选择、战斗和胜利界面，并触发主要战斗演出。

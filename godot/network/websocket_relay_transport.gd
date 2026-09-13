@@ -163,10 +163,6 @@ func get_room_id() -> String:
 	return room_id
 
 
-func get_resume_token() -> String:
-	return resume_token
-
-
 func _normalize_url(value: String) -> String:
 	var result := value.strip_edges()
 	if not result.begins_with("ws://") and not result.begins_with("wss://"):

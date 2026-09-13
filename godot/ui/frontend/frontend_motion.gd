@@ -23,9 +23,7 @@ static func is_low_quality() -> bool:
 	var settings := _settings()
 	if settings == null:
 		return false
-	if settings.has_method("resolved_quality_profile"):
-		return str(settings.call("resolved_quality_profile")) == "low"
-	return str(settings.get("quality_profile")) == "low"
+	return str(settings.call("resolved_quality_profile")) == "low"
 
 
 static func decorative_motion_enabled() -> bool:
@@ -69,26 +67,6 @@ static func play_enter(
 	tween.set_ease(Tween.EASE_OUT)
 	tween.tween_property(control, "modulate:a", 1.0, seconds)
 	tween.tween_property(control, "scale", Vector2.ONE, seconds)
-	control.set_meta(_TWEEN_META, tween)
-	tween.finished.connect(func() -> void:
-		if is_instance_valid(control):
-			control.remove_meta(_TWEEN_META)
-	)
-	return tween
-
-
-static func play_exit(control: Control, base_duration: float = 0.16) -> Tween:
-	if not is_instance_valid(control):
-		return null
-	_stop_existing(control)
-	var seconds := duration(base_duration)
-	if seconds <= 0.0 or not control.is_inside_tree():
-		control.modulate.a = 0.0
-		return null
-	var tween := control.create_tween()
-	tween.set_trans(Tween.TRANS_QUAD)
-	tween.set_ease(Tween.EASE_IN)
-	tween.tween_property(control, "modulate:a", 0.0, seconds)
 	control.set_meta(_TWEEN_META, tween)
 	tween.finished.connect(func() -> void:
 		if is_instance_valid(control):

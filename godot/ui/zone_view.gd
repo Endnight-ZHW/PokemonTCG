@@ -43,6 +43,11 @@ var _drop_highlighted := false
 var _pressed := false
 var _press_msec := 0
 var _press_position := Vector2.ZERO
+var _press_card_id := ""
+var _press_moved := false
+var _long_press_fired := false
+var _touch_pointer := -1
+var _long_press_timer: Timer
 
 @onready var frame: Panel = %Frame
 @onready var image: TextureRect = %Image
@@ -62,6 +67,11 @@ var _presentation_tween: Tween
 
 
 func _ready() -> void:
+	_long_press_timer = Timer.new()
+	_long_press_timer.one_shot = true
+	_long_press_timer.wait_time = float(LONG_PRESS_MSEC) / 1000.0
+	_long_press_timer.timeout.connect(_on_long_press_timeout)
+	add_child(_long_press_timer)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	gui_input.connect(_on_gui_input)
@@ -85,6 +95,8 @@ func configure(
 	p_hidden: bool = false,
 	p_context: Dictionary = {},
 ) -> void:
+	if p_card_id != card_id or p_count != count:
+		cancel_pointer_gesture()
 	title = p_title
 	card_id = p_card_id
 	count = p_count
@@ -214,6 +226,10 @@ func is_actionable() -> bool:
 
 
 func _has_point(point: Vector2) -> bool:
+	var ref := get_meta("physical_presenter") as WeakRef if has_meta("physical_presenter") else null
+	var physical := ref.get_ref() as Battle3DPresenter if ref != null else null
+	if physical != null and physical.is_projection_ready():
+		return physical.contains_global_point(self, get_global_transform_with_canvas() * point)
 	if stack_visual_mode == "prizes":
 		# The root reserves six-card capacity for stable layout, but only the cards
 		# currently visible (plus their tray edge) should receive inspection input.
@@ -237,10 +253,6 @@ func set_drop_target(
 		drop_hint.visible = _drop_highlighted and not _allowed_drop_hand_indices.is_empty()
 		drop_hint.text = "打出竞技场"
 	_apply_frame_style()
-
-
-func get_allowed_drop_hand_indices() -> Array[int]:
-	return _allowed_drop_hand_indices.duplicate()
 
 
 func set_drop_highlight(value: bool) -> void:
@@ -302,31 +314,6 @@ func clear_presentation_state() -> void:
 
 func is_presentation_hidden() -> bool:
 	return _presentation_hidden
-
-
-func has_visible_card_back() -> bool:
-	if not is_hidden_zone or count <= 0:
-		return false
-	_ensure_fallback_card_back()
-	if (
-		fallback_back_panel != null
-		and image != null
-		and image.texture == null
-	):
-		fallback_back_panel.visible = true
-		if not _presentation_hidden:
-			fallback_back_panel.modulate.a = 1.0
-	var image_visible := (
-		image != null
-		and image.texture != null
-		and image.modulate.a > 0.01
-	)
-	var fallback_visible := (
-		fallback_back_panel != null
-		and fallback_back_panel.visible
-		and fallback_back_panel.modulate.a > 0.01
-	)
-	return image_visible or fallback_visible
 
 
 func _draw() -> void:
@@ -444,7 +431,7 @@ func _refresh() -> void:
 	title_label.text = title
 	title_label.visible = stack_visual_mode.is_empty()
 	count_label.text = str(count)
-	count_label.visible = count > 0
+	count_label.visible = count > 0 and str(inspect_context.get("zone", "")) != "stadium"
 	_layout_count_badge()
 	tooltip_text = "%s · %d 张" % [title, count]
 	var texture_path := ""
@@ -521,26 +508,97 @@ func _ensure_fallback_card_back() -> void:
 
 
 func _on_gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+	if event.device == InputEvent.DEVICE_ID_EMULATION:
+		return
+	if event is InputEventScreenTouch:
 		if event.pressed:
-			_pressed = true
-			_press_msec = Time.get_ticks_msec()
-			_press_position = event.position
+			if CardView._touch_owner != null and CardView._touch_owner.get_ref() != null:
+				return
+			CardView._touch_owner = weakref(self)
+			_touch_pointer = event.index
+			_begin_pointer_press(event.position)
+		elif event.index == _touch_pointer:
+			if _pressed and not event.canceled:
+				_finish_pointer_interaction(event.position)
+			cancel_pointer_gesture()
+		accept_event()
+		return
+	if event is InputEventScreenDrag:
+		if event.index == _touch_pointer:
+			_check_pointer_movement(event.position)
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if CardView._touch_owner != null and CardView._touch_owner.get_ref() != null:
+			return
+		if event.pressed:
+			_begin_pointer_press(event.position)
 			accept_event()
 		elif _pressed:
-			_pressed = false
 			_finish_pointer_interaction(event.position)
+			cancel_pointer_gesture()
 			accept_event()
+	elif event is InputEventMouseMotion:
+		_check_pointer_movement(event.position)
+
+
+func _begin_pointer_press(point: Vector2) -> void:
+	_pressed = true
+	_press_msec = Time.get_ticks_msec()
+	_press_position = point
+	_press_card_id = card_id
+	_press_moved = false
+	_long_press_fired = false
+	if _long_press_timer != null and not card_id.is_empty():
+		_long_press_timer.start()
+
+
+func _check_pointer_movement(point: Vector2) -> void:
+	if _pressed and point.distance_to(_press_position) >= TAP_MOVE_THRESHOLD:
+		_press_moved = true
+		_long_press_timer.stop()
+
+
+func _on_long_press_timeout() -> void:
+	if not _pressed or _press_moved or not is_visible_in_tree():
+		return
+	if card_id.is_empty() or card_id != _press_card_id:
+		cancel_pointer_gesture()
+		return
+	_long_press_fired = true
+	detail_requested.emit(card_id)
+
+
+func cancel_pointer_gesture() -> void:
+	if _long_press_timer != null:
+		_long_press_timer.stop()
+	if CardView._touch_owner != null and CardView._touch_owner.get_ref() == self:
+		CardView._touch_owner = null
+	_pressed = false
+	_press_msec = 0
+	_touch_pointer = -1
+	_long_press_fired = false
+	_press_moved = false
+
+
+func _notification(what: int) -> void:
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_EXIT_TREE]:
+		cancel_pointer_gesture()
+	elif what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree():
+		cancel_pointer_gesture()
 
 
 func _finish_pointer_interaction(release_position: Vector2) -> void:
 	var held := Time.get_ticks_msec() - _press_msec
 	var moved := release_position.distance_to(_press_position)
+	if _long_press_fired or _press_moved or moved >= TAP_MOVE_THRESHOLD or not _has_point(release_position):
+		return
 	if held >= LONG_PRESS_MSEC and not card_id.is_empty():
 		detail_requested.emit(card_id)
 	elif moved < TAP_MOVE_THRESHOLD:
 		if stack_visual_mode == "prizes" and count > 0:
-			stack_index_activated.emit(_prize_index_at_point(release_position))
+			var index := _prize_index_at_point(release_position)
+			if index >= 0:
+				stack_index_activated.emit(index)
 			return
 		if not inspect_context.is_empty():
 			inspected.emit(inspect_context.duplicate(true))
@@ -551,6 +609,10 @@ func _finish_pointer_interaction(release_position: Vector2) -> void:
 func _prize_index_at_point(point: Vector2) -> int:
 	if count <= 0:
 		return -1
+	var ref := get_meta("physical_presenter") as WeakRef if has_meta("physical_presenter") else null
+	var physical := ref.get_ref() as Battle3DPresenter if ref != null else null
+	if physical != null and physical.is_projection_ready():
+		return physical.prize_index_at_global_point(self, get_global_transform_with_canvas() * point)
 	var step := _stack_step()
 	var face_size := _stack_face_size()
 	# Prize cards overlap. Index 0 is the real Frame and is painted above every

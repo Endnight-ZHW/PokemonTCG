@@ -24,12 +24,12 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 	add_theme_constant_override("separation", 12)
 	var card_id := str(context.get("card_id", ""))
 	if card_id.is_empty():
-		add_child(_label("没有可查看的卡牌。", 16, DesignTokens.TEXT_MUTED))
+		add_child(DesignTokens.label("没有可查看的卡牌。", 16, DesignTokens.TEXT_MUTED))
 		return
 	var card := catalog.get_card(card_id)
 	var location := str(context.get("location", ""))
 	if not location.is_empty():
-		add_child(_label(location, 15, DesignTokens.TEXT_MUTED))
+		add_child(DesignTokens.label(location, 15, DesignTokens.TEXT_MUTED))
 	_content_grid = GridContainer.new()
 	_content_grid.columns = 2
 	_content_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -196,17 +196,6 @@ func _card_detail_bbcode(card_id: String, pokemon: PokemonState = null) -> Strin
 		pokemon,
 		CardPresentation.DetailLevel.FULL,
 	)
-
-
-func _label(text_value: String, font_size: int, color: Color) -> Label:
-	var label := Label.new()
-	label.text = text_value
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", color)
-	label.add_theme_constant_override("outline_size", 0)
-	label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
-	return label
 
 
 func _texture_for_path(path: String) -> Texture2D:

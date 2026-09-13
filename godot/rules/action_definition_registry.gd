@@ -88,15 +88,6 @@ func public_kinds() -> Array[String]:
 	return result
 
 
-func all_kinds() -> Array[String]:
-	var result: Array[String] = []
-	for kind_value in _definitions:
-		result.append(str(kind_value))
-	result.sort_custom(func(left: String, right: String) -> bool:
-		return encoding_index(left) < encoding_index(right))
-	return result
-
-
 func encoder_kinds() -> Array[String]:
 	return public_kinds()
 
@@ -168,13 +159,13 @@ func validate_wire_dict(
 	for field in expected:
 		if not data.has(field):
 			return _invalid("invalid_schema", "动作缺少字段：%s" % field)
-	if not _is_wire_integer(data["schema_version"]) or int(
+	if not WireValue.is_integer(data["schema_version"]) or int(
 		data["schema_version"]) != ACTION_SCHEMA_VERSION:
 		return _invalid("invalid_schema", "动作 schema 版本无效。")
-	if not _is_wire_integer(data["base_revision"]) or int(
+	if not WireValue.is_integer(data["base_revision"]) or int(
 		data["base_revision"]) < 0:
 		return _invalid("invalid_schema", "动作基础版本无效。")
-	if not _is_wire_integer(data["actor"]) or int(data["actor"]) not in [0, 1]:
+	if not WireValue.is_integer(data["actor"]) or int(data["actor"]) not in [0, 1]:
 		return _invalid("unauthorized_actor", "动作玩家无效。")
 	if not data["kind"] is String or not data["payload"] is Dictionary:
 		return _invalid("invalid_schema", "动作类型或载荷无效。")
@@ -231,23 +222,11 @@ static func _value_matches_type(value: Variant, expected: String) -> bool:
 		"String":
 			return value is String and not str(value).is_empty()
 		"int":
-			return _is_wire_integer(value) and int(value) >= 0
+			return WireValue.is_integer(value) and int(value) >= 0
 		"bool":
 			return value is bool
 		_:
 			return false
-
-
-static func _is_wire_integer(value: Variant) -> bool:
-	if value is int:
-		return true
-	return (
-		value is float
-		and is_finite(value)
-		and value >= -2147483648.0
-		and value <= 2147483647.0
-		and value == floorf(value)
-	)
 
 
 static func _invalid(code: String, message: String) -> Dictionary:

@@ -208,7 +208,7 @@ static func _validate_choice_presentation(
 			if (
 				not category is String
 				or not _bounded_string(category, MAX_IDENTIFIER_BYTES)
-				or not _is_integer_number(limits[category])
+				or not WireValue.is_integer(limits[category])
 				or int(limits[category]) < 0
 				or int(limits[category]) > MAX_CHOICE_OPTIONS
 			):

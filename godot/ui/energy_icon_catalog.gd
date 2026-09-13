@@ -81,10 +81,6 @@ static func path_for(energy_type: String) -> String:
 	return str(ICON_PATHS.get(energy_type, ""))
 
 
-static func source_card_id_for(energy_type: String) -> String:
-	return str(SOURCE_CARD_IDS.get(energy_type, ""))
-
-
 static func path_for_card_id(card_id: String) -> String:
 	return str(SPECIAL_ICON_PATHS.get(card_id, ""))
 

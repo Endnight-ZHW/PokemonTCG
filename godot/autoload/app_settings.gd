@@ -1,6 +1,7 @@
 extends Node
 
 signal changed
+signal runtime_quality_changed
 
 const SETTINGS_PATH := "user://settings.cfg"
 const DEFAULT_MASTER_VOLUME := 0.8
@@ -10,7 +11,7 @@ const DEFAULT_MUTED := false
 const DEFAULT_REDUCED_MOTION := false
 const DEFAULT_CARD_CACHE_SIZE := 24
 const DEFAULT_RELAY_URL := "ws://127.0.0.1:8766"
-const DEFAULT_ANIMATION_MODE := "cinematic"
+const DEFAULT_ANIMATION_MODE := "standard"
 const DEFAULT_QUALITY_PROFILE := "auto"
 
 var master_volume := DEFAULT_MASTER_VOLUME
@@ -22,6 +23,13 @@ var card_cache_size := DEFAULT_CARD_CACHE_SIZE
 var relay_url := DEFAULT_RELAY_URL
 var animation_mode := DEFAULT_ANIMATION_MODE
 var quality_profile := DEFAULT_QUALITY_PROFILE
+var _battle_owner := 0
+var _battle_auto_profile := ""
+var _frame_warmup := 5.0
+var _frame_elapsed := 0.0
+var _frame_samples: Array[float] = []
+var _slow_windows := 0
+var _downgrade_pending := false
 
 
 func _ready() -> void:
@@ -176,6 +184,8 @@ func volume_db() -> float:
 func resolved_quality_profile() -> String:
 	if quality_profile != "auto":
 		return quality_profile
+	if _battle_owner != 0 and not _battle_auto_profile.is_empty():
+		return _battle_auto_profile
 	if OS.get_name() in ["Android", "iOS"]:
 		# Stability first: mobile auto mode uses the bounded 30 FPS profile.
 		# Users can explicitly select Medium/High after validating their device.
@@ -185,3 +195,56 @@ func resolved_quality_profile() -> String:
 
 func target_fps() -> int:
 	return 30 if resolved_quality_profile() == "low" else 60
+
+
+func begin_battle_quality(owner: int) -> void:
+	if _battle_owner == owner:
+		return
+	_battle_owner = owner
+	_battle_auto_profile = "medium" if OS.get_name() in ["Android", "iOS"] else "high"
+	reset_battle_frame_samples()
+	runtime_quality_changed.emit()
+
+
+func end_battle_quality(owner: int) -> void:
+	if _battle_owner != owner:
+		return
+	_battle_owner = 0
+	_battle_auto_profile = ""
+	reset_battle_frame_samples()
+	runtime_quality_changed.emit()
+
+
+func reset_battle_frame_samples() -> void:
+	_frame_warmup = 5.0
+	_frame_elapsed = 0.0
+	_frame_samples.clear()
+	_slow_windows = 0
+	_downgrade_pending = false
+
+
+func record_battle_frame(delta: float, safe_to_apply: bool) -> void:
+	if quality_profile != "auto" or _battle_owner == 0 or _battle_auto_profile != "medium":
+		return
+	if _downgrade_pending:
+		if safe_to_apply:
+			_battle_auto_profile = "low"
+			_downgrade_pending = false
+			runtime_quality_changed.emit()
+		return
+	if delta <= 0.0 or delta > 0.25:
+		reset_battle_frame_samples()
+		return
+	if _frame_warmup > 0.0:
+		_frame_warmup -= delta
+		return
+	_frame_elapsed += delta
+	_frame_samples.append(delta * 1000.0)
+	if _frame_elapsed < 5.0:
+		return
+	_frame_samples.sort()
+	var p95 := _frame_samples[mini(_frame_samples.size() - 1, ceili(_frame_samples.size() * 0.95) - 1)]
+	_slow_windows = _slow_windows + 1 if p95 > 22.0 else 0
+	_frame_elapsed = 0.0
+	_frame_samples.clear()
+	_downgrade_pending = _slow_windows >= 3

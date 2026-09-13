@@ -66,7 +66,7 @@ func _single_line(value: String) -> String:
 
 
 func _localize_entry(value: String) -> String:
-	var result := value
+	var result := PlayerFacingText.message(value)
 	# Replace phrases first so the shorter ASCII-token pass cannot leave a
 	# half-localized player name. Card-name suffixes such as "ex" are not part
 	# of this map and therefore remain untouched.

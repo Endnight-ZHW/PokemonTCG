@@ -793,18 +793,6 @@ func _stack_visual_step(direction: String, depth: float) -> Vector2:
 			return Vector2(3.6, 2.4) * depth_scale
 	return Vector2(3.6, -3.2) * depth_scale
 
-func _motion_card_hidden_from_view(
-	card_id: String,
-	source: Dictionary,
-	target: Dictionary,
-) -> bool:
-	if card_id.is_empty():
-		return true
-	# True means the identity must stay hidden for the entire flight. A transition
-	# from a hidden pile to a public local zone now starts on the back and flips at
-	# mid-flight, so only hidden-to-hidden movement is fully concealed.
-	return _endpoint_hidden_from_view(source) and _endpoint_hidden_from_view(target)
-
 func _endpoint_hidden_from_view(endpoint: Dictionary) -> bool:
 	var zone_name := str(endpoint.get("zone", ""))
 	if zone_name in ["deck", "prizes"]:
@@ -939,47 +927,6 @@ func _bench_slot_from_event(event: Dictionary) -> String:
 			return slot_name
 	return ""
 
-func _discard_hand_start_points(
-	card_ids: Array,
-	visible_count: int,
-	fallback_start: Vector2,
-) -> Array[Vector2]:
-	var result: Array[Vector2] = []
-	var requested_ids: Array[String] = []
-	var has_identity := false
-	for value in card_ids:
-		var card_id := str(value)
-		requested_ids.append(card_id)
-		if not card_id.is_empty():
-			has_identity = true
-	if not has_identity:
-		for _index in range(visible_count):
-			result.append(fallback_start)
-		return result
-	var used: Array[bool] = []
-	for _view in table.hand_views:
-		used.append(false)
-	for index in range(visible_count):
-		var target_id := (
-			requested_ids[index] if index < requested_ids.size() else ""
-		)
-		var start := fallback_start
-		if not target_id.is_empty():
-			for hand_index in range(table.hand_views.size()):
-				var view := table.hand_views[hand_index] as CardView
-				if (
-					used[hand_index]
-					or view == null
-					or not view.visible
-					or view.card_id != target_id
-				):
-					continue
-				used[hand_index] = true
-				start = table._effects_local(view.global_center())
-				break
-		result.append(start)
-	return result
-
 func _flying_card_timing(
 	index: int,
 	total_count: int,
@@ -1040,12 +987,3 @@ func _reveal_content_rect() -> Rect2:
 	if resolved_size.x <= 1.0 or resolved_size.y <= 1.0:
 		return Rect2(Vector2.ZERO, fallback_size)
 	return Rect2(rect_position, resolved_size)
-
-func _shuffle_ease_out_cubic(value: float) -> float:
-	return 1.0 - pow(1.0 - clampf(value, 0.0, 1.0), 3.0)
-
-func _shuffle_ease_in_out_cubic(value: float) -> float:
-	var t := clampf(value, 0.0, 1.0)
-	if t < 0.5:
-		return 4.0 * t * t * t
-	return 1.0 - pow(-2.0 * t + 2.0, 3.0) * 0.5

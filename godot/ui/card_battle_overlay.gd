@@ -6,10 +6,18 @@ var hp_pill: Label
 var damage_badge: Label
 var energy_row: HBoxContainer
 var tool_badge: Label
+var _physical_rect := Rect2()
 
 
 func configure(p_card: CardView) -> void:
 	card = p_card
+
+
+func set_physical_rect(rect: Rect2) -> void:
+	if _physical_rect.is_equal_approx(rect):
+		return
+	_physical_rect = rect
+	_layout_battle_overlay()
 
 
 func attachment_visual_global_rect(
@@ -737,19 +745,24 @@ func _pokemon_max_hp(card_data: Dictionary, pokemon_value: PokemonState) -> int:
 func _layout_battle_overlay() -> void:
 	if hp_pill == null:
 		return
+	var face_rect := _physical_rect if _physical_rect.has_area() else Rect2(Vector2.ZERO, card.size)
+	var face_size := face_rect.size
+	var origin := face_rect.position
 	var badge_scale := clampf(card.size.x / 130.0, 0.68, 1.06)
 	var hp_size := Vector2(58, 24) * badge_scale
-	hp_pill.position = Vector2(card.size.x - hp_size.x - 5.0, 4.0)
+	hp_pill.position = origin + Vector2(face_size.x - hp_size.x - 5.0, 4.0)
+	if _physical_rect.has_area() and card.slot == "active":
+		hp_pill.position.y = origin.y - hp_size.y * 0.4
 	hp_pill.size = hp_size
 	hp_pill.add_theme_font_size_override("font_size", int(17 * badge_scale))
 	var damage_size := Vector2(30, 30) * badge_scale
-	damage_badge.position = Vector2(
-		card.size.x - damage_size.x - 3.0,
-		card.size.y * 0.42,
+	damage_badge.position = origin + Vector2(
+		face_size.x - damage_size.x - 3.0,
+		face_size.y * 0.42,
 	)
 	damage_badge.size = damage_size
 	damage_badge.add_theme_font_size_override("font_size", int(14 * badge_scale))
-	energy_row.position = Vector2(5.0, card.size.y - 26.0 * badge_scale)
+	energy_row.position = origin + Vector2(5.0, face_size.y - 26.0 * badge_scale)
 	energy_row.size = Vector2(card.size.x - 10.0, 25.0 * badge_scale)
 	if card.interaction_hint != null:
 		card.interaction_hint.offset_left = 5.0
@@ -769,16 +782,39 @@ func _layout_battle_overlay() -> void:
 	tool_badge.position = tool_rect.position
 	tool_badge.size = tool_rect.size
 	tool_badge.add_theme_font_size_override("font_size", int(10 * badge_scale))
-	card.status_row.offset_left = -6.0
-	card.status_row.offset_top = 6.0
-	card.status_row.offset_right = -6.0
+	if _physical_rect.has_area():
+		_layout_physical_statuses(maxf(16.0, face_size.x - damage_size.x - 12.0))
+		card.status_row.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		card.status_row.size = card.status_row.get_combined_minimum_size()
+		card.status_row.position = origin + Vector2(4.0, face_size.y * 0.42)
+	else:
+		card.status_row.offset_left = -6.0
+		card.status_row.offset_top = 6.0
+		card.status_row.offset_right = -6.0
 	if card.top_gloss:
 		card.top_gloss.position = Vector2(3.0, 3.0)
 		card.top_gloss.size = Vector2(maxf(0.0, card.size.x - 6.0), maxf(3.0, card.size.y * 0.14))
 
 func _tool_badge_layout_rect() -> Rect2:
 	var badge_scale := clampf(card.size.x / 130.0, 0.68, 1.06)
+	var top := 5.0
+	if _physical_rect.has_area() and _physical_rect.size.x < 100.0 * badge_scale + 15.0:
+		top = 24.0 * badge_scale * 0.6 + 2.0
 	return Rect2(
-		Vector2(5.0, 5.0),
+		_physical_rect.position + Vector2(5.0, top),
 		Vector2(42.0, 20.0) * badge_scale,
 	)
+
+
+func _layout_physical_statuses(available_width: float) -> void:
+	var badges := card.status_row.get_children()
+	var collapsed := badges.size() * 24.0 + maxi(0, badges.size() - 1) * 3.0 > available_width
+	for index in range(badges.size()):
+		var badge := badges[index] as Label
+		if not badge.has_meta("status_text"):
+			badge.set_meta("status_text", badge.text)
+		badge.visible = not collapsed or index == 0
+		badge.text = "异" if collapsed and badges.size() > 1 else str(badge.get_meta("status_text"))
+		badge.accessibility_name = "、".join(card.pokemon.status_conditions) if card.pokemon != null else ""
+		badge.custom_minimum_size.x = minf(24.0, available_width) if collapsed else 24.0
+		badge.size = badge.custom_minimum_size

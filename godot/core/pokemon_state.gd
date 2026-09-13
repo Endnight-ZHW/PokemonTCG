@@ -27,14 +27,6 @@ func max_hp(catalog: CardCatalog) -> int:
 	return NativeRulesProjection.pokemon_max_hp(self, catalog)
 
 
-func available_energy(catalog: CardCatalog) -> Array[String]:
-	return EnergyView.units_for_cards(energy_card_ids, catalog)
-
-
-func has_enough_energy(cost: Array, catalog: CardCatalog) -> bool:
-	return EnergyView.can_pay_cost(energy_card_ids, cost, catalog)
-
-
 func register_modifier(descriptor: Dictionary) -> String:
 	var error := VMModifierDescriptorRegistry.shared().validation_error(descriptor)
 	if not error.is_empty():
@@ -96,23 +88,6 @@ func has_modifier_operation(operation_kind: String, string_value: String = "") -
 		]:
 			return true
 	return false
-
-
-func modifier_operation_sum(operation_kind: String, key: String = "amount") -> int:
-	var result := 0
-	for descriptor in modifier_descriptors():
-		var operation: Dictionary = descriptor.get("operation", {})
-		if str(operation.get("kind", "")) == operation_kind:
-			result += int(operation.get(key, 0))
-	return result
-
-
-func prevents_damage() -> bool:
-	return has_modifier_operation("prevent_damage")
-
-
-func prevents_effects() -> bool:
-	return has_modifier_operation("prevent_effects")
 
 
 func attack_is_locked(attack_name: String = "") -> bool:

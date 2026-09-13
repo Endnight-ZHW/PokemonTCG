@@ -24,6 +24,10 @@ func _initialize() -> void:
 
 
 func _run_protocol_boundaries() -> void:
+	for integer in [0, -2147483648, 2147483648, 9223372036854775807, -2147483648.0, 2147483647.0]:
+		_expect(WireValue.is_integer(integer), "Wire integer validation rejected a supported native/JSON number")
+	for invalid in [true, false, "1", null, 0.5, NAN, INF, -INF, -2147483649.0, 2147483648.0]:
+		_expect(not WireValue.is_integer(invalid), "Wire integer validation accepted an ambiguous or out-of-range value")
 	var envelope := ProtocolV6.envelope(ProtocolV6.PING, "contract", 0, 1)
 	var legacy_envelope: Dictionary = envelope.duplicate(true)
 	legacy_envelope["protocol_version"] = 4

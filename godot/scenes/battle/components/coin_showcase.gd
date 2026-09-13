@@ -77,6 +77,16 @@ var _token: CoinToken
 var _title_label: Label
 var _summary_label: Label
 var _history_label: Label
+var _physical_rendering := false
+
+
+func set_physical_rendering(value: bool) -> void:
+	if _physical_rendering == value:
+		return
+	_physical_rendering = value
+	if _token != null:
+		_token.modulate.a = 0.0 if value else 1.0
+	queue_redraw()
 
 
 func _init() -> void:
@@ -353,6 +363,10 @@ func _coin_vertical_scale(progress: float) -> float:
 func _draw() -> void:
 	var rect := Rect2(Vector2.ZERO, size)
 	if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+		return
+	if _physical_rendering:
+		draw_style_box(_showcase_style(), Rect2(0, 0, size.x, 52))
+		draw_style_box(_showcase_style(), Rect2(0, size.y - 105, size.x, 105))
 		return
 	draw_style_box(
 		_showcase_style(),
