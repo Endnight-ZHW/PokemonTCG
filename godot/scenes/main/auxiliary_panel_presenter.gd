@@ -80,9 +80,9 @@ func _show_card_inspector(
 	host.modal_body.add_child(panel)
 	panel.configure(catalog, context)
 	panel.art_requested.connect(_show_card_art.bind(
-		context.duplicate(true), return_action, return_label, field_choice_context, panel))
+		context.duplicate(true), return_action, return_label, field_choice_context))
 	panel.card_requested.connect(_show_nested_card_inspector.bind(
-		context.duplicate(true), return_action, return_label, field_choice_context, panel))
+		context.duplicate(true), return_action, return_label, field_choice_context))
 	host.back_action = return_action
 	if return_action.is_valid():
 		host.modal_confirm.text = return_label if not return_label.is_empty() else "返回上一界面"
@@ -101,17 +101,15 @@ func _show_card_inspector(
 		host.modal_confirm.pressed.connect(host.close, CONNECT_ONE_SHOT)
 
 func _show_nested_card_inspector(next_context: Dictionary, previous_context: Dictionary,
-		return_action: Callable, return_label: String, choice_context: Dictionary,
-		inspector: CardInspectorPanel) -> void:
+		return_action: Callable, return_label: String, choice_context: Dictionary) -> void:
 	var restore := _restore_card_inspector.bind(previous_context, return_action, return_label,
-		choice_context, host.modal_scroll.scroll_vertical, inspector._detail_text.get_v_scroll_bar().value)
+		choice_context, host.modal_scroll.scroll_vertical)
 	_show_card_inspector(next_context, restore, "返回卡牌详情", choice_context)
 
 
 func _show_card_art(context: Dictionary, return_action: Callable, return_label: String,
-		choice_context: Dictionary, inspector: CardInspectorPanel) -> void:
+		choice_context: Dictionary) -> void:
 	var scroll_position := host.modal_scroll.scroll_vertical
-	var text_position := inspector._detail_text.get_v_scroll_bar().value
 	var card := catalog.get_card(str(context.get("card_id", "")))
 	var spec := ModalSpec.battle(Vector2(720, 850), in_battle) if in_battle else ModalSpec.frontend(Vector2(720, 850))
 	spec.stack_behavior = ModalSpec.StackBehavior.RESTORE_PARENT
@@ -122,26 +120,15 @@ func _show_card_art(context: Dictionary, return_action: Callable, return_label: 
 	art.accessibility_name = str(card.get("name", "卡牌原图"))
 	host.modal_body.add_child(art)
 	var restore := _restore_card_inspector.bind(context, return_action, return_label,
-		choice_context, scroll_position, text_position)
+		choice_context, scroll_position)
 	host.back_action = restore
 	host.modal_confirm.pressed.connect(restore, CONNECT_ONE_SHOT)
 
 
 func _restore_card_inspector(context: Dictionary, return_action: Callable, return_label: String,
-		choice_context: Dictionary, scroll_position: int, text_position: float) -> void:
+		choice_context: Dictionary, scroll_position: int) -> void:
 	_show_card_inspector(context, return_action, return_label, choice_context)
-	_restore_inspector_scroll(host.generation, scroll_position, text_position)
-
-
-func _restore_inspector_scroll(generation: int, scroll_position: int, text_position: float) -> void:
-	await get_tree().process_frame
-	await get_tree().process_frame
-	if generation != host.generation or not host.modal_layer.visible:
-		return
-	host.modal_scroll.scroll_vertical = scroll_position
-	var inspector := host.modal_body.get_child(0) as CardInspectorPanel
-	if inspector and inspector._detail_text:
-		inspector._detail_text.get_v_scroll_bar().value = text_position
+	_restore_modal_scroll(host.generation, scroll_position)
 
 
 func _show_zone_inspector(

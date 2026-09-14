@@ -30,6 +30,8 @@ func _run() -> void:
 			player.bench[i].energy_card_ids.assign(["sv1-ener-2", "sv1-ener-2", "sv1-ener-2"])
 	for i in range(15):
 		state.players[0].hand.append("svi-chim" if i % 2 == 0 else "sv1-ener-2")
+	state.players[1].hand.assign(state.players[0].hand)
+	_report["hand_counts"] = [state.players[0].hand.size(), state.players[1].hand.size()]
 	table.update_view(state, 0, UIPreviewStateFactory.action_rows(state), "", false, "local")
 	await create_timer(5.0).timeout
 	table.render3d.viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS

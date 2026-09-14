@@ -2,14 +2,18 @@ class_name BattleHandFan3D
 extends RefCounted
 
 ## One physical circular fan. Existing semantic positions still drive reflow and
-## identity-preserving browsing; a bounded lens keeps both end cards on screen.
+## identity-preserving browsing. Card tops stay visible at the screen edge while
+## the lower bodies extend off screen, preserving a readable printed size.
 var presenter: Battle3DPresenter
 var _signature := ""
 var _rig := Transform3D.IDENTITY
 var _radius := 1.0
 var _half_angle := 0.0
-const REST_RADIUS := 11.0
-const CARD_SCALE := 1.12
+var _mirrored_poses: Dictionary = {}
+var _mirror_camera_transform := Transform3D.IDENTITY
+var _mirror_transform := Transform3D.IDENTITY
+const REST_RADIUS := 13.0
+const CARD_SCALE := 1.22
 
 func _init(value: Battle3DPresenter) -> void:
 	presenter = value
@@ -68,7 +72,7 @@ func reflow_proxy(control: Control, target_position: Vector2, target_rotation: f
 	var old_rotation := proxy.rotation_degrees
 	proxy.position = target_position
 	proxy.rotation_degrees = target_rotation
-	var finish := presenter._hand_surface_pose(proxy, proxy.size.x * (1.0 if own else 0.72), index, count, 0.36 + index * 0.025, own, false)
+	var finish := presenter._hand_surface_pose(proxy, proxy.size.x, index, count, 0.36 + index * 0.025, own, false)
 	proxy.position = old_position
 	proxy.rotation_degrees = old_rotation
 	proxy.set_meta("physical_reflow", true)
@@ -86,16 +90,9 @@ func reflow_proxy(control: Control, target_position: Vector2, target_rotation: f
 
 func pose(root: Control, width: float, ordinal: int, count: int, height: float, highlighted: bool) -> Transform3D:
 	var table := presenter.table
-	var projection := presenter.world.projection
 	var to_table := table.get_global_transform_with_canvas().affine_inverse()
 	var scroll_rect := to_table * table.hand_scroll.get_global_rect()
-	var corridor := Rect2(scroll_rect.position.x + 12.0, presenter._hand_top,
-		scroll_rect.size.x - 24.0, presenter.size.y - 6.0 - presenter._hand_top)
-	# Give the entire fan one scale and one vertical fit, including its end corners.
-	var signature := "%s|%s|%s|%d" % [presenter.size, corridor, width, count]
-	if signature != _signature:
-		_signature = signature
-		_build_rig(corridor, width, count)
+	_ensure_rig(width, count)
 	var center := to_table * (root.get_global_transform_with_canvas() * (root.size * 0.5))
 	var card_size := table.hand_view._current_hand_card_size()
 	var available := maxf(220.0, table.hand_scroll.size.x)
@@ -117,6 +114,18 @@ func pose(root: Control, width: float, ordinal: int, count: int, height: float, 
 		var centered_scroll := (content_width - available) * 0.5
 		var browsing := clampf(absf(table.hand_scroll.scroll_horizontal - centered_scroll) / maxf(1.0, centered_scroll), 0.0, 1.0)
 		u = lerpf(u, browsed, browsing * 0.25)
+	return _pose_at(u, ordinal, count, height, highlighted)
+
+func _ensure_rig(width: float, count: int) -> void:
+	var corridor := presenter.layout.hand_area(true)
+	var signature := "%s|%s|%s|%d" % [presenter.size, corridor, width, count]
+	if signature != _signature:
+		_signature = signature
+		_build_rig(corridor, width, count)
+		_mirrored_poses.clear()
+		_mirror_camera_transform = Transform3D.IDENTITY
+
+func _pose_at(u: float, ordinal: int, count: int, height: float, highlighted: bool) -> Transform3D:
 	var angle := lerpf(-_half_angle, _half_angle, clampf(u, 0.0, 1.0)) if count > 1 else 0.0
 	var result := _rig * _local_pose(angle)
 	# Layer along the shared fan normal so neighbouring cards never interpenetrate.
@@ -127,12 +136,66 @@ func pose(root: Control, width: float, ordinal: int, count: int, height: float, 
 	result.origin.y += maxf(0.0, height - 0.36 - ordinal * 0.025 - (0.6 if highlighted else 0.0))
 	return result
 
+func opponent_pose(ordinal: int, count: int, height: float) -> Transform3D:
+	# Rotate the entire near fan around the camera axis. Mirroring just each
+	# bounding box leaves different silhouettes and can bury large tilted cards
+	# in the table. One shared transform also preserves parallel paper layers.
+	_ensure_rig(presenter.table.hand_view._current_hand_card_size().x, count)
+	var projection := presenter.world.projection
+	if _mirror_camera_transform != projection.camera.transform:
+		_mirror_camera_transform = projection.camera.transform
+		_mirrored_poses.clear()
+		_build_mirror(count)
+	var key := Vector2(ordinal, height)
+	if _mirrored_poses.has(key):
+		return _mirrored_poses[key]
+	var u := float(ordinal) / maxf(1.0, count - 1.0) if count > 1 else 0.5
+	var near_pose := _pose_at(u, ordinal, count, height, false)
+	var result := _mirror_transform * near_pose
+	_mirrored_poses[key] = result
+	return result
+
+func _build_mirror(count: int) -> void:
+	var camera := presenter.world.camera
+	var turn := Basis(camera.global_basis.z.normalized(), PI)
+	var mirrored := Transform3D(turn, camera.global_position - turn * camera.global_position)
+	var lowest := INF
+	var nearest := INF
+	var farthest := 0.0
+	var view_axis := camera.global_basis.z
+	for index in range(maxi(1, count)):
+		var u := float(index) / maxf(1.0, count - 1.0) if count > 1 else 0.5
+		var pose := mirrored * _pose_at(u, index, count, 0.36 + index * 0.025, false)
+		var half_extent := absf(pose.basis.x.y) * 0.5 + absf(pose.basis.z.y) * CardEntity3D.ASPECT * 0.5
+		half_extent += absf(pose.basis.y.y) * CardEntity3D.THICKNESS * 0.5
+		lowest = minf(lowest, pose.origin.y - half_extent)
+		var view_depth := (camera.global_position - pose.origin).dot(view_axis)
+		var half_depth := absf(pose.basis.x.dot(view_axis)) * 0.5 + absf(pose.basis.z.dot(view_axis)) * CardEntity3D.ASPECT * 0.5
+		half_depth += absf(pose.basis.y.dot(view_axis)) * CardEntity3D.THICKNESS * 0.5
+		nearest = minf(nearest, view_depth - half_depth)
+		farthest = maxf(farthest, view_depth + half_depth)
+	# Keep both fans moving up. A camera-centered half turn alone would move
+	# the far hand down. Use the middle depth of the whole fan, including paper
+	# layers, to keep the off-axis perspective error below a pixel at either edge.
+	var projection := presenter.world.projection
+	var reference_depth := 2.0 * nearest * farthest / maxf(0.001, nearest + farthest)
+	var viewport_center := presenter.size * 0.5
+	var offset := projection.camera_plane_point(viewport_center + presenter.world.framing_offset * 2.0, reference_depth)
+	offset -= projection.camera_plane_point(viewport_center, reference_depth)
+	mirrored.origin += offset
+	lowest += offset.y
+	# Move the whole fan along camera rays until its lowest corner rests above
+	# the cloth. Uniform depth scaling leaves the exact projected shape intact.
+	var depth_scale := (camera.global_position.y - 0.12) / maxf(0.001, camera.global_position.y - lowest)
+	var depth := Transform3D(Basis.from_scale(Vector3.ONE * depth_scale), camera.global_position * (1.0 - depth_scale))
+	_mirror_transform = depth * mirrored
+
 func _local_pose(angle: float) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, -angle), Vector3(sin(angle) * _radius, 0, (1.0 - cos(angle)) * _radius))
 
 func _build_rig(corridor: Rect2, width: float, count: int) -> void:
 	var projection := presenter.world.projection
-	_half_angle = deg_to_rad(minf(15.0, maxf(0.0, (count - 1) * 2.3)))
+	_half_angle = deg_to_rad(minf(8.0, maxf(0.0, (count - 1) * 1.6)))
 	_radius = REST_RADIUS
 	_rig = projection.pose_for_screen(corridor.get_center(), width * CARD_SCALE, 0.0, 1.0, deg_to_rad(24.0))
 	var maximum_scale := _rig.basis.x.length()
@@ -147,7 +210,9 @@ func _build_rig(corridor: Rect2, width: float, count: int) -> void:
 			var edge_width := projection.project_pose_bounds(_rig * _local_pose(_half_angle)).size.x
 			_radius *= maxf(0.05, (corridor.size.x - edge_width) / maxf(1.0, bounds.size.x - edge_width))
 			bounds = _fan_bounds(count)
-		var offset := Vector2(corridor.get_center().x - bounds.get_center().x, corridor.end.y - bounds.end.y)
+		# Anchor the readable upper edge. Fitting the bottom to the viewport made
+		# hand cards smaller than the bench whenever the field needed more space.
+		var offset := Vector2(corridor.get_center().x - bounds.get_center().x, corridor.position.y - bounds.position.y)
 		_rig.origin = projection.screen_to_world(projection.world_to_screen(_rig.origin) + offset, _rig.origin.y)
 
 func _fan_bounds(count: int) -> Rect2:

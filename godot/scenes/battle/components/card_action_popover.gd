@@ -18,7 +18,6 @@ signal outside_pressed(global_position: Vector2)
 @onready var panel: Panel = %Panel
 @onready var title_label: Label = %TitleLabel
 @onready var hint_label: Label = %HintLabel
-@onready var empty_hint: Label = %EmptyHint
 @onready var action_scroll: ScrollContainer = %ActionScroll
 @onready var action_buttons: VBoxContainer = %ActionButtons
 @onready var compact_scroll: ScrollContainer = %CompactScroll
@@ -105,7 +104,7 @@ func show_for_control(
 		hint,
 	)
 	_last_tracked_source_rect = _control_global_bounds(source_control)
-	set_process(true)
+	set_process(visible)
 
 
 func reposition(
@@ -236,6 +235,13 @@ func _present(
 ) -> void:
 	_resolve_nodes()
 	_rows = rows.duplicate()
+	# A card's unavailability is explained once in the battle header. Never open
+	# a second floating surface unless it offers an executable action.
+	if not has_enabled_action():
+		dismiss(false)
+		_clear_buttons(action_buttons)
+		_clear_buttons(compact_action_buttons)
+		return
 	_source_rect = source_rect
 	_uses_viewport_safe_rect = safe_rect.size.x <= 0.0 or safe_rect.size.y <= 0.0
 	_safe_rect = _default_safe_rect() if _uses_viewport_safe_rect else safe_rect
@@ -281,8 +287,6 @@ func _build_content(title: String, hint: String) -> void:
 	title_label.visible = not title.is_empty()
 	hint_label.text = hint
 	hint_label.visible = not hint.is_empty() and not _rows.is_empty()
-	empty_hint.text = hint if not hint.is_empty() else "当前没有可执行动作"
-	empty_hint.visible = _rows.is_empty()
 	action_scroll.visible = not _rows.is_empty()
 
 	for row in _rows:
@@ -329,6 +333,7 @@ func _action_button(row: Dictionary) -> Button:
 		# size. Build a tiny presentation copy first so high-resolution energy art
 		# cannot stretch the 48 px action row, while retaining native text layout.
 		button.icon = _thumbnail_icon(icon_texture)
+		DesignTokens.preserve_art_icon(button)
 		button.expand_icon = false
 	if action:
 		button.pressed.connect(_on_action_button_pressed.bind(action))
@@ -710,7 +715,6 @@ func _resolve_nodes() -> void:
 	panel = get_node_or_null("Panel") as Panel
 	title_label = get_node_or_null("Panel/Margin/Content/TitleRow/TitleLabel") as Label
 	hint_label = get_node_or_null("Panel/Margin/Content/HintLabel") as Label
-	empty_hint = get_node_or_null("Panel/Margin/Content/EmptyHint") as Label
 	action_scroll = get_node_or_null("Panel/Margin/Content/ActionScroll") as ScrollContainer
 	action_buttons = get_node_or_null(
 		"Panel/Margin/Content/ActionScroll/ActionButtons"

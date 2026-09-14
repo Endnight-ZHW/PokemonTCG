@@ -1,3 +1,4 @@
+
 [gd_scene load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://ui/dialogs/pause_panel.gd" id="1_panel"]
@@ -8,7 +9,7 @@ script = ExtResource("1_panel")
 
 [node name="Message" type="Label" parent="."]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1)
+theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
 text = "返回首页会结束当前对局。"
 autowrap_mode = 2
 

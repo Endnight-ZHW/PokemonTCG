@@ -97,7 +97,7 @@ const ZERO_CARD_SEMANTIC_MOTION_TYPES: Array[String] = [
 @export var opponent_hand_card_size := Vector2(76, 106)
 @export var opponent_hand_minimum_spacing := 26.0
 @export var opponent_hand_rotation_degrees := 6.0
-@export var opponent_hand_max_visible := 8
+@export var opponent_hand_max_visible := 60
 @export_category("Presentation")
 @export_group("Refresh")
 @export var resync_fade_duration := 0.16
@@ -749,10 +749,15 @@ func _refresh_ai_thinking_indicator() -> void:
 			false,
 		)
 	if ai_thinking_overlay:
+		var physical := is_instance_valid(render3d)
+		var rects: Array[Rect2] = []
+		if not physical:
+			rects = _ai_slot_rects(ai_player)
+		ai_thinking_overlay.set_card_highlights_in_3d(physical)
 		ai_thinking_overlay.configure(
 			active,
 			ai_player,
-			_ai_slot_rects(ai_player),
+			rects,
 			_settings_reduced_motion(),
 			ai_name,
 			_ai_thinking_started_msec,
@@ -781,9 +786,10 @@ func _ai_slot_rects(player_idx: int) -> Array[Rect2]:
 		return rects
 	for slot_name in ["active", "bench_0", "bench_1", "bench_2", "bench_3", "bench_4"]:
 		var view := get_slot_view(player_idx, slot_name)
-		if view == null or not view.visible:
+		if view == null or not view.visible or view.empty:
 			continue
-		rects.append(Rect2(view.position, view.size))
+		var target := ai_thinking_overlay if ai_thinking_overlay != null else board_canvas
+		rects.append(target.get_global_transform_with_canvas().affine_inverse() * view.visual_global_bounds())
 	return rects
 
 
@@ -980,7 +986,9 @@ func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
 		_pending_detail_pokemon = pokemon
 		return
 	_read_only_detail_key = ""
-	if is_compact_layout() or board_view.is_selecting_action_target():
+	# Wide layouts reserve a left corridor for card text, so the source remains
+	# readable while choosing its placement, evolution or attachment target.
+	if is_compact_layout():
 		hide_card_detail()
 		return
 	_show_card_detail_content(card_id, pokemon)
@@ -1397,7 +1405,7 @@ func _bind_scene_nodes() -> void:
 	)
 	opponent_hand_count_badge.add_theme_color_override(
 		"font_color",
-		DesignTokens.BG_DEEP,
+		DesignTokens.TEXT_ON_ACCENT,
 	)
 	opponent_info.z_index = 46
 	opponent_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1405,9 +1413,9 @@ func _bind_scene_nodes() -> void:
 	opponent_info.add_theme_stylebox_override(
 		"normal",
 		DesignTokens.panel_style(
-			Color(0.06, 0.085, 0.14, 0.96),
+			DesignTokens.PANEL,
 			7,
-			Color(0.35, 0.40, 0.57, 0.55),
+			DesignTokens.BORDER,
 			1,
 			7,
 		),
@@ -1416,9 +1424,9 @@ func _bind_scene_nodes() -> void:
 	own_info.add_theme_stylebox_override(
 		"normal",
 		DesignTokens.panel_style(
-			Color(0.025, 0.060, 0.105, 0.94),
+			DesignTokens.PANEL,
 			7,
-			Color(0.28, 0.53, 0.78, 0.72),
+			DesignTokens.BORDER,
 			1,
 			7,
 		),

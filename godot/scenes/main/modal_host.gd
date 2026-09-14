@@ -4,7 +4,7 @@ extends Control
 const FRONTEND_THEME := preload("res://ui/frontend/front_end_theme.tres")
 const SCREEN_GAME := "game"
 const MODE_CHALLENGE := "challenge"
-const MODAL_SHADE_ALPHA := 0.72
+const MODAL_SHADE_ALPHA := 0.48
 const MODAL_SHADE_OPAQUE_ALPHA := 1.0
 
 @onready var modal_layer: Control = self
@@ -239,6 +239,7 @@ func begin(spec: ModalSpec, available_size: Vector2) -> void:
 	active_spec = spec
 	if modal_panel:
 		modal_panel.theme = FRONTEND_THEME
+		modal_panel.theme_type_variation = &"FrontModalPanel"
 		modal_panel.remove_theme_stylebox_override("panel")
 		_apply_layout(spec, available_size)
 	if modal_scroll:
@@ -266,6 +267,7 @@ func finish() -> void:
 func reset_surface() -> void:
 	if modal_panel:
 		modal_panel.theme = null
+		modal_panel.theme_type_variation = &""
 
 
 func _apply_layout(spec: ModalSpec, available_size: Vector2) -> void:
@@ -274,9 +276,9 @@ func _apply_layout(spec: ModalSpec, available_size: Vector2) -> void:
 	for button in [modal_confirm, modal_cancel]:
 		button.custom_minimum_size.y = 56
 	for side in ["left", "right"]:
-		margin.add_theme_constant_override("margin_" + side, 18 if available_size.x < 700 else 26)
-	margin.add_theme_constant_override("margin_top", 16 if compact_battle else 26)
-	margin.add_theme_constant_override("margin_bottom", 16 if compact_battle else 26)
+		margin.add_theme_constant_override("margin_" + side, 16 if available_size.x < 700 else 24)
+	margin.add_theme_constant_override("margin_top", 16 if compact_battle else 24)
+	margin.add_theme_constant_override("margin_bottom", 16 if compact_battle else 24)
 	var panel_size := _resolved_size(spec, available_size)
 	# Reset the previous viewport's scroll floor before changing the panel. A
 	# stale 420 px floor can otherwise become the panel's effective minimum and

@@ -76,7 +76,11 @@ func _refresh_field_info(display_state: GameState) -> void:
 		own.prizes.size(),
 	]
 	table.own_info.accessibility_name = "%s，%s" % [own.name, table.own_info.text]
+	table.own_info.tooltip_text = table.own_info.text
 	table.opponent_info.accessibility_name = "%s，%s" % [opponent.name, table.opponent_info.text]
+	table.opponent_info.tooltip_text = table.opponent_info.text
+	table.opponent_info.set_meta("full_caption", table.opponent_info.text)
+	table.opponent_info.set_meta("hand_count", opponent.hand.size())
 	_refresh_turn_allowance_chips(own)
 
 
@@ -187,7 +191,7 @@ func _refresh_log(display_state: GameState = null) -> void:
 		return
 	var lines: Array[String] = []
 	for index in range(active_state.action_log.size()):
-		lines.append("[color=#62d7ff]◆[/color] " + active_state.action_log[index])
+		lines.append(DesignTokens.rich_text("[color=#{target}]◆[/color] ") + active_state.action_log[index])
 	if table.log_label:
 		table.log_label.text = "\n".join(lines)
 		table.log_label.scroll_to_line(maxi(0, lines.size() - 1))
@@ -251,7 +255,6 @@ func _refresh_target_hints() -> void:
 			disabled_reason,
 			target_hint,
 			allowed_hand_indices,
-			not is_attachment_source,
 		)
 		if target_hint.is_empty():
 			view.set_targetable(false)
@@ -730,6 +733,8 @@ func _layout_detail_panel() -> void:
 			opponent_prizes.get_stack_visual_max_rect().grow(6.0),
 			table,
 		)
+		if table.render3d and table.render3d.is_projection_ready():
+			opponent_bounds = table.render3d.layout.prize_capacity_rect(opponent_prizes).grow(6.0)
 		corridor_top = maxf(
 			corridor_top,
 			opponent_bounds.end.y + prize_gap + detail_halo,
@@ -741,6 +746,8 @@ func _layout_detail_panel() -> void:
 			own_prizes.get_stack_visual_max_rect().grow(6.0),
 			table,
 		)
+		if table.render3d and table.render3d.is_projection_ready():
+			own_bounds = table.render3d.layout.prize_capacity_rect(own_prizes).grow(6.0)
 		corridor_bottom = minf(
 			corridor_bottom,
 			own_bounds.position.y - prize_gap - detail_halo,
@@ -761,6 +768,13 @@ func _layout_detail_panel() -> void:
 		)
 
 	var available_width := maxf(1.0, maximum_detail_right - minimum_fixed_x)
+	if table.render3d and table.render3d.is_projection_ready():
+		# The physical bench rows may reach farther into this corridor than their
+		# semantic CardView anchors, especially after re-centering on the cloth.
+		for bench in [table.own_bench[0], table.opponent_bench[0]]:
+			maximum_detail_right = minf(maximum_detail_right,
+				table.render3d.layout.field_rect(bench).position.x - 8.0 - detail_halo)
+		available_width = maxf(1.0, maximum_detail_right - minimum_fixed_x)
 	var available_height := maxf(1.0, corridor_bottom - corridor_top)
 	var component := table.detail_panel as BattleDetailPanel
 	var compact_content := (
@@ -768,6 +782,12 @@ func _layout_detail_panel() -> void:
 		or available_height < BattleDetailPanel.NORMAL_PANEL_SIZE.y
 	)
 	var use_bottom_layout := table.is_compact_layout()
+	if not use_bottom_layout and available_height < BattleDetailPanel.COMPACT_PANEL_SIZE.y:
+		# Keep an 8px clearance when the shifted Prize rows leave a short lane.
+		# The default 26px margins would force even the compact panel over a pile.
+		corridor_top = maxf(safe_rect.position.y + detail_halo, corridor_top - 18.0)
+		corridor_bottom = minf(safe_rect.end.y - detail_halo, corridor_bottom + 18.0)
+		available_height = maxf(1.0, corridor_bottom - corridor_top)
 	if component:
 		component.set_compact_layout(use_bottom_layout or compact_content)
 	var base_panel_size := (
@@ -780,6 +800,8 @@ func _layout_detail_panel() -> void:
 	if not use_bottom_layout:
 		base_panel_size.x = minf(base_panel_size.x, maxf(300.0, available_width))
 		table.detail_panel.custom_minimum_size.x = base_panel_size.x
+		if component:
+			base_panel_size.y = component.fit_available_height(minf(available_height, 480.0), true)
 	table.detail_panel.pivot_offset = Vector2.ZERO
 	table.detail_panel.scale = Vector2.ONE
 	if use_bottom_layout:
@@ -990,15 +1012,15 @@ func _refresh_turn_allowance_chips(player: PlayerState) -> void:
 		)
 		allowance_label.add_theme_color_override(
 			"font_color",
-			Color(0.52, 0.60, 0.70, 0.86) if used else DesignTokens.GREEN,
+			DesignTokens.TEXT_MUTED if used else DesignTokens.GREEN,
 		)
 
 
 func _allowance_chip_style(used: bool) -> StyleBoxFlat:
 	return DesignTokens.panel_style(
-		Color(0.035, 0.055, 0.080, 0.90) if used else Color(0.050, 0.105, 0.125, 0.94),
+		DesignTokens.PANEL_DISABLED if used else DesignTokens.PANEL,
 		7,
-		Color(0.25, 0.34, 0.45, 0.32) if used else Color(0.30, 0.50, 0.53, 0.45),
+		DesignTokens.BORDER_SOFT if used else DesignTokens.STATE_SUCCESS,
 		1,
 		5,
 	)
@@ -1016,14 +1038,27 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 			table.board_canvas,
 		)
 	var status_height := 48.0 if float(metrics["height"]) < 600.0 else 56.0
+	var own_active_rect: Rect2 = field_plan["own_active_rect"]
+	if table.render3d and table.render3d.is_projection_ready():
+		own_active_rect = table.render3d.layout.field_rect(table.own_active)
+		stadium_rect = table.render3d.layout.stadium_rect()
 	var status_plan := BattleTableLayout.own_status_plan(
 		metrics,
-		field_plan["own_active_rect"],
+		own_active_rect,
 		Vector2(304.0, status_height),
 		stadium_rect,
 	)
 	var info_rect: Rect2 = status_plan["info_rect"]
 	var allowance_rect: Rect2 = status_plan["allowance_rect"]
+	if table.render3d and table.render3d.is_projection_ready():
+		var prize_rect := table.render3d.layout.prize_capacity_rect(table.zones["own_prizes"])
+		if prize_rect.grow(8.0).intersects(info_rect) or prize_rect.grow(8.0).intersects(allowance_rect):
+			var status_left := maxf(info_rect.position.x, prize_rect.end.x + 8.0)
+			var status_width := maxf(1.0, info_rect.end.x - status_left)
+			info_rect.position.x = status_left
+			allowance_rect.position.x = status_left
+			info_rect.size.x = status_width
+			allowance_rect.size.x = status_width
 	if table.detail_panel and table.detail_panel.visible and not table.is_compact_layout():
 		var detail_rect := _visual_rect_in_control(table.detail_panel, Rect2(Vector2.ZERO, table.detail_panel.size), table.board_canvas)
 		if detail_rect.intersects(info_rect) or detail_rect.intersects(allowance_rect):
@@ -1038,10 +1073,17 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 				var below_y := detail_rect.end.y + 8.0
 				var prizes := table.zones.get("own_prizes") as ZoneView
 				var bottom := prizes.position.y - 12.0 if prizes else float(metrics["own_hand_y"])
+				if prizes and table.render3d and table.render3d.is_projection_ready():
+					bottom = table.render3d.layout.prize_capacity_rect(prizes).position.y - 12.0
 				if below_y + status_height <= bottom:
 					var row_gap := allowance_rect.position.y - info_rect.position.y
 					info_rect.position = Vector2(detail_rect.position.x, below_y)
 					allowance_rect.position = Vector2(detail_rect.position.x, below_y + row_gap)
+				elif available >= 140.0:
+					info_rect.position.x = left
+					info_rect.size.x = available
+					allowance_rect.position.x = left
+					allowance_rect.size.x = available
 	table.own_info.position = info_rect.position
 	table.own_info.size = info_rect.size
 	table.own_allowance_row.position = allowance_rect.position
@@ -1059,12 +1101,16 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 		var label := table.own_allowance_labels.get(key) as Label
 		if label == null:
 			continue
-		label.add_theme_font_size_override("font_size", 11 if compact_status else 12)
+		label.add_theme_font_size_override("font_size", 10 if allowance_rect.size.x < 260.0 else 11 if compact_status else 12)
 		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		label.clip_text = true
 		if compact_status:
 			label.custom_minimum_size.x = compact_unit * (1.2 if key == "stadium" else 1.0)
 		else:
 			label.custom_minimum_size.x = 82.0 if key == "stadium" else 68.0
+	# Apply the row width after its children shrink; otherwise Container keeps
+	# the previous wide minimum when the viewport crosses the compact breakpoint.
+	table.own_allowance_row.size = allowance_rect.size
 
 
 func _layout_current_status() -> void:
@@ -1341,14 +1387,10 @@ func _refresh_action_popover() -> void:
 		_present_popover_rows(table._forced_popover_source_key, table._forced_popover_rows)
 		return
 	var groups := table.interaction_router.action_groups_for_source(table.selected_entity_key)
-	var contextual_disabled_rows := _disabled_context_rows_for_source(table.selected_entity_key)
 	if groups.is_empty():
-		_present_popover_rows(
-			table.selected_entity_key,
-			contextual_disabled_rows,
-			"无法操作",
-			_disabled_reason_for_source(table.selected_entity_key),
-		)
+		# The task header already explains why the selected card cannot act.
+		table.action_popover.dismiss(false)
+		table._popover_source_key = ""
 		return
 	if not table._selected_action_group_key.is_empty():
 		table.action_popover.dismiss(false)
@@ -1357,13 +1399,10 @@ func _refresh_action_popover() -> void:
 		groups.size() == 1
 		and bool(groups[0].get("requires_target", false))
 	):
-		# Disabled informational rows (for example, an ability already used this
-		# turn) do not turn a single targeted action into a multi-action choice.
-		# Keep the one-tap contract and enter target selection immediately.
+		# A single targeted action enters target selection immediately.
 		table.action_popover.dismiss(false)
 		return
 	var popover_rows := _popover_rows_for_groups(groups)
-	popover_rows.append_array(contextual_disabled_rows)
 	_present_popover_rows(
 		table.selected_entity_key,
 		popover_rows,
@@ -1390,32 +1429,6 @@ func _popover_rows_for_groups(groups: Array[Dictionary]) -> Array[Dictionary]:
 		elif bool(group.get("requires_target", false)):
 			row["hint"] = "选择合法目标"
 		result.append(row)
-	return result
-
-
-func _disabled_context_rows_for_source(source_key: String) -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	if table.state_ref == null or not source_key.begins_with("pokemon:"):
-		return result
-	var parts := source_key.split(":")
-	if parts.size() < 3:
-		return result
-	var pokemon := table.state_ref.get_player(int(parts[1])).get_pokemon(str(parts[2]))
-	if pokemon == null or pokemon.used_abilities.is_empty():
-		return result
-	var legal_abilities: Dictionary = {}
-	for action in table.interaction_router.actions_for_source(source_key):
-		if action.kind == "USE_ABILITY":
-			legal_abilities[str(action.ability_name())] = true
-	for ability_value in table.catalog.get_card(pokemon.card_id).get("abilities", []):
-		var ability: Dictionary = ability_value
-		var ability_name := str(ability.get("name", ""))
-		if ability_name in pokemon.used_abilities and not legal_abilities.has(ability_name):
-			result.append({
-				"label": "特性 · %s（已使用）" % ability_name,
-				"hint": "本回合已发动",
-				"disabled": true,
-			})
 	return result
 
 
@@ -1602,7 +1615,8 @@ func _on_popover_action_chosen(action: GameAction) -> void:
 			return
 	var group := _group_for_action(table._popover_source_key, action)
 	if not group.is_empty() and bool(group.get("requires_target", false)):
-		table.hide_card_detail()
+		if table.is_compact_layout():
+			table.hide_card_detail()
 		table._selected_action_group_key = str(group.get("key", ""))
 		table._popover_source_key = ""
 		_refresh_target_hints()

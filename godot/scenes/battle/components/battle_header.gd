@@ -55,8 +55,8 @@ func update_header(
 	turn_label.add_theme_color_override("font_color", DesignTokens.GOLD if display_actor == view_player else DesignTokens.TEXT_MUTED)
 	_turn_full_text = turn_label.text
 	_fit_turn_caption()
-	turn_label.tooltip_text = turn_label.text
-	turn_label.accessibility_name = "当前对局：%s" % turn_label.text
+	turn_label.tooltip_text = _turn_full_text
+	turn_label.accessibility_name = "当前对局：%s" % _turn_full_text
 	var effective_hint := task_hint.strip_edges()
 	if effective_hint.is_empty():
 		effective_hint = _task_hint_override
@@ -166,20 +166,18 @@ func _update_task_hint(value: String) -> void:
 
 
 func _apply_responsive_layout() -> void:
-	# The fixed space at each edge is balanced (12 + 84 + 12 on the left,
-	# 108 on the right). Equal expanding spacers therefore keep the continuous
-	# turn/task group centered while the menu remains pinned to the left edge.
+	# Balanced corner captions leave the top center free for the opponent's
+	# edge-docked hand. All controls retain their existing node paths/signals.
 	if menu_button == null or turn_label == null or task_hint_label == null:
 		return
 	menu_button.custom_minimum_size = Vector2(84.0, 48.0)
-	turn_label.custom_minimum_size = Vector2(
-		252.0 if size.x < 1080.0 else 292.0,
-		44.0,
-	)
-	task_hint_label.custom_minimum_size = Vector2(
-		clampf(size.x * 0.22, 250.0, 340.0),
-		44.0,
-	)
+	var caption_width := clampf(size.x * 0.19, 144.0, 292.0)
+	var compact := size.x < 1180.0
+	for label in [turn_label, task_hint_label]:
+		label.custom_minimum_size = Vector2(caption_width, 52.0 if compact else 44.0)
+		label.add_theme_font_size_override("font_size", 14 if compact else 15)
+	task_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART if compact else TextServer.AUTOWRAP_OFF
+	task_hint_label.max_lines_visible = 2 if compact else 1
 	_fit_turn_caption()
 
 
@@ -187,5 +185,9 @@ func _fit_turn_caption() -> void:
 	if turn_label == null or _turn_full_text.is_empty():
 		return
 	turn_label.text = _turn_full_text
-	if size.x > 0.0 and size.x < 1180.0:
+	if size.x > 0.0 and size.x < 1450.0:
 		turn_label.text = _turn_full_text.replace("我方行动", "我方").replace("对手行动", "对手")
+	if size.x > 0.0 and size.x < 1180.0:
+		var parts := turn_label.text.split(" · ")
+		if parts.size() == 3:
+			turn_label.text = "%s · %s\n%s" % [parts[0], parts[1], parts[2]]

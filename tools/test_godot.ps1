@@ -56,6 +56,7 @@ $contracts = @(
     @('native_rules_session_contract_test', 'NATIVE_RULES_SESSION_CONTRACT_OK', 'Native ABI 2 stateful rules session, privacy, rollback, Snapshot and journal contract'),
     @('vm_descriptor_contract_test', 'VM_DESCRIPTOR_CONTRACT_OK', 'Generated VM IR descriptor and negative-schema contract'),
     @('frontend_layout_contract', 'FRONTEND_LAYOUT_CONTRACT_OK', 'Frontend layout contract'),
+    @('modal_scroll_contract', 'MODAL_SCROLL_CONTRACT_OK', 'Single-owner modal scrolling, content reachability and reading-position restoration'),
     @('battle_feedback_lifecycle_contract', 'BATTLE_FEEDBACK_LIFECYCLE_OK', 'Battle feedback lifecycle contract'),
     @('card_view_layers_contract', 'CARD_VIEW_LAYERS_OK', 'Card view layers contract'),
     @('view_model_ownership_contract', 'VIEW_MODEL_OWNERSHIP_OK', 'Player view privacy and queued snapshot ownership'),

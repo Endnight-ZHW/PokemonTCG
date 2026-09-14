@@ -191,7 +191,7 @@ func _build_nodes() -> void:
 	_title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_title_label.add_theme_font_size_override("font_size", 20)
-	_title_label.add_theme_color_override("font_color", Color("ffe59a"))
+	_title_label.add_theme_color_override("font_color", DesignTokens.GOLD)
 	add_child(_title_label)
 
 	_token = CoinToken.new()
@@ -202,7 +202,7 @@ func _build_nodes() -> void:
 	_summary_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_summary_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_summary_label.add_theme_font_size_override("font_size", 18)
-	_summary_label.add_theme_color_override("font_color", Color("f4f7ff"))
+	_summary_label.add_theme_color_override("font_color", DesignTokens.TEXT)
 	add_child(_summary_label)
 
 	_history_label = Label.new()
@@ -211,7 +211,7 @@ func _build_nodes() -> void:
 	_history_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_history_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_history_label.add_theme_font_size_override("font_size", 15)
-	_history_label.add_theme_color_override("font_color", Color("c9d5e8"))
+	_history_label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
 	add_child(_history_label)
 
 
@@ -400,11 +400,11 @@ func _draw() -> void:
 
 func _showcase_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.018, 0.036, 0.067, 0.96)
-	style.border_color = Color(0.94, 0.68, 0.20, 0.72)
+	style.bg_color = DesignTokens.PANEL
+	style.border_color = DesignTokens.GOLD
 	style.set_border_width_all(1)
 	style.set_corner_radius_all(16)
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.42)
+	style.shadow_color = DesignTokens.SHADOW
 	style.shadow_size = 12
 	style.shadow_offset = Vector2(0, 5)
 	return style

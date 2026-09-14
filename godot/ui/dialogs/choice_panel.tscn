@@ -1,3 +1,4 @@
+
 [gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://ui/dialogs/choice_panel.gd" id="1_panel"]
@@ -15,7 +16,7 @@ script = ExtResource("2_energy")
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_colors/font_color = Color(0.933, 0.91, 0.863, 1.0)
+theme_override_colors/font_color = Color(0.270588, 0.215686, 0.184314, 1)
 theme_override_font_sizes/font_size = 17
 text = "请选择一张卡牌。"
 autowrap_mode = 2
@@ -23,7 +24,7 @@ autowrap_mode = 2
 [node name="MetadataLabel" type="Label" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.788, 0.651, 0.396, 1.0)
+theme_override_colors/font_color = Color(0.639216, 0.372549, 0.196078, 1)
 theme_override_font_sizes/font_size = 16
 text = "请选择 1 项"
 autowrap_mode = 2
@@ -33,7 +34,7 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 custom_minimum_size = Vector2(0, 20)
-theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1.0)
+theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
 theme_override_font_sizes/font_size = 16
 text = "单选模式 · 点击任意卡牌进行选择"
 vertical_alignment = 1
@@ -44,7 +45,7 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 custom_minimum_size = Vector2(0, 24)
-theme_override_colors/font_color = Color(0.929, 0.667, 0.62, 1.0)
+theme_override_colors/font_color = Color(0.678431, 0.317647, 0.278431, 1)
 theme_override_font_sizes/font_size = 16
 text = "当前不能选择此项。"
 vertical_alignment = 1
@@ -54,7 +55,7 @@ autowrap_mode = 2
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1.0)
+theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
 text = "点击确认继续结算。"
 
 [node name="PreviewReturnButton" type="Button" parent="."]
@@ -95,7 +96,7 @@ theme_override_constants/separation = 6
 [node name="EnergyPreviewLabel" type="Label" parent="ContentRow/OptionsScroll/ChoiceColumn/EnergyPreview"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1.0)
+theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
 theme_override_font_sizes/font_size = 16
 text = "待分配能量"
 
@@ -136,7 +137,7 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1.0)
+theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
 theme_override_font_sizes/font_size = 16
 text = "牌库视图"
 vertical_alignment = 1
@@ -189,11 +190,19 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="PreviewContent" type="VBoxContainer" parent="ContentRow/PreviewPanel"]
+[node name="PreviewScroll" type="ScrollContainer" parent="ContentRow/PreviewPanel"]
+unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PreviewContent" type="VBoxContainer" parent="ContentRow/PreviewPanel/PreviewScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="PreviewImage" type="TextureRect" parent="ContentRow/PreviewPanel/PreviewContent"]
+[node name="PreviewImage" type="TextureRect" parent="ContentRow/PreviewPanel/PreviewScroll/PreviewContent"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(88, 123)
 layout_mode = 2
@@ -201,21 +210,22 @@ size_flags_horizontal = 3
 expand_mode = 1
 stretch_mode = 5
 
-[node name="PreviewTitle" type="Label" parent="ContentRow/PreviewPanel/PreviewContent"]
+[node name="PreviewTitle" type="Label" parent="ContentRow/PreviewPanel/PreviewScroll/PreviewContent"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1.0)
+theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
 theme_override_font_sizes/font_size = 16
 text = "卡牌预览"
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="PreviewText" type="RichTextLabel" parent="ContentRow/PreviewPanel/PreviewContent"]
+[node name="PreviewText" type="RichTextLabel" parent="ContentRow/PreviewPanel/PreviewScroll/PreviewContent"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_font_sizes/normal_font_size = 16
 bbcode_enabled = true
-scroll_active = true
+fit_content = true
+scroll_active = false
 autowrap_mode = 3
 text = "选择卡牌查看效果。"

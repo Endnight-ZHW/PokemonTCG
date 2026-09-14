@@ -1617,7 +1617,7 @@ func run(ui: Control) -> void:
 	)
 	if (
 		attachment_source_card == null
-		or attachment_source_card.interaction_hint.visible
+		or attachment_source_card.get_node_or_null("%InteractionHint") != null
 		or not attachment_source_card.target_glow.visible
 	):
 		push_error(
@@ -1642,7 +1642,7 @@ func run(ui: Control) -> void:
 	attachment_source_card = ui.battle_screen.get_slot_view(0, "active")
 	if (
 		attachment_source_card == null
-		or attachment_source_card.interaction_hint.visible
+		or attachment_source_card.get_node_or_null("%InteractionHint") != null
 		or not attachment_source_card.target_glow.visible
 	):
 		push_error("Compact attachment source preview restored the inline hint")

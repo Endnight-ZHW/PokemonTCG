@@ -40,10 +40,12 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 	_image_button = Button.new()
 	_image_button.custom_minimum_size = Vector2(260, 363)
 	_image_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_image_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	_image_button.focus_mode = Control.FOCUS_NONE
 	_image_button.flat = true
 	_image_button.expand_icon = true
 	_image_button.icon = _texture_for_path(str(card.get("image_path", "")))
+	DesignTokens.preserve_art_icon(_image_button)
 	_image_button.tooltip_text = ""
 	_image_button.accessibility_name = "放大查看%s卡图" % str(card.get("name", card_id))
 	_image_button.add_theme_stylebox_override(
@@ -58,14 +60,15 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 	_content_grid.add_child(_image_button)
 	var detail := RichTextLabel.new()
 	_detail_text = detail
-	detail.custom_minimum_size = Vector2(500, 363)
+	detail.custom_minimum_size = Vector2.ZERO
 	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail.fit_content = false
-	detail.scroll_active = true
-	FrontendPalette.style_scrollbar(detail.get_v_scroll_bar())
+	# The modal owns scrolling for card text, evolution and attachments together.
+	detail.fit_content = true
+	detail.scroll_active = false
+	detail.mouse_filter = Control.MOUSE_FILTER_PASS
 	detail.bbcode_enabled = true
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail.text = "[color=#a9babd]%s[/color]\n\n%s" % [
+	detail.text = DesignTokens.rich_text("[color=#{muted}]%s[/color]\n\n%s") % [
 		CardPresentation.meta_text(card),
 		_card_detail_bbcode(card_id, context.get("pokemon") as PokemonState),
 	]
@@ -108,11 +111,6 @@ func _apply_responsive_layout() -> void:
 			Vector2(148, 207) if short_landscape else Vector2(216, 302) if compact_layout else Vector2(260, 363)
 		)
 	if _detail_text:
-		_detail_text.fit_content = compact_layout
-		_detail_text.scroll_active = not compact_layout
-		_detail_text.custom_minimum_size = (
-			Vector2(0, 240) if short_landscape else Vector2(0, 280) if compact_layout else Vector2(0, 363)
-		)
 		_detail_text.add_theme_font_size_override("normal_font_size", 16 if short_landscape else 18)
 
 

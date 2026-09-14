@@ -1,74 +1,80 @@
+
 [gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_header.gd" id="1_header"]
 
 [sub_resource type="StyleBoxFlat" id="Style_menu_normal"]
-bg_color = Color(0.025, 0.055, 0.102, 0.96)
+bg_color = Color(1.000000, 0.976471, 0.941176, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.27, 0.42, 0.58, 0.65)
+border_color = Color(0.631373, 0.541176, 0.450980, 1)
 corner_radius_top_left = 12
 corner_radius_top_right = 12
 corner_radius_bottom_right = 12
 corner_radius_bottom_left = 12
-shadow_color = Color(0, 0, 0, 0.20)
+shadow_color = Color(0.270588, 0.215686, 0.184314, 0.12)
 shadow_size = 3
 
 [sub_resource type="StyleBoxFlat" id="Style_menu_hover"]
-bg_color = Color(0.043, 0.122, 0.216, 1)
+bg_color = Color(0.952941, 0.898039, 0.823529, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.388, 0.847, 1, 1)
+border_color = Color(0.639216, 0.372549, 0.196078, 1)
 corner_radius_top_left = 12
 corner_radius_top_right = 12
 corner_radius_bottom_right = 12
 corner_radius_bottom_left = 12
 
 [sub_resource type="StyleBoxFlat" id="Style_menu_pressed"]
-bg_color = Color(0.024, 0.063, 0.122, 1)
+bg_color = Color(0.909804, 0.835294, 0.729412, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.957, 0.784, 0.29, 0.85)
+border_color = Color(0.639216, 0.372549, 0.196078, 1)
 corner_radius_top_left = 12
 corner_radius_top_right = 12
 corner_radius_bottom_right = 12
 corner_radius_bottom_left = 12
 
 [sub_resource type="StyleBoxFlat" id="Style_turn_context"]
-bg_color = Color(0.027, 0.055, 0.098, 0.9)
+bg_color = Color(1.000000, 0.976471, 0.941176, 1)
 border_width_left = 1
 border_width_top = 1
+border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.80, 0.66, 0.30, 0.50)
+border_color = Color(0.639216, 0.372549, 0.196078, 1)
 corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
 corner_radius_bottom_left = 12
 content_margin_left = 16.0
 content_margin_top = 5.0
 content_margin_right = 14.0
 content_margin_bottom = 5.0
-shadow_color = Color(0, 0, 0, 0.38)
+shadow_color = Color(0.270588, 0.215686, 0.184314, 0.12)
 shadow_size = 3
 
 [sub_resource type="StyleBoxFlat" id="Style_task_hint"]
-bg_color = Color(0.035, 0.09, 0.15, 0.97)
+bg_color = Color(1.000000, 0.976471, 0.941176, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.25, 0.43, 0.59, 0.60)
+border_color = Color(0.631373, 0.541176, 0.450980, 1)
 corner_radius_top_right = 12
+corner_radius_top_left = 12
 corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
 content_margin_left = 16.0
 content_margin_top = 5.0
 content_margin_right = 14.0
 content_margin_bottom = 5.0
-shadow_color = Color(0, 0, 0, 0.38)
+shadow_color = Color(0.270588, 0.215686, 0.184314, 0.12)
 shadow_size = 3
 
 [node name="Header" type="HBoxContainer"]
@@ -76,7 +82,7 @@ custom_minimum_size = Vector2(0, 58)
 layout_mode = 2
 mouse_filter = 2
 theme_override_constants/separation = 0
-editor_description = "全宽悬浮战斗头部。菜单固定左侧，回合与任务作为连续信息组保持在画面中央。"
+editor_description = "全宽悬浮战斗头部。回合与任务分居两侧，为上下贴边的大尺寸手牌留出中央区域。"
 script = ExtResource("1_header")
 
 [node name="LeftInset" type="Control" parent="."]
@@ -90,9 +96,9 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(84, 48)
 layout_mode = 2
 size_flags_vertical = 4
-theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
-theme_override_colors/font_hover_color = Color(0.957, 0.969, 1, 1)
-theme_override_colors/font_pressed_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_colors/font_color = Color(0.270588, 0.215686, 0.184314, 1)
+theme_override_colors/font_hover_color = Color(0.270588, 0.215686, 0.184314, 1)
+theme_override_colors/font_pressed_color = Color(0.639216, 0.372549, 0.196078, 1)
 theme_override_font_sizes/font_size = 14
 theme_override_styles/normal = SubResource("Style_menu_normal")
 theme_override_styles/hover = SubResource("Style_menu_hover")
@@ -104,30 +110,31 @@ custom_minimum_size = Vector2(12, 0)
 layout_mode = 2
 mouse_filter = 2
 
-[node name="CenterSpacerLeft" type="Control" parent="."]
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_filter = 2
-
 [node name="TurnLabel" type="Label" parent="."]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(292, 44)
 layout_mode = 2
 size_flags_vertical = 4
-theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_colors/font_color = Color(0.639216, 0.372549, 0.196078, 1)
 theme_override_font_sizes/font_size = 15
 theme_override_styles/normal = SubResource("Style_turn_context")
 text = "第 1 回合 · 玩家 1 · 准备阶段"
 horizontal_alignment = 0
 vertical_alignment = 1
 text_overrun_behavior = 3
+clip_text = true
+
+[node name="CenterSpacerLeft" type="Control" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
 
 [node name="TaskHint" type="Label" parent="."]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(300, 44)
 layout_mode = 2
 size_flags_vertical = 4
-theme_override_colors/font_color = Color(0.949, 0.969, 1, 1)
+theme_override_colors/font_color = Color(0.270588, 0.215686, 0.184314, 1)
 theme_override_font_sizes/font_size = 15
 theme_override_styles/normal = SubResource("Style_task_hint")
 text = "选择基础宝可梦放到战斗场"
@@ -137,6 +144,7 @@ text_overrun_behavior = 3
 clip_text = true
 
 [node name="HeaderSpacer" type="Control" parent="."]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2

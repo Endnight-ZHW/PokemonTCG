@@ -17,6 +17,7 @@ func _run() -> void:
 		quit(1)
 		return
 	Engine.max_fps = 60
+	report["mode"] = "layout_only" if "--layout-only" in OS.get_cmdline_user_args() else "full"
 	Input.warp_mouse(Vector2(2, 2))
 	await _check_ink_values()
 	await _check_startup_and_alignment()
@@ -67,6 +68,8 @@ func _check_startup_and_alignment() -> void:
 	settings.quality_profile = "high"
 	report["raster_sizes"] = []
 	report["symmetry"] = []
+	report["hand_layout"] = []
+	report["pile_faces"] = []
 	for resolution in [Vector2i(1600, 900), Vector2i(1280, 720), Vector2i(900, 540), Vector2i(2000, 900), Vector2i(2560, 1392)]:
 		root.size = resolution
 		root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
@@ -108,13 +111,19 @@ func _check_startup_and_alignment() -> void:
 			table.hand_scroll.scroll_horizontal = scroll
 			presenter.sync_surfaces()
 			for hand in table.hand_views:
-				var bounds := presenter.world.projection.project_pose_bounds(presenter.card_pose(hand))
-				check(Rect2(Vector2.ZERO, presenter.size).grow(-4).encloses(bounds), "The circular fan cuts off a card at the viewport edge")
+				SYMMETRY.check_visible_hand(table, hand, check)
 		for card in table.own_bench + table.opponent_bench:
 			var bounds := presenter.global_bounds(card)
 			for zone_name in ["own_deck", "opponent_deck", "own_discard", "opponent_discard"]:
 				check(not bounds.intersects(presenter.global_bounds(table.zones[zone_name])), "A bench card overlaps a side pile")
 		report.symmetry.append(SYMMETRY.layout_metrics(table, check).merged({"window": str(resolution)}))
+		report.hand_layout.append((await SYMMETRY.check_hand_layout(self, table, check)).merged({"window": str(resolution)}))
+		report.pile_faces.append((await SYMMETRY.check_pile_faces(self, table, check)).merged({"window": str(resolution)}))
+		if "--layout-only" in OS.get_cmdline_user_args():
+			table.queue_free()
+			await process_frame
+			await process_frame
+			continue
 		if resolution == Vector2i(1600, 900):
 			report["hand_fans"] = await SYMMETRY.check_fans(self, table, check)
 			report["reconciled_hand"] = await SYMMETRY.check_reconciled_hand(self, table, check)
@@ -153,4 +162,5 @@ func _check_startup_and_alignment() -> void:
 		table.queue_free()
 		await process_frame
 		await process_frame
-	check(report.max_packet_layers > 1.0, "Full decks still have single-card thickness")
+	if "--layout-only" not in OS.get_cmdline_user_args():
+		check(report.max_packet_layers > 1.0, "Full decks still have single-card thickness")

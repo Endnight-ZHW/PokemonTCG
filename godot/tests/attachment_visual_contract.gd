@@ -282,7 +282,7 @@ func _run() -> void:
 	card.set_interaction_state(false, "", "选择能量", [], false)
 	await process_frame
 	_check(
-		not card.interaction_hint.visible
+		card.get_node_or_null("%InteractionHint") == null
 		and card.targetable
 		and card.target_glow.visible
 		and "选择能量" in card.accessibility_description,

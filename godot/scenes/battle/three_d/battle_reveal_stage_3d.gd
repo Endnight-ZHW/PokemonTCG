@@ -9,7 +9,7 @@ func _ready() -> void:
 	_dimmer = _surface()
 	_panel = _surface()
 	var dim := _dimmer.material_override as ShaderMaterial
-	dim.set_shader_parameter("fill", Color(0.008, 0.015, 0.024, 0.58))
+	dim.set_shader_parameter("fill", Color(DesignTokens.SCRIM, 0.48))
 	dim.set_shader_parameter("radius", 0.0)
 	visible = false
 

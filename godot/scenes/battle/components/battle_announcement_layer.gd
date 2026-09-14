@@ -99,7 +99,7 @@ func _play_next() -> void:
 	_active_handle = handle
 	var run_generation := _generation
 	var text := str(row.get("text", ""))
-	var color: Color = row.get("color", Color.WHITE)
+	var color: Color = row.get("color", DesignTokens.TEXT)
 	var reduced_motion := bool(row.get("reduced_motion", false))
 	var timings := _timings(reduced_motion)
 	var enter_duration := timings.x
@@ -111,7 +111,7 @@ func _play_next() -> void:
 	announcement_label.add_theme_color_override("font_color", color)
 	announcement_label.add_theme_color_override(
 		"font_outline_color",
-		Color(0.005, 0.012, 0.025, 0.96),
+		DesignTokens.PANEL,
 	)
 	announcement_panel.add_theme_stylebox_override(
 		"panel",
@@ -187,13 +187,13 @@ func _timings(reduced_motion: bool) -> Vector3:
 
 func _announcement_style(accent: Color) -> StyleBoxFlat:
 	var style := DesignTokens.panel_style(
-		Color(0.018, 0.038, 0.070, 0.96),
+		DesignTokens.PANEL,
 		12,
 		accent.darkened(0.08),
 		1,
 		10,
 	)
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.46)
+	style.shadow_color = DesignTokens.SHADOW
 	style.shadow_size = 10
 	style.shadow_offset = Vector2(0.0, 4.0)
 	return style

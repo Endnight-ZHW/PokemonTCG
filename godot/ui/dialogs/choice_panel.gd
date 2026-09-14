@@ -239,7 +239,7 @@ func add_card_option(
 	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	badge.add_theme_font_size_override("font_size", 16)
 	badge.add_theme_color_override("font_color", FrontendPalette.INK)
-	badge.add_theme_color_override("font_outline_color", Color(1, 1, 1, 0.28))
+	badge.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
 	badge.add_theme_constant_override("outline_size", 1)
 	badge.add_theme_stylebox_override(
 		"normal",
@@ -786,8 +786,7 @@ func _configure_preview_panel() -> void:
 		preview_text.bbcode_enabled = true
 		preview_text.focus_mode = Control.FOCUS_NONE
 		preview_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		preview_text.scroll_active = true
-		FrontendPalette.style_scrollbar(preview_text.get_v_scroll_bar())
+	FrontendPalette.style_scrollbar(%PreviewScroll.get_v_scroll_bar())
 
 
 func _preview_card(card_id: String) -> void:
@@ -797,6 +796,8 @@ func _preview_card(card_id: String) -> void:
 		_hide_preview()
 		return
 	var card := _card_data(card_id)
+	if card_id != _previewed_card_id:
+		%PreviewScroll.scroll_vertical = 0
 	_previewed_card_id = card_id
 	preview_panel.visible = true
 	if card.is_empty():
@@ -834,7 +835,7 @@ func _hide_preview() -> void:
 
 func _card_detail_bbcode(card_id: String) -> String:
 	var card := _card_data(card_id)
-	return "[color=#a9babd]%s[/color]\n\n%s" % [
+	return DesignTokens.rich_text("[color=#{muted}]%s[/color]\n\n%s") % [
 		CardPresentation.meta_text(card),
 		CardPresentation.detail_bbcode(
 			card,
@@ -1008,12 +1009,12 @@ func _apply_card_tile_style(
 	blocked: bool,
 	read_only: bool = false,
 ) -> void:
-	var background := Color(0.06, 0.11, 0.18, 0.88)
+	var background := DesignTokens.PANEL
 	var border := FrontendPalette.BORDER
 	var border_width := 1
 	if selected:
 		background = FrontendPalette.INSET
-		border = Color(FrontendPalette.GOLD, 0.92)
+		border = FrontendPalette.GOLD
 		border_width = 2
 	elif blocked:
 		background = FrontendPalette.INSET
@@ -1025,7 +1026,7 @@ func _apply_card_tile_style(
 		border_width = 2 if hovered else 1
 	elif hovered:
 		background = FrontendPalette.INSET
-		border = Color(FrontendPalette.GOLD, 0.72)
+		border = FrontendPalette.GOLD
 		border_width = 2
 	var style := DesignTokens.panel_style(
 		background,
@@ -1035,7 +1036,7 @@ func _apply_card_tile_style(
 		6,
 	)
 	if selected:
-		style.shadow_color = Color(FrontendPalette.GOLD, 0.20)
+		style.shadow_color = Color(FrontendPalette.GOLD, 0.10)
 		style.shadow_size = 7
 		style.shadow_offset = Vector2.ZERO
 	tile.add_theme_stylebox_override("panel", style)
@@ -1083,7 +1084,7 @@ func _apply_text_option_style(option_id: String) -> void:
 		hover_style = DesignTokens.panel_style(
 			FrontendPalette.INSET, 10, FrontendPalette.GOLD, 2, 12)
 		pressed_style = DesignTokens.panel_style(
-			Color(FrontendPalette.GOLD, 0.28), 10, FrontendPalette.GOLD, 3, 12)
+			Color(FrontendPalette.GOLD, 0.12), 10, FrontendPalette.GOLD, 3, 12)
 		font_color = FrontendPalette.GOLD
 		hover_font_color = FrontendPalette.GOLD
 		pressed_font_color = FrontendPalette.TEXT
@@ -1102,7 +1103,7 @@ func _apply_text_option_style(option_id: String) -> void:
 		hover_style = DesignTokens.panel_style(
 			FrontendPalette.RAISED, 10, FrontendPalette.GOLD, 2, 12)
 		pressed_style = DesignTokens.panel_style(
-			Color(FrontendPalette.GOLD, 0.20), 10, FrontendPalette.GOLD, 2, 12)
+			Color(FrontendPalette.GOLD, 0.10), 10, FrontendPalette.GOLD, 2, 12)
 	button.add_theme_stylebox_override("normal", normal_style)
 	button.add_theme_stylebox_override("hover", hover_style)
 	button.add_theme_stylebox_override("pressed", pressed_style)
@@ -1123,7 +1124,7 @@ func _apply_choice_selection_ring(card_view: CardView) -> void:
 		0,
 	)
 	style.draw_center = false
-	style.shadow_color = Color(0, 0, 0, 0.2)
+	style.shadow_color = DesignTokens.SHADOW
 	style.shadow_size = 8
 	style.shadow_offset = Vector2.ZERO
 	ring.add_theme_stylebox_override("panel", style)
@@ -1265,6 +1266,8 @@ func _apply_responsive_layout() -> void:
 	var show_preview := has_preview and (
 		not compact_preview or _compact_preview_expanded
 	)
+	# PreviewScroll owns image and text scrolling; the selection progress and
+	# return control remain outside it, including on the compact reading page.
 	%OptionsScroll.visible = not (compact_preview and _compact_preview_expanded and has_preview)
 	preview_return_button.visible = compact_preview and _compact_preview_expanded and has_preview
 	if content_row:

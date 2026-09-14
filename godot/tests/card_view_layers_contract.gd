@@ -163,18 +163,12 @@ func _run() -> void:
 	var amber_target_style := card.target_glow.get_theme_stylebox(
 		"panel",
 	) as StyleBoxFlat
-	var amber_hint_style := card.interaction_hint.get_theme_stylebox(
-		"panel",
-	) as StyleBoxFlat
 	_check(
 		amber_target_style != null
 		and amber_target_style.border_color.is_equal_approx(DesignTokens.GOLD)
-		and amber_hint_style != null
-		and amber_hint_style.border_color.is_equal_approx(DesignTokens.GOLD)
-		and card.interaction_hint_label.get_theme_color(
-			"font_color",
-		).is_equal_approx(DesignTokens.GOLD),
-		"CardView target accent did not reach glow and interaction hint",
+		and card.get_node_or_null("%InteractionHint") == null
+		and "选择能量来源" in card.accessibility_description,
+		"CardView lost its target outline/accessibility or restored the removed hint strip",
 	)
 	card.set_targetable(false)
 	card.set_targetable(true)

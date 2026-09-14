@@ -1,3 +1,4 @@
+
 [gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scenes/decks/deck_select_page.gd" id="1_page"]
@@ -236,7 +237,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(5, 32)
 layout_mode = 2
 mouse_filter = 2
-color = Color(0.384, 0.843, 1, 1)
+color = Color(0.639216, 0.372549, 0.196078, 1)
 
 [node name="DetailTitle" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailScroll/PreviewBody/DetailInfo/DetailTitleRow"]
 unique_name_in_owner = true

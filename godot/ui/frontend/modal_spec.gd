@@ -28,7 +28,7 @@ var preferred_size := Vector2(720, 620)
 var size_mode := SizeMode.PREFERRED
 var surface := Surface.FRONTEND
 var opaque_shade := false
-var shade_alpha := 0.72
+var shade_alpha := 0.48
 var cancellable := true
 var stack_behavior := StackBehavior.REPLACE
 var confirm_role := ButtonRole.PRIMARY
@@ -43,7 +43,7 @@ static func frontend(
 	spec.preferred_size = size
 	spec.size_mode = mode
 	spec.surface = Surface.FRONTEND
-	spec.shade_alpha = 0.72
+	spec.shade_alpha = 0.48
 	return spec
 
 
@@ -57,7 +57,7 @@ static func battle(
 	spec.size_mode = mode
 	spec.surface = Surface.BATTLE
 	spec.opaque_shade = opaque
-	spec.shade_alpha = 0.86
+	spec.shade_alpha = 0.52
 	return spec
 
 

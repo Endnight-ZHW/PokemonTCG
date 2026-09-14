@@ -15,7 +15,14 @@ static func transfer(projection: BattleProjection3D, start: Transform3D, finish:
 	var depth := lerpf(depth_a, depth_b, t)
 	var rotation := start.basis.orthonormalized().get_rotation_quaternion().slerp(finish.basis.orthonormalized().get_rotation_quaternion(), t)
 	var scale := (start.basis.get_scale() / depth_a).lerp(finish.basis.get_scale() / depth_b, t) * depth
-	return Transform3D(Basis(rotation) * Basis.from_scale(scale), projection.camera_plane_point(point, depth))
+	var pose := Transform3D(Basis(rotation) * Basis.from_scale(scale), projection.camera_plane_point(point, depth))
+	# Turning a revealed card toward the opposite hand rotates its long axis
+	# across the screen. Keep the displayed width on the same smooth path as its
+	# travel, so that rotation does not briefly enlarge the card.
+	var width := lerpf(projection.project_pose_bounds(start).size.x, projection.project_pose_bounds(finish).size.x, t)
+	var projected_width := projection.project_pose_bounds(pose).size.x
+	pose.basis = pose.basis.scaled(Vector3.ONE * width / maxf(0.001, projected_width))
+	return pose
 
 static func attachment(start: Transform3D, finish: Transform3D, progress: float, departing: bool, arriving: bool) -> Transform3D:
 	var exit_pose := start

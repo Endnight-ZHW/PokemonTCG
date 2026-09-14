@@ -429,11 +429,17 @@ static func _check_layout_case(
 		"%s did not reserve %.0fpx for the command rail and right margin"
 		% [label, required_command_reserve],
 	)
-	_expect(
-		failures,
-		float(metrics.get("pile_dock_shift", 0.0)) >= 32.0 - EPSILON,
-		"%s did not retain the expanded right-shift for pile docks" % label,
-	)
+	if content_size.y >= 500.0:
+		_expect(
+			failures,
+			float(metrics.get("pile_dock_shift", 0.0)) >= 32.0 - EPSILON,
+			"%s did not retain the expanded right-shift for pile docks" % label,
+		)
+	else:
+		for zone_key in ["own_deck", "own_discard", "opponent_deck", "opponent_discard"]:
+			var pile_position := Vector2(zone_positions[zone_key])
+			_expect(failures, pile_position.x + zone_size.x <= command_dock_left + EPSILON,
+				"%s %s entered the phase rail in a short safe area" % [label, zone_key])
 	_expect(
 		failures,
 		BattlePhaseHud.PHASE_PANEL_OFFSET_Y >= 112.0,

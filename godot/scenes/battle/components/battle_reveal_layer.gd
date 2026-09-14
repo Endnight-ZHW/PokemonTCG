@@ -238,7 +238,7 @@ func _build_showcase(
 	dimmer.name = "Dimmer"
 	dimmer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dimmer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dimmer.color = Color(0.01, 0.025, 0.055, 0.30)
+	dimmer.color = Color(DesignTokens.SCRIM, 0.30)
 	dimmer.z_index = -2
 	root.add_child(dimmer)
 
@@ -371,9 +371,9 @@ func _create_card(
 	badge.add_theme_stylebox_override(
 		"normal",
 		DesignTokens.panel_style(
-			Color("182a36"),
+			DesignTokens.PANEL_INSET,
 			7,
-			Color("53616a") if matched else Color("2d414d"),
+			DesignTokens.STATE_SUCCESS if matched else DesignTokens.BORDER,
 			1,
 			0,
 		),

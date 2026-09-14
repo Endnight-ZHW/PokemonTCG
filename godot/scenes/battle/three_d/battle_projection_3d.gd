@@ -25,6 +25,11 @@ func screen_to_world(point: Vector2, height: float = 0.0) -> Vector3:
 func world_to_screen(point: Vector3) -> Vector2:
 	return camera.unproject_position(point) * screen_size / Vector2(viewport.size)
 
+func screen_to_plane(point: Vector2, plane: Plane) -> Vector3:
+	var pixel := point * Vector2(viewport.size) / screen_size
+	var hit: Variant = plane.intersects_ray(camera.project_ray_origin(pixel), camera.project_ray_normal(pixel))
+	return hit if hit is Vector3 else Vector3.ZERO
+
 func camera_plane_point(point: Vector2, depth: float) -> Vector3:
 	var direction := camera.project_ray_normal(point * Vector2(viewport.size) / screen_size)
 	return camera.global_position + direction * depth / maxf(0.001, direction.dot(-camera.global_basis.z))
@@ -63,7 +68,7 @@ func project_pose_bounds(pose: Transform3D, surface_height: float = CardEntity3D
 	return result
 
 
-func fit_pose_rect(pose: Transform3D, rect: Rect2, surface_height: float = CardEntity3D.THICKNESS * 0.5) -> Transform3D:
+func fit_pose_rect(pose: Transform3D, rect: Rect2, surface_height: float = CardEntity3D.THICKNESS * 0.5, plane: Plane = Plane()) -> Transform3D:
 	# Compensate both projected axes. Equal widths alone left far cards shorter
 	# and changed the visible gap between the active and bench rows.
 	for iteration in range(4):
@@ -72,7 +77,8 @@ func fit_pose_rect(pose: Transform3D, rect: Rect2, surface_height: float = CardE
 		bounds = project_pose_bounds(pose, surface_height)
 		pose.basis.z *= rect.size.y / maxf(0.001, bounds.size.y)
 		bounds = project_pose_bounds(pose, surface_height)
-		pose.origin = screen_to_world(world_to_screen(pose.origin) + rect.get_center() - bounds.get_center(), pose.origin.y)
+		var center := world_to_screen(pose.origin) + rect.get_center() - bounds.get_center()
+		pose.origin = screen_to_plane(center, plane) if plane.normal.length_squared() > 0.5 else screen_to_world(center, pose.origin.y)
 	return pose
 
 

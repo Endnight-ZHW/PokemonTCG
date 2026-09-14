@@ -871,7 +871,7 @@ func _check_field_choice_inspector_resume(main: Control) -> void:
 	main.current_screen = "game"
 	main.battle_screen = table
 	await _check_card_action_detail_separation(table)
-	_check_discard_zone_action_reachability(table)
+	await _check_discard_zone_action_reachability(table)
 	_check_same_id_hand_motion_staging(table)
 	var slot_state := UIPreviewStateFactory.battle_state()
 	main.state = slot_state
@@ -1131,7 +1131,7 @@ func _check_card_action_detail_separation(table: BattleTable) -> void:
 	var detail := table.detail_panel as BattleDetailPanel
 	context._check(
 		detail != null
-		and detail.visible == (not table.is_compact_layout() and not table.board_view.is_selecting_action_target())
+		and detail.visible == (not table.is_compact_layout())
 		and detail.get_node_or_null("Content/ActionSection") == null
 		and table.action_popover != null
 		and table.action_popover.visible
@@ -1395,6 +1395,7 @@ func _check_discard_zone_action_reachability(table: BattleTable) -> void:
 		"local",
 	)
 	var discard_zone := table.zones.get("own_discard") as ZoneView
+	await context._settle_layout(2)
 	context._check(
 		BattleInteractionController.source_key_for_action(ability) == source_key
 		and table.interaction_router.has_source(source_key)
@@ -1403,7 +1404,8 @@ func _check_discard_zone_action_reachability(table: BattleTable) -> void:
 		and discard_zone != null
 		and discard_zone.is_actionable()
 		and discard_zone.action_button.visible
-		and discard_zone.action_button.text == "可用操作"
+		and discard_zone.action_button.text == "操作"
+		and "可用操作" in discard_zone.action_button.accessibility_name
 		and table.board_view._source_control_for_key(source_key) == discard_zone,
 		"Empty-hand discard-zone Ability was not reachable from its public zone",
 	)

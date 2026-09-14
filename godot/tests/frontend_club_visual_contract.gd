@@ -111,6 +111,11 @@ func run() -> void:
 		for target in SIZES:
 			root.size = target
 			await capture(modal_kind)
+			if modal_kind == "card-inspector":
+				var inspector := main.modal_body.get_child(0) as CardInspectorPanel
+				for state in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+					check(inspector._image_button.get_theme_color("icon_%s_color" % state).is_equal_approx(Color.WHITE),
+						"Card inspection inherited the monochrome icon tint: " + state)
 			inside(main.modal_panel, modal_kind + "/panel")
 			inside(main.modal_confirm, modal_kind + "/confirm")
 			inside(main.modal_cancel, modal_kind + "/cancel")

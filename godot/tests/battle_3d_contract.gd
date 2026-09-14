@@ -53,6 +53,7 @@ func _run() -> void:
 	table.own_active.set_presentation_hidden(false)
 	preload("res://tests/battle_3d_interaction_checks.gd").run(table, _expect)
 	await preload("res://tests/battle_3d_interaction_checks.gd").check_layouts(table, _expect)
+	await _check_ai_highlights(table)
 	table.update_view(state, 0, UIPreviewStateFactory.action_rows(state), "", false, "local")
 	for frame in range(4):
 		await process_frame
@@ -108,6 +109,93 @@ func _run() -> void:
 		_expect(preflight.status == MotionHandle.CANCELLED, "Exiting left an asset preflight alive")
 		_expect(int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)) <= baseline + 2, "Repeated battle exits leaked nodes at iteration %d" % iteration)
 	_finish()
+
+
+func _check_ai_highlights(table: BattleTable) -> void:
+	Input.warp_mouse(Vector2(2, 2))
+	var old_size := root.size
+	var old_scale_size := root.content_scale_size
+	var old_scale_mode := root.content_scale_mode
+	var settings := root.get_node("AppSettings")
+	var old_reduced: bool = settings.reduced_motion
+	var old_quality: String = settings.quality_profile
+	var state := UIPreviewStateFactory.battle_state()
+	for player in state.players:
+		for index in range(5): player.bench[index] = null
+		player.bench[0] = PokemonState.new("svi-chim")
+		player.bench[2] = PokemonState.new("svi-hrot")
+	var p := table.render3d
+	for dimensions in [Vector2i(1600, 900), Vector2i(1280, 720), Vector2i(900, 540), Vector2i(2000, 900), Vector2i(2560, 1392)]:
+		root.size = dimensions
+		root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+		root.content_scale_size = Vector2i(1600, 900) if dimensions.x == 2560 else dimensions
+		for reduced in [false, true]:
+			settings.reduced_motion = reduced
+			settings.quality_profile = "low" if reduced else "high"
+			# Both absolute player identities and an AI viewed from its own side.
+			for case in [{"view": 0, "mode": "challenge", "ai": 1}, {"view": 1, "mode": "local", "ai": 0}, {"view": 1, "mode": "challenge", "ai": 1}]:
+				state.active_player_idx = case.ai
+				table.update_view(state, case.view, [], "", true, case.mode)
+				for frame in range(3): await process_frame
+				p.sync_surfaces()
+				var overlay := table.ai_thinking_overlay
+				_expect(overlay.active and overlay.card_highlights_in_3d and overlay.slot_rects.is_empty(),
+					"AI thinking still paints a second set of 2D slot shadows")
+				_expect(overlay.mouse_filter == Control.MOUSE_FILTER_IGNORE, "AI thinking intercepts card inspection input")
+				for card in table.slot_views.values():
+					var entity := p.world.entities.get(p._key(card)) as CardEntity3D
+					_expect(entity != null, "AI highlight check lost a field card")
+					if entity == null: continue
+					var expected := overlay.card_highlight_color() if card.owner_player == case.ai else Color.TRANSPARENT
+					if card.empty:
+						_expect(entity._outline_tint == DesignTokens.TABLE_STITCH, "AI adds a thinking shadow to an empty slot")
+					elif card.owner_player == case.ai:
+						_expect(entity.outline.visible and entity._outline_tint.is_equal_approx(expected), "AI thinking highlights the wrong player's cards")
+						_check_ai_border_pose(p, entity)
+					else:
+						_expect(not entity.outline.visible, "AI thinking highlights a spectator's card")
+				var source := table.get_slot_view(case.ai, "active")
+				var source_entity := p.world.entities[p._key(source)] as CardEntity3D
+				source.set_selected(true)
+				p.sync_surfaces()
+				_expect(source_entity._outline_tint == DesignTokens.STATE_SELECTED, "AI tint overrides a selected card")
+				source.set_selected(false)
+				source.set_targetable(true)
+				p.sync_surfaces()
+				_expect(source_entity._outline_tint == DesignTokens.STATE_TARGET, "AI tint overrides a legal target")
+				source.set_targetable(false)
+				# Move the physical pose without changing its legacy Control rectangle.
+				var displaced := source_entity.transform
+				displaced.origin += Vector3(0.25, 0.3, -0.2)
+				displaced.basis = BattleProjection3D.rotate_card_basis(displaced.basis, Basis(Vector3.UP, 0.12))
+				source.set_meta("physical_pose", displaced)
+				p.sync_surfaces()
+				_check_ai_border_pose(p, source_entity)
+				source.remove_meta("physical_pose")
+				source.set_presentation_hidden(true)
+				p.sync_surfaces()
+				_expect(not source_entity.outline.is_visible_in_tree(), "A masked AI card leaves its thinking highlight behind")
+				source.set_presentation_hidden(false)
+				var tint := overlay.card_highlight_color()
+				overlay._time += 0.6
+				if reduced:
+					_expect(tint == overlay.card_highlight_color(), "Reduced motion still pulses the AI highlight")
+				table.update_view(state, case.view, [], "", false, case.mode)
+				p.sync_surfaces()
+				_expect(not overlay.visible and not source_entity.outline.visible, "Completed AI thinking leaves a stale highlight")
+	root.size = old_size
+	root.content_scale_size = old_scale_size
+	root.content_scale_mode = old_scale_mode
+	settings.reduced_motion = old_reduced
+	settings.quality_profile = old_quality
+	for frame in range(3): await process_frame
+
+
+func _check_ai_border_pose(p: Battle3DPresenter, entity: CardEntity3D) -> void:
+	var face := p.world.projection.project_pose_bounds(entity.global_transform)
+	var border := p.world.projection.project_pose_bounds(entity.outline.global_transform)
+	_expect(face.get_center().distance_to(border.get_center()) < 1.0 and face.size.distance_to(border.size) < 1.0,
+		"AI thinking outline does not follow the rendered card's pose")
 
 
 func _test_auto_quality(settings: Node) -> void:

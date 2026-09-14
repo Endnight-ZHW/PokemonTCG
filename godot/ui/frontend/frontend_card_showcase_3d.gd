@@ -70,7 +70,7 @@ func _ready() -> void:
 	environment.environment.ambient_light_energy = 0.0
 	_world.add_child(environment)
 	_stage = _box("DisplayTray", Vector3(5.3, 0.16, 3.4), Vector3(0, -0.12, 0.1), true, FrontendPalette.WOOD)
-	_mat = _box("DisplayCloth", Vector3(5.12, 0.04, 3.22), Vector3(0, -0.02, 0.1), false, FrontendPalette.PANEL)
+	_mat = _box("DisplayCloth", Vector3(5.12, 0.04, 3.22), Vector3(0, -0.02, 0.1), false, DesignTokens.TABLE_CLOTH)
 	for index in range(3):
 		var card := CardEntity3D.new()
 		card.name = "ShowcaseCard%d" % index

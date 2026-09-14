@@ -133,7 +133,7 @@ func show_toast(message: String, is_error: bool = false) -> void:
 	toast_label.text = message
 	toast_label.modulate = Color.WHITE
 	if is_error:
-		toast_label.add_theme_color_override("font_color", Color("#ff9aa4"))
+		toast_label.add_theme_color_override("font_color", DesignTokens.STATE_DANGER)
 	else:
 		toast_label.remove_theme_color_override("font_color")
 	_layout_toast()

@@ -182,15 +182,16 @@ func _entry_category(text: String) -> String:
 
 
 func _category_color(category: String) -> String:
-	return {
-		"回合": "#f4c84a",
-		"奖赏卡": "#c38cff",
-		"气绝": "#ff6b7a",
-		"伤害": "#ff9a62",
-		"状态": "#e88cff",
-		"附能": "#62d7ff",
-		"撤退": "#84d6b2",
-	}.get(category, "#9eb0ca")
+	var color: Color = {
+		"回合": DesignTokens.GOLD,
+		"奖赏卡": DesignTokens.PURPLE,
+		"气绝": DesignTokens.STATE_DANGER,
+		"伤害": DesignTokens.STATE_DANGER,
+		"状态": DesignTokens.PURPLE,
+		"附能": DesignTokens.STATE_TARGET,
+		"撤退": DesignTokens.STATE_SUCCESS,
+	}.get(category, DesignTokens.TEXT_MUTED)
+	return "#" + color.to_html(false)
 
 
 func _scroll_to_latest() -> void:

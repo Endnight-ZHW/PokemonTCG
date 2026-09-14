@@ -174,14 +174,12 @@ func _move_pointer_to_hand_card_exposed_edge(card: CardView) -> bool:
 		return false
 	# The right half of a dense fan card is intentionally covered by its next
 	# sibling. Probe a small deterministic grid inside the exposed leading strip,
-	# using the same logical rectangle as GUI input. Every probe is routed as a real
-	# mouse motion and accepted only when Viewport GUI picking names this card.
+	# using the visible part of its rendered bounds. Edge-docked card bodies may
+	# extend outside the viewport. Every probe is a real mouse motion, accepted only
+	# when Viewport GUI picking names this card.
 	for x_fraction in [0.08, 0.16, 0.24, 0.32, 0.40]:
 		for y_fraction in [0.50, 0.36, 0.64, 0.22, 0.78]:
-			# InputEvent positions use the same logical GUI coordinates reported by
-			# get_global_rect(). A Canvas/global transform includes Window stretch and
-			# maps this point a second time after a 900×540 resize.
-			var card_rect := card.get_global_rect()
+			var card_rect := card.visual_global_bounds().intersection(tree.root.get_visible_rect())
 			var pointer_position := card_rect.position + Vector2(
 				card_rect.size.x * float(x_fraction),
 				card_rect.size.y * float(y_fraction),

@@ -1,3 +1,4 @@
+
 [gd_scene load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://ui/dialogs/privacy_panel.gd" id="1_panel"]
@@ -15,7 +16,7 @@ autowrap_mode = 2
 
 [node name="Hint" type="Label" parent="."]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.663, 0.729, 0.741, 1)
+theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
 theme_override_font_sizes/font_size = 17
 text = "隐私遮挡已启用。确认前不会显示该玩家手牌。"
 autowrap_mode = 2

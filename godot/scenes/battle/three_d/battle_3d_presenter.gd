@@ -16,6 +16,7 @@ var _hud_masks: Dictionary = {}
 var _warmup_frames := 3
 var layout: BattleLayout3D
 var hand_fan: BattleHandFan3D
+var opponent_hand_fan: BattleHandFan3D
 var mulligan: BattleMulligan3D
 var _hand_top := 0.0
 
@@ -63,6 +64,7 @@ func configure(value: BattleTable) -> void:
 	table = value
 	layout = BattleLayout3D.new(self)
 	hand_fan = BattleHandFan3D.new(self)
+	opponent_hand_fan = BattleHandFan3D.new(self)
 	mulligan = BattleMulligan3D.new(self)
 
 
@@ -200,6 +202,11 @@ func _resize_world() -> void:
 	_last_pixel_size = render_pixel_size()
 	viewport.size = _last_pixel_size
 	world.resize(viewport, size)
+	# Reflow HUD surfaces after the physical layout has its new cloth midpoint.
+	# BoardCanvas emits resize before this renderer updates its projection.
+	if table.board_view != null:
+		table.board_view.call_deferred("_layout_current_status")
+		table.board_view.call_deferred("_layout_overlay_drawers")
 	var settings := get_node_or_null("/root/AppSettings")
 	if settings != null:
 		settings.reset_battle_frame_samples()
@@ -252,18 +259,44 @@ func sync_surfaces() -> void:
 
 func _layout_opponent_info() -> void:
 	var left := INF
+	var right := -INF
+	var bottom := -INF
 	for hand in table.opponent_hand_views:
 		var entity := world.entities.get(_key(hand)) as CardEntity3D
 		if entity != null and entity.visible:
-			left = minf(left, world.projection.project_bounds(entity).position.x)
-	if is_inf(left):
-		table.opponent_info.size.x = 304.0
-		return
+			var bounds := world.projection.project_bounds(entity)
+			left = minf(left, bounds.position.x)
+			right = maxf(right, bounds.end.x)
+			bottom = maxf(bottom, bounds.end.y)
 	var to_parent := (table.opponent_info.get_parent() as CanvasItem).get_global_transform_with_canvas().affine_inverse() * table.get_global_transform_with_canvas()
-	var limit := (to_parent * Vector2(left, 0)).x - table.opponent_info.position.x - 10.0
+	var prizes := layout.prize_capacity_rect(table.zones["opponent_prizes"])
+	var info_left := prizes.end.x + 12.0
+	var info_right := size.x * 0.5 - 12.0 if is_inf(left) else left - 12.0
+	# Beside the upper Prize fan, below the fixed turn caption. Never reserve
+	# an extra horizontal band above Prizes just for this repeated summary.
+	var info_top := prizes.position.y
+	table.opponent_info.position = to_parent * Vector2(info_left, info_top)
+	var limit := (to_parent * Vector2(info_right, info_top)).x - table.opponent_info.position.x
 	table.opponent_info.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	table.opponent_info.clip_text = true
-	table.opponent_info.size.x = clampf(limit, 140.0, 304.0)
+	table.opponent_info.size.x = clampf(limit, 48.0, 304.0)
+	if table.opponent_info.has_meta("full_caption"):
+		table.opponent_info.text = str(table.opponent_info.get_meta("full_caption"))
+		if limit < 180.0:
+			table.opponent_info.text = "对方 · 手牌%d" % int(table.opponent_info.get_meta("hand_count", 0))
+	if is_inf(left):
+		return
+	var badge := table.opponent_hand_count_badge
+	var to_badge_parent := (badge.get_parent() as CanvasItem).get_global_transform_with_canvas().affine_inverse() * table.get_global_transform_with_canvas()
+	var header_end := table.get_global_transform_with_canvas().affine_inverse() * (
+		table.header.get_global_transform_with_canvas() * Vector2(0, table.header.size.y))
+	badge.position = to_badge_parent * Vector2(right + 8.0, maxf(header_end.y + 6.0, bottom - badge.size.y))
+	# On compact tables the adjacent deck fills this corner. Its count remains
+	# essential; the opponent information row already states the hand count.
+	badge.visible = true
+	for key in ["opponent_deck", "opponent_discard"]:
+		if badge.get_global_rect().intersects(global_bounds(table.zones[key])):
+			badge.visible = false
 
 
 func _mask_hud(anchor: CanvasItem, hidden: bool) -> void:
@@ -312,13 +345,9 @@ func _suppress_art(anchor: Control) -> void:
 	if anchor is CardView:
 		var card := anchor as CardView
 		card.self_modulate.a = 0.0
-		for art in [card.image, card.frame, card.shadow, card.depth_edge, card.top_gloss, card.selection_ring, card.target_glow, card.actionable_marker]:
+		for art in [card.image, card.frame, card.empty_label, card.shadow, card.depth_edge, card.top_gloss, card.selection_ring, card.target_glow, card.actionable_marker]:
 			if art != null:
 				art.self_modulate.a = 0.0
-		# The phase HUD names the action and the physical outline marks legal
-		# targets. Inline target text cannot share a compact card with its counters.
-		if card.interaction_hint != null:
-			card.interaction_hint.self_modulate.a = 0.0 if card.targetable and card.hand_index < 0 else 1.0
 		for overlay in card._flash_overlays:
 			if is_instance_valid(overlay):
 				overlay.self_modulate.a = 0.0
@@ -327,7 +356,7 @@ func _suppress_art(anchor: Control) -> void:
 		zone.self_modulate.a = 0.0
 		if not zone.has_meta("physical_caption_style"):
 			zone.set_meta("physical_caption_style", true)
-			zone.title_label.add_theme_stylebox_override("normal", DesignTokens.panel_style(Color("14222b"), 3, Color.TRANSPARENT, 0, 2))
+			zone.title_label.add_theme_stylebox_override("normal", DesignTokens.panel_style(DesignTokens.PANEL, 4, DesignTokens.BORDER_SOFT, 1, 2))
 		for art in [zone.frame, zone.image, zone.fallback_back_panel, zone.fallback_back_label]:
 			if art != null:
 				art.self_modulate.a = 0.0
@@ -391,7 +420,11 @@ func _sync_card(card: CardView) -> void:
 		_hide_children(card)
 		return
 	entity.set_surface(card.image.texture, card.is_hidden_card)
-	entity.set_highlight(card.selected, card.targetable, card._hovered, card.empty and not card.is_hidden_card)
+	var thinking_tint := Color.TRANSPARENT
+	var thinking := table.ai_thinking_overlay
+	if not hand and not card.empty and thinking != null and thinking.active and card.owner_player == thinking.ai_player:
+		thinking_tint = thinking.card_highlight_color()
+	entity.set_highlight(card.selected, card.targetable, card._hovered, card.empty and not card.is_hidden_card, thinking_tint)
 	var flash_color := Color.BLACK
 	var flash_strength := 0.0
 	for overlay in card._flash_overlays:
@@ -399,7 +432,7 @@ func _sync_card(card: CardView) -> void:
 			flash_strength = overlay.color.a
 			flash_color = overlay.color
 	entity.set_feedback(flash_color, flash_strength)
-	_apply_hand_clip(entity, card.hand_index >= 0)
+	_apply_hand_clip(entity, hand)
 	entity.update_contact_shadow()
 	_sync_attachments(card, entity)
 
@@ -498,13 +531,17 @@ func _sync_zone(zone: ZoneView) -> void:
 		var bounds := to_zone * world.projection.project_bounds(top)
 		var badge := zone.count_label
 		badge.set_anchors_preset(Control.PRESET_TOP_LEFT)
-		badge.position = Vector2(bounds.position.x if zone.stack_visual_mode == "deck" else bounds.end.x - badge.size.x, bounds.end.y - badge.size.y * 0.4)
+		# Prize counts sit inside the lower corner so a compact side preview can
+		# use the gap between the piles without covering a hanging count badge.
+		var badge_overlap := 1.0 if zone.stack_visual_mode == "prizes" else 0.4
+		badge.position = Vector2(bounds.position.x if zone.stack_visual_mode == "deck" else bounds.end.x - badge.size.x, bounds.end.y - badge.size.y * badge_overlap)
 		zone.empty_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		zone.empty_label.position = bounds.position
 		zone.empty_label.size = bounds.size
 		zone.title_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		zone.title_label.position = bounds.position + Vector2(0, -20)
 		zone.title_label.size = Vector2(bounds.size.x, 18)
+		zone.layout_physical_action_button(table.get_global_transform_with_canvas() * world.projection.project_pose_bounds(top.global_transform, top.half_height()))
 
 
 func _sync_token(anchor: Control) -> void:
@@ -532,7 +569,7 @@ func _sync_token(anchor: Control) -> void:
 	elif anchor.has_meta("snapshot_opponent_hand_index"):
 		var ordinal := int(anchor.get_meta("snapshot_opponent_hand_index"))
 		var count := maxi(1, table.hand_presentation._presentation_opponent_hand_stage_count)
-		entity.transform = _hand_surface_pose(anchor, anchor.size.x * 0.72, ordinal, count, 0.36 + ordinal * 0.025, false, false)
+		entity.transform = _hand_surface_pose(anchor, anchor.size.x, ordinal, count, 0.36 + ordinal * 0.025, false, false)
 	else:
 		var reveal := anchor.has_meta("face_texture")
 		var dragging := anchor.has_meta("drag_session_id")
@@ -558,15 +595,16 @@ func _sync_token(anchor: Control) -> void:
 	if anchor is CardMotionEntity:
 		entity.visual_id = (anchor as CardMotionEntity).visual_id
 		(anchor as CardMotionEntity).physical_entity = entity
-	_apply_hand_clip(entity, anchor.has_meta("face_texture") or anchor.has_meta("reveal_transferred") or anchor.has_meta("mulligan_hand") or (anchor.has_meta("snapshot_hand_key") and not anchor.has_meta("motion_event_id") and not anchor.has_meta("drag_session_id")))
+	var staged_hand := anchor.has_meta("snapshot_hand_key") or anchor.has_meta("snapshot_opponent_hand_index")
+	_apply_hand_clip(entity, anchor.has_meta("face_texture") or anchor.has_meta("reveal_transferred") or anchor.has_meta("mulligan_hand") or (staged_hand and not anchor.has_meta("motion_event_id") and not anchor.has_meta("drag_session_id")))
 	entity.update_contact_shadow()
 	if anchor.has_meta("face_texture"):
 		entity.contact_shadow.visible = false
 
 
 func _apply_hand_clip(entity: CardEntity3D, enabled: bool) -> void:
-	# The fan fits its entire silhouette. Keep only the viewport boundary and the
-	# inexpensive hand contact shadows; the old scroll-rectangle cut off end cards.
+	# Only the viewport clips the deliberately off-screen card bodies. The scroll
+	# control must not cut off the visible tops or exposed sides used for picking.
 	entity.set_screen_clip(Rect2(0, 0, 1, 1), enabled)
 
 
@@ -742,34 +780,14 @@ func _hand_pose(card: CardView, root: Control, height: float) -> Transform3D:
 	var cards := table.hand_views if own else table.opponent_hand_views
 	var ordinal := card.hand_index if own else card.get_index()
 	var count := maxi(1, cards.filter(func(view: CardView) -> bool: return view.visible).size())
-	var width := card.size.x * (1.0 if own else 0.72)
+	var width := card.size.x
 	return _hand_surface_pose(root, width, ordinal, count, height, own, card.selected or card._hovered)
 
 
 func _hand_surface_pose(root: Control, width: float, ordinal: int, count: int, height: float, own: bool, highlighted: bool) -> Transform3D:
 	if own:
 		return hand_fan.pose(root, width, ordinal, count, height, highlighted)
-	var fan := clampf(float(ordinal) / maxi(1, count - 1) - 0.5, -0.5, 0.5)
-	var pose := _surface_pose(root, width, 0.0, deg_to_rad(-12.0))
-	pose.origin.y = height + absf(fan) * 0.08
-	pose.basis = pose.basis * Basis(Vector3.UP, fan * deg_to_rad(24.0))
-	var bounds := world.projection.project_pose_bounds(pose)
-	var correction := 0.0
-	if own:
-		var top := _hand_top - (20.0 if highlighted else 0.0)
-		var available := maxf(48.0, size.y - 16.0 - top)
-		if bounds.size.y > available:
-			pose.basis = pose.basis.scaled(Vector3.ONE * available / bounds.size.y)
-			bounds = world.projection.project_pose_bounds(pose)
-		correction = maxf(0.0, top - bounds.position.y)
-		if bounds.end.y + correction > size.y - 16.0:
-			correction = size.y - 16.0 - bounds.end.y
-	else:
-		var info_top := table.get_global_transform_with_canvas().affine_inverse() * table.opponent_info.get_global_transform_with_canvas().origin
-		correction = maxf(0.0, info_top.y - 6.0 - bounds.position.y)
-	if absf(correction) > 0.01:
-		pose.origin = world.projection.screen_to_world(world.projection.world_to_screen(pose.origin) + Vector2(0, correction), pose.origin.y)
-	return pose
+	return opponent_hand_fan.opponent_pose(ordinal, count, height)
 
 
 func clear_private_faces() -> void:

@@ -1,3 +1,4 @@
+
 [gd_scene load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://ui/panels/deck_detail_panel.gd" id="1_deck"]
@@ -29,7 +30,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 4)
 layout_mode = 2
 mouse_filter = 2
-color = Color(0.384, 0.843, 1, 1)
+color = Color(0.639216, 0.372549, 0.196078, 1)
 
 [node name="DeckName" type="Label" parent="HeaderPanel/HeaderMargin/HeaderContent"]
 unique_name_in_owner = true

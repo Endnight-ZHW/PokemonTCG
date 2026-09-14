@@ -131,12 +131,15 @@ func set_feedback(color: Color, strength: float) -> void:
 	_front.set_shader_parameter("feedback_strength", strength)
 
 
-func set_highlight(selected: bool, targetable: bool, hovered: bool, empty: bool = false) -> void:
+func set_highlight(selected: bool, targetable: bool, hovered: bool, empty: bool = false, thinking_tint: Color = Color.TRANSPARENT) -> void:
 	body.visible = not empty
-	outline.visible = selected or targetable or hovered or empty
-	var tint := Color("dbb766") if selected else Color("62baa4") if targetable else Color("a7c4c0")
+	var thinking := thinking_tint.a > 0.0 and not empty
+	outline.visible = selected or targetable or hovered or empty or thinking
+	var tint := DesignTokens.STATE_SELECTED if selected else DesignTokens.STATE_TARGET if targetable else DesignTokens.STATE_INFO
+	if thinking and not selected and not targetable and not hovered:
+		tint = thinking_tint
 	if empty and not selected and not targetable and not hovered:
-		tint = Color("385a66")
+		tint = DesignTokens.TABLE_STITCH
 	if _outline_tint != tint:
 		_outline_tint = tint
 		_outline_material.set_shader_parameter("tint", tint)

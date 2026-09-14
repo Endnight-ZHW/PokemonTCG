@@ -148,13 +148,13 @@ func _build_nodes() -> void:
 	_title_label = Label.new()
 	_title_label.text = "选择附着能量"
 	_title_label.add_theme_font_size_override("font_size", 15)
-	_title_label.add_theme_color_override("font_color", Color("ffd46a"))
+	_title_label.add_theme_color_override("font_color", DesignTokens.GOLD)
 	content.add_child(_title_label)
 
 	_source_label = Label.new()
 	_source_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_source_label.add_theme_font_size_override("font_size", 12)
-	_source_label.add_theme_color_override("font_color", Color("d9b35b"))
+	_source_label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
 	content.add_child(_source_label)
 
 	_scroll = ScrollContainer.new()
@@ -208,6 +208,7 @@ func _rebuild_rows() -> void:
 		var icon: Texture2D = descriptor.icon if descriptor != null else null
 		if icon != null:
 			button.icon = icon
+			DesignTokens.preserve_art_icon(button)
 			button.expand_icon = true
 		if descriptor != null:
 			button.set_meta("attachment_card_id", descriptor.card_id)
@@ -235,7 +236,7 @@ func _sync_buttons() -> void:
 		var reason := str(_disabled_reasons.get(option_id, ""))
 		button.disabled = not selected and not reason.is_empty()
 		button.tooltip_text = reason
-		button.modulate = Color("ffd56a") if selected else Color.WHITE
+		button.modulate = Color.WHITE
 	var valid_count := _selected_ids.size()
 	_confirm_button.visible = _max_select != 1 or _min_select == 0
 	_confirm_button.disabled = valid_count < _min_select or valid_count > _max_select
@@ -364,11 +365,11 @@ func _kill_visibility_tween() -> void:
 
 func _panel_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.034, 0.055, 0.083, 0.985)
-	style.border_color = Color(0.91, 0.63, 0.18, 0.90)
+	style.bg_color = DesignTokens.PANEL
+	style.border_color = DesignTokens.GOLD
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(12)
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.46)
+	style.shadow_color = DesignTokens.SHADOW
 	style.shadow_size = 10
 	style.shadow_offset = Vector2(0, 4)
 	return style

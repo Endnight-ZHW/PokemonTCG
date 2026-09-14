@@ -124,8 +124,6 @@ var catalog: CardCatalog
 @onready var selection_ring: Panel = %SelectionRing
 @onready var target_glow: Panel = %TargetGlow
 @onready var actionable_marker: Panel = %ActionableMarker
-@onready var interaction_hint: Panel = %InteractionHint
-@onready var interaction_hint_label: Label = %InteractionHintLabel
 @onready var animation_player: AnimationPlayer = %AnimationPlayer
 
 var _press_position := Vector2.ZERO
@@ -143,7 +141,6 @@ var _has_base_position := false
 var _content_signature := ""
 var _disabled_reason := ""
 var _legal_target_hint := ""
-var _show_inline_target_hint := true
 var _target_accent := DesignTokens.CYAN
 var _allowed_drop_hand_indices: Array[int] = []
 var _dragging := false
@@ -315,13 +312,14 @@ func set_interaction_state(
 	disabled_reason := "",
 	legal_target_hint := "",
 	allowed_hand_indices: Array = [],
-	show_inline_target_hint := true,
+	_show_inline_target_hint := true,
 ) -> void:
+	# Keep the legacy fifth argument for callers. Instructions now belong to the
+	# battle header; cards convey interaction state through outlines only.
 	if (
 		actionable == p_actionable
 		and _disabled_reason == disabled_reason
 		and _legal_target_hint == legal_target_hint
-		and _show_inline_target_hint == show_inline_target_hint
 		and _allowed_drop_hand_indices == allowed_hand_indices
 		and targetable == (not legal_target_hint.is_empty() or not allowed_hand_indices.is_empty())
 	):
@@ -331,7 +329,6 @@ func set_interaction_state(
 	actionable = p_actionable
 	_disabled_reason = disabled_reason
 	_legal_target_hint = legal_target_hint
-	_show_inline_target_hint = show_inline_target_hint
 	_replace_allowed_drop_hand_indices(allowed_hand_indices)
 	set_targetable(
 		not _legal_target_hint.is_empty()
@@ -363,7 +360,6 @@ func clear_interaction_state() -> void:
 	actionable = false
 	_disabled_reason = ""
 	_legal_target_hint = ""
-	_show_inline_target_hint = true
 	_allowed_drop_hand_indices.clear()
 	set_targetable(false)
 	_refresh_interaction_visuals()
@@ -384,7 +380,6 @@ func set_targetable(value: bool) -> void:
 	targetable = value
 	if not value:
 		_legal_target_hint = ""
-		_show_inline_target_hint = true
 		_allowed_drop_hand_indices.clear()
 		_target_accent = DesignTokens.CYAN
 	if target_glow:
@@ -710,7 +705,7 @@ func _refresh() -> void:
 		depth_edge.modulate.a = 1.0
 	_refresh_statuses()
 	var texture_cache := _root_child("CardTextureCache")
-	var frame_color := Color("#15253a")
+	var frame_color := DesignTokens.PANEL_INSET
 	var border_color := DesignTokens.BORDER
 	var current_card := {}
 	if is_hidden_card:
@@ -722,18 +717,18 @@ func _refresh() -> void:
 		if image.texture == null:
 			image.texture = CARD_BACK_TEXTURE
 		empty_label.visible = false
-		frame_color = Color("#15284e")
+		frame_color = DesignTokens.PANEL_INSET
 		border_color = DesignTokens.GOLD.darkened(0.3)
 		battle_overlay._refresh_battle_overlay({}, border_color)
 	elif empty:
 		image.texture = null
 		empty_label.visible = not _is_field_empty_slot()
 		if _is_field_empty_slot():
-			frame_color = Color(0.02, 0.05, 0.04, 0.03)
-			border_color = Color(0.30, 0.80, 0.55, 0.10)
+			frame_color = Color(DesignTokens.PANEL, 0.035)
+			border_color = Color(DesignTokens.TABLE_STITCH, 0.36)
 		else:
-			frame_color = Color(0.025, 0.07, 0.055, 0.30)
-			border_color = Color(0.30, 0.66, 0.45, 0.34)
+			frame_color = Color(DesignTokens.PANEL_INSET, 0.55)
+			border_color = DesignTokens.BORDER
 		battle_overlay._refresh_battle_overlay({}, border_color)
 	else:
 		var card := _card_data(card_id)
@@ -785,7 +780,7 @@ func _refresh_statuses() -> void:
 		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		badge.custom_minimum_size = Vector2(24, 22)
 		badge.add_theme_font_size_override("font_size", 12)
-		badge.add_theme_color_override("font_color", DesignTokens.BG_DEEP)
+		badge.add_theme_color_override("font_color", DesignTokens.STATUS_INK)
 		badge.add_theme_stylebox_override(
 			"normal",
 			DesignTokens.panel_style(
@@ -1147,12 +1142,6 @@ func _resolve_scene_nodes() -> void:
 		target_glow = get_node_or_null(content_path + "TargetGlow") as Panel
 	if actionable_marker == null:
 		actionable_marker = get_node_or_null(content_path + "ActionableMarker") as Panel
-	if interaction_hint == null:
-		interaction_hint = get_node_or_null(content_path + "InteractionHint") as Panel
-	if interaction_hint_label == null:
-		interaction_hint_label = get_node_or_null(
-			content_path + "InteractionHint/InteractionHintLabel"
-		) as Label
 	if animation_player == null:
 		animation_player = get_node_or_null("AnimationPlayer") as AnimationPlayer
 
@@ -1174,7 +1163,6 @@ func _normalize_interaction_overlay_z_order() -> void:
 		target_glow,
 		selection_ring,
 		actionable_marker,
-		interaction_hint,
 	]:
 		if overlay == null:
 			continue
@@ -1232,51 +1220,18 @@ func _refresh_interaction_visuals() -> void:
 		var actionable_style := DesignTokens.panel_style(
 			Color.TRANSPARENT,
 			_outline_corner_radius(),
-			Color(0.36, 0.88, 1.0, 0.98),
+			DesignTokens.STATE_TARGET,
 			3,
 			0,
 		)
 		# The marker sits above the whole CardView so it must never paint its
 		# center. Even a very low-alpha fill noticeably veils detailed card art.
 		actionable_style.draw_center = false
-		actionable_style.shadow_color = Color(0.20, 0.78, 1.0, 0.50)
+		actionable_style.shadow_color = Color(DesignTokens.STATE_TARGET, 0.16)
 		actionable_style.shadow_size = 5
 		actionable_style.shadow_offset = Vector2.ZERO
 		actionable_marker.add_theme_stylebox_override("panel", actionable_style)
 
-	var hint_text := ""
-	var hint_color := DesignTokens.GOLD
-	if targetable and not selected:
-		hint_text = (
-			_legal_target_hint
-			if not _legal_target_hint.is_empty()
-			else "可放置"
-			if not _allowed_drop_hand_indices.is_empty()
-			else "可选择"
-		)
-		hint_color = _target_accent
-	elif selected and not actionable and not _disabled_reason.is_empty():
-		hint_text = _disabled_reason
-	if interaction_hint:
-		# Attachment-source choices already expose their instruction in the battle
-		# task header and in the anchored popover. Repeating it as an opaque strip
-		# over the Pokemon makes the card bottom and its badges harder to read.
-		interaction_hint.visible = (
-			_show_inline_target_hint and not hint_text.is_empty()
-		)
-		interaction_hint.add_theme_stylebox_override(
-			"panel",
-			DesignTokens.panel_style(
-				Color(0.018, 0.042, 0.07, 0.94),
-				4,
-				hint_color,
-				1,
-				0,
-			),
-		)
-	if interaction_hint_label:
-		interaction_hint_label.text = hint_text
-		interaction_hint_label.add_theme_color_override("font_color", hint_color)
 	battle_overlay._refresh_accessibility_summary()
 
 

@@ -334,7 +334,7 @@ func _refresh_battle_overlay(card_data: Dictionary, border_color: Color) -> void
 	hp_pill.text = "HP%d" % current
 	hp_pill.tooltip_text = ""
 	hp_pill.accessibility_name = "HP %d/%d" % [current, maximum]
-	hp_pill.add_theme_color_override("font_color", DesignTokens.BG_DEEP)
+	hp_pill.add_theme_color_override("font_color", DesignTokens.TEXT_ON_ACCENT)
 	hp_pill.add_theme_stylebox_override(
 		"normal",
 		DesignTokens.panel_style(hp_color, 4, Color(1, 1, 1, 0.78), 1, 0),
@@ -345,11 +345,11 @@ func _refresh_battle_overlay(card_data: Dictionary, border_color: Color) -> void
 		damage_badge.text = "%d" % damage
 		damage_badge.tooltip_text = ""
 		damage_badge.accessibility_name = "伤害 %d" % damage
-		damage_badge.add_theme_color_override("font_color", DesignTokens.BG_DEEP)
+		damage_badge.add_theme_color_override("font_color", DesignTokens.TEXT_ON_ACCENT)
 		damage_badge.add_theme_stylebox_override(
 			"normal",
 			DesignTokens.panel_style(
-				DesignTokens.RED.lightened(0.16),
+				DesignTokens.STATE_DANGER,
 				4,
 				Color(1, 1, 1, 0.72),
 				1,
@@ -368,7 +368,7 @@ func _refresh_battle_overlay(card_data: Dictionary, border_color: Color) -> void
 		tool_badge.add_theme_stylebox_override(
 			"normal",
 			DesignTokens.panel_style(
-				Color("#213146"),
+				DesignTokens.PANEL,
 				3,
 				border_color.lightened(0.25),
 				1,
@@ -509,16 +509,16 @@ func _new_energy_badge(
 	plate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var plate_style := DesignTokens.panel_style(
 		(
-			Color(0.018, 0.038, 0.065, 0.14)
+			Color(DesignTokens.PANEL, 0.14)
 			if texture != null
-			else Color(0.09, 0.115, 0.15, 0.82)
+			else DesignTokens.PANEL
 		),
 		int(round(badge_size * 0.5)),
 		_energy_color(energy_type).lightened(0.38),
 		1,
 		0,
 	)
-	plate_style.shadow_color = Color(0.0, 0.0, 0.0, 0.32)
+	plate_style.shadow_color = DesignTokens.SHADOW
 	plate_style.shadow_size = 1
 	plate_style.shadow_offset = Vector2(0, 1)
 	plate.add_theme_stylebox_override("panel", plate_style)
@@ -537,7 +537,7 @@ func _new_energy_badge(
 			maxi(8, int(round(badge_size * 0.42))),
 		)
 		fallback.add_theme_color_override("font_color", DesignTokens.TEXT)
-		fallback.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.72))
+		fallback.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
 		fallback.add_theme_constant_override("outline_size", 2)
 		badge.add_child(fallback)
 	else:
@@ -573,7 +573,7 @@ func _new_energy_badge(
 			marker_badge.add_theme_stylebox_override(
 				"normal",
 				DesignTokens.panel_style(
-					Color(0.075, 0.10, 0.145, 0.90),
+					DesignTokens.TEXT,
 					int(round(marker_size * 0.5)),
 					_energy_color(energy_type).lightened(0.42),
 					1,
@@ -600,7 +600,7 @@ func _new_energy_badge(
 		count_badge.add_theme_stylebox_override(
 			"normal",
 			DesignTokens.panel_style(
-				Color(0.012, 0.028, 0.055, 0.98),
+				DesignTokens.TEXT,
 				int(round(count_height * 0.5)),
 				Color(0.94, 0.975, 1.0, 0.98),
 				1,
@@ -631,7 +631,7 @@ func _new_energy_overflow_badge(count: int, badge_size: float) -> Control:
 	plate.add_theme_stylebox_override(
 		"panel",
 		DesignTokens.panel_style(
-			Color(0.055, 0.075, 0.105, 0.74),
+			DesignTokens.TEXT,
 			int(round(badge_size * 0.5)),
 			DesignTokens.GOLD.lightened(0.12),
 			1,
@@ -764,20 +764,6 @@ func _layout_battle_overlay() -> void:
 	damage_badge.add_theme_font_size_override("font_size", int(14 * badge_scale))
 	energy_row.position = origin + Vector2(5.0, face_size.y - 26.0 * badge_scale)
 	energy_row.size = Vector2(card.size.x - 10.0, 25.0 * badge_scale)
-	if card.interaction_hint != null:
-		card.interaction_hint.offset_left = 5.0
-		card.interaction_hint.offset_right = -5.0
-		if energy_row.visible:
-			# Source-selection hints used to sit on the same bottom strip as the
-			# attachment badges. Reserve the energy row and keep the hint directly
-			# above it so every physical attachment remains readable and anchorable.
-			var hint_bottom := -26.0 * badge_scale - 2.0
-			var hint_height := clampf(27.0 * badge_scale, 20.0, 29.0)
-			card.interaction_hint.offset_bottom = hint_bottom
-			card.interaction_hint.offset_top = hint_bottom - hint_height
-		else:
-			card.interaction_hint.offset_top = -34.0
-			card.interaction_hint.offset_bottom = -5.0
 	var tool_rect := _tool_badge_layout_rect()
 	tool_badge.position = tool_rect.position
 	tool_badge.size = tool_rect.size

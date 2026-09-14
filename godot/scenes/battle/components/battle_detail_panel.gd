@@ -182,9 +182,9 @@ func set_compact_layout(value: bool) -> void:
 	if header:
 		header.custom_minimum_size.y = 48.0
 	if content:
-		content.add_theme_constant_override("separation", 4 if value else 6)
+		content.add_theme_constant_override("separation", 4 if value else 8)
 	if body:
-		body.add_theme_constant_override("separation", 6 if value else 10)
+		body.add_theme_constant_override("separation", 8 if value else 12)
 	if image_column:
 		image_column.custom_minimum_size.x = 84.0 if value else 112.0
 	if image_frame:
@@ -195,19 +195,19 @@ func set_compact_layout(value: bool) -> void:
 		detail_text.custom_minimum_size.x = 0.0
 		detail_text.add_theme_font_size_override(
 			"normal_font_size",
-			11 if value else 12,
+			13 if value else 14,
 		)
 	if state_surface:
-		state_surface.custom_minimum_size.y = 52.0 if value else 62.0
+		state_surface.custom_minimum_size.y = 56.0 if value else 68.0
 	if state_text:
 		state_text.add_theme_font_size_override(
 			"normal_font_size",
-			10 if value else 11,
+			11 if value else 12,
 		)
 	if detail_title:
 		detail_title.add_theme_font_size_override("font_size", 17)
 	if detail_meta:
-		detail_meta.add_theme_font_size_override("font_size", 11)
+		detail_meta.add_theme_font_size_override("font_size", 12)
 	if context_label:
 		context_label.add_theme_font_size_override("font_size", 12)
 	if close_button:
@@ -216,6 +216,19 @@ func set_compact_layout(value: bool) -> void:
 
 func is_compact_layout() -> bool:
 	return _compact_layout
+
+func fit_available_height(available_height: float, fill_space: bool = false) -> float:
+	var target := available_height if fill_space else minf(layout_size().y, available_height)
+	if _compact_layout:
+		var image_frame := get_node("Content/Body/ImageColumn/ImageFrame") as Control
+		var content := get_node("Content") as Control
+		var fixed_height := content.get_combined_minimum_size().y + get_theme_stylebox("panel").get_minimum_size().y - image_frame.custom_minimum_size.y
+		# Preserve the 48px close control and text sizes; only the card thumbnail
+		# contracts when the left corridor is shorter than the usual preview.
+		image_frame.custom_minimum_size.y = clampf(target - fixed_height, 88.0, 117.0)
+		target = maxf(target, fixed_height + image_frame.custom_minimum_size.y)
+	custom_minimum_size.y = target
+	return target
 
 
 func layout_size() -> Vector2:

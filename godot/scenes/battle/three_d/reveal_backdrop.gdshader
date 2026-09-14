@@ -1,8 +1,8 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, shadows_disabled, depth_draw_never;
 
-uniform vec4 fill : source_color = vec4(0.035, 0.063, 0.09, 0.98);
-uniform vec4 border : source_color = vec4(0.30, 0.40, 0.45, 1.0);
+uniform vec4 fill : source_color = vec4(1.0, 0.976471, 0.941176, 0.98);
+uniform vec4 border : source_color = vec4(0.631373, 0.541176, 0.450980, 1.0);
 uniform vec2 rect_pixels = vec2(600.0, 380.0);
 uniform float radius = 18.0;
 uniform float opacity = 1.0;

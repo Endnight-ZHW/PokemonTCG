@@ -1,3 +1,4 @@
+
 [gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://scenes/end/victory_screen.gd" id="1_victory"]
@@ -117,6 +118,7 @@ alignment = 1
 [node name="TrophyIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/CelebrationHeader"]
 custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
+self_modulate = Color(0.639216, 0.372549, 0.196078, 1)
 texture = ExtResource("4_trophy")
 expand_mode = 1
 stretch_mode = 5
@@ -199,7 +201,7 @@ grow_vertical = 2
 [node name="PlaceholderIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage/CardStageContent/CardFrameCenter/CardFrame/CardPlaceholder"]
 custom_minimum_size = Vector2(72, 72)
 layout_mode = 2
-modulate = Color(1, 1, 1, 0.42)
+modulate = Color(0.474510, 0.403922, 0.341176, 1)
 texture = ExtResource("9_app_icon")
 expand_mode = 1
 stretch_mode = 5
@@ -248,6 +250,7 @@ theme_override_constants/separation = 12
 [node name="ModeIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/ModeRow"]
 custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
+self_modulate = Color(0.474510, 0.403922, 0.341176, 1)
 texture = ExtResource("5_play")
 expand_mode = 1
 stretch_mode = 5
@@ -277,6 +280,7 @@ theme_override_constants/separation = 12
 [node name="DeckIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/DeckRow"]
 custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
+self_modulate = Color(0.474510, 0.403922, 0.341176, 1)
 texture = ExtResource("6_deck")
 expand_mode = 1
 stretch_mode = 5
@@ -308,6 +312,7 @@ theme_override_constants/separation = 12
 [node name="TurnIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/TurnRow"]
 custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
+self_modulate = Color(0.474510, 0.403922, 0.341176, 1)
 texture = ExtResource("7_refresh")
 expand_mode = 1
 stretch_mode = 5

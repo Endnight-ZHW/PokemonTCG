@@ -1,5 +1,6 @@
 # 项目文档
 
+- [`WARM_UI_REDESIGN.md`](WARM_UI_REDESIGN.md)：全游戏奶油暖色主题、控件与牌桌细节、截图及验收方法。
 - [`MAIN_REVIEW.md`](MAIN_REVIEW.md)：三维重构提交前审核、生命周期修复与最新图形性能复测。
 - [`CODE_CLEANUP.md`](CODE_CLEANUP.md)：三维迁移后的无用代码清理、公共校验去重与回归记录。
 - [`BATTLE_3D_REFACTOR.md`](BATTLE_3D_REFACTOR.md)：三维牌桌、卡牌、投影输入、表现生命周期与双平台验证。

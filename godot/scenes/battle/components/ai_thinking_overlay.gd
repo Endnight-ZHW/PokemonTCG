@@ -7,6 +7,7 @@ var ai_player := 1
 var ai_name := "AI"
 var started_msec := 0
 var slot_rects: Array[Rect2] = []
+var card_highlights_in_3d := false
 var _time := 0.0
 var _status_label: Label
 
@@ -51,6 +52,19 @@ func _process(delta: float) -> void:
 	if not reduced_motion:
 		queue_redraw()
 
+func set_card_highlights_in_3d(value: bool) -> void:
+	if card_highlights_in_3d == value:
+		return
+	card_highlights_in_3d = value
+	queue_redraw()
+
+func card_highlight_color() -> Color:
+	if not active:
+		return Color.TRANSPARENT
+	var pulse := (sin(_time * 3.2) + 1.0) * 0.5
+	var strength := 0.55 if reduced_motion else 0.48 + pulse * 0.16
+	return DesignTokens.TABLE_CLOTH.lerp(DesignTokens.RED.lightened(0.12), strength)
+
 
 func _draw() -> void:
 	if not active:
@@ -58,16 +72,19 @@ func _draw() -> void:
 	var accent := DesignTokens.RED.lightened(0.12)
 	var pulse := 0.0 if reduced_motion else (sin(_time * 3.2) + 1.0) * 0.5
 	var ring_alpha := 0.16 if reduced_motion else 0.12 + pulse * 0.10
-	for rect in slot_rects:
-		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
-			continue
-		var grown := rect.grow(9.0 + pulse * 4.0)
-		var radius := maxf(8.0, minf(grown.size.x, grown.size.y) * 0.09)
-		var fill := Color(accent.r, accent.g, accent.b, 0.035 + ring_alpha * 0.18)
-		var border := Color(accent.r, accent.g, accent.b, ring_alpha)
-		draw_rect(grown, fill, true)
-		draw_rect(grown, border, false, 2.0)
-		_draw_corner_ticks(grown, border.lightened(0.2), radius)
+	# Physical cards own their highlights and visibility. Keep rectangle drawing
+	# only for standalone 2D callers of the existing configure interface.
+	if not card_highlights_in_3d:
+		for rect in slot_rects:
+			if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+				continue
+			var grown := rect.grow(9.0 + pulse * 4.0)
+			var radius := maxf(8.0, minf(grown.size.x, grown.size.y) * 0.09)
+			var fill := Color(accent.r, accent.g, accent.b, 0.035 + ring_alpha * 0.18)
+			var border := Color(accent.r, accent.g, accent.b, ring_alpha)
+			draw_rect(grown, fill, true)
+			draw_rect(grown, border, false, 2.0)
+			_draw_corner_ticks(grown, border.lightened(0.2), radius)
 	if reduced_motion:
 		return
 	var scan_y := fposmod(_time * 86.0, maxf(1.0, size.y))
@@ -90,7 +107,7 @@ func _ensure_status_label() -> void:
 	_status_label.add_theme_stylebox_override(
 		"normal",
 		DesignTokens.panel_style(
-			Color(0.055, 0.10, 0.17, 0.96),
+			DesignTokens.PANEL,
 			8,
 			DesignTokens.CYAN.darkened(0.10),
 			1,

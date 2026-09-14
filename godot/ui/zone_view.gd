@@ -198,6 +198,32 @@ func set_actionable(value: bool) -> void:
 	actionable = value
 	_apply_frame_style()
 
+func layout_physical_action_button(face_rect: Rect2) -> void:
+	if action_button == null or not action_button.visible:
+		return
+	if not action_button.has_meta("physical_style"):
+		action_button.set_meta("physical_style", true)
+		action_button.theme_type_variation = &"BattleCompactButton"
+		action_button.remove_theme_stylebox_override("normal")
+		action_button.add_theme_font_size_override("font_size", 14)
+	if _action_menu_enabled and _pending_action_row.is_empty():
+		action_button.text = "操作"
+		action_button.tooltip_text = "%s区：%s" % [title, _action_menu_label]
+		action_button.accessibility_name = action_button.tooltip_text
+		action_button.clip_text = true
+	# Keep the UI upright even though the legacy ZoneView is tilted. The input
+	# is the actual face in canvas coordinates, not an enclosing local rectangle.
+	var transform := get_global_transform_with_canvas()
+	var button_size := Vector2(clampf(face_rect.size.x, 48.0, 104.0), 48.0)
+	action_button.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	action_button.pivot_offset = Vector2.ZERO
+	action_button.rotation = -transform.get_rotation()
+	action_button.scale = Vector2.ONE / transform.get_scale()
+	action_button.custom_minimum_size = button_size
+	action_button.size = action_button.custom_minimum_size
+	action_button.position = transform.affine_inverse() * Vector2(face_rect.get_center().x - button_size.x * 0.5,
+		face_rect.position.y - button_size.y - 8.0)
+
 
 func get_stack_visual_extent() -> Vector2:
 	if stack_visual_mode.is_empty() or count <= 0 or stack_visual_max_count <= 0:
@@ -404,7 +430,7 @@ func _draw_prize_fan(
 		shadow_color,
 		true,
 	)
-	draw_rect(tray_rect, Color(0.018, 0.032, 0.058, 0.92), true)
+	draw_rect(tray_rect, DesignTokens.PANEL_INSET, true)
 	var tray_border := _stack_border_color()
 	tray_border.a = 0.80
 	draw_rect(tray_rect, tray_border, false, 1.5)
@@ -826,18 +852,18 @@ func _stack_extent_for_depth(total_depth: float) -> Vector2:
 func _stack_color() -> Color:
 	match stack_visual_mode:
 		"deck":
-			return Color("#2b3342")
+			return DesignTokens.TABLE_WOOD
 		"prizes":
-			return Color("#48313c")
+			return DesignTokens.TABLE_WOOD
 		"discard":
-			return Color("#28323d")
-	return Color("#253240")
+			return DesignTokens.TABLE_CLOTH
+	return DesignTokens.TABLE_CLOTH
 
 
 func _paper_edge_color() -> Color:
 	if stack_visual_mode == "prizes":
-		return Color("#d6c8d2")
-	return Color("#d9dde2")
+		return DesignTokens.PANEL_INSET
+	return DesignTokens.PANEL
 
 
 func _stack_border_color() -> Color:
@@ -854,16 +880,16 @@ func _stack_border_color() -> Color:
 func _apply_frame_style() -> void:
 	if frame == null:
 		return
-	var fill := Color(0.045, 0.07, 0.11, 0.90)
+	var fill := DesignTokens.PANEL_INSET
 	var border := DesignTokens.BORDER.lightened(table_depth * 0.16)
 	if is_hidden_zone and count > 0:
-		fill = Color("#172038")
+		fill = DesignTokens.PANEL_INSET
 		border = DesignTokens.GOLD.darkened(0.16)
 	elif stack_visual_mode == "discard" and count > 0:
-		fill = Color(0.052, 0.070, 0.088, 0.94)
+		fill = DesignTokens.PANEL
 		border = DesignTokens.CYAN.darkened(0.18)
 	elif not card_id.is_empty():
-		fill = Color(0.055, 0.08, 0.12, 0.92)
+		fill = DesignTokens.PANEL
 		border = DesignTokens.CYAN.darkened(0.18)
 	if actionable or _drop_highlighted:
 		border = DesignTokens.CYAN
@@ -875,18 +901,18 @@ func _apply_frame_style() -> void:
 		0,
 	)
 	if actionable or _drop_highlighted:
-		frame_style.shadow_color = Color(0.20, 0.78, 1.0, 0.46)
+		frame_style.shadow_color = Color(DesignTokens.STATE_TARGET, 0.16)
 		frame_style.shadow_size = 3
 		frame_style.shadow_offset = Vector2.ZERO
 	frame.add_theme_stylebox_override("panel", frame_style)
 	if count_label:
 		var badge_fill := DesignTokens.GOLD
 		var badge_border := Color(1, 1, 1, 0.70)
-		var badge_text := DesignTokens.BG_DEEP
+		var badge_text := DesignTokens.TEXT_ON_ACCENT
 		if stack_visual_mode in ["deck", "discard"]:
-			badge_fill = Color(0.025, 0.055, 0.095, 0.98)
+			badge_fill = DesignTokens.PANEL
 			badge_border = DesignTokens.GOLD
-			badge_text = Color("#ffe071")
+			badge_text = DesignTokens.TEXT
 		count_label.add_theme_color_override("font_color", badge_text)
 		count_label.add_theme_stylebox_override(
 			"normal",

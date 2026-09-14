@@ -943,8 +943,8 @@ func _neutral_public_card_texture() -> Texture2D:
 	if neutral_public_texture != null:
 		return neutral_public_texture
 	var image := Image.create(64, 90, false, Image.FORMAT_RGBA8)
-	image.fill(Color("#172334"))
-	var border := Color("#6f8197")
+	image.fill(DesignTokens.PANEL_INSET)
+	var border := DesignTokens.BORDER
 	for x in range(image.get_width()):
 		image.set_pixel(x, 0, border)
 		image.set_pixel(x, image.get_height() - 1, border)

@@ -479,11 +479,11 @@ func _apply_energy_target_style(
 	hovered: bool,
 	blocked: bool,
 ) -> void:
-	var background := FrontendPalette.INSET
+	var background := FrontendPalette.PANEL
 	var border := FrontendPalette.BORDER
 	var width := 1
 	if selected:
-		background = FrontendPalette.INSET
+		background = FrontendPalette.PANEL
 		border = FrontendPalette.GOLD
 		width = 2
 	elif blocked:
@@ -491,14 +491,14 @@ func _apply_energy_target_style(
 		border = Color(FrontendPalette.DANGER, 0.62 if hovered else 0.38)
 		width = 2 if hovered else 1
 	elif hovered:
-		background = FrontendPalette.INSET
+		background = DesignTokens.PANEL_HOVER
 		border = FrontendPalette.GOLD
 		width = 2
 	var style := DesignTokens.panel_style(
 		background, DesignTokens.RADIUS_MEDIUM, border, width, 8)
 	if selected:
-		style.shadow_color = Color(FrontendPalette.GOLD, 0.22)
-		style.shadow_size = 6
+		style.shadow_color = DesignTokens.SHADOW
+		style.shadow_size = 4
 		style.shadow_offset = Vector2.ZERO
 	tile.add_theme_stylebox_override("panel", style)
 

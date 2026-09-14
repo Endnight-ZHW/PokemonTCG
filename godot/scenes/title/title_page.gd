@@ -87,13 +87,13 @@ func _apply_responsive_layout() -> void:
 		return
 	var portrait := size.x < size.y * 1.05
 	var compact := size.x < 1180 or size.y < 650
-	var margin := 22 if compact else 40
+	var margin := 24 if compact else 40
 	var side := maxi(margin, int((size.x - MAX_CONTENT_WIDTH) * 0.5))
 	for edge in ["left", "right"]:
 		safe_content.add_theme_constant_override("margin_" + edge, side)
 	for edge in ["top", "bottom"]:
-		safe_content.add_theme_constant_override("margin_" + edge, 22 if compact else 32)
-	page_frame.add_theme_constant_override("separation", 14 if compact else 24)
+		safe_content.add_theme_constant_override("margin_" + edge, 24 if compact else 32)
+	page_frame.add_theme_constant_override("separation", 16 if compact else 24)
 	header_panel.custom_minimum_size.y = 76 if compact else 106
 	title_label.add_theme_font_size_override("font_size", 34 if compact else 52)
 	brand_subtitle_label.add_theme_font_size_override("font_size", 16 if compact else 18)
@@ -103,7 +103,7 @@ func _apply_responsive_layout() -> void:
 	hero_panel.custom_minimum_size = Vector2(0 if portrait else 300 if compact else 520, minf(280, size.y * 0.3) if portrait else 0)
 	modes_panel.custom_minimum_size.x = 0 if portrait else 360 if compact else 440
 	card_stage.custom_minimum_size.y = minf(230, size.y * 0.25) if portrait else 0
-	mode_stack.add_theme_constant_override("separation", 12 if compact else 16)
+	mode_stack.add_theme_constant_override("separation", 12 if compact else 24)
 	for button in [%LocalTwoPlayerButton, %AIButton, %NetworkButton]:
 		button.custom_minimum_size.y = 86 if compact else 112
 	%ModeHeading.add_theme_font_size_override("font_size", 18 if compact else 22)

@@ -13,6 +13,8 @@ var _mat: MeshInstance3D
 var _trim: MeshInstance3D
 var _base_camera_transform := Transform3D.IDENTITY
 var quality := "high"
+var playmat_center := Vector2.ZERO
+var framing_offset := Vector2.ZERO
 var coin: CoinEntity3D
 var feedback: BattleFeedback3D
 var reveal_stage: BattleRevealStage3D
@@ -40,7 +42,7 @@ func _ready() -> void:
 	environment = WorldEnvironment.new()
 	environment.environment = Environment.new()
 	environment.environment.background_mode = Environment.BG_COLOR
-	environment.environment.background_color = Color("302b29")
+	environment.environment.background_color = DesignTokens.BG_DEEP
 	environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment.environment.ambient_light_color = Color("dbe5ed")
 	# Compatibility composites shadowed lights in a separate sRGB pass. Ambient
@@ -50,15 +52,15 @@ func _ready() -> void:
 	var wood := ShaderMaterial.new()
 	wood.shader = SURFACE_SHADER
 	wood.set_shader_parameter("wood", true)
-	wood.set_shader_parameter("base_color", Color("866248"))
+	wood.set_shader_parameter("base_color", DesignTokens.TABLE_WOOD)
 	_box("Table", Vector3(85, 0.4, 85), Vector3(0, -0.30, 0), wood)
 	var trim_material := StandardMaterial3D.new()
-	trim_material.albedo_color = Color("b1986a")
+	trim_material.albedo_color = DesignTokens.TABLE_STITCH
 	trim_material.roughness = 0.86
 	_trim = _box("MatStitching", Vector3(20, 0.03, 14), Vector3(0, -0.070, 0), trim_material)
 	var cloth := ShaderMaterial.new()
 	cloth.shader = SURFACE_SHADER
-	cloth.set_shader_parameter("base_color", Color("233f4b"))
+	cloth.set_shader_parameter("base_color", DesignTokens.TABLE_CLOTH)
 	_mat = _box("WovenPlaymat", Vector3(19.9, 0.06, 13.9), Vector3(0, -0.043, 0), cloth)
 	coin = CoinEntity3D.new()
 	coin.name = "PhysicalCoin"
@@ -76,6 +78,7 @@ func resize(viewport: SubViewport, size_value: Vector2) -> void:
 	if camera == null:
 		return
 	projection.configure(camera, viewport, size_value)
+	framing_offset = Vector2(0.0, -clampf(size_value.y * 0.035, 14.0, 36.0))
 	var compact := size_value.x < 1180.0 or size_value.y < 650.0
 	var angle := deg_to_rad(65.0 if compact else 55.0)
 	# A longer lens keeps the tabletop framing while reducing the side-card
@@ -84,14 +87,21 @@ func resize(viewport: SubViewport, size_value: Vector2) -> void:
 	camera.position = Vector3(0, sin(angle) * distance, cos(angle) * distance)
 	camera.look_at(Vector3.ZERO)
 	_base_camera_transform = camera.transform
-	var a := projection.screen_to_world(Vector2(size_value.x * 0.025, size_value.y * 0.08))
-	var b := projection.screen_to_world(Vector2(size_value.x * 0.975, size_value.y * 0.97))
+	# Frame slightly toward the local player: both edges move up together so
+	# more of the local hand and less of the opponent hand remain on screen.
+	var a := projection.screen_to_world(Vector2(size_value.x * 0.025, size_value.y * 0.03) + framing_offset)
+	var b := projection.screen_to_world(Vector2(size_value.x * 0.975, size_value.y * 0.97) + framing_offset)
 	var depth := absf(b.z - a.z)
 	var width := maxf(absf(a.x), absf(b.x)) * 2.0
 	_mat.mesh = _box_mesh(Vector3(width, 0.06, depth))
 	_trim.mesh = _box_mesh(Vector3(width + 0.06, 0.035, depth + 0.06))
 	_mat.position.z = (a.z + b.z) * 0.5
 	_trim.position.z = _mat.position.z
+	# Share the projected cloth's midline with every resting card layout. The
+	# perspective projection of the mesh origin is not the midpoint of its edges.
+	var far_edge := projection.world_to_screen(_mat.position + Vector3(0, 0.03, -depth * 0.5))
+	var near_edge := projection.world_to_screen(_mat.position + Vector3(0, 0.03, depth * 0.5))
+	playmat_center = (far_edge + near_edge) * 0.5
 
 
 func acquire(key: String) -> CardEntity3D:

@@ -1,26 +1,45 @@
 class_name DesignTokens
 extends RefCounted
 
-const BG_DEEP := Color("#07101d")
-const BG_SURFACE := Color("#0d1828")
-const PANEL := Color("#111d30")
-const PANEL_RAISED := Color("#172842")
-const PANEL_GLASS := Color(0.055, 0.10, 0.17, 0.94)
+## Shared cream surfaces. Keep card art, energy types and physical lighting neutral.
+const BG_DEEP := Color("#f3eadb")
+const BG_SURFACE := Color("#eee0cc")
+const PANEL := Color("#fff9f0")
+const PANEL_RAISED := Color("#fffcf7")
+const PANEL_INSET := Color("#eadcc9")
+const PANEL_HOVER := Color("#f3e5d2")
+const PANEL_PRESSED := Color("#e8d5ba")
+const PANEL_HOVER_PRESSED := Color("#e1ccb0")
+const PANEL_DISABLED := Color("#e6ddcf")
+const PANEL_GLASS := Color(1.0, 0.976471, 0.941176, 0.98)
 const SURFACE_BASE := BG_SURFACE
 const SURFACE_PANEL := PANEL
 const SURFACE_ELEVATED := PANEL_RAISED
 const SURFACE_OVERLAY := PANEL_GLASS
-const BORDER := Color("#304764")
-const BORDER_SOFT := Color(0.26, 0.39, 0.56, 0.45)
-const TEXT := Color("#f4f7ff")
-const TEXT_MUTED := Color("#9eb0ca")
-const TEXT_DISABLED := Color("#66748a")
-const GOLD := Color("#f4c84a")
-const BLUE := Color("#45a6ff")
-const CYAN := Color("#62d7ff")
-const RED := Color("#ef6572")
-const GREEN := Color("#68d391")
-const PURPLE := Color("#b78cff")
+const BORDER := Color("#a18a73")
+const BORDER_SOFT := Color("#cebba6")
+const TEXT := Color("#45372f")
+const TEXT_MUTED := Color("#796757")
+const TEXT_DISABLED := Color("#8d7c69")
+const TEXT_ON_ACCENT := Color("#fff9f0")
+const STATUS_INK := Color("#201811")
+const GOLD := Color("#a35f32")
+const ACCENT_HOVER := Color("#98592e")
+const ACCENT_PRESSED := Color("#804b29")
+const BLUE := Color("#466d86")
+const CYAN := Color("#49786b")
+const RED := Color("#ad5147")
+const DANGER_HOVER := Color("#99453d")
+const DANGER_PRESSED := Color("#833b34")
+const GREEN := Color("#4f7153")
+const PURPLE := Color("#805c91")
+const SUCCESS_SURFACE := Color("#e5ecdf")
+const DANGER_SURFACE := Color("#f3dfd8")
+const SHADOW := Color(0.270588, 0.215686, 0.184314, 0.12)
+const SCRIM := Color("#45372f")
+const TABLE_WOOD := Color("#c9a77e")
+const TABLE_CLOTH := Color("#d9c9ad")
+const TABLE_STITCH := Color("#a18a73")
 const STATE_SELECTED := GOLD
 const STATE_TARGET := CYAN
 const STATE_INFO := BLUE
@@ -32,6 +51,7 @@ const SPACE_SM := 8
 const SPACE_MD := 12
 const SPACE_LG := 16
 const SPACE_XL := 24
+const SPACE_XXL := 32
 
 const TYPE_COLORS := {
 	"Grass": Color("#55b96a"),
@@ -93,19 +113,38 @@ static func style_scrollbar(scrollbar: ScrollBar) -> void:
 	if scrollbar == null:
 		return
 	var track := panel_style(
-		Color(0.025, 0.055, 0.095, 0.62), 6, Color.TRANSPARENT, 0, 0)
+		PANEL_INSET, 6, Color.TRANSPARENT, 0, 0)
 	var thumb := panel_style(
-		Color(0.31, 0.50, 0.70, 0.92), 6, Color(0.42, 0.70, 0.92, 0.72), 1, 0)
+		TEXT_MUTED, 6, Color.TRANSPARENT, 0, 0)
 	var hover := panel_style(
-		Color(STATE_TARGET, 0.78), 6, Color(0.62, 0.90, 1.0, 0.92), 1, 0)
+		GOLD, 6, Color.TRANSPARENT, 0, 0)
 	scrollbar.add_theme_stylebox_override("scroll", track)
 	scrollbar.add_theme_stylebox_override("grabber", thumb)
 	scrollbar.add_theme_stylebox_override("grabber_highlight", hover)
 	scrollbar.add_theme_stylebox_override("grabber_pressed", hover)
 	if scrollbar is VScrollBar:
+		track.content_margin_left = 6
+		track.content_margin_right = 6
 		scrollbar.custom_minimum_size.x = 12.0
 	else:
+		track.content_margin_top = 6
+		track.content_margin_bottom = 6
 		scrollbar.custom_minimum_size.y = 12.0
+
+
+## Format only the UI template, before inserting escaped card text with %.
+static func rich_text(template: String) -> String:
+	return template.format({
+		"text": TEXT.to_html(false), "muted": TEXT_MUTED.to_html(false),
+		"accent": GOLD.to_html(false), "target": CYAN.to_html(false),
+		"success": GREEN.to_html(false), "danger": RED.to_html(false),
+	})
+
+
+## Colored artwork must not inherit the ink tint used by monochrome UI icons.
+static func preserve_art_icon(button: Button) -> void:
+	for state in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+		button.add_theme_color_override("icon_%s_color" % state, Color.WHITE)
 
 
 static func label(text_value: String, font_size: int, color: Color) -> Label:

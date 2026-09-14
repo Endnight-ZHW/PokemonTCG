@@ -64,19 +64,19 @@ static func detail_bbcode(
 	var maximum_hp := int(card.get("hp", 0))
 	var card_rows: Array[String] = []
 	if maximum_hp > 0:
-		card_rows.append("[color=#f2f6ff][b]卡面 HP %d[/b][/color]" % maximum_hp)
+		card_rows.append(DesignTokens.rich_text("[color=#{text}][b]卡面 HP %d[/b][/color]") % maximum_hp)
 	var evolves_from := str(card.get("evolves_from", "")).strip_edges()
 	if not evolves_from.is_empty():
-		card_rows.append("[color=#9eb0ca]进化自[/color]  %s" % _safe_text(evolves_from))
+		card_rows.append(DesignTokens.rich_text("[color=#{muted}]进化自[/color]  %s") % _safe_text(evolves_from))
 	if detail_level == DetailLevel.FULL and not card_rows.is_empty():
-		sections.append("[color=#9eb0ca][b]卡面信息[/b][/color]\n%s" % "\n".join(card_rows))
+		sections.append(DesignTokens.rich_text("[color=#{muted}][b]卡面信息[/b][/color]\n%s") % "\n".join(card_rows))
 	elif not card_rows.is_empty():
 		sections.append("　·　".join(card_rows))
 
 	for ability_value in card.get("abilities", []):
 		var ability := Dictionary(ability_value)
 		var ability_text := str(ability.get("text", "")).strip_edges()
-		var rows: Array[String] = ["[color=#62d7ff][b]特性 · %s[/b][/color]" % (
+		var rows: Array[String] = [DesignTokens.rich_text("[color=#{target}][b]特性 · %s[/b][/color]") % (
 			_safe_text(str(ability.get("name", "")))
 		)]
 		if not ability_text.is_empty():
@@ -91,10 +91,10 @@ static func detail_bbcode(
 		var heading := "招式 · %s" % _safe_text(str(attack.get("name", "")))
 		if not damage_text.is_empty():
 			heading += "　%s" % _safe_text(damage_text)
-		var attack_rows: Array[String] = ["[color=#f4c84a][b]%s[/b][/color]" % heading]
+		var attack_rows: Array[String] = [DesignTokens.rich_text("[color=#{accent}][b]%s[/b][/color]") % heading]
 		var cost_text := energy_cost_text(attack.get("cost", []))
 		if not cost_text.is_empty():
-			attack_rows.append("[color=#9eb0ca]费用：%s[/color]" % cost_text)
+			attack_rows.append(DesignTokens.rich_text("[color=#{muted}]费用：%s[/color]") % cost_text)
 		var attack_text := str(attack.get("text", "")).strip_edges()
 		if not attack_text.is_empty():
 			attack_rows.append(_safe_text(attack_text))
@@ -102,7 +102,7 @@ static func detail_bbcode(
 
 	var provides := energy_cost_text(card.get("provides_energy", []))
 	if not provides.is_empty():
-		sections.append("[color=#7de6b2][b]提供能量[/b][/color]\n%s" % provides)
+		sections.append(DesignTokens.rich_text("[color=#{success}][b]提供能量[/b][/color]\n%s") % provides)
 
 	var rules: Array[String] = []
 	var seen_rules: Dictionary = {}
@@ -117,7 +117,7 @@ static func detail_bbcode(
 		seen_rules[rule] = true
 		rules.append(_safe_text(rule))
 	if not rules.is_empty():
-		sections.append("[color=#62d7ff][b]%s[/b][/color]\n%s" % [
+		sections.append(DesignTokens.rich_text("[color=#{target}][b]%s[/b][/color]\n%s") % [
 			_rule_section_title(str(card.get("supertype", ""))),
 			"\n".join(rules),
 		])
@@ -128,12 +128,12 @@ static func detail_bbcode(
 		footer.append("弱点：%s" % (weakness if not weakness.is_empty() else "无"))
 		var resistance := matchup_text(card.get("resistances", []))
 		footer.append("抗性：%s" % (resistance if not resistance.is_empty() else "无"))
-		sections.append("[color=#9eb0ca]%s[/color]" % "　·　".join(footer))
+		sections.append(DesignTokens.rich_text("[color=#{muted}]%s[/color]") % "　·　".join(footer))
 
 	if pokemon != null:
 		sections.append(_current_state_bbcode(pokemon, catalog, maximum_hp))
 	if sections.is_empty():
-		sections.append("[color=#9eb0ca]这张卡没有额外说明。[/color]")
+		sections.append(DesignTokens.rich_text("[color=#{muted}]这张卡没有额外说明。[/color]"))
 	return "\n\n".join(sections)
 
 
@@ -164,16 +164,16 @@ static func battle_state_bbcode(
 			else pokemon.attached_tool_id
 		)
 	return (
-		"[font_size=12][color=#7de6b2][b]当前状态[/b][/color][/font_size]  "
-		+ "[color=#f2f6ff][b]HP %d／%d[/b][/color]  " % [
+		DesignTokens.rich_text("[font_size=12][color=#{success}][b]当前状态[/b][/color][/font_size]  ")
+		+ DesignTokens.rich_text("[color=#{text}][b]HP %d／%d[/b][/color]  ") % [
 			current_hp,
 			effective_maximum,
 		]
-		+ "[color=#9eb0ca]伤害 %d[/color]\n" % (pokemon.damage_counters * 10)
-		+ "[color=#9eb0ca]状态[/color] %s　" % (
+		+ DesignTokens.rich_text("[color=#{muted}]伤害 %d[/color]\n") % (pokemon.damage_counters * 10)
+		+ DesignTokens.rich_text("[color=#{muted}]状态[/color] %s　") % (
 			"、".join(states) if not states.is_empty() else "无"
 		)
-		+ "[color=#9eb0ca]能量[/color] %d　[color=#9eb0ca]道具[/color] %s" % [
+		+ DesignTokens.rich_text("[color=#{muted}]能量[/color] %d　[color=#{muted}]道具[/color] %s") % [
 			pokemon.energy_card_ids.size(),
 			_safe_text(tool_name),
 		]
@@ -184,17 +184,17 @@ static func _compact_rule_bbcode(card: Dictionary) -> String:
 	var sections: Array[String] = []
 	var maximum_hp := int(card.get("hp", 0))
 	if maximum_hp > 0:
-		var summary := "[color=#9eb0ca][font_size=11]卡面数据[/font_size][/color]\n"
-		summary += "[font_size=18][color=#f2f6ff][b]HP %d[/b][/color][/font_size]" % maximum_hp
+		var summary := DesignTokens.rich_text("[color=#{muted}][font_size=11]卡面数据[/font_size][/color]\n")
+		summary += DesignTokens.rich_text("[font_size=18][color=#{text}][b]HP %d[/b][/color][/font_size]") % maximum_hp
 		var evolves_from := str(card.get("evolves_from", "")).strip_edges()
 		if not evolves_from.is_empty():
-			summary += "  [color=#9eb0ca]进化自 %s[/color]" % _safe_text(evolves_from)
+			summary += DesignTokens.rich_text("  [color=#{muted}]进化自 %s[/color]") % _safe_text(evolves_from)
 		sections.append(summary)
 
 	for ability_value in card.get("abilities", []):
 		var ability := Dictionary(ability_value)
 		var rows: Array[String] = [
-			"[color=#62d7ff][font_size=15][b]特性　%s[/b][/font_size][/color]" % _safe_text(
+			DesignTokens.rich_text("[color=#{target}][font_size=15][b]特性　%s[/b][/font_size][/color]") % _safe_text(
 				str(ability.get("name", ""))
 			),
 		]
@@ -208,17 +208,17 @@ static func _compact_rule_bbcode(card: Dictionary) -> String:
 		var damage_text := str(attack.get("damage_text", "")).strip_edges()
 		if damage_text.is_empty() and int(attack.get("damage", 0)) > 0:
 			damage_text = str(attack.get("damage", 0))
-		var heading := "[color=#f4c84a][font_size=16][b]%s[/b][/font_size][/color]" % _safe_text(
+		var heading := DesignTokens.rich_text("[color=#{accent}][font_size=16][b]%s[/b][/font_size][/color]") % _safe_text(
 			str(attack.get("name", ""))
 		)
 		if not damage_text.is_empty():
-			heading += "  [color=#ffd85a][font_size=16][b]%s[/b][/font_size][/color]" % _safe_text(
+			heading += DesignTokens.rich_text("  [color=#{accent}][font_size=16][b]%s[/b][/font_size][/color]") % _safe_text(
 				damage_text
 			)
 		var rows: Array[String] = [heading]
 		var cost_text := energy_cost_text(attack.get("cost", []))
 		if not cost_text.is_empty():
-			rows.append("[color=#62d7ff]费用[/color]  %s" % cost_text)
+			rows.append(DesignTokens.rich_text("[color=#{target}]费用[/color]  %s") % cost_text)
 		var attack_text := str(attack.get("text", "")).strip_edges()
 		if not attack_text.is_empty():
 			rows.append(_safe_text(attack_text))
@@ -226,7 +226,7 @@ static func _compact_rule_bbcode(card: Dictionary) -> String:
 
 	var provides := energy_cost_text(card.get("provides_energy", []))
 	if not provides.is_empty():
-		sections.append("[color=#7de6b2][font_size=15][b]提供能量[/b][/font_size][/color]\n%s" % provides)
+		sections.append(DesignTokens.rich_text("[color=#{success}][font_size=15][b]提供能量[/b][/font_size][/color]\n%s") % provides)
 
 	var rules: Array[String] = []
 	var seen_rules: Dictionary = {}
@@ -241,7 +241,7 @@ static func _compact_rule_bbcode(card: Dictionary) -> String:
 		seen_rules[rule] = true
 		rules.append(_safe_text(rule))
 	if not rules.is_empty():
-		sections.append("[color=#62d7ff][font_size=14][b]%s[/b][/font_size][/color]\n%s" % [
+		sections.append(DesignTokens.rich_text("[color=#{target}][font_size=14][b]%s[/b][/font_size][/color]\n%s") % [
 			_rule_section_title(str(card.get("supertype", ""))),
 			"\n".join(rules),
 		])
@@ -251,8 +251,8 @@ static func _compact_rule_bbcode(card: Dictionary) -> String:
 		var resistance := matchup_text(card.get("resistances", []))
 		sections.append(
 			(
-				"[color=#9eb0ca]撤退[/color] %d　[color=#9eb0ca]弱点[/color] %s\n"
-				+ "[color=#9eb0ca]抗性[/color] %s"
+				DesignTokens.rich_text("[color=#{muted}]撤退[/color] %d　[color=#{muted}]弱点[/color] %s\n")
+				+ DesignTokens.rich_text("[color=#{muted}]抗性[/color] %s")
 			) % [
 				int(card.get("retreat_cost", 0)),
 				weakness if not weakness.is_empty() else "无",
@@ -260,7 +260,7 @@ static func _compact_rule_bbcode(card: Dictionary) -> String:
 			]
 		)
 	if sections.is_empty():
-		return "[color=#9eb0ca]这张卡没有额外说明。[/color]"
+		return DesignTokens.rich_text("[color=#{muted}]这张卡没有额外说明。[/color]")
 	return "\n\n".join(sections)
 
 
@@ -358,7 +358,7 @@ static func _current_state_bbcode(
 	rows.append("宝可梦道具：%s" % _safe_text(tool_name))
 	if not pokemon.used_abilities.is_empty():
 		rows.append("本回合已使用特性：%s" % "、".join(pokemon.used_abilities))
-	return "[color=#7de6b2][b]当前对战状态[/b][/color]\n%s" % "\n".join(rows)
+	return DesignTokens.rich_text("[color=#{success}][b]当前对战状态[/b][/color]\n%s") % "\n".join(rows)
 
 
 static func _rule_section_title(supertype: String) -> String:

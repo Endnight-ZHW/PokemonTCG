@@ -35,8 +35,10 @@ static func run(table: BattleTable, expect: Callable) -> void:
 	presenter.sync_surfaces()
 	var fan_bounds := hand.visual_global_bounds()
 	var allowed_fan := table.get_global_transform_with_canvas() * Rect2(Vector2.ZERO, table.size)
-	expect.call(allowed_fan.encloses(fan_bounds), "Browsing clips the end card instead of fitting the circular fan")
-	expect.call(hand.contains_visual_global_point(hand.global_center()), "Visible fan end cannot be selected after browsing")
+	var visible_fan := fan_bounds.intersection(allowed_fan)
+	expect.call(visible_fan.size.y >= 48.0 and visible_fan.size.x >= fan_bounds.size.x - 1.0,
+		"Browsing loses the visible upper edge or side of the end card")
+	preload("res://tests/battle_3d_symmetry_checks.gd").check_visible_hand(table, hand, expect)
 	hand.position = original_position
 	presenter.sync_surfaces()
 	# Public presentation must also mask badge nodes created by a state refresh.

@@ -102,8 +102,9 @@ func _apply_energy_style(type_color: Color) -> void:
 	)
 	assignment_badge.add_theme_stylebox_override(
 		"panel",
-		_badge_style(FrontendPalette.GOLD, 0.1, 0.5, 8.0, Vector4(7, 3, 7, 3)),
+		_badge_style(FrontendPalette.SUCCESS, 0.08, 0.65, 8.0, Vector4(8, 4, 8, 4)),
 	)
+	assignment_label.add_theme_color_override("font_color", FrontendPalette.SUCCESS)
 
 
 func _badge_style(

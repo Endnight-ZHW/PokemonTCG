@@ -158,6 +158,70 @@ func _check_theme_contract() -> void:
 				and battle_theme.has_stylebox(&"disabled", variation),
 				"Battle semantic button variation is incomplete: %s" % variation,
 			)
+		_check_warm_theme_semantics(theme, battle_theme)
+
+
+func _check_warm_theme_semantics(frontend: Theme, battle: Theme) -> void:
+	for row in [
+		[frontend, &"FrontPrimaryButton"], [frontend, &"FrontSecondaryButton"],
+		[frontend, &"FrontDangerButton"], [battle, &"BattlePrimaryButton"],
+		[battle, &"BattleSecondaryButton"], [battle, &"BattleDangerButton"],
+		[battle, &"BattleCompactButton"],
+	]:
+		var theme := row[0] as Theme
+		var variation := StringName(row[1])
+		_check_button_state_geometry(theme, variation)
+		var button := Button.new()
+		button.theme = theme
+		button.theme_type_variation = variation
+		button.hide()
+		context.tree.root.add_child(button)
+		for state in [&"normal", &"hover", &"pressed", &"hover_pressed"]:
+			var style := theme.get_stylebox(state, variation) as StyleBoxFlat
+			if style == null:
+				continue
+			var foreground_key := &"font_color" if state == &"normal" else StringName("font_%s_color" % state)
+			var foreground := button.get_theme_color(foreground_key)
+			context._check(context._contrast_ratio(foreground, style.bg_color) >= 4.5,
+				"Button text is illegible on its %s surface: %s" % [state, variation])
+		button.free()
+	for theme in [frontend, battle]:
+		var panel := theme.get_stylebox(&"panel", &"PanelContainer") as StyleBoxFlat
+		context._check(panel != null and panel.bg_color.is_equal_approx(DesignTokens.PANEL),
+			"Editor theme panel drifted from the shared cream palette")
+		context._check(theme.get_color(&"font_color", &"Label").is_equal_approx(DesignTokens.TEXT),
+			"Editor theme text drifted from the shared palette")
+	for accent in [DesignTokens.STATE_SELECTED, DesignTokens.STATE_TARGET]:
+		context._check(context._contrast_ratio(accent, DesignTokens.TABLE_CLOTH) >= 3.0,
+			"Card selection/target outlines blend into the linen table")
+	for text_color in [DesignTokens.TEXT, DesignTokens.TEXT_MUTED, DesignTokens.STATE_DANGER]:
+		context._check(context._contrast_ratio(text_color, DesignTokens.PANEL) >= 4.5,
+			"Shared card text or error feedback is illegible on a cream panel")
+	for row in [[&"unchecked", &"FrontRuleToggle"], [&"checked", &"FrontRuleToggle"],
+		[&"unchecked", &"CheckButton"], [&"checked", &"CheckButton"],
+		[&"grabber", &"HSlider"], [&"grabber_highlight", &"HSlider"], [&"arrow", &"OptionButton"]]:
+		_check_light_surface_icon(frontend.get_icon(row[0], row[1]), "%s/%s" % [row[1], row[0]])
+	var catalog := CardCatalog.shared()
+	var card_text := CardPresentation.detail_bbcode(catalog.get_card("svi-ente"), catalog)
+	context._check(not card_text.contains("{text}") and not card_text.contains("{muted}"),
+		"Card text exposed an unresolved palette placeholder")
+
+
+func _check_light_surface_icon(texture: Texture2D, description: String) -> void:
+	context._check(texture != null, "Missing control icon: " + description)
+	if texture == null:
+		return
+	var pixels := texture.get_image()
+	context._check(pixels != null, "Control icon could not be inspected: " + description)
+	if pixels == null:
+		return
+	var visible_pixels := 0
+	for y in range(pixels.get_height()):
+		for x in range(pixels.get_width()):
+			var pixel := context._composite_color(pixels.get_pixel(x, y), DesignTokens.PANEL)
+			if context._contrast_ratio(pixel, DesignTokens.PANEL) >= 3.0:
+				visible_pixels += 1
+	context._check(visible_pixels >= 32, "Control icon disappears on a cream surface: " + description)
 
 
 func _check_button_state_geometry(theme: Theme, variation: StringName) -> void:
@@ -246,7 +310,7 @@ func _check_frontend_contrast(theme: Theme) -> void:
 		],
 	)
 	var status_background := context._composite_color(status.bg_color, raised.bg_color)
-	var error_text := Color("#ff9aa4")
+	var error_text := DesignTokens.STATE_DANGER
 	context._check(
 		context._contrast_ratio(error_text, status_background) >= 4.5,
 		"Frontend error text contrast must be at least 4.5:1 (actual %.2f:1)" % [

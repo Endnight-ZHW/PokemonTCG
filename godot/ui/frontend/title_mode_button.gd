@@ -67,17 +67,17 @@ func _draw() -> void:
 	var state_fill := fill_color
 	var state_accent := accent_color
 	if disabled_state:
-		state_fill = state_fill.lerp(Color("#111a27"), 0.52)
-		state_accent = state_accent.lerp(Color("#657083"), 0.72)
+		state_fill = DesignTokens.PANEL_DISABLED
+		state_accent = DesignTokens.TEXT_DISABLED
 	elif pressed_state:
-		state_fill = state_fill.darkened(0.12)
-		state_accent = state_accent.lightened(0.06)
+		state_fill = DesignTokens.PANEL_PRESSED
+		state_accent = DesignTokens.ACCENT_PRESSED
 	elif hover_state:
-		state_fill = state_fill.lightened(0.065)
-		state_accent = state_accent.lightened(0.12)
+		state_fill = DesignTokens.PANEL_HOVER
+		state_accent = DesignTokens.ACCENT_HOVER
 
 	var style := FrontendPalette.panel(state_fill, 14, state_accent if hover_state or pressed_state else FrontendPalette.BORDER, 1, 0)
-	style.shadow_color = Color(0, 0, 0, 0.18)
+	style.shadow_color = DesignTokens.SHADOW
 	style.shadow_size = 5
 	style.shadow_offset = Vector2(0, 3)
 	draw_style_box(style, Rect2(Vector2(1, 1), size - Vector2(2, 6)))
@@ -125,7 +125,7 @@ func _draw_copy(icon_zone: float, disabled_state: bool) -> void:
 	muted.a = 0.38 if disabled_state else 1.0
 	draw_string(
 		BODY_FONT,
-		Vector2(copy_left, title_y + subtitle_size + 12.0),
+		Vector2(copy_left, title_y + subtitle_size + 8.0),
 		subtitle_text,
 		HORIZONTAL_ALIGNMENT_LEFT,
 		available_width,
