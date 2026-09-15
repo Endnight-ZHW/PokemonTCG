@@ -343,38 +343,32 @@ std::int32_t agent_for_seat(
     return seat == result.candidate_seat ? 0 : 1;
 }
 
-std::int32_t seat_for_agent(
-    const ChallengeArenaGameResult &result,
-    std::int32_t agent
-) {
-    if (agent == 0) return result.candidate_seat;
-    if (agent == 1) return 1 - result.candidate_seat;
-    return -1;
-}
-
 void set_winner(
     ChallengeArenaGameResult &result,
     std::int32_t winner_seat
 ) {
+    result.strength_eligible = true;
     result.winner_seat = winner_seat;
     result.winner_agent = agent_for_seat(result, winner_seat);
     result.candidate_score_x2 = result.winner_agent < 0
         ? 1 : (result.winner_agent == 0 ? 2 : 0);
 }
 
-void adjudicate_agent_failure(
+void record_agent_failure(
     ChallengeArenaGameResult &result,
     std::int32_t offending_agent,
     std::string kind,
     std::string error
 ) {
     result.success = false;
-    result.terminal = true;
-    result.strength_eligible = true;
+    result.terminal = false;
+    result.strength_eligible = false;
     result.offending_agent = offending_agent;
     result.failure_kind = std::move(kind);
     result.error = std::move(error);
-    set_winner(result, 1 - seat_for_agent(result, offending_agent));
+    result.winner_seat = -1;
+    result.winner_agent = -1;
+    result.candidate_score_x2 = -1;
 }
 
 bool external_timeout_error(const std::string &error) {
@@ -395,7 +389,7 @@ void retryable_timeout_failure(
     result.error = std::move(error);
     result.winner_seat = -1;
     result.winner_agent = -1;
-    result.candidate_score_x2 = 1;
+    result.candidate_score_x2 = -1;
 }
 
 void infrastructure_failure(
@@ -408,7 +402,7 @@ void infrastructure_failure(
     result.strength_eligible = false;
     result.failure_kind = std::move(kind);
     result.error = std::move(error);
-    result.candidate_score_x2 = 1;
+    result.candidate_score_x2 = -1;
     ++result.rule_exceptions;
 }
 
@@ -418,7 +412,7 @@ void cancellation_failure(ChallengeArenaGameResult &result) {
     result.strength_eligible = false;
     result.failure_kind = "cancelled";
     result.error = "challenge_arena_cancelled";
-    result.candidate_score_x2 = 1;
+    result.candidate_score_x2 = -1;
 }
 
 Value legal_signatures(const Value &actions) {
@@ -650,7 +644,7 @@ void add_agent_metrics(
 
 void finalize_semantic_hash(ChallengeArenaGameResult &result) {
     const Value payload(Object{
-        {"schema", Value("ptcg.challenge_arena.game_semantics/1")},
+        {"schema", Value("ptcg.challenge_arena.game_semantics/2")},
         {"task_id", Value(result.task_id)},
         {"candidate_deck", Value(result.candidate_deck)},
         {"baseline_deck", Value(result.baseline_deck)},
@@ -663,7 +657,7 @@ void finalize_semantic_hash(ChallengeArenaGameResult &result) {
         {"strength_eligible", Value(result.strength_eligible)},
         {"winner_seat", Value(result.winner_seat)},
         {"winner_agent", Value(result.winner_agent)},
-        {"candidate_score_x2", Value(result.candidate_score_x2)},
+        {"candidate_score_x2", result.strength_eligible ? Value(result.candidate_score_x2) : Value()},
         {"offending_agent", Value(result.offending_agent)},
         {"decisions", Value(static_cast<std::int64_t>(result.decisions))},
         {"turns", Value(static_cast<std::int64_t>(result.turns))},
@@ -761,8 +755,8 @@ NativeChallengeArenaPool::~NativeChallengeArenaPool() {
 }
 
 void NativeChallengeArenaPool::start(std::vector<ChallengeArenaTask> tasks) {
-    if (running_.exchange(true) || !workers_.empty()) {
-        running_ = true;
+    std::lock_guard<std::mutex> batch_lock(batch_mutex_);
+    if (cancelled_ || running_.exchange(true)) {
         throw std::logic_error("challenge_arena_already_started");
     }
     if (tasks.empty()) {
@@ -791,11 +785,13 @@ void NativeChallengeArenaPool::start(std::vector<ChallengeArenaTask> tasks) {
     finished_ = false;
     const std::size_t count = std::min<std::size_t>(
         config_.concurrent_games, tasks_.size());
-    active_workers_ = count;
+    active_workers_ = std::max(count, workers_.size());
     workers_.reserve(count);
-    for (std::size_t index = 0; index < count; ++index) {
+    for (std::size_t index = workers_.size(); index < count; ++index) {
         workers_.emplace_back(&NativeChallengeArenaPool::worker, this);
     }
+    ++batch_generation_;
+    batch_ready_.notify_all();
 }
 
 void NativeChallengeArenaPool::pause() noexcept {
@@ -808,9 +804,19 @@ void NativeChallengeArenaPool::resume() noexcept {
 }
 
 void NativeChallengeArenaPool::cancel() noexcept {
-    cancelled_ = true;
+    {
+        std::lock_guard<std::mutex> lock(batch_mutex_);
+        cancelled_ = true;
+    }
     paused_ = false;
     pause_ready_.notify_all();
+    batch_ready_.notify_all();
+    {
+        std::lock_guard<std::mutex> lock(completion_mutex_);
+        finished_ = true;
+        running_ = false;
+        completion_ready_.notify_all();
+    }
     std::lock_guard<std::mutex> lock(controllers_mutex_);
     for (ChallengeArenaAgent *agent : active_agents_) {
         if (agent != nullptr) {
@@ -820,6 +826,11 @@ void NativeChallengeArenaPool::cancel() noexcept {
 }
 
 void NativeChallengeArenaPool::wait() {
+    if (!cancelled_) {
+        std::unique_lock<std::mutex> lock(completion_mutex_);
+        completion_ready_.wait(lock, [this]() { return finished_.load() || !running_.load(); });
+        return;
+    }
     for (std::thread &worker_thread : workers_) {
         if (worker_thread.joinable()) worker_thread.join();
     }
@@ -966,95 +977,112 @@ void NativeChallengeArenaPool::worker() {
         baseline_agent = std::move(replacement_baseline);
     };
 
-    while (!cancelled_) {
-        wait_if_paused();
-        if (cancelled_) break;
-        const std::size_t index = next_task_.fetch_add(1);
-        if (index >= tasks_.size()) break;
-        ChallengeArenaGameResult result;
-        try {
-            const bool candidate_ok = candidate_agent->ready();
-            const bool baseline_ok = baseline_agent->ready();
-            if (!candidate_ok && !baseline_ok) {
+    std::uint64_t generation = 0;
+    for (;;) {
+        {
+            std::unique_lock<std::mutex> lock(batch_mutex_);
+            batch_ready_.wait(lock, [this, &generation]() {
+                return cancelled_.load() || batch_generation_ != generation;
+            });
+            if (cancelled_) break;
+            generation = batch_generation_;
+        }
+        while (!cancelled_) {
+            wait_if_paused();
+            if (cancelled_) break;
+            const std::size_t index = next_task_.fetch_add(1);
+            if (index >= tasks_.size()) break;
+            ChallengeArenaGameResult result;
+            try {
+                const bool candidate_ok = candidate_agent->ready();
+                const bool baseline_ok = baseline_agent->ready();
+                if (!candidate_ok && !baseline_ok) {
+                    result = task_result(tasks_[index]);
+                    infrastructure_failure(
+                        result,
+                        "both_agents_configuration_failed",
+                        "candidate=" + candidate_agent->configuration_error()
+                            + ";baseline=" + baseline_agent->configuration_error());
+                    finalize_semantic_hash(result);
+                } else if (!candidate_ok) {
+                    result = task_result(tasks_[index]);
+                    ++result.controller_failures;
+                    const std::string error = candidate_agent->configuration_error();
+                    if (external_timeout_error(error)) {
+                        retryable_timeout_failure(result, 0, error);
+                    } else {
+                        record_agent_failure(
+                            result, 0, "candidate_configuration", error);
+                    }
+                    finalize_semantic_hash(result);
+                } else if (!baseline_ok) {
+                    result = task_result(tasks_[index]);
+                    ++result.controller_failures;
+                    const std::string error = baseline_agent->configuration_error();
+                    if (external_timeout_error(error)) {
+                        retryable_timeout_failure(result, 1, error);
+                    } else {
+                        record_agent_failure(
+                            result, 1, "baseline_configuration", error);
+                    }
+                    finalize_semantic_hash(result);
+                } else {
+                    result = run_game(
+                        tasks_[index], *candidate_agent, *baseline_agent);
+                }
+            } catch (const std::exception &error) {
                 result = task_result(tasks_[index]);
                 infrastructure_failure(
-                    result,
-                    "both_agents_configuration_failed",
-                    "candidate=" + candidate_agent->configuration_error()
-                        + ";baseline=" + baseline_agent->configuration_error());
+                    result, "rule_exception", error.what());
                 finalize_semantic_hash(result);
-            } else if (!candidate_ok) {
+            } catch (...) {
                 result = task_result(tasks_[index]);
-                ++result.controller_failures;
-                const std::string error = candidate_agent->configuration_error();
-                if (external_timeout_error(error)) {
-                    retryable_timeout_failure(result, 0, error);
-                } else {
-                    adjudicate_agent_failure(
-                        result, 0, "candidate_configuration", error);
-                }
+                infrastructure_failure(
+                    result, "rule_exception", "unknown_challenge_arena_error");
                 finalize_semantic_hash(result);
-            } else if (!baseline_ok) {
-                result = task_result(tasks_[index]);
-                ++result.controller_failures;
-                const std::string error = baseline_agent->configuration_error();
-                if (external_timeout_error(error)) {
-                    retryable_timeout_failure(result, 1, error);
-                } else {
-                    adjudicate_agent_failure(
-                        result, 1, "baseline_configuration", error);
-                }
-                finalize_semantic_hash(result);
-            } else {
-                result = run_game(
-                    tasks_[index], *candidate_agent, *baseline_agent);
             }
-        } catch (const std::exception &error) {
-            result = task_result(tasks_[index]);
-            infrastructure_failure(
-                result, "rule_exception", error.what());
-            finalize_semantic_hash(result);
-        } catch (...) {
-            result = task_result(tasks_[index]);
-            infrastructure_failure(
-                result, "rule_exception", "unknown_challenge_arena_error");
-            finalize_semantic_hash(result);
+            if (result.success) ++completed_games_;
+            else ++failed_games_;
+            decisions_ += result.decisions;
+            invalid_actions_ += result.invalid_actions;
+            illegal_choices_ += result.illegal_choices;
+            controller_failures_ += result.controller_failures;
+            rule_exceptions_ += result.rule_exceptions;
+            truncated_games_ += result.truncated ? 1U : 0U;
+            candidate_decision_us_ += result.candidate_decision_us;
+            baseline_decision_us_ += result.baseline_decision_us;
+            candidate_nodes_ += result.candidate_nodes;
+            baseline_nodes_ += result.baseline_nodes;
+            candidate_deck_inspections_ += result.candidate_deck_inspections;
+            baseline_deck_inspections_ += result.baseline_deck_inspections;
+            candidate_inspection_memory_decisions_ +=
+                result.candidate_inspection_memory_decisions;
+            baseline_inspection_memory_decisions_ +=
+                result.baseline_inspection_memory_decisions;
+            projection_us_ += result.projection_us;
+            legal_actions_us_ += result.legal_actions_us;
+            apply_us_ += result.apply_us;
+            const bool rebuild_external_agents = !cancelled_
+                && candidate_.backend == "external_process"
+                && (
+                    result.failure_kind == "decision_timeout"
+                    || result.error.find("external_agent_") != std::string::npos
+                );
+            {
+                std::lock_guard<std::mutex> lock(results_mutex_);
+                results_.push_back(std::move(result));
+            }
+            if (rebuild_external_agents) {
+                // Recreate both sides symmetrically so one dead process cannot
+                // poison later tasks owned by this worker.
+                rebuild_agents();
+            }
         }
-        if (result.success) ++completed_games_;
-        else ++failed_games_;
-        decisions_ += result.decisions;
-        invalid_actions_ += result.invalid_actions;
-        illegal_choices_ += result.illegal_choices;
-        controller_failures_ += result.controller_failures;
-        rule_exceptions_ += result.rule_exceptions;
-        truncated_games_ += result.truncated ? 1U : 0U;
-        candidate_decision_us_ += result.candidate_decision_us;
-        baseline_decision_us_ += result.baseline_decision_us;
-        candidate_nodes_ += result.candidate_nodes;
-        baseline_nodes_ += result.baseline_nodes;
-        candidate_deck_inspections_ += result.candidate_deck_inspections;
-        baseline_deck_inspections_ += result.baseline_deck_inspections;
-        candidate_inspection_memory_decisions_ +=
-            result.candidate_inspection_memory_decisions;
-        baseline_inspection_memory_decisions_ +=
-            result.baseline_inspection_memory_decisions;
-        projection_us_ += result.projection_us;
-        legal_actions_us_ += result.legal_actions_us;
-        apply_us_ += result.apply_us;
-        const bool rebuild_external_agents = !cancelled_
-            && candidate_.backend == "external_process"
-            && (
-                result.failure_kind == "decision_timeout"
-                || result.error.find("external_agent_") != std::string::npos
-            );
-        {
-            std::lock_guard<std::mutex> lock(results_mutex_);
-            results_.push_back(std::move(result));
-        }
-        if (rebuild_external_agents) {
-            // Recreate both sides symmetrically so one dead process cannot
-            // poison later tasks owned by this worker.
-            rebuild_agents();
+        if (active_workers_.fetch_sub(1) == 1) {
+            std::lock_guard<std::mutex> lock(completion_mutex_);
+            running_ = false;
+            finished_ = true;
+            completion_ready_.notify_all();
         }
     }
     {
@@ -1065,11 +1093,6 @@ void NativeChallengeArenaPool::worker() {
         active_agents_.erase(std::remove(
             active_agents_.begin(), active_agents_.end(),
             baseline_agent.get()), active_agents_.end());
-    }
-    if (active_workers_.fetch_sub(1) == 1) {
-        running_ = false;
-        finished_ = true;
-        completion_ready_.notify_all();
     }
 }
 
@@ -1146,7 +1169,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
         if (external_timeout_error(reset_error)) {
             retryable_timeout_failure(summary, offending, reset_error);
         } else {
-            adjudicate_agent_failure(
+            record_agent_failure(
                 summary,
                 offending,
                 "agent_reset_failed",
@@ -1330,7 +1353,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
                 retryable_timeout_failure(
                     summary, offending, controller_error);
             } else {
-                adjudicate_agent_failure(
+                record_agent_failure(
                     summary, offending, "controller_failure",
                     controller_error);
             }
@@ -1394,7 +1417,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
                     pending, *response, &validation_error)) {
                 ++summary.illegal_choices;
                 const std::int32_t offending = candidate_turn ? 0 : 1;
-                adjudicate_agent_failure(
+                record_agent_failure(
                     summary, offending, "illegal_choice",
                     validation_error.empty()
                         ? "challenge_choice_response_missing"
@@ -1421,7 +1444,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
             if (!applied.success) {
                 ++summary.illegal_choices;
                 const std::int32_t offending = candidate_turn ? 0 : 1;
-                adjudicate_agent_failure(
+                record_agent_failure(
                     summary, offending, "illegal_choice",
                     "authoritative_choice_rejected:" + applied.error_code);
                 summary.failure_trace = failure_trace(
@@ -1446,7 +1469,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
             if (matched == nullptr) {
                 ++summary.invalid_actions;
                 const std::int32_t offending = candidate_turn ? 0 : 1;
-                adjudicate_agent_failure(
+                record_agent_failure(
                     summary, offending, "invalid_action",
                     "challenge_action_not_uniquely_legal");
                 summary.failure_trace = failure_trace(
@@ -1510,7 +1533,7 @@ ChallengeArenaGameResult NativeChallengeArenaPool::run_game(
         summary.terminal = false;
         summary.truncated = true;
         summary.strength_eligible = false;
-        summary.candidate_score_x2 = 1;
+        summary.candidate_score_x2 = -1;
         summary.failure_kind = "truncated";
         summary.error = "challenge_arena_decision_cap";
         summary.failure_trace = failure_trace(

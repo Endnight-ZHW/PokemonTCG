@@ -91,6 +91,7 @@ public:
     void resume() noexcept;
     void cancel() noexcept;
     void wait();
+    bool wait_for(std::uint32_t timeout_milliseconds);
     bool running() const noexcept;
     bool finished() const noexcept;
     std::vector<ActorGameResultV3> drain_games();
@@ -114,6 +115,12 @@ private:
     ActorPoolConfigV3 config_;
     std::vector<GameTaskV3> tasks_;
     std::vector<std::thread> workers_;
+    std::mutex batch_mutex_;
+    std::condition_variable batch_ready_;
+    std::uint64_t batch_generation_ = 0;
+    std::atomic<std::size_t> active_workers_{0};
+    std::mutex completion_mutex_;
+    std::condition_variable completion_ready_;
     std::atomic<std::size_t> next_task_{0};
     std::atomic<bool> running_{false};
     std::atomic<bool> finished_{false};

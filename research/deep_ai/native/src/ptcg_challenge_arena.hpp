@@ -75,11 +75,11 @@ struct ChallengeArenaGameResult {
     bool success = false;
     bool terminal = false;
     bool truncated = false;
-    bool strength_eligible = true;
+    bool strength_eligible = false;
 
     std::int32_t winner_seat = -1;
     std::int32_t winner_agent = -1;
-    std::int32_t candidate_score_x2 = 1;
+    std::int32_t candidate_score_x2 = -1;
     std::int32_t offending_agent = -1;
 
     std::uint32_t decisions = 0;
@@ -180,6 +180,9 @@ private:
     ChallengeArenaPoolConfig config_;
     std::vector<ChallengeArenaTask> tasks_;
     std::vector<std::thread> workers_;
+    std::mutex batch_mutex_;
+    std::condition_variable batch_ready_;
+    std::uint64_t batch_generation_ = 0;
     std::atomic<std::size_t> next_task_{0};
     std::atomic<bool> running_{false};
     std::atomic<bool> finished_{false};

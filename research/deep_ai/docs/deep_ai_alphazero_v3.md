@@ -55,23 +55,29 @@ warmup anchor 与新 learner 之间做确定性的 trust-region 投影，选择�
 最大新 learner 比例。该步骤保留 AdamW、GradScaler、scheduler、RNG 与 global
 step，不以 champion 回滚，也不会把 validation 样本送入 SGD。
 
-pilot/release 的每个 arena look 使用完整公平矩阵：55 个无序牌组对展开为
-100 个有序方向，每个方向覆盖 candidate seat 与 first-player 的四种闭包，
-共 400 局。十套牌作为 learner 牌组时各有 40 局；A-vs-B、B-vs-A 与
-四种闭包共享由牌组对和 replicate 稳定派生的 seed。pilot 仍将单局限制为
-64 个决策，用于验证 actor/搜索/continuation 结构完整性；release 才使用配置的
-正式长局上限。
+棋力评价与 Challenge 共用 `ptcg.ai_evaluation.report/1` 和共享协议。release 对
+候选 A、冠军 C、固定锚点 H 运行 A–C / A–H / C–H 三组比较，每轮 400 局，
+每组至少 5 轮才检查晋升、最多 100 轮；正式决策上限默认 1024。
+pilot 为最多三轮的筛选，smoke 为缩小规模的结构检查，二者不授予晋升。
+预算使用 `--evaluation-max-rounds`（PowerShell：`-EvaluationMaxRounds`）；
+每轮套牌矩阵与座位闭包由统一协议生成。
 
-arena 只统计完整四/八局配对块；失败或截断不会再作为和局进入 score rate。
-每轮晋升要求点估计至少 0.55 且 paired-block bootstrap 区间下界高于 0.50。
-边界结果最多追加两个 400 局 look，三次查看使用 Bonferroni `alpha=0.05/3`；
-最终仍无结论则保留 champion。GPU/CPU 吞吐和推理耗时只写入
-`performance_advisory`，不参与晋升。逐局和每次查看证据写入
-`arena-v3/cycle-XXXX/`。
+正式协议采用完整四/八局块上的经验 Bernstein 置信序列；晋升要求 A–C 区间
+下界 > 50%，固定锚点整体变化下界 > -2 个百分点，且没有已确认的单套牌明显退步。
+套牌未知项如实保留，详见 [共享评价说明](native_challenge_arena.md)。
+整个训练任务预声明 `cycles` 并分配 5% 的总错误预算，续跑不能靠增加 cycles 重置预算。
+对战、尝试与协议写入 `arena-v3/cycle-XXXX/`，正式对局不进入 replay。
 
-已有 v3 checkpoint 仍可续跑；历史 cycle 中没有新 arena schema 的记录明确标为
-`legacy`，沿用当时已经落盘的晋升结论，不做追溯重判。续跑后产生的新 cycle 使用
-`ptcg.deep_ai.arena_evaluation/1`。
+锚点保存在 `evaluation-anchor/`；已有任务从当前已保存冠军冻结，新任务从 warmup 后
+首个冠军冻结。之后冠军升级不会移动锚点。推理使用冻结副本、float32、固定批次形状
+和单个未完成叶子；评估结束恢复训练的确定性设置。GPU/CPU 耗时不参与棋力晋升。
+
+长评测开始前先保存带 `evaluation_pending` 的 learner checkpoint，包含优化器与 RNG。
+中断后恢复同一权重及同一轮评价，不重复生成自博弈或重新训练；结束后以 checkpoint
+revision 保存最终结论。晋升还需验证报告对应的实际候选权重内容哈希。
+恢复使用当前 checkpoint 和报告 schema；晋升只读取封存的统一评价证据。
+推理或证据基础设施失败时保留 pending checkpoint 并停止训练，避免继续修改待验证权重。
+最终冠军更新仍保留已有训练质量检查；面板分别展示棋力评测结论和实际冠军更新状态。
 
 ## 命令
 

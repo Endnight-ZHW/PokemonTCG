@@ -1,9 +1,12 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('smoke', 'pr', 'nightly', 'release', 'calibration', 'focused')]
+    [ValidateSet('smoke', 'pr', 'nightly', 'release', 'calibration')]
     [string]$Preset = 'smoke',
     [string]$Candidate = 'challenge_next',
-    [string]$Baseline = 'challenge_release_v1',
+    [string]$Baseline = '',
+    [string]$Anchor = 'challenge_release_v1',
+    [string]$CacheDirectory = '',
+    [switch]$DeclareOnly,
     [ValidateSet('', 'turn_beam_v2', 'strategic_intent_v3')]
     [string]$CandidateEngine = '',
     [ValidateSet('', 'turn_beam_v2', 'strategic_intent_v3')]
@@ -23,25 +26,19 @@ param(
     [int]$Seed = 17,
     [int]$Replicates = 0,
     [ValidateRange(1, 4096)]
-    [int]$MaxDecisions = 512,
+    [int]$MaxDecisions = 1024,
     [ValidateRange(1, 600000)]
     [int]$DecisionTimeoutMilliseconds = 120000,
-    [ValidateRange(0, 60000)]
-    [int]$TimeBudgetMilliseconds = 0,
-    [ValidateSet('single', 'gameplay')]
-    [string]$SearchWorkerMode = 'single',
-    [ValidateSet('auto', 'none', 'structural', 'regression', 'promotion')]
-    [string]$Gate = 'auto',
     [ValidateSet('release-bundle', 'implementation-only', 'same-binary-strategy')]
     [string]$ComparisonMode = 'release-bundle',
-    [string[]]$CandidateDeck = @(),
-    [string[]]$BaselineDeck = @(),
-    [switch]$MirrorOnly,
     [switch]$AllowSelfPlay,
     [switch]$TraceAll
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($Baseline)) {
+    $Baseline = if ($Preset -eq 'smoke') { 'challenge_release_v1' } else { 'challenge_champion_v1' }
+}
 $researchRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $researchRoot)
 $portablePython = Join-Path $repoRoot '.tools\python311\python.exe'
@@ -58,6 +55,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 $candidateManifest = ''
 $baselineManifest = ''
+$anchorManifest = ''
 $baselineRuntime = $Baseline
 if ($ComparisonMode -ne 'same-binary-strategy') {
     $candidateBuildOutput = & (Join-Path $PSScriptRoot 'build_challenge_agent.ps1') `
@@ -66,8 +64,8 @@ if ($ComparisonMode -ne 'same-binary-strategy') {
     $candidateManifest = [string]($candidateBuildOutput | Select-Object -Last 1)
     if ($Preset -eq 'calibration') {
         $baselineRuntime = "$Baseline-calibration-current"
-        $baselineBuildOutput = & (Join-Path $PSScriptRoot 'build_challenge_agent.ps1') `
-            -AgentId $baselineRuntime -BuildId 'working-tree' -Python $Python
+        # Calibrate the exact same artifact, including its binary checksum.
+        $baselineBuildOutput = @($candidateManifest)
     } else {
         $baselineSpecPath = Join-Path $researchRoot "arena\baselines\$Baseline.json"
         if (-not (Test-Path -LiteralPath $baselineSpecPath)) {
@@ -92,6 +90,18 @@ if ($ComparisonMode -ne 'same-binary-strategy') {
     }
     if ($LASTEXITCODE -ne 0) { throw 'Baseline Arena Agent build failed.' }
     $baselineManifest = [string]($baselineBuildOutput | Select-Object -Last 1)
+    if ($Preset -eq 'release') {
+        $anchorSpecPath = Join-Path $researchRoot "arena\baselines\$Anchor.json"
+        $anchorSpec = Get-Content -LiteralPath $anchorSpecPath -Raw | ConvertFrom-Json
+        if ([string]$anchorSpec.git_ref -notmatch '^[0-9a-fA-F]{40}$') {
+            throw 'Anchor must pin a full commit hash.'
+        }
+        $anchorBuildOutput = & (Join-Path $PSScriptRoot 'build_challenge_agent.ps1') `
+            -GitRef ([string]$anchorSpec.git_ref) -AgentId $Anchor `
+            -BuildId ([string]$anchorSpec.build_id) -Python $Python
+        if ($LASTEXITCODE -ne 0) { throw 'Anchor Arena Agent build failed.' }
+        $anchorManifest = [string]($anchorBuildOutput | Select-Object -Last 1)
+    }
 }
 $script = Join-Path $researchRoot 'scripts\run_challenge_arena.py'
 if ([string]::IsNullOrWhiteSpace($Output)) {
@@ -108,10 +118,7 @@ $arguments = @(
     '--seed', [string]$Seed,
     '--max-decisions', [string]$MaxDecisions,
     '--decision-timeout-milliseconds', [string]$DecisionTimeoutMilliseconds,
-    '--time-budget-ms', [string]$TimeBudgetMilliseconds,
-    '--search-worker-mode', $SearchWorkerMode,
     '--comparison-mode', $ComparisonMode,
-    '--gate', $Gate,
     '--output', $Output
 )
 if (-not [string]::IsNullOrWhiteSpace($candidateManifest)) {
@@ -120,6 +127,13 @@ if (-not [string]::IsNullOrWhiteSpace($candidateManifest)) {
 if (-not [string]::IsNullOrWhiteSpace($baselineManifest)) {
     $arguments += @('--baseline-build-manifest', $baselineManifest)
 }
+if (-not [string]::IsNullOrWhiteSpace($anchorManifest)) {
+    $arguments += @('--anchor', $Anchor, '--anchor-build-manifest', $anchorManifest)
+}
+if (-not [string]::IsNullOrWhiteSpace($CacheDirectory)) {
+    $arguments += @('--cache-dir', $CacheDirectory)
+}
+if ($DeclareOnly) { $arguments += '--declare-only' }
 if (-not [string]::IsNullOrWhiteSpace($CandidateEngine)) {
     $arguments += @('--candidate-engine', $CandidateEngine)
 }
@@ -141,15 +155,6 @@ if (-not [string]::IsNullOrWhiteSpace($BaselineStrategyOptimization)) {
 if ($Replicates -gt 0) {
     $arguments += @('--replicates', [string]$Replicates)
 }
-foreach ($deck in $CandidateDeck) {
-    $arguments += @('--candidate-deck', $deck)
-}
-foreach ($deck in $BaselineDeck) {
-    $arguments += @('--baseline-deck', $deck)
-}
-if ($MirrorOnly) {
-    $arguments += '--mirror-only'
-}
 if ($TraceAll) {
     $arguments += '--trace-all'
 }
@@ -158,5 +163,5 @@ if ($AllowSelfPlay) {
 }
 & $Python @arguments
 if ($LASTEXITCODE -ne 0) {
-    throw "Native Challenge Arena failed with exit code $LASTEXITCODE"
+    exit $LASTEXITCODE
 }

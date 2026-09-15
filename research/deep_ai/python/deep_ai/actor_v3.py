@@ -7,7 +7,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 
@@ -59,6 +59,9 @@ class ActorConfigV3:
     dirichlet_epsilon: float = 0.25
     strict: bool = True
     direct_policy: bool = False
+    inference_amp: bool = True
+    inference_fixed_batch_size: int = 0
+    progress_timeout_ms: int = 0
 
 
 class NativeActorServiceV3:
@@ -75,7 +78,7 @@ class NativeActorServiceV3:
             import ptcg_ai_core
         except ImportError as exc:
             raise RuntimeError("v3_native_actor_binding_unavailable") from exc
-        if not hasattr(ptcg_ai_core, "NativeActorPoolV3"):
+        if not hasattr(ptcg_ai_core, "NativeActorPoolV3") or not hasattr(ptcg_ai_core.NativeActorPoolV3, "wait_for"):
             raise RuntimeError("v3_native_actor_binding_outdated")
         self.native = ptcg_ai_core
         self.repo_root = Path(repo_root).resolve()
@@ -128,12 +131,15 @@ class NativeActorServiceV3:
             target_batch_size=self.config.inference_target_batch,
             max_batch_size=self.config.inference_max_batch,
             poll_wait_ms=max(1, int(round(self.config.inference_coalesce_ms))),
+            amp=self.config.inference_amp,
+            fixed_batch_size=self.config.inference_fixed_batch_size,
         )
 
     def close(self) -> None:
+        # Wake searches waiting for an inference response before joining them.
+        self.batch.close()
         self.pool.cancel()
         self.pool.wait()
-        self.batch.close()
         self.broker.close()
 
     def __enter__(self) -> "NativeActorServiceV3":
@@ -147,6 +153,7 @@ class NativeActorServiceV3:
         tasks: Sequence[GameTaskV3],
         *,
         replay: ReplayStoreV3 | None = None,
+        on_games: Callable[[list[dict[str, Any]]], None] | None = None,
     ) -> dict[str, Any]:
         rows = []
         for task in tasks:
@@ -175,8 +182,56 @@ class NativeActorServiceV3:
             daemon=True,
         )
         monitor.start()
+        games: list[dict[str, Any]] = []
+        self.timed_out = False
+
+        def collect_games() -> None:
+            drained = list(self.pool.drain_games())
+            publishable = drained
+            if self.control is not None and self.control.cancel_path.exists():
+                # Interrupted work remains pending, rather than becoming a
+                # permanent failed game on the next resume.
+                publishable = [r for r in drained if r.get("success") and r.get("terminal") and not r.get("truncated")]
+            if publishable and on_games is not None:
+                on_games(publishable)
+            games.extend(drained)
+
         try:
+            last_progress = time.monotonic()
+            progress = (0, self.broker.request_count)
+            while not self.pool.wait_for(250):
+                collect_games()
+                observed = (len(games), self.broker.request_count)
+                now = time.monotonic()
+                paused = self.control is not None and self.control.pause_path.exists()
+                if observed != progress or paused:
+                    progress, last_progress = observed, now
+                if self.config.progress_timeout_ms and (now-last_progress)*1000 >= self.config.progress_timeout_ms:
+                    self.timed_out = True
+                    self.batch.close()
+                    self.pool.cancel()
+                    break
             self.pool.wait()
+            if self.timed_out:
+                drained = list(self.pool.drain_games())
+                completed = [r for r in drained if r.get("success") and r.get("terminal") and not r.get("truncated")]
+                if completed and on_games is not None:
+                    on_games(completed)
+                games.extend(completed)
+                done = {r["game_id"] for r in games}
+                timed_out = [{**asdict(task), "success": False, "terminal": False, "truncated": False,
+                              "winner": -1, "error": "evaluation_actor_timeout", "state_hash": 0}
+                             for task in tasks if task.game_id not in done]
+                if timed_out and on_games is not None:
+                    on_games(timed_out)
+                games.extend(timed_out)
+            else:
+                collect_games()
+        except BaseException:
+            self.batch.close()
+            self.pool.cancel()
+            self.pool.wait()
+            raise
         finally:
             actors_done.set()
             stopped.set()
@@ -185,7 +240,6 @@ class NativeActorServiceV3:
                 writer.join(timeout=30.0)
                 if writer.is_alive():
                     raise RuntimeError("v3_replay_writer_did_not_stop")
-        games = list(self.pool.drain_games())
         native_samples = self.batch.drain_samples()
         written = int(writer_state["samples"])
         if writer_state["error"] is not None:
@@ -195,11 +249,13 @@ class NativeActorServiceV3:
             replay.flush()
         if self.control is not None and self.control.cancel_path.exists():
             raise TrainingCancelled("deep_ai_v3_cancelled")
+        if getattr(self.broker, "error", None) is not None:
+            raise RuntimeError("evaluation_inference_failed") from self.broker.error
         errors = [row for row in games if not bool(row.get("success"))]
         structural_errors = [
             row for row in errors
             if str(row.get("error", ""))
-                not in {"v3_actor_decision_cap", "v3_actor_cancelled"}
+                not in {"v3_actor_decision_cap", "v3_actor_cancelled", "evaluation_actor_timeout"}
         ]
         if errors and self.control is not None:
             failure_path = self.control.run_dir / "actor-failures-v3.jsonl"
@@ -264,6 +320,7 @@ class NativeActorServiceV3:
                 continue
             try:
                 if self.control.cancel_path.exists():
+                    self.batch.close()
                     self.pool.cancel()
                     return
                 should_pause = self.control.pause_path.exists()
@@ -276,6 +333,7 @@ class NativeActorServiceV3:
                     self.control.status("running")
                     paused = False
             except TrainingCancelled:
+                self.batch.close()
                 self.pool.cancel()
                 return
 

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 import sys
 import tempfile
 from dataclasses import asdict
@@ -58,7 +59,7 @@ def _parser() -> argparse.ArgumentParser:
     train.add_argument("--concurrent-games", type=int)
     train.add_argument("--actor-threads", type=int)
     train.add_argument("--batch-size", type=int)
-    train.add_argument("--arena-max-looks", type=int)
+    train.add_argument("--evaluation-max-rounds", type=int)
     return parser
 
 
@@ -85,7 +86,7 @@ def _config(args: argparse.Namespace) -> AlphaZeroV3Config:
     overrides = {"seed": args.seed}
     for name in (
         "device", "cycles", "cycle_samples", "simulations",
-        "concurrent_games", "actor_threads", "batch_size", "arena_max_looks",
+        "concurrent_games", "actor_threads", "batch_size", "evaluation_max_rounds",
     ):
         value = getattr(args, name)
         if value is not None:

@@ -19,6 +19,7 @@ class NativeBatchTorchBrokerV3:
         max_batch_size: int = 256,
         poll_wait_ms: int = 2,
         amp: bool = True,
+        fixed_batch_size: int = 0,
     ) -> None:
         import torch
 
@@ -35,6 +36,7 @@ class NativeBatchTorchBrokerV3:
         self.max_batch_size = max(self.target_batch_size, int(max_batch_size))
         self.poll_wait_ms = max(1, int(poll_wait_ms))
         self.amp = bool(amp) and self.device.startswith("cuda")
+        self.fixed_batch_size = max(0, int(fixed_batch_size))
         self._closed = threading.Event()
         self._thread = threading.Thread(
             target=self._worker,
@@ -117,37 +119,33 @@ class NativeBatchTorchBrokerV3:
                     model = self.models.get(slot)
                     if model is None:
                         raise RuntimeError(f"v3_inference_model_slot_missing:{slot}")
-                    indices = np.flatnonzero(model_slots == slot)
-                    inputs = [
-                        self._device_tensor(arrays[name][indices])
+                    all_indices = np.flatnonzero(model_slots == slot)
+                    size = self.fixed_batch_size or len(all_indices)
+                    for offset in range(0, len(all_indices), size):
+                        indices = all_indices[offset:offset + size]
+                        inputs = []
                         for name in (
-                            "state_global",
-                            "entity_numeric",
-                            "entity_card_ids",
-                            "entity_type_ids",
-                            "entity_mask",
-                            "candidate_numeric",
-                            "candidate_card_ids",
-                            "candidate_type_ids",
-                            "candidate_refs",
-                            "candidate_mask",
-                            "actor_deck_id",
-                            "opponent_deck_id",
-                        )
-                    ]
-                    with self.torch.inference_mode(), self.torch.autocast(
-                        device_type="cuda" if self.device.startswith("cuda") else "cpu",
-                        enabled=self.amp,
-                        dtype=self.torch.bfloat16,
-                    ):
-                        policy_logits, wdl_logits = model(*inputs)
-                    policy_output[indices] = (
-                        policy_logits.detach().float().cpu().numpy()
-                    )
-                    wdl_output[indices] = (
-                        wdl_logits.detach().float().cpu().numpy()
-                    )
-                    self.model_batch_count += 1
+                            "state_global", "entity_numeric", "entity_card_ids",
+                            "entity_type_ids", "entity_mask", "candidate_numeric",
+                            "candidate_card_ids", "candidate_type_ids", "candidate_refs",
+                            "candidate_mask", "actor_deck_id", "opponent_deck_id",
+                        ):
+                            values = arrays[name][indices]
+                            if self.fixed_batch_size and len(indices) < size:
+                                # Duplicate a valid row for padding, avoiding
+                                # all-masked attention rows. Padding is never used.
+                                padded = np.repeat(values[:1], size, axis=0)
+                                padded[:len(indices)] = values
+                                values = padded
+                            inputs.append(self._device_tensor(values))
+                        with self.torch.inference_mode(), self.torch.autocast(
+                            device_type="cuda" if self.device.startswith("cuda") else "cpu",
+                            enabled=self.amp, dtype=self.torch.bfloat16,
+                        ):
+                            policy_logits, wdl_logits = model(*inputs)
+                        policy_output[indices] = policy_logits[:len(indices)].detach().float().cpu().numpy()
+                        wdl_output[indices] = wdl_logits[:len(indices)].detach().float().cpu().numpy()
+                        self.model_batch_count += 1
                 self.native_batch.submit_inference(
                     request_ids,
                     np.ascontiguousarray(policy_output),
@@ -161,7 +159,8 @@ class NativeBatchTorchBrokerV3:
                 self.max_observed_batch = max(self.max_observed_batch, count)
                 self.total_inference_seconds += elapsed
         except BaseException as exc:
-            self.error = exc
+            if not self._closed.is_set() and not bool(self.native_batch.closed):
+                self.error = exc
             self._closed.set()
             self.native_batch.close()
 

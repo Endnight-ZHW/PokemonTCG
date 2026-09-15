@@ -88,6 +88,23 @@
           <article class="metric panel"><span>Arena 胜 / 负 / 平</span><strong id="record">—</strong></article>
         </section>
 
+        <section class="panel evaluation-panel" aria-labelledby="evaluation-title">
+          <div class="panel-title"><h2 id="evaluation-title">棋力评测</h2><strong id="evaluation-verdict">等待评测</strong></div>
+          <div class="evaluation-grid">
+            <div><span class="muted">有效主对照 / 已跑总局数</span><p id="evaluation-games">—</p></div>
+            <div><span class="muted">独立配对块</span><p id="evaluation-blocks">—</p></div>
+            <div><span class="muted">对冠军得分率与可信范围</span><p id="evaluation-interval">—</p></div>
+            <div><span class="muted">对固定历史锚点的变化</span><p id="evaluation-anchor">—</p></div>
+          </div>
+          <p id="evaluation-reason" class="muted">评测故障与截断单独记录，不计为负局或和局。</p>
+          <p id="evaluation-performance" class="muted"></p>
+          <svg id="anchor-trend" viewBox="0 0 600 100" role="img" aria-label="候选对固定历史锚点的得分率趋势"></svg>
+          <div class="evaluation-table-wrap"><table class="evaluation-table">
+            <thead><tr><th>套牌</th><th>对锚点的变化</th><th>可信范围</th><th>分项结论</th></tr></thead>
+            <tbody id="evaluation-decks"></tbody>
+          </table></div>
+        </section>
+
         <section class="panel">
           <div class="panel-title"><h2>实时事件与错误</h2><span id="last-seq" class="muted">seq 0</span></div>
           <div id="events" class="event-log" aria-live="polite"></div>

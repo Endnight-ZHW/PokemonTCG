@@ -1,18 +1,20 @@
-"""Crash-safe, resumable result storage for long Native Arena runs."""
+"""Checksummed evidence journal and complete-round cache for both executors."""
 from __future__ import annotations
 
 import hashlib
 import json
 import os
 import socket
+import secrets
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from .challenge_arena_build import write_json_atomic
 from .evaluation_fairness import canonical_hash
+from .evaluation_protocol import EvaluationProtocol, GameEvidence, evidence_semantics
 
 
-RUN_STATE_SCHEMA = "ptcg.challenge_arena.run_state/2"
+RUN_STATE_SCHEMA = "ptcg.ai_evaluation.run_state/1"
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -69,21 +71,26 @@ def write_bytes_atomic(path: Path, value: bytes) -> None:
     os.replace(temporary, path)
 
 
-class ChallengeArenaRunStore:
-    def __init__(
-        self,
-        root: Path,
-        *,
-        fingerprint: str,
-        task_ids: Sequence[str],
-    ) -> None:
+class EvaluationRunStore:
+    def __init__(self, root: Path, protocol: EvaluationProtocol) -> None:
+        if (root / "arena-summary.json").exists() and not (root / "evaluation-protocol.json").exists():
+            raise ValueError("evaluation_output_protocol_missing")
+        self.protocol = protocol
+        self.tasks = {task.task_id: task for comparison in protocol.comparisons
+                      for rep in range(protocol.maximum_replicates)
+                      for task in protocol.tasks(comparison, rep)}
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock_path = self.root / ".arena.lock"
         self.state_path = self.root / "arena-run-state.json"
         self.shards_root = self.root / "shards"
-        self.fingerprint = str(fingerprint)
-        self.task_ids = tuple(str(value) for value in task_ids)
+        self.fingerprint = protocol.fingerprint
+        self.task_ids = tuple(self.tasks)
+        self._completed_digest = hashlib.sha256()
+        self._next_shard_index: int | None = None
+        self._task_id_set = set(self.task_ids)
+        if len(self._task_id_set) != len(self.task_ids):
+            raise ValueError("arena_store_duplicate_scheduled_task")
         self._locked = False
         self._state: dict[str, Any] = {}
         self._games: dict[str, dict[str, Any]] = {}
@@ -130,6 +137,14 @@ class ChallengeArenaRunStore:
         raise RuntimeError("challenge_arena_output_locked")
 
     def _open_or_create(self) -> None:
+        # Freeze the cohort under the directory lock before creating any journal.
+        path = self.root / "evaluation-protocol.json"
+        if path.exists():
+            saved = EvaluationProtocol.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            if saved.fingerprint != self.protocol.fingerprint:
+                raise ValueError("evaluation_resume_protocol_mismatch")
+        else:
+            write_json_atomic(path, self.protocol.to_dict())
         expected_ids = sorted(self.task_ids)
         if self.state_path.is_file():
             state = json.loads(self.state_path.read_text(encoding="utf-8"))
@@ -142,7 +157,11 @@ class ChallengeArenaRunStore:
                 )
             if state.get("fingerprint") != self.fingerprint:
                 raise RuntimeError("arena_resume_fingerprint_mismatch")
-            if state.get("task_ids") != expected_ids:
+            expected_matches = (
+                state.get("task_ids_sha256") == canonical_hash(expected_ids)
+                and state.get("task_count") == len(expected_ids)
+            )
+            if not expected_matches:
                 raise RuntimeError("arena_resume_task_matrix_mismatch")
             self._state = state
             self._load_shards()
@@ -150,11 +169,13 @@ class ChallengeArenaRunStore:
         self._state = {
             "schema": RUN_STATE_SCHEMA,
             "fingerprint": self.fingerprint,
-            "task_ids": expected_ids,
+            "task_ids_sha256": canonical_hash(expected_ids),
+            "task_count": len(expected_ids),
             "status": "running",
             "shards": [],
             "attempt_shards": [],
-            "completed_task_ids": [],
+            "completed_count": 0,
+            "completed_index_sha256": self._completed_digest.hexdigest(),
             "pending_retry_task_ids": [],
             "elapsed_seconds": 0.0,
         }
@@ -182,10 +203,16 @@ class ChallengeArenaRunStore:
                 task_id = str(game.get("task_id", ""))
                 if not task_id or task_id in self._games:
                     raise RuntimeError("arena_shard_duplicate_task_id")
-                if task_id not in self.task_ids:
+                if task_id not in self._task_id_set:
                     raise RuntimeError("arena_shard_unknown_task_id")
+                GameEvidence.verify(self.protocol, self.tasks[task_id], game)
                 self._games[task_id] = game
-        if sorted(self._games) != sorted(self._state.get("completed_task_ids", [])):
+                self._completed_digest.update((task_id + "\n").encode("utf-8"))
+        index_matches = (
+            self._state.get("completed_count") == len(self._games)
+            and self._state.get("completed_index_sha256") == self._completed_digest.hexdigest()
+        )
+        if not index_matches:
             raise RuntimeError("arena_resume_completed_index_mismatch")
         attempt_keys: set[tuple[str, int]] = set()
         for row in self._state.get("attempt_shards", []):
@@ -208,7 +235,7 @@ class ChallengeArenaRunStore:
                 attempt = json.loads(line)
                 task_id = str(attempt.get("task_id", ""))
                 attempt_number = int(attempt.get("attempt_number", 0))
-                if task_id not in self.task_ids:
+                if task_id not in self._task_id_set:
                     raise RuntimeError("arena_attempt_shard_unknown_task_id")
                 if attempt_number not in (1, 2):
                     raise RuntimeError("arena_attempt_number_invalid")
@@ -221,6 +248,7 @@ class ChallengeArenaRunStore:
                 unhashed.pop("attempt_hash", None)
                 if claimed_hash != canonical_hash(unhashed):
                     raise RuntimeError("arena_attempt_hash_mismatch")
+                GameEvidence.verify(self.protocol, self.tasks[task_id], attempt)
                 self._attempts.append(attempt)
         pending = {
             str(value) for value in self._state.get("pending_retry_task_ids", [])
@@ -272,28 +300,30 @@ class ChallengeArenaRunStore:
         batch_ids: set[str] = set()
         for game in rows:
             task_id = str(game.get("task_id", ""))
-            if task_id not in self.task_ids:
+            if task_id not in self._task_id_set:
                 raise RuntimeError("arena_shard_unknown_task_id")
             if task_id in self._games or task_id in batch_ids:
                 raise RuntimeError("arena_shard_duplicate_task_id")
+            GameEvidence.verify(self.protocol, self.tasks[task_id], game)
             batch_ids.add(task_id)
-        existing_indices = [
-            int(path.stem.split("-")[-1])
-            for path in self.shards_root.glob("shard-*.jsonl")
-            if path.stem.split("-")[-1].isdigit()
-        ]
-        index = max(existing_indices, default=0) + 1
+        if self._next_shard_index is None:
+            self._next_shard_index = max((
+                int(path.stem.split("-")[-1]) for path in self.shards_root.glob("shard-*.jsonl")
+                if path.stem.split("-")[-1].isdigit()), default=0) + 1
+        index = self._next_shard_index
+        self._next_shard_index += 1
         relative = Path("shards") / f"shard-{index:06d}.jsonl"
         payload = _jsonl_bytes(rows)
         write_bytes_atomic(self.root / relative, payload)
         for game in rows:
             self._games[str(game["task_id"])] = game
+            self._completed_digest.update((str(game["task_id"]) + "\n").encode("utf-8"))
         self._state["shards"].append({
             "path": relative.as_posix(),
             "sha256": _sha256_bytes(payload),
             "games": len(rows),
         })
-        self._state["completed_task_ids"] = sorted(self._games)
+        self._state.update(completed_count=len(self._games), completed_index_sha256=self._completed_digest.hexdigest())
         self._state["pending_retry_task_ids"] = sorted(
             self.pending_retry_task_ids - batch_ids
         )
@@ -330,7 +360,7 @@ class ChallengeArenaRunStore:
         for attempt in rows:
             task_id = str(attempt.get("task_id", ""))
             attempt_number = int(attempt.get("attempt_number", 0))
-            if task_id not in self.task_ids:
+            if task_id not in self._task_id_set:
                 raise RuntimeError("arena_attempt_shard_unknown_task_id")
             if task_id in self._games:
                 raise RuntimeError("arena_attempt_for_completed_task")
@@ -341,6 +371,7 @@ class ChallengeArenaRunStore:
                 raise RuntimeError("arena_attempt_duplicate")
             if attempt_number == 2 and (task_id, 1) not in existing_keys:
                 raise RuntimeError("arena_retry_primary_attempt_missing")
+            GameEvidence.verify(self.protocol, self.tasks[task_id], attempt)
             batch_keys.add(key)
             pending.add(task_id)
         existing_indices = [
@@ -372,9 +403,7 @@ class ChallengeArenaRunStore:
             raise RuntimeError("arena_complete_with_pending_retries")
         self._state["status"] = "complete"
         self._state["gate_status"] = str(gate_status)
-        self._state["remaining_task_ids"] = sorted(
-            set(self.task_ids) - set(self._games)
-        )
+        self._state["remaining_task_count"] = len(self.task_ids) - len(self._games)
         write_json_atomic(self.state_path, self._state)
 
     def close(self) -> None:
@@ -382,7 +411,7 @@ class ChallengeArenaRunStore:
             self.lock_path.unlink(missing_ok=True)
             self._locked = False
 
-    def __enter__(self) -> "ChallengeArenaRunStore":
+    def __enter__(self) -> "EvaluationRunStore":
         return self
 
     def __exit__(self, *_: object) -> None:
@@ -391,3 +420,82 @@ class ChallengeArenaRunStore:
 
 def write_jsonl_atomic(path: Path, values: Iterable[Mapping[str, Any]]) -> None:
     write_bytes_atomic(path, _jsonl_bytes(values))
+
+
+def cohort_for_output(output: Path) -> str:
+    path = output / "evaluation-protocol.json"
+    if path.is_file():
+        return str(json.loads(path.read_text(encoding="utf-8"))["cohort"])
+    return secrets.token_hex(16)
+
+
+class EvaluationRoundCache:
+    """Only trustworthy full rounds enter the cache; partial games stay in the run journal."""
+
+    def __init__(self, root: Path | None):
+        self.root = root
+        self.hits = 0
+
+    def _path(self, key: str) -> Path:
+        assert self.root is not None
+        return self.root / key[:2] / f"{key}.json"
+
+    def read(self, protocol: EvaluationProtocol, comparison: str, replicate: int) -> list[dict[str, Any]] | None:
+        if self.root is None:
+            return None
+        key = protocol.round_cache_key(comparison, replicate)
+        path = self._path(key)
+        if not path.is_file():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        checksum = payload.pop("sha256", None)
+        if checksum != canonical_hash(payload) or payload.get("cache_key") != key:
+            raise ValueError("evaluation_cache_checksum_mismatch")
+        source_rows = payload["rows"]
+        expected = protocol.tasks(comparison, replicate)
+        if len(source_rows) != len(expected):
+            raise ValueError("evaluation_cache_incomplete_round")
+        conditions = {canonical_hash(row_task.conditions()): row_task for row_task in expected}
+        seen = set()
+        rows = []
+        for source in source_rows:
+            if source.get("evidence_hash") != canonical_hash(evidence_semantics(source)):
+                raise ValueError("evaluation_cache_evidence_hash_mismatch")
+            condition = {name: source.get(name) for name in expected[0].conditions()}
+            task = conditions.get(canonical_hash(condition))
+            if task is None or task.task_id in seen or not source.get("strength_eligible"):
+                raise ValueError("evaluation_cache_conditions_mismatch")
+            seen.add(task.task_id)
+            rebound = {**source, **task.to_dict(), "cached": True,
+                       "cache_source_protocol": source["protocol_fingerprint"]}
+            rows.append(GameEvidence.from_result(protocol, task, rebound).row)
+        self.hits += len(rows)
+        return rows
+
+    def write(self, protocol: EvaluationProtocol, comparison: str, replicate: int,
+              rows: Sequence[Mapping[str, Any]]) -> None:
+        if self.root is None or len(rows) != protocol.games_per_round:
+            return
+        tasks = {task.task_id: task for task in protocol.tasks(comparison, replicate)}
+        if set(tasks) != {row["task_id"] for row in rows} or len(tasks) != len(rows):
+            raise ValueError("evaluation_cache_incomplete_round")
+        checked = [GameEvidence.verify(protocol, tasks[row["task_id"]], row).row for row in rows]
+        if any(not row["strength_eligible"] for row in checked):
+            return
+        key = protocol.round_cache_key(comparison, replicate)
+        path = self._path(key)
+        payload = {"cache_key": key, "rows": sorted(checked, key=lambda row: row["task_id"])}
+        payload["sha256"] = canonical_hash(payload)
+        # Equivalent races can differ in latency metadata. Neither can change
+        # cached semantic outcomes; files are always atomically published.
+        if path.exists():
+            previous = self.read(protocol, comparison, replicate)
+            old = {canonical_hash({k: r[k] for k in ("candidate_deck", "baseline_deck", "game_seed", "candidate_seat", "first_player")}):
+                   (r["winner_seat"], r["final_state_hash"]) for r in previous or []}
+            new = {canonical_hash({k: r[k] for k in ("candidate_deck", "baseline_deck", "game_seed", "candidate_seat", "first_player")}):
+                   (r["winner_seat"], r["final_state_hash"]) for r in checked}
+            if old != new:
+                raise ValueError("evaluation_cache_nondeterministic_result")
+            self.hits -= len(previous or [])
+            return
+        write_json_atomic(path, payload)

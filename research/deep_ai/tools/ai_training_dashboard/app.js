@@ -6,6 +6,7 @@ const deckLabels = {
 };
 const state = {
   csrf: "", runs: [], selected: "", source: null, lastEvent: null, events: [],
+  anchorHistory: new Map(), anchorContext: "",
 };
 const $ = id => document.getElementById(id);
 const activeStatuses = new Set([
@@ -47,6 +48,7 @@ function stageLabel(stage) {
     teacher_warmup_complete: "教师预热完成",
     teacher_retention_complete: "教师保持检查",
     self_play_complete: "原生自博弈",
+    arena_progress: "棋力验证",
     cycle_complete: "训练周期完成",
     cycle_teacher_gate_repaired: "教师门禁修复",
     run_started: "训练开始",
@@ -176,12 +178,68 @@ function formatDuration(seconds) {
       : `${rest}秒`;
 }
 
+function renderEvaluation(arena, cycle, accepted, learningPassed) {
+  if (arena.schema !== "ptcg.ai_evaluation.report/1") {
+    $("record").textContent = "— / — / —";
+    $("evaluation-verdict").textContent = "等待有效评测报告";
+    for (const id of ["evaluation-games", "evaluation-blocks", "evaluation-interval", "evaluation-anchor"]) $(id).textContent = "—";
+    $("evaluation-decks").replaceChildren(); $("anchor-trend").replaceChildren();
+    $("evaluation-reason").textContent = "";
+    $("evaluation-performance").textContent = "";
+    state.anchorHistory.clear(); state.anchorContext = "";
+    return;
+  }
+  const record = arena.record;
+  $("record").textContent = `${record.wins} / ${record.losses} / ${record.draws}`;
+  const number = value => typeof value === "number" && Number.isFinite(value);
+  const percent = value => number(value) ? `${(value * 100).toFixed(2)}%` : "—";
+  const delta = value => number(value) ? `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)} 个百分点` : "—";
+  const interval = (value, format) => Array.isArray(value) && value.every(number) ? `${format(value[0])} ～ ${format(value[1])}` : "证据不足";
+  const strength = arena.strength || {};
+  const status = {improved: "确认总体提升", regressed: "确认总体退步", inconclusive: "证据不足", not_evaluated: "仅诊断或评测未完成"};
+  const gate = {pass: "通过", fail: "未通过", inconclusive: "证据不足", continue: "继续采样", infrastructure_fail: "运行故障"};
+  const champion = typeof accepted === "boolean" ? (accepted ? " · 冠军已更新" : " · 冠军保留") : "";
+  $("evaluation-verdict").textContent = `${status[strength.status] || "等待评测"} · 评测${gate[arena.gate_status] || "待定"}${champion}`;
+  $("evaluation-games").textContent = `${arena.strength_games ?? 0} / ${arena.games ?? 0}`;
+  $("evaluation-blocks").textContent = String(strength.blocks ?? 0);
+  $("evaluation-interval").textContent = `${percent(strength.estimate)} · ${interval(strength.interval, percent)}（${percent(strength.confidence_level)} 置信序列）`;
+  $("evaluation-anchor").textContent = `${delta(arena.anchor?.estimate)} · ${interval(arena.anchor?.interval, delta)}`;
+  const reasons = {diagnostic_only: "本次只作诊断", overall_regression: "总体退步",
+    primary_evidence_insufficient: "对冠军的证据不足", anchor_evidence_insufficient: "对历史锚点的证据不足",
+    overall_improvement_and_anchor_protection: "总体提升且通过历史锚点保护", anchor_regression: "历史锚点表现退步",
+    budget_exhausted_or_incomplete_evidence: "达到预算或证据尚未完整", truncated: "存在截断对局",
+    timeout: "存在持续超时", agent_error: "AI 返回错误", infrastructure: "运行故障", infrastructure_error: "证据或执行器发生错误", cancelled: "评测取消"};
+  $("evaluation-reason").textContent = (arena.stop_reasons || []).map(reason => reason.startsWith("deck_regression:") ? `${deckLabels[reason.split(":")[1]] || "套牌"}出现明确退步` : reasons[reason] || reason).join("；");
+  if (learningPassed === false) $("evaluation-reason").textContent += "；训练质量检查未通过，保留冠军";
+  const perf = arena.performance_advisory || {};
+  $("evaluation-performance").textContent = `运行耗时 ${formatDuration(perf.elapsed_seconds)} · 复用 ${perf.cached_games ?? 0} 局 · 性能指标不参与棋力晋升`;
+  $("evaluation-decks").replaceChildren(...Object.entries(arena.per_deck || {}).map(([deck, value]) => {
+    const tr = document.createElement("tr");
+    const labels = {noninferior: "已排除超过 5 个百分点的退步", confirmed_regression: "已确认明显退步", inconclusive: "证据不足"};
+    for (const text of [deckLabels[deck] || deck, delta(value.estimate), interval(value.interval, delta), labels[value.status] || "证据不足"]) {
+      const td = document.createElement("td"); td.textContent = text; tr.append(td);
+    }
+    return tr;
+  }));
+  const context = `${state.selected}:${arena.comparison_context_hash}:${arena.references?.anchor?.content_hash}`;
+  if (state.anchorContext !== context) { state.anchorHistory.clear(); state.anchorContext = context; }
+  const anchorScore = arena.anchor?.candidate_record?.score_rate;
+  if (number(cycle) && number(anchorScore)) state.anchorHistory.set(cycle, anchorScore);
+  const points = [...state.anchorHistory.entries()].sort((a, b) => a[0]-b[0]);
+  const svg = $("anchor-trend"); svg.replaceChildren();
+  if (points.length > 1) {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    line.setAttribute("points", points.map((point, index) => `${10+580*index/(points.length-1)},${90-80*point[1]}`).join(" "));
+    line.setAttribute("fill", "none"); line.setAttribute("stroke", "currentColor"); line.setAttribute("stroke-width", "2"); svg.append(line);
+  }
+}
+
 function applyEvent(row) {
   const metrics = row.metrics || {};
   const training = metrics.training || metrics;
   const generated = metrics.generated || {};
   const arena = metrics.arena || {};
-  const inference = metrics.inference || arena.inference || {};
+  const inference = metrics.inference || arena.performance_advisory?.inference || {};
   $("run-message").textContent = row.message || "";
   $("last-seq").textContent = `seq ${row.seq}`;
   const total = Number(row.total || 0);
@@ -214,10 +272,7 @@ function applyEvent(row) {
   $("policy-loss").textContent = formatLoss(training.policy_loss);
   $("value-loss").textContent = formatLoss(training.wdl_loss);
   $("choice-loss").textContent = formatLoss(training.normalized_policy_entropy);
-  const arenaLosses = Number.isFinite(Number(arena.games))
-    ? Number(arena.games) - Number(arena.wins || 0) - Number(arena.draws || 0)
-    : "—";
-  $("record").textContent = `${arena.wins ?? "—"} / ${arenaLosses} / ${arena.draws ?? "—"}`;
+  if (Object.keys(arena).length) renderEvaluation(arena, cycle, metrics.accepted, metrics.learning_gate?.passed);
 }
 
 function renderRun(run) {

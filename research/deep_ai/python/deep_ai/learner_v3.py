@@ -716,14 +716,11 @@ class DeepLearnerV3:
             load_file(str(root / "model.safetensors"), device=self.config.device),
             strict=True,
         )
-        try:
-            optimizer = torch.load(
-                root / "optimizer.pt",
-                map_location=self.config.device,
-                weights_only=True,
-            )
-        except TypeError:  # PyTorch 2.3 compatibility.
-            optimizer = torch.load(root / "optimizer.pt", map_location=self.config.device)
+        optimizer = torch.load(
+            root / "optimizer.pt",
+            map_location=self.config.device,
+            weights_only=True,
+        )
         self.optimizer.load_state_dict(optimizer["optimizer"])
         self.scaler.load_state_dict(optimizer["scaler"])
         self.global_step = int(state["global_step"])

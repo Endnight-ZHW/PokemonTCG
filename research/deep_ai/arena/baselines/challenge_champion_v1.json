@@ -1,15 +1,13 @@
 {
   "schema": "ptcg.challenge_arena.agent/2",
-  "agent_id": "challenge_pre_efficiency",
-  "build_id": "71d02fa-frozen",
+  "agent_id": "challenge_champion_v1",
+  "build_id": "736d2ce1-frozen",
   "backend": "external_process",
-  "git_ref": "71d02fa06c7bb4ac80cbe019e83a2e772373965b",
+  "git_ref": "736d2ce11d3413546e3b216b6fd428eb5261bd5c",
   "strategies_ref_path": "godot/data/ai_strategies.json",
   "evaluation_options": {
     "engine": "strategic_intent_v3",
     "node_budget": 192,
-    "belief_samples": 3,
-    "use_deck_inspection": true,
-    "use_strategy_optimization": true
+    "belief_samples": 3
   }
 }

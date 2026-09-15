@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <stdexcept>
 #include <utility>
 
@@ -212,8 +213,8 @@ NativeActorPoolV3::~NativeActorPoolV3() {
 }
 
 void NativeActorPoolV3::start(std::vector<GameTaskV3> tasks) {
-    if (running_.exchange(true) || !workers_.empty()) {
-        running_ = true;
+    std::lock_guard<std::mutex> batch_lock(batch_mutex_);
+    if (cancelled_ || running_.exchange(true)) {
         throw std::logic_error("v3_actor_pool_already_started");
     }
     if (tasks.empty()) {
@@ -240,9 +241,12 @@ void NativeActorPoolV3::start(std::vector<GameTaskV3> tasks) {
         tasks_.size()
     );
     workers_.reserve(count);
-    for (std::size_t index = 0; index < count; ++index) {
+    active_workers_ = std::max(count, workers_.size());
+    for (std::size_t index = workers_.size(); index < count; ++index) {
         workers_.emplace_back(&NativeActorPoolV3::worker, this);
     }
+    ++batch_generation_;
+    batch_ready_.notify_all();
 }
 
 void NativeActorPoolV3::pause() noexcept {
@@ -255,18 +259,39 @@ void NativeActorPoolV3::resume() noexcept {
 }
 
 void NativeActorPoolV3::cancel() noexcept {
-    cancelled_ = true;
+    {
+        std::lock_guard<std::mutex> lock(batch_mutex_);
+        cancelled_ = true;
+    }
     paused_ = false;
     pause_ready_.notify_all();
+    batch_ready_.notify_all();
+    {
+        std::lock_guard<std::mutex> lock(completion_mutex_);
+        finished_ = true;
+        running_ = false;
+        completion_ready_.notify_all();
+    }
 }
 
 void NativeActorPoolV3::wait() {
+    if (!cancelled_) {
+        std::unique_lock<std::mutex> lock(completion_mutex_);
+        completion_ready_.wait(lock, [this]() { return finished_.load() || !running_.load(); });
+        return;
+    }
     for (std::thread &worker_thread : workers_) {
         if (worker_thread.joinable()) worker_thread.join();
     }
     workers_.clear();
     running_ = false;
     finished_ = true;
+}
+
+bool NativeActorPoolV3::wait_for(std::uint32_t timeout_milliseconds) {
+    std::unique_lock<std::mutex> lock(completion_mutex_);
+    return completion_ready_.wait_for(lock, std::chrono::milliseconds(timeout_milliseconds),
+        [this]() { return finished_.load(); });
 }
 
 bool NativeActorPoolV3::running() const noexcept {
@@ -326,34 +351,51 @@ void NativeActorPoolV3::worker() {
     NativeSearchJob search(cards_, decks_, batch_, limiter_);
     NativeInformationSetEncoderV3 encoder(cards_);
     NativeGameKernel game(cards_);
-    while (!cancelled_) {
-        wait_if_paused();
-        const std::size_t index = next_task_.fetch_add(1);
-        if (index >= tasks_.size()) break;
-        ActorGameResultV3 result;
-        try {
-            result = run_game(tasks_[index], search, encoder, game);
-        } catch (const std::exception &error) {
-            result = task_result(tasks_[index]);
-            result.error = error.what();
-        } catch (...) {
-            result = task_result(tasks_[index]);
-            result.error = "unknown_v3_actor_error";
+    std::uint64_t generation = 0;
+    for (;;) {
+        {
+            std::unique_lock<std::mutex> lock(batch_mutex_);
+            batch_ready_.wait(lock, [this, &generation]() {
+                return cancelled_.load() || batch_generation_ != generation;
+            });
+            if (cancelled_) break;
+            generation = batch_generation_;
         }
-        if (result.success) ++completed_games_;
-        else ++failed_games_;
-        decisions_ += result.decisions;
-        simulations_ += result.simulations;
-        samples_ += result.samples;
-        determinization_microseconds_ += result.determinization_microseconds;
-        projection_microseconds_ += result.projection_microseconds;
-        candidate_generation_microseconds_ +=
-            result.candidate_generation_microseconds;
-        apply_microseconds_ += result.apply_microseconds;
-        encoding_microseconds_ += result.encoding_microseconds;
-        inference_wait_microseconds_ += result.inference_wait_microseconds;
-        std::lock_guard<std::mutex> lock(results_mutex_);
-        results_.push_back(std::move(result));
+        while (!cancelled_) {
+            wait_if_paused();
+            const std::size_t index = next_task_.fetch_add(1);
+            if (index >= tasks_.size()) break;
+            ActorGameResultV3 result;
+            try {
+                result = run_game(tasks_[index], search, encoder, game);
+            } catch (const std::exception &error) {
+                result = task_result(tasks_[index]);
+                result.error = error.what();
+            } catch (...) {
+                result = task_result(tasks_[index]);
+                result.error = "unknown_v3_actor_error";
+            }
+            if (result.success) ++completed_games_;
+            else ++failed_games_;
+            decisions_ += result.decisions;
+            simulations_ += result.simulations;
+            samples_ += result.samples;
+            determinization_microseconds_ += result.determinization_microseconds;
+            projection_microseconds_ += result.projection_microseconds;
+            candidate_generation_microseconds_ +=
+                result.candidate_generation_microseconds;
+            apply_microseconds_ += result.apply_microseconds;
+            encoding_microseconds_ += result.encoding_microseconds;
+            inference_wait_microseconds_ += result.inference_wait_microseconds;
+            std::lock_guard<std::mutex> lock(results_mutex_);
+            results_.push_back(std::move(result));
+        }
+        if (active_workers_.fetch_sub(1) == 1) {
+            std::lock_guard<std::mutex> lock(completion_mutex_);
+            running_ = false;
+            finished_ = true;
+            completion_ready_.notify_all();
+        }
     }
 }
 

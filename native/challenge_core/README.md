@@ -60,13 +60,11 @@ Benched Pokemon as protection against an immediate board-out. The behavior and
 the prize-aware choice adjustments are controlled by the evaluation-only
 `use_strategy_optimization` treatment (enabled by the game client).
 
-`strategic_intent_v3` remains the product default. The strength refactor compares
-against the actual v3 product controller at commit `a1d0f452`, pinned by the
-`challenge_pre_strength_refactor` Arena specification. `turn_beam_v2` remains
-the compatibility/fallback engine; its internal scoring also uses the corrected
-facts. Historical v2-to-v3 promotion measurements are not evidence for this
-new implementation. See the [Arena guide](../../research/deep_ai/docs/native_challenge_arena.md)
-for reproducible strength comparisons.
+`strategic_intent_v3` remains the product default. Strength evaluation uses the
+shared protocol to compare the candidate, frozen champion and 0.8.0 historical
+anchor. `turn_beam_v2` remains the controller's fallback engine. See the
+[Arena guide](../../research/deep_ai/docs/native_challenge_arena.md) for the active
+reference specifications and reproducible strength comparisons.
 
 `strategic_combat.cpp` centralizes per-attack energy/evolution access, expected
 damage, coin/mill knockout odds, reload costs and a bounded three-attack prize

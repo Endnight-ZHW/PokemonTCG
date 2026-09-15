@@ -721,7 +721,11 @@ py::dict challenge_arena_game_to_python(
     result["strength_eligible"] = source.strength_eligible;
     result["winner_seat"] = source.winner_seat;
     result["winner_agent"] = source.winner_agent;
-    result["candidate_score_x2"] = source.candidate_score_x2;
+    if (source.strength_eligible) {
+        result["candidate_score_x2"] = source.candidate_score_x2;
+    } else {
+        result["candidate_score_x2"] = py::none();
+    }
     result["offending_agent"] = source.offending_agent;
     result["decisions"] = source.decisions;
     result["turns"] = source.turns;
@@ -1129,6 +1133,10 @@ PYBIND11_MODULE(ptcg_ai_core, module) {
         .def("wait", [](NativeActorPoolV3 &pool) {
             py::gil_scoped_release release;
             pool.wait();
+        })
+        .def("wait_for", [](NativeActorPoolV3 &pool, std::uint32_t milliseconds) {
+            py::gil_scoped_release release;
+            return pool.wait_for(milliseconds);
         })
         .def("drain_games", [](NativeActorPoolV3 &pool) {
             py::list result;

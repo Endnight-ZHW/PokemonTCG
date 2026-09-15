@@ -26,7 +26,7 @@ jobs:
 
       - name: Install Arena build dependencies
         shell: pwsh
-        run: python -m pip install "pybind11==2.13.6" "scons==4.10.1"
+        run: python -m pip install "pybind11==2.13.6" "scons==4.10.1" "numpy==1.26.4"
 
       - name: Install pinned native headers
         shell: pwsh
@@ -50,17 +50,21 @@ jobs:
           $summary = Get-Content `
             build\challenge-arena\ci-smoke\arena-summary.json `
             -Raw | ConvertFrom-Json
+          $provenance = Get-Content build/challenge-arena/ci-smoke/agent-provenance.json -Raw | ConvertFrom-Json
           if (
-            [string]$summary.schema -ne 'ptcg.challenge_arena.summary/3' -or
-            [string]$manifest.schema -ne 'ptcg.challenge_arena.manifest/3' -or
-            [string]$manifest.candidate.backend -ne 'external_process' -or
-            [string]$manifest.baseline.backend -ne 'external_process' -or
-            [string]$manifest.baseline.binary.git_ref -ne 'd4f20ee9775b7e8c80a1994e5c9aa5f1e11c9864' -or
-            [int]$summary.integrity.structural_errors -ne 0 -or
-            [int]$summary.integrity.truncated_games -ne 0 -or
-            [int]$summary.integrity.strength_blocks.excluded_blocks -ne 0 -or
+            [string]$summary.schema -ne 'ptcg.ai_evaluation.report/1' -or
+            [string]$manifest.schema -ne 'ptcg.ai_evaluation.manifest/1' -or
+            [string]$provenance.champion.build_manifest.git_ref -ne 'd4f20ee9775b7e8c80a1994e5c9aa5f1e11c9864' -or
+            [string]$summary.gate_status -ne 'pass' -or
+            [int]$summary.games -ne 16 -or
+            [int]$summary.strength_games -ne 16 -or
+            [int]$summary.strength.blocks -ne 3 -or
+            -not [bool]$summary.evidence.finalized -or
             -not [bool]$summary.reliability.passed -or
-            [bool]$summary.performance_advisory.gating
+            [bool]$summary.promotion_passed -or
+            [bool]$summary.performance_advisory.gating -or
+            [string]$manifest.games_sha256 -ne (Get-FileHash build/challenge-arena/ci-smoke/arena-games.jsonl -Algorithm SHA256).Hash.ToLowerInvariant() -or
+            [string]$manifest.summary_sha256 -ne (Get-FileHash build/challenge-arena/ci-smoke/arena-summary.json -Algorithm SHA256).Hash.ToLowerInvariant()
           ) {
             throw 'Native Challenge Arena smoke evidence is invalid.'
           }
@@ -76,23 +80,38 @@ jobs:
           ) -join [IO.Path]::PathSeparator
           Push-Location research\deep_ai
           python -B -m unittest -q `
-            tests.test_challenge_arena_tasks `
-            tests.test_challenge_arena_stats `
             tests.test_challenge_arena_build `
-            tests.test_challenge_arena_store `
-            tests.test_challenge_arena_determinism `
-            tests.test_challenge_agent_protocol
+            tests.test_challenge_agent_protocol `
+            tests.test_evaluation_challenge `
+            tests.test_evaluation_store `
+            tests.test_evaluation `
+            tests.test_evaluation_native
           $arenaTestExitCode = $LASTEXITCODE
           Pop-Location
           if ($arenaTestExitCode -ne 0) {
             throw 'Native Challenge Arena tests failed.'
           }
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Calibrate evaluation and verify dashboard rendering
+        shell: pwsh
+        run: |
+          python -B research/deep_ai/scripts/calibrate_evaluation.py --output build/evaluation-audit/calibration.json
+          if ($LASTEXITCODE -ne 0) { throw 'Evaluation calibration failed.' }
+          node research/deep_ai/tests/test_dashboard_evaluation.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Evaluation dashboard test failed.' }
+
       - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: native-challenge-arena-smoke
-          path: build/challenge-arena/ci-smoke
+          path: |
+            build/challenge-arena/ci-smoke
+            build/evaluation-audit
 
   fast:
     runs-on: windows-latest

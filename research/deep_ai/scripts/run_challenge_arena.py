@@ -19,8 +19,8 @@ for import_root in (NATIVE_ROOT, PYTHON_ROOT):
 from deep_ai.challenge_arena import (  # noqa: E402
     PRODUCT_STRATEGIES,
     load_agent_spec,
-    run_arena,
 )
+from deep_ai.evaluation_challenge import run_challenge_evaluation
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -32,11 +32,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--preset",
-        choices=("smoke", "pr", "nightly", "release", "calibration", "focused"),
+        choices=("smoke", "pr", "nightly", "release", "calibration"),
         default="smoke",
     )
     parser.add_argument("--candidate", default="challenge_next")
-    parser.add_argument("--baseline", default="challenge_release_v1")
+    parser.add_argument("--baseline", help="Champion spec; smoke defaults to the frozen 0.8.0 anchor.")
+    parser.add_argument("--anchor", default="challenge_release_v1")
+    parser.add_argument("--anchor-build-manifest", type=Path)
+    parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--declare-only", action="store_true")
     parser.add_argument(
         "--candidate-engine",
         choices=("turn_beam_v2", "strategic_intent_v3"),
@@ -78,41 +82,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--replicates", type=int)
-    parser.add_argument("--max-decisions", type=int, default=512)
-    parser.add_argument("--time-budget-ms", type=int, default=0)
-    parser.add_argument("--search-worker-mode", choices=("single", "gameplay"), default="single")
+    parser.add_argument("--max-decisions", type=int, default=1024)
     parser.add_argument(
         "--decision-timeout-milliseconds",
         type=int,
         default=120000,
         help="Equal watchdog for both agents; timeout is retried and never scored.",
     )
-    parser.add_argument("--candidate-deck", action="append", default=[])
-    parser.add_argument("--baseline-deck", action="append", default=[])
-    parser.add_argument(
-        "--mirror-only",
-        action="store_true",
-        help="Run only same-deck matchups; requires the focused preset.",
-    )
     parser.add_argument("--trace-all", action="store_true")
-    parser.add_argument("--bootstrap-samples", type=int, default=2000)
-    parser.add_argument("--truncated-rate-limit", type=float, default=0.001)
-    parser.add_argument(
-        "--latency-ratio-limit",
-        type=float,
-        default=1.15,
-        help="Diagnostic-only search P95 ratio warning threshold.",
-    )
-    parser.add_argument(
-        "--max-candidate-p95-ms",
-        type=float,
-        help="Diagnostic-only absolute search P95 warning threshold.",
-    )
-    parser.add_argument(
-        "--gate",
-        choices=("auto", "none", "structural", "regression", "promotion"),
-        default="auto",
-    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -121,32 +98,9 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _selected_gate(preset: str, requested: str) -> str:
-    if requested != "auto":
-        return requested
-    if preset == "smoke":
-        return "structural"
-    if preset in {"pr", "nightly"}:
-        return "regression"
-    if preset == "release":
-        return "promotion"
-    return "none"
-
-
-def _gate_passed(summary: dict, gate: str, truncated_limit: float) -> bool:
-    if gate == "none":
-        return True
-    if gate == "structural":
-        integrity = summary["integrity"]
-        return (
-            int(integrity["structural_errors"]) == 0
-            and float(integrity["truncated_rate"]) <= float(truncated_limit)
-        )
-    return bool(summary["gates"][gate]["passed"])
-
-
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    args.baseline = args.baseline or ("challenge_release_v1" if args.preset == "smoke" else "challenge_champion_v1")
     product_strategies = json.loads(PRODUCT_STRATEGIES.read_text(encoding="utf-8"))
     candidate = load_agent_spec(
         args.candidate,
@@ -216,11 +170,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.decision_timeout_milliseconds <= 0:
         raise ValueError("decision_timeout_milliseconds_must_be_positive")
-    if not 0 <= args.time_budget_ms <= 60000:
-        raise ValueError("invalid_time_budget_ms")
-    if args.search_worker_mode == "gameplay" and args.workers > 4:
-        raise ValueError("gameplay_search_requires_at_most_four_concurrent_games")
-    paired_options = {"time_budget_ms": args.time_budget_ms, "search_worker_mode": args.search_worker_mode}
+    paired_options = {"time_budget_ms": 0, "search_worker_mode": "single"}
     candidate = replace(candidate, evaluation_options={**dict(candidate.evaluation_options), **paired_options})
     baseline = replace(baseline, evaluation_options={**dict(baseline.evaluation_options), **paired_options})
     candidate = replace(
@@ -231,64 +181,36 @@ def main(argv: list[str] | None = None) -> int:
         baseline,
         decision_timeout_milliseconds=args.decision_timeout_milliseconds,
     )
+    anchor = None
+    if args.preset == "release":
+        anchor = load_agent_spec(args.anchor, build_manifest=args.anchor_build_manifest)
+        anchor = replace(anchor, decision_timeout_milliseconds=args.decision_timeout_milliseconds,
+                         evaluation_options={**dict(anchor.evaluation_options), **paired_options})
     output = args.output or Path("build") / "challenge-arena" / args.preset
     if not output.is_absolute():
         output = (REPO_ROOT / output).resolve()
-    result = run_arena(
+    result = run_challenge_evaluation(
         preset=args.preset,
         candidate=candidate,
-        baseline=baseline,
+        champion=baseline,
         workers=args.workers,
         output=output,
         seed=args.seed,
         replicates=args.replicates,
         max_decisions=args.max_decisions,
-        candidate_decks=args.candidate_deck,
-        baseline_decks=args.baseline_deck,
-        mirror_only=args.mirror_only,
         trace_all=args.trace_all,
-        bootstrap_samples=args.bootstrap_samples,
-        truncated_rate_limit=args.truncated_rate_limit,
-        latency_ratio_limit=args.latency_ratio_limit,
-        max_candidate_p95_ms=args.max_candidate_p95_ms,
         allow_self_play=args.allow_self_play,
         comparison_mode=args.comparison_mode,
+        anchor=anchor,
+        cache_root=args.cache_dir,
+        declare_only=args.declare_only,
     )
-    summary = result["summary"]
-    gate = _selected_gate(args.preset, args.gate)
-    canonical_status = str(summary["arena"]["gate_status"])
-    if args.gate == "auto":
-        status = canonical_status
-    elif canonical_status == "infrastructure_fail":
-        status = "infrastructure_fail"
-    else:
-        status = (
-            "pass"
-            if _gate_passed(summary, gate, args.truncated_rate_limit)
-            else "fail"
-        )
-    passed = status == "pass"
-    payload = {
-        "schema": summary["schema"],
-        "preset": args.preset,
-        "candidate": candidate.agent_id,
-        "baseline": baseline.agent_id,
-        "games": summary["games"],
-        "score_rate": summary["paired_statistics"]["score_rate"],
-        "score_rate_ci": summary["paired_statistics"]["score_rate_ci"],
-        "confidence_level": summary["paired_statistics"]["confidence_level"],
-        "structural_errors": summary["integrity"]["structural_errors"],
-        "truncated_rate": summary["integrity"]["truncated_rate"],
-        "persistent_timeouts": summary["reliability"][
-            "persistent_timeout_games"
-        ],
-        "performance_advisory": summary["performance_advisory"]["status"],
-        "gate": gate,
-        "status": status,
-        "passed": passed,
-        "output": str(output),
-    }
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    if args.declare_only:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    summary = result
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    status = summary["gate_status"]
     return {
         "pass": 0,
         "fail": 3,

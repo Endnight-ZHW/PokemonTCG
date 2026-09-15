@@ -643,3 +643,12 @@ main {
     transition-duration: 0.01ms !important;
   }
 }
+
+.evaluation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.evaluation-grid p { margin: 8px 0 16px; font-weight: 600; }
+.evaluation-table-wrap { overflow-x: auto; }
+.evaluation-table { width: 100%; border-collapse: collapse; text-align: left; }
+.evaluation-table th, .evaluation-table td { padding: 12px 10px; border-bottom: 1px solid currentColor; }
+.evaluation-table th { font-weight: 600; }
+#anchor-trend { width: 100%; max-height: 120px; margin: 12px 0; color: inherit; }
+#anchor-trend:empty { display: none; }
