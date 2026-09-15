@@ -129,9 +129,7 @@ func _check_main_shell_contract() -> void:
 	context._check_pointer_only_controls(main.modal_layer, "help-modal")
 	context._check(main.modal_panel.theme != null,
 		"Frontend modal did not apply the isolated frontend theme")
-	var previous_reduced_motion := bool(context._settings_node.get("reduced_motion"))
 	var previous_animation_mode := str(context._settings_node.get("animation_mode"))
-	context._settings_node.set("reduced_motion", false)
 	context._settings_node.set("animation_mode", "fast")
 	var close_calls := [0]
 	main.modal_host_controller.close(func() -> void:
@@ -146,7 +144,6 @@ func _check_main_shell_contract() -> void:
 	)
 	main.modal_host_controller.finish_close(close_generation)
 	main.modal_host_controller.finish_close(close_generation)
-	context._settings_node.set("reduced_motion", previous_reduced_motion)
 	context._settings_node.set("animation_mode", previous_animation_mode)
 	context._check(
 		int(close_calls[0]) == 1 and not bool(main.modal_host_controller.closing),
@@ -1504,7 +1501,9 @@ func _check_same_id_hand_motion_staging(table: BattleTable) -> void:
 		"svf-potion", "sv1-ener-2", "sv1-151", "sv1-176",
 		"sv1-153", "sv1-189", "sv1-150",
 	]
-	table.prepare_hand_identity_transition(raw_events, snapshot, final_hand)
+	table.prepare_hand_identity_transition(
+		PresentationEvent.prepare_for_player(raw_events, table.state_ref.revision, table.view_player),
+		snapshot, final_hand)
 	context._check(
 		table._pending_removed_hand_visual_ids.size() == 3,
 		"Same-id replacement did not retire every physical pre-resolution hand card",

@@ -67,5 +67,29 @@ func state_for_render() -> GameState:
 	return _state.clone_state() if _state != null else null
 
 
+## Collect only visible art identities, without serializing or exposing the snapshot.
+func visible_card_ids() -> Array[String]:
+	var ids: Array[String] = []
+	if _state == null or view_player not in [0, 1]:
+		return ids
+	ids.append(_state.stadium_card_id)
+	for player_idx in range(2):
+		var player := _state.get_player(player_idx)
+		ids.append_array(player.discard)
+		if player_idx == view_player:
+			ids.append_array(player.hand)
+		elif _state.setup_stage != GameState.SETUP_COMPLETE:
+			continue
+		for row in player.get_all_pokemon():
+			var pokemon := row.get("pokemon") as PokemonState
+			if pokemon == null:
+				continue
+			ids.append(pokemon.card_id)
+			ids.append(pokemon.attached_tool_id)
+			ids.append_array(pokemon.energy_card_ids)
+			ids.append_array(pokemon.evolution_stack_ids)
+	return ids
+
+
 func revision() -> int:
 	return _state.revision if _state != null else -1

@@ -19,8 +19,8 @@ func _run() -> void:
 	_report["gpu"] = RenderingServer.get_video_adapter_name()
 	_report["renderer"] = RenderingServer.get_current_rendering_method()
 	var settings := root.get_node("AppSettings")
+	settings.reset_defaults(false)
 	settings.animation_mode = "standard"
-	settings.reduced_motion = false
 	var table := TABLE.instantiate() as BattleTable
 	root.add_child(table)
 	var state := UIPreviewStateFactory.battle_state()

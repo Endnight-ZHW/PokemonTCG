@@ -53,6 +53,9 @@ func _run_release_runtime(services: Dictionary) -> Dictionary:
 		and card_cache_size > 0
 		and texture_cache != null
 		and _load_release_ui_resources()
+		and not DirAccess.dir_exists_absolute("res://authoring")
+		and not DirAccess.dir_exists_absolute("res://tests")
+		and not DirAccess.dir_exists_absolute("res://tools")
 		and not FileAccess.file_exists("res://data/ai_models/universal.onnx")
 	)
 	if not valid:

@@ -38,7 +38,6 @@ func _run() -> void:
 	_check_event_addresses()
 	for mode in ["standard", "fast", "reduced"]:
 		root.get_node("AppSettings").animation_mode = mode
-		root.get_node("AppSettings").reduced_motion = mode == "reduced"
 		for kind in ["generator", "generator_split", "generator_one", "generator_zero", "generator_cancel", "generator_duplicate", "generator_last", "retrieval", "ultra_ball", "nest_ball", "energy_switch", "dynamotor", "research"]:
 			await _run_effect(kind, mode, 0)
 		await _run_effect("generator", mode, 1)

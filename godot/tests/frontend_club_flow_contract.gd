@@ -2,6 +2,7 @@ extends RefCounted
 
 ## Check the public UI boundaries without writing settings or opening sockets.
 func run(context: FrontendContractContext) -> void:
+	_check_settings_round_trip(context)
 	var saved_cache := int(context._settings_node.get("card_cache_size"))
 	context._settings_node.set("card_cache_size", 32)
 	var settings := load("res://ui/dialogs/settings_panel.tscn").instantiate() as SettingsPanel
@@ -19,7 +20,7 @@ func run(context: FrontendContractContext) -> void:
 	settings.save_requested.connect(func(values: Dictionary) -> void: submitted.append(values))
 	settings.request_save()
 	context._check(submitted.size() == 1 and is_equal_approx(submitted[0].master_volume, 0.35)
-		and submitted[0].animation_mode == "reduced" and submitted[0].reduced_motion,
+		and submitted[0].animation_mode == "reduced" and not submitted[0].has("reduced_motion"),
 		"Settings save did not emit a coherent animation/volume form")
 	settings.reset_form_to_defaults()
 	context._check(settings.values().animation_mode == "standard"
@@ -72,3 +73,27 @@ func run(context: FrontendContractContext) -> void:
 			"Result CTA must describe its actual return destination")
 	victory.free()
 	await context._settle_layout(2)
+
+
+func _check_settings_round_trip(context: FrontendContractContext) -> void:
+	var settings: Node = load("res://autoload/app_settings.gd").new()
+	var path := "user://cleanup-settings-contract.cfg"
+	for mode in ["cinematic", "standard", "fast", "reduced"]:
+		settings.update(0.37, false, 32, mode, "medium", 0.21, 0.64)
+		context._check(settings.save_settings(path), "Cannot save settings fixture")
+		var stored := ConfigFile.new()
+		stored.load(path)
+		context._check(not stored.has_section_key("accessibility", "reduced_motion"),
+			"Settings still stores a second animation preference")
+		settings.reset_defaults(false)
+		context._check(settings.load_settings(path) and settings.animation_mode == mode
+			and settings.reduced_motion == (mode == "reduced")
+			and is_equal_approx(settings.music_volume, 0.21) and settings.card_cache_size == 32,
+			"Current settings failed round-trip: " + mode)
+	var obsolete := ConfigFile.new()
+	obsolete.set_value("accessibility", "reduced_motion", true)
+	obsolete.save(path)
+	context._check(settings.load_settings(path) and settings.animation_mode == "standard"
+		and not settings.reduced_motion, "Old boolean animation preference was migrated")
+	DirAccess.remove_absolute(path)
+	settings.free()

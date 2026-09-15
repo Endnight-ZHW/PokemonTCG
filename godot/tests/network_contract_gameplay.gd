@@ -198,9 +198,7 @@ func _collect_direct_ko_view_events(
 		var actual: Array = causal_types_by_player[player_idx]
 		for event_value in view.get("presentation_events", []):
 			var event: Dictionary = event_value
-			var event_type := PresentationEvent.canonical_event_type(
-				str(event.get("event_type", "")),
-			)
+			var event_type := str(event.get("event_type", ""))
 			if (
 				event_type == "card_moved"
 				and bool(event.get("data", {}).get("ko_leave_play", false))

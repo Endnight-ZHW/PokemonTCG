@@ -65,8 +65,8 @@ against the actual v3 product controller at commit `a1d0f452`, pinned by the
 `challenge_pre_strength_refactor` Arena specification. `turn_beam_v2` remains
 the compatibility/fallback engine; its internal scoring also uses the corrected
 facts. Historical v2-to-v3 promotion measurements are not evidence for this
-new implementation. See `docs/TRADITIONAL_AI_STRENGTH_REFACTOR.md` at the
-repository root for this refactor's separate acceptance results.
+new implementation. See the [Arena guide](../../research/deep_ai/docs/native_challenge_arena.md)
+for reproducible strength comparisons.
 
 `strategic_combat.cpp` centralizes per-attack energy/evolution access, expected
 damage, coin/mill knockout odds, reload costs and a bounded three-attack prize
@@ -128,5 +128,4 @@ generation cancellation, match reset, and fallback. The research tool
 `scripts/compare_challenge_decisions.py` runs two frozen external agents against
 the same public requests, applies only the baseline's decisions, and fails on
 the first action/choice divergence. Its output is separate from paired Arena
-strength/performance reports. See `docs/TRADITIONAL_AI_SIMPLIFICATION.md` at the
-repository root for the implementation audit and validation results.
+strength/performance reports. See the [research workflow](../../research/deep_ai/README.md) for regression commands.

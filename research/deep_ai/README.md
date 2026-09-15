@@ -1,7 +1,8 @@
 # Deep AI research
 
 This directory is an opt-in research project. It is not imported by the game,
-the default build, release packaging, or regular CI.
+the default client build or release packaging. Challenge Arena validation runs
+in regular CI; training and model export remain manual.
 
 The Python teacher and Godot both call the same dependency-free
 `native/challenge_core/ChallengeController`. Generated replay, checkpoints and
@@ -47,3 +48,24 @@ diagnostic-only performance splits, explicit reliability/strength gate status,
 and a reproducibility manifest under `build/challenge-arena/<preset>`. See
 [`docs/native_challenge_arena.md`](docs/native_challenge_arena.md) for presets,
 agent specifications, fairness constraints, and promotion criteria.
+
+## Maintenance and regression
+
+The supported learned model uses `encoder_v3`, the V8 information-set encoder,
+and the v3 actor/learner/replay contract. The unreferenced older action-state
+encoder and its effect-alias adapter have been removed. The Python engine/DTO
+adapter remains necessary for the current teacher and replay workflows.
+
+Keep every frozen Arena baseline specification: historical agent comparisons
+are explicit research inputs, not product compatibility code. For decision
+parity, use `scripts/compare_challenge_decisions.py` with frozen baseline and
+candidate agents; `scripts/benchmark_challenge_decisions.py` measures repeated
+fixed requests. Use `scripts/check_challenge_memory.py` for the native lifetime
+fixtures. Controller tests cover plan reuse, public knowledge, cancellation,
+match reset and fallback. The manual smoke also checks replay, a CPU learner
+step and ONNX parity.
+
+Generated replays, checkpoints and exported models under `build/` must be
+preserved during repository cleanup. Only identified compiler outputs and
+reproducible old audits are disposable. New measurements belong in ignored
+output directories; update this README or the Arena guide for lasting changes.

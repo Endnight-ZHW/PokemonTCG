@@ -4,7 +4,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 
-# PyInstaller
+# Build and release output
 build/
 dist/
 
@@ -38,23 +38,8 @@ torch_cache/
 .test_tmp/
 test_log_output.txt
 
-# Generated AI audit output. Keep only the compact, reproducible evidence set.
-artifacts/*
-!artifacts/README.md
-!artifacts/godot_native_release_evidence_v2.json
-!artifacts/native_action_transition_v2_release_raw.json
-!artifacts/native_action_transition_v2_release_sealed.json
-!artifacts/native_action_transition_v2_release_shard_1701.json
-!artifacts/native_action_transition_v2_release_shard_2701.json
-!artifacts/native_action_transition_v2_release_shard_3701.json
-!artifacts/native_action_transition_v2_release_shard_4701.json
-!artifacts/native_infoset_security_v2_release_raw.json
-!artifacts/native_infoset_security_v2_release_sealed.json
-!artifacts/native_gpu_multileaf_benchmark_v2.json
-!artifacts/native_parallel_singleleaf_v2.json
-!artifacts/native_parallel_multileaf_v2.json
-!artifacts/native_vs_python_puct_benchmark_v2.json
-!artifacts/relay_protocol_v6_benchmark.json
+# Generated audit output
+artifacts/
 
 # Godot generated files and local toolchains
 godot/.godot/
@@ -66,8 +51,6 @@ godot/native/**/*.o
 godot/native/**/*.os
 godot/native/**/*.obj.import
 godot/native/**/.sconsign.dblite
-godot/native/ptcg_core/lib/
-godot/native/ptcg_core/bin/
 native/**/.sconsign.dblite
 native/**/bin/
 native/**/lib/

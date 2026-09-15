@@ -8,7 +8,6 @@ const DEFAULT_MASTER_VOLUME := 0.8
 const DEFAULT_MUSIC_VOLUME := 0.55
 const DEFAULT_SFX_VOLUME := 0.8
 const DEFAULT_MUTED := false
-const DEFAULT_REDUCED_MOTION := false
 const DEFAULT_CARD_CACHE_SIZE := 24
 const DEFAULT_RELAY_URL := "ws://127.0.0.1:8766"
 const DEFAULT_ANIMATION_MODE := "standard"
@@ -18,7 +17,9 @@ var master_volume := DEFAULT_MASTER_VOLUME
 var music_volume := DEFAULT_MUSIC_VOLUME
 var sfx_volume := DEFAULT_SFX_VOLUME
 var muted := DEFAULT_MUTED
-var reduced_motion := DEFAULT_REDUCED_MOTION
+var reduced_motion: bool:
+	get:
+		return animation_mode == "reduced"
 var card_cache_size := DEFAULT_CARD_CACHE_SIZE
 var relay_url := DEFAULT_RELAY_URL
 var animation_mode := DEFAULT_ANIMATION_MODE
@@ -63,17 +64,15 @@ func load_settings(path: String = SETTINGS_PATH) -> bool:
 		1.0,
 	)
 	muted = bool(config.get_value("audio", "muted", DEFAULT_MUTED))
-	var legacy_reduced_motion := bool(
-		config.get_value("accessibility", "reduced_motion", DEFAULT_REDUCED_MOTION)
-	)
+	if not config.has_section_key("accessibility", "animation_mode"):
+		print("设置缺少当前动画模式，已使用默认值；旧动画设置不再迁移。")
 	animation_mode = str(config.get_value(
 		"accessibility",
 		"animation_mode",
-		"reduced" if legacy_reduced_motion else DEFAULT_ANIMATION_MODE,
+		DEFAULT_ANIMATION_MODE,
 	))
 	if animation_mode not in ["cinematic", "standard", "fast", "reduced"]:
 		animation_mode = DEFAULT_ANIMATION_MODE
-	reduced_motion = animation_mode == "reduced"
 	quality_profile = str(config.get_value(
 		"performance",
 		"quality_profile",
@@ -105,7 +104,6 @@ func save_settings(path: String = SETTINGS_PATH) -> bool:
 	config.set_value("audio", "music_volume", music_volume)
 	config.set_value("audio", "sfx_volume", sfx_volume)
 	config.set_value("audio", "muted", muted)
-	config.set_value("accessibility", "reduced_motion", reduced_motion)
 	config.set_value("accessibility", "animation_mode", animation_mode)
 	config.set_value("performance", "card_cache_size", card_cache_size)
 	config.set_value("performance", "quality_profile", quality_profile)
@@ -120,7 +118,6 @@ func save_settings(path: String = SETTINGS_PATH) -> bool:
 func update(
 	new_master_volume: float,
 	new_muted: bool,
-	new_reduced_motion: bool,
 	new_card_cache_size: int,
 	new_animation_mode: String = "",
 	new_quality_profile: String = "",
@@ -139,15 +136,12 @@ func update(
 			if new_animation_mode in ["cinematic", "standard", "fast", "reduced"]
 			else DEFAULT_ANIMATION_MODE
 		)
-	else:
-		animation_mode = "reduced" if new_reduced_motion else animation_mode
 	if not new_quality_profile.is_empty():
 		quality_profile = (
 			new_quality_profile
 			if new_quality_profile in ["auto", "high", "medium", "low"]
 			else DEFAULT_QUALITY_PROFILE
 		)
-	reduced_motion = animation_mode == "reduced"
 	card_cache_size = clampi(new_card_cache_size, 8, 64)
 	changed.emit()
 
@@ -166,7 +160,6 @@ func reset_defaults(emit_signal: bool = true) -> void:
 	music_volume = DEFAULT_MUSIC_VOLUME
 	sfx_volume = DEFAULT_SFX_VOLUME
 	muted = DEFAULT_MUTED
-	reduced_motion = DEFAULT_REDUCED_MOTION
 	card_cache_size = DEFAULT_CARD_CACHE_SIZE
 	relay_url = DEFAULT_RELAY_URL
 	animation_mode = DEFAULT_ANIMATION_MODE

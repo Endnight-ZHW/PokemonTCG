@@ -170,12 +170,11 @@ func _assign_new_hand_visual_id(view: CardView) -> void:
 	])
 
 func prepare_hand_identity_transition(
-	raw_events: Array,
+	events: Array,
 	previous_snapshot: Dictionary,
 	final_hand: Array[String],
 ) -> void:
 	table._pending_removed_hand_visual_ids.clear()
-	var events := PresentationEvent.normalize_all(raw_events, table.state_ref.revision if table.state_ref else -1, table.view_player)
 	var plan := table.hand_presentation.plan_hand_sources(events, previous_snapshot, final_hand)
 	for rows in plan.values():
 		for row in rows:

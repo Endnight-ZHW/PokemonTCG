@@ -176,13 +176,13 @@ func _pump() -> void:
 	var previous_snapshot := _table.capture_presentation_snapshot()
 	var final_state := request.target_view.state_for_render()
 	var new_events: Array[Dictionary] = []
-	for event in PresentationEvent.normalize_all(request.events, request.revision, request.fallback_actor):
+	for event in request.events:
 		if not _table.director.has_seen_event(str(event.get("event_id", ""))):
 			new_events.append(event)
 	_table.prepare_hand_identity_transition(new_events, previous_snapshot, final_state.get_player(request.target_view.view_player).hand)
 	if not request.drag_session_id.is_empty():
 		_table.prepare_pending_drag_for_transition(request.drag_session_id)
-	_apply_view(request.target_view)
+	_apply_view(request.target_view, final_state)
 	if not request.drag_session_id.is_empty():
 		_table.commit_pending_drag_source(request.drag_session_id)
 	if request.events.is_empty() or _table.director == null:
@@ -191,8 +191,6 @@ func _pump() -> void:
 	var director := _table.director
 	_table.play_presentation(
 		request.events,
-		request.revision,
-		request.fallback_actor,
 		previous_snapshot,
 	)
 	# A duplicate-only batch does not start the director.  It still commits on
@@ -204,8 +202,9 @@ func _pump() -> void:
 	_finish_active(run_generation)
 
 
-func _apply_view(view: BattleViewModel) -> void:
-	var render_state := view.state_for_render()
+func _apply_view(view: BattleViewModel, render_state: GameState = null) -> void:
+	if render_state == null:
+		render_state = view.state_for_render()
 	if render_state == null:
 		return
 	_table.update_view(

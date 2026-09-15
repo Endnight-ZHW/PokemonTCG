@@ -64,7 +64,6 @@ func _check_ink_values() -> void:
 func _check_startup_and_alignment() -> void:
 	var settings := root.get_node("AppSettings")
 	settings.animation_mode = "standard"
-	settings.reduced_motion = false
 	settings.quality_profile = "high"
 	report["raster_sizes"] = []
 	report["symmetry"] = []

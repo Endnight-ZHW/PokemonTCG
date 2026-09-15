@@ -33,7 +33,17 @@ function Invoke-GodotExport {
         [switch]$InstallAndroidBuildTemplate
     )
     $outputPath = Join-Path $projectRoot $Output
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $outputPath) | Out-Null
+    $outputRoot = Split-Path -Parent $outputPath
+    Assert-PathUnderRoot -Root (Join-Path $projectRoot 'dist') -Path $outputRoot
+    New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
+    # Godot overwrites current files but leaves libraries from older exports.
+    foreach ($stale in Get-ChildItem -LiteralPath $outputRoot -File) {
+        if ($stale.Name -like 'onnxruntime*.dll' -or $stale.Extension -in @('.onnx', '.tmp') -or
+            $stale.Name -like '*~RF*' -or $stale.Name -like '~libpokemon_ai*' -or
+            ($Configuration -eq 'release' -and $stale.Name -eq 'PokemonTCG.console.exe')) {
+            Remove-Item -LiteralPath $stale.FullName -Force
+        }
+    }
     $flag = if ($Configuration -eq 'release') { '--export-release' } else { '--export-debug' }
     $arguments = @('--headless', '--path', $projectRoot)
     if ($InstallAndroidBuildTemplate) {

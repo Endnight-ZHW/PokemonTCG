@@ -7,7 +7,7 @@ ChoiceView 2、Protocol 6、Snapshot 3、Journal 1 和 RNG 2。
 ![Godot 4.7 奶油暖色开始界面](docs/images/godot-guide/title-cream.png)
 
 全游戏 UI 使用奶油暖色与浅木质感，设计与验收见
-[`docs/WARM_UI_REDESIGN.md`](docs/WARM_UI_REDESIGN.md)。
+[`docs/GODOT_DEVELOPMENT_GUIDE.md`](docs/GODOT_DEVELOPMENT_GUIDE.md)。
 
 ## 代码边界
 

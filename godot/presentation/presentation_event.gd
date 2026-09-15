@@ -5,10 +5,6 @@ const PUBLIC := "public"
 const OWNER := "owner"
 const PRIVATE := "private"
 
-const EVENT_TYPE_ALIASES := {
-	"card_discarded": "cards_discarded",
-	"knockout_effect_applied": "direct_knockout_applied",
-}
 const SUPPORTED_EVENT_TYPES: Array[String] = [
 	"attack_declared",
 	"card_moved",
@@ -78,7 +74,7 @@ static func normalize(
 		"actor",
 		data.get("player", data.get("actor", fallback_actor)),
 	))
-	var event_type := canonical_event_type(str(raw_event.get("event_type", "unknown")))
+	var event_type := str(raw_event.get("event_type", "unknown"))
 	if (
 		event_type == "cards_drawn"
 		and data.get("cards", []) is Array
@@ -152,12 +148,8 @@ static func normalize(
 	return result
 
 
-static func canonical_event_type(event_type: String) -> String:
-	return str(EVENT_TYPE_ALIASES.get(event_type, event_type))
-
-
 static func is_supported_event_type(event_type: String) -> bool:
-	return canonical_event_type(event_type) in SUPPORTED_EVENT_TYPES
+	return event_type in SUPPORTED_EVENT_TYPES
 
 
 static func normalize_all(
@@ -184,11 +176,12 @@ static func normalize_all(
 static func order_for_presentation(
 	events: Array[Dictionary],
 ) -> Array[Dictionary]:
-	var result: Array[Dictionary] = events.duplicate(true)
+	# Reordering changes the list, never the event payloads.
+	var result: Array[Dictionary] = events.duplicate()
 	var start_index := 0
 	while start_index < result.size():
 		var start_event: Dictionary = result[start_index]
-		if canonical_event_type(str(start_event.get("event_type", ""))) != "turn_start":
+		if str(start_event.get("event_type", "")) != "turn_start":
 			start_index += 1
 			continue
 		var start_data := _dictionary_or_empty(start_event.get("data", {}))
@@ -220,7 +213,7 @@ static func _is_matching_turn_draw(
 	start_actor: int,
 	turn_number: int,
 ) -> bool:
-	if canonical_event_type(str(event.get("event_type", ""))) != "cards_drawn":
+	if str(event.get("event_type", "")) != "cards_drawn":
 		return false
 	var data := _dictionary_or_empty(event.get("data", {}))
 	if str(data.get("purpose", "")) != "turn_draw":
@@ -234,7 +227,25 @@ static func _is_matching_turn_draw(
 
 
 static func for_player(event: Dictionary, player_idx: int) -> Dictionary:
-	var result := event.duplicate(true)
+	return _filter_owned_event(event.duplicate(true), player_idx)
+
+
+## Creates the owned, privacy-filtered batch consumed by presentation workers.
+static func prepare_for_player(
+	raw_events: Array,
+	revision: int,
+	player_idx: int,
+	fallback_actor: int = -1,
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for event in normalize_all(raw_events, revision, fallback_actor):
+		var visible := _filter_owned_event(event, player_idx)
+		if not visible.is_empty():
+			result.append(visible)
+	return result
+
+
+static func _filter_owned_event(result: Dictionary, player_idx: int) -> Dictionary:
 	var data := _dictionary_or_empty(result.get("data", {}))
 	var owner := _visibility_owner(result, data)
 	var visibility := str(result.get("visibility", PUBLIC))

@@ -10,13 +10,11 @@ func _initialize() -> void:
 func _run() -> void:
 	var settings := root.get_node_or_null("AppSettings")
 	var previous_mode := str(settings.get("animation_mode"))
-	var previous_reduced := bool(settings.get("reduced_motion"))
 	await _run_announcement_modes(settings)
 	_run_reduced_slots(settings)
 	_run_public_selection_readability()
 	await _run_fast_feedback_barrier(settings)
 	settings.set("animation_mode", previous_mode)
-	settings.set("reduced_motion", previous_reduced)
 	if failures.is_empty():
 		print("BATTLE_FEEDBACK_LIFECYCLE_OK")
 		quit(0)
@@ -55,7 +53,6 @@ func _run_announcement_modes(settings: Node) -> void:
 	var event_revision := 500
 	for mode in ["cinematic", "standard", "fast", "reduced"]:
 		settings.set("animation_mode", mode)
-		settings.set("reduced_motion", mode == "reduced")
 		director.set_speed_mode(mode)
 		announcements.clear()
 		var events: Array[Dictionary] = []
@@ -101,7 +98,6 @@ func _run_announcement_modes(settings: Node) -> void:
 
 func _run_reduced_slots(settings: Node) -> void:
 	settings.set("animation_mode", "reduced")
-	settings.set("reduced_motion", true)
 	var layer := BattleEffectLayer.new()
 	root.add_child(layer)
 	var anchor := Vector2(360.0, 260.0)
@@ -168,7 +164,6 @@ func _run_public_selection_readability() -> void:
 
 func _run_fast_feedback_barrier(settings: Node) -> void:
 	settings.set("animation_mode", "fast")
-	settings.set("reduced_motion", false)
 	var director := PresentationDirector.new()
 	var layer := BattleEffectLayer.new()
 	var camera := BattleCameraRig.new()

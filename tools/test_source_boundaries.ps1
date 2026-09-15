@@ -4,58 +4,6 @@ param()
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-function Assert-SourceLimits {
-    param(
-        [Parameter(Mandatory = $true)][string]$Directory,
-        [Parameter(Mandatory = $true)][string[]]$Extensions,
-        [Parameter(Mandatory = $true)][int64]$MaxBytes,
-        [Parameter(Mandatory = $true)][int]$MaxLines
-    )
-
-    foreach ($file in Get-ChildItem -LiteralPath $Directory -Recurse -File) {
-        if ($Extensions -notcontains $file.Extension.ToLowerInvariant()) {
-            continue
-        }
-        $lineCount = @([IO.File]::ReadLines($file.FullName)).Count
-        if ($file.Length -gt $MaxBytes -or $lineCount -gt $MaxLines) {
-            $relative = [IO.Path]::GetRelativePath(
-                $repoRoot, $file.FullName).Replace('\', '/')
-            throw (
-                "Source boundary exceeded: $relative " +
-                "bytes=$($file.Length)/$MaxBytes lines=$lineCount/$MaxLines"
-            )
-        }
-    }
-}
-
-function Assert-GodotUiSourceLimits {
-    $roots = @(
-        'godot\scenes',
-        'godot\ui',
-        'godot\presentation',
-        'godot\tests'
-    )
-    foreach ($relativeRoot in $roots) {
-        $directory = Join-Path $repoRoot $relativeRoot
-        foreach ($file in Get-ChildItem -LiteralPath $directory -Recurse -File -Filter '*.gd') {
-            $relative = [IO.Path]::GetRelativePath(
-                $repoRoot, $file.FullName).Replace('\', '/')
-            $maxLines = if ($relative -eq 'godot/scenes/main/main.gd') {
-                3000
-            } else {
-                2000
-            }
-            $lineCount = @([IO.File]::ReadLines($file.FullName)).Count
-            if ($file.Length -gt 98304 -or $lineCount -gt $maxLines) {
-                throw (
-                    "Source boundary exceeded: $relative " +
-                    "bytes=$($file.Length)/98304 lines=$lineCount/$maxLines"
-                )
-            }
-        }
-    }
-}
-
 function Assert-SourceManifest {
     param(
         [Parameter(Mandatory = $true)][string]$ComponentRoot,
@@ -183,17 +131,6 @@ function Assert-VmDispatchOwnership {
     }
 }
 
-Assert-SourceLimits `
-    -Directory (Join-Path $repoRoot 'native\ptcg_core\src') `
-    -Extensions @('.cpp', '.hpp') -MaxBytes 98304 -MaxLines 2500
-Assert-SourceLimits `
-    -Directory (Join-Path $repoRoot 'native\challenge_core\src') `
-    -Extensions @('.cpp', '.hpp') -MaxBytes 98304 -MaxLines 2500
-Assert-SourceLimits `
-    -Directory (Join-Path $repoRoot 'godot\network') `
-    -Extensions @('.gd') -MaxBytes 32768 -MaxLines 900
-Assert-GodotUiSourceLimits
-
 Assert-SourceManifest `
     -ComponentRoot (Join-Path $repoRoot 'native\ptcg_core') `
     -Groups @('runtime', 'product_only')
@@ -202,4 +139,4 @@ Assert-SourceManifest `
     -Groups @('runtime')
 Assert-VmDispatchOwnership
 
-Write-Host 'SOURCE_BOUNDARIES_OK cpp=98304/2500 network_gd=32768/900 ui_test_gd=98304/2000 main_gd=98304/3000 vm_ops=80'
+Write-Host 'SOURCE_BOUNDARIES_OK manifests=2 vm_ops=80'

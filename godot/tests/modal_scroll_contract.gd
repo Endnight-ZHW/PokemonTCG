@@ -48,7 +48,6 @@ func check_scroll_tree(node: Node, scrolling_ancestor: bool = false) -> void:
 func run() -> void:
 	var settings := root.get_node("AppSettings")
 	settings.animation_mode = "reduced"
-	settings.reduced_motion = true
 	settings.muted = true
 	root.size = SIZES[0]
 	main = load("res://scenes/main/main.tscn").instantiate() as Control

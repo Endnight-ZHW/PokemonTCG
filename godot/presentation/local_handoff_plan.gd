@@ -29,9 +29,7 @@ static func create(
 		if not event_value is Dictionary:
 			continue
 		var event: Dictionary = event_value
-		var event_type := PresentationEvent.canonical_event_type(
-			str(event.get("event_type", "")),
-		)
+		var event_type := str(event.get("event_type", ""))
 		var data: Dictionary = event.get("data", {})
 		var actor := int(event.get("actor", data.get("player", -1)))
 		if event_type == "turn_start" and actor == incoming_player:
@@ -52,9 +50,7 @@ static func create(
 		if not raw_events[index] is Dictionary:
 			continue
 		var event: Dictionary = Dictionary(raw_events[index]).duplicate(true)
-		var event_type := PresentationEvent.canonical_event_type(
-			str(event.get("event_type", "")),
-		)
+		var event_type := str(event.get("event_type", ""))
 		if str(event.get("event_id", "")).is_empty():
 			event["event_id"] = "presentation:%d:%d:%s" % [
 				state.revision,
@@ -66,9 +62,7 @@ static func create(
 	var boundary := -1
 	for index in range(events.size()):
 		var event: Dictionary = events[index]
-		var event_type := PresentationEvent.canonical_event_type(
-			str(event.get("event_type", "")),
-		)
+		var event_type := str(event.get("event_type", ""))
 		var data: Dictionary = event.get("data", {})
 		var actor := int(event.get("actor", data.get("player", -1)))
 		if actor == incoming_player and event_type == "turn_start":
@@ -77,9 +71,7 @@ static func create(
 	if boundary < 0:
 		for index in range(events.size()):
 			var event: Dictionary = events[index]
-			var event_type := PresentationEvent.canonical_event_type(
-				str(event.get("event_type", "")),
-			)
+			var event_type := str(event.get("event_type", ""))
 			var data: Dictionary = event.get("data", {})
 			var actor := int(event.get("actor", data.get("player", -1)))
 			if actor == incoming_player and event_type == "cards_drawn":
@@ -132,9 +124,7 @@ static func _state_before_handoff_draw(
 	var player: PlayerState = result.get_player(incoming_player)
 	for event_index in range(suffix_events.size() - 1, -1, -1):
 		var event: Dictionary = suffix_events[event_index]
-		if PresentationEvent.canonical_event_type(
-			str(event.get("event_type", "")),
-		) != "cards_drawn":
+		if str(event.get("event_type", "")) != "cards_drawn":
 			continue
 		var data: Dictionary = event.get("data", {})
 		var actor := int(event.get("actor", data.get("player", -1)))

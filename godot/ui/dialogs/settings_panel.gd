@@ -32,7 +32,6 @@ func configure() -> void:
 		"music_volume": AppSettings.music_volume,
 		"sfx_volume": AppSettings.sfx_volume,
 		"muted": AppSettings.muted,
-		"reduced_motion": AppSettings.reduced_motion,
 		"animation_mode": AppSettings.animation_mode,
 		"quality_profile": AppSettings.quality_profile,
 		"card_cache_size": AppSettings.card_cache_size,
@@ -45,7 +44,6 @@ func reset_form_to_defaults() -> void:
 		"music_volume": AppSettings.DEFAULT_MUSIC_VOLUME,
 		"sfx_volume": AppSettings.DEFAULT_SFX_VOLUME,
 		"muted": AppSettings.DEFAULT_MUTED,
-		"reduced_motion": AppSettings.DEFAULT_REDUCED_MOTION,
 		"animation_mode": AppSettings.DEFAULT_ANIMATION_MODE,
 		"quality_profile": AppSettings.DEFAULT_QUALITY_PROFILE,
 		"card_cache_size": AppSettings.DEFAULT_CARD_CACHE_SIZE,
@@ -56,13 +54,11 @@ func values() -> Dictionary:
 	var animation_mode := str(
 		animation_mode_option.get_item_metadata(animation_mode_option.selected)
 	)
-	var reduced_motion := animation_mode == "reduced"
 	return {
 		"master_volume": float(master_volume_slider.value),
 		"music_volume": float(music_volume_slider.value),
 		"sfx_volume": float(sfx_volume_slider.value),
 		"muted": muted_toggle.button_pressed,
-		"reduced_motion": reduced_motion,
 		"animation_mode": animation_mode,
 		"quality_profile": str(
 			quality_profile_option.get_item_metadata(quality_profile_option.selected)
@@ -132,10 +128,6 @@ func _apply_form_values(source: Dictionary) -> void:
 	sfx_volume_slider.value = float(source.get("sfx_volume", 0.8))
 	muted_toggle.button_pressed = bool(source.get("muted", false))
 	var requested_animation_mode := str(source.get("animation_mode", AppSettings.DEFAULT_ANIMATION_MODE))
-	var reduced_motion := (
-		bool(source.get("reduced_motion", false))
-		or requested_animation_mode == "reduced"
-	)
 	_fill_option(
 		animation_mode_option,
 		[
@@ -144,7 +136,7 @@ func _apply_form_values(source: Dictionary) -> void:
 			["快速", "fast"],
 			["减少动画", "reduced"],
 		],
-		"reduced" if reduced_motion else requested_animation_mode,
+		requested_animation_mode,
 	)
 	_fill_option(
 		quality_profile_option,

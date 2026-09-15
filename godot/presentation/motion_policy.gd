@@ -41,10 +41,7 @@ static func reduced() -> bool:
 	var settings := _settings()
 	if settings == null:
 		return false
-	return (
-		str(settings.get("animation_mode")) == "reduced"
-		or bool(settings.get("reduced_motion"))
-	)
+	return bool(settings.get("reduced_motion"))
 
 
 static func _settings() -> Node:

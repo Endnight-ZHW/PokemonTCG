@@ -10,9 +10,8 @@ const CAUSE_REFRESH := "refresh"
 const CAUSE_RESYNC := "resync"
 
 var target_view: BattleViewModel
-var events: Array = []
+var events: Array[Dictionary] = []
 var revision := -1
-var fallback_actor := -1
 var origin_action_id := ""
 var origin_request_id := ""
 var drag_session_id := ""
@@ -32,13 +31,13 @@ static func create(
 ) -> BattleTransitionRequest:
 	var result := BattleTransitionRequest.new()
 	result.target_view = p_target_view
-	result.events = p_events.duplicate(true)
 	result.revision = p_target_view.revision() if p_target_view != null else -1
-	result.fallback_actor = p_fallback_actor
+	if p_target_view != null:
+		result.events = PresentationEvent.prepare_for_player(
+			p_events, result.revision, p_target_view.view_player, p_fallback_actor)
 	result.cause = p_cause
 	result.origin_action_id = p_origin_action_id
 	result.origin_request_id = p_origin_request_id
 	result.drag_session_id = p_drag_session_id
 	result.critical = p_critical
 	return result
-

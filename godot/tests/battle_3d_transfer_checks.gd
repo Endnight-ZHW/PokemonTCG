@@ -8,11 +8,9 @@ static func run(tree: SceneTree, table: BattleTable, check: Callable) -> Diction
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://../build/battle3d-transfer-fixes"))
 	for mode in ["standard", "fast", "reduced"]:
 		settings.animation_mode = mode
-		settings.reduced_motion = mode == "reduced"
 		for kind in ["search", "opponent_search", "recover", "energy", "energy_opponent", "energy_transfer"]:
 			report.cases.append(await _transaction(tree, table, check, kind, mode))
 	settings.animation_mode = "standard"
-	settings.reduced_motion = false
 	for phase in ["display", "flight"]:
 		await _cancel(tree, table, check, phase)
 		report.cancelled_cases += 1

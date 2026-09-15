@@ -7,6 +7,19 @@ func configure(preview_harness: Variant) -> void:
 	harness = preview_harness
 
 
+func _play_preview_events(
+	table: BattleTable,
+	raw_events: Array,
+	revision: int,
+	actor: int = -1,
+	snapshot: Dictionary = {},
+) -> void:
+	table.play_presentation(
+		PresentationEvent.prepare_for_player(raw_events, revision, table.view_player, actor),
+		snapshot,
+	)
+
+
 func run(ui: Control) -> void:
 	if not ui._start_local_match("fire", "water"):
 		push_error("Unable to start preview match")
@@ -690,7 +703,7 @@ func run(ui: Control) -> void:
 	harness._update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
 	await harness._settle_frontend(3)
 
-	ui.battle_screen.play_presentation([{
+	_play_preview_events(ui.battle_screen, [{
 		"event_type": "cards_drawn",
 		"actor": 0,
 		"visibility": "owner",
@@ -708,7 +721,7 @@ func run(ui: Control) -> void:
 		harness._finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
-	ui.battle_screen.play_presentation([{
+	_play_preview_events(ui.battle_screen, [{
 		"event_type": "cards_discarded",
 		"actor": 0,
 		"source": {"player": 0, "zone": "hand"},
@@ -727,7 +740,7 @@ func run(ui: Control) -> void:
 	ui.battle_screen.clear_presentation_for_resync()
 	harness._set_preview_motion("standard", "high")
 	await harness._settle_rendered(2)
-	ui.battle_screen.play_presentation([{
+	_play_preview_events(ui.battle_screen, [{
 		"event_type": "deck_shuffled",
 		"actor": 0,
 		"source": {"player": 0, "zone": "deck"},
@@ -741,7 +754,7 @@ func run(ui: Control) -> void:
 	ui.battle_screen.clear_presentation_for_resync()
 	harness._set_preview_motion("standard", "low")
 	await harness._settle_rendered(2)
-	ui.battle_screen.play_presentation([{
+	_play_preview_events(ui.battle_screen, [{
 		"event_type": "deck_shuffled",
 		"actor": 0,
 		"source": {"player": 0, "zone": "deck"},
@@ -755,7 +768,7 @@ func run(ui: Control) -> void:
 	ui.battle_screen.clear_presentation_for_resync()
 	harness._set_preview_motion("reduced", "high")
 	await harness._settle_rendered(2)
-	ui.battle_screen.play_presentation([{
+	_play_preview_events(ui.battle_screen, [{
 		"event_type": "deck_shuffled",
 		"actor": 0,
 		"source": {"player": 0, "zone": "deck"},
@@ -812,7 +825,7 @@ func run(ui: Control) -> void:
 			},
 		},
 	}
-	ui.battle_screen.play_presentation(
+	_play_preview_events(ui.battle_screen,
 		[reveal_preview_event], demo.revision + 114, 0)
 	await harness.tree.create_timer(0.82).timeout
 	if not harness._capture("reveal-public.png"):
@@ -821,7 +834,7 @@ func run(ui: Control) -> void:
 	ui.battle_screen.clear_presentation_for_resync()
 	harness._set_preview_motion("reduced", "high")
 	await harness._settle_rendered(2)
-	ui.battle_screen.play_presentation(
+	_play_preview_events(ui.battle_screen,
 		[reveal_preview_event], demo.revision + 115, 0)
 	await harness.tree.create_timer(0.12).timeout
 	if not harness._capture("reveal-public-reduced.png"):
@@ -853,7 +866,7 @@ func run(ui: Control) -> void:
 		"matched_count": 0,
 		"amount": 0,
 	}
-	ui.battle_screen.play_presentation(
+	_play_preview_events(ui.battle_screen,
 		[reveal_no_energy_event], demo.revision + 116, 0)
 	await harness.tree.create_timer(0.82).timeout
 	if not harness._capture("reveal-public-no-energy.png"):
@@ -894,7 +907,7 @@ func run(ui: Control) -> void:
 		"matched_count": 5,
 		"amount": 400,
 	}
-	ui.battle_screen.play_presentation(
+	_play_preview_events(ui.battle_screen,
 		[reveal_all_energy_event], demo.revision + 117, 0)
 	await harness.tree.create_timer(0.82).timeout
 	if not harness._capture("reveal-public-all-energy.png"):
@@ -912,7 +925,7 @@ func run(ui: Control) -> void:
 			"first_player": 0,
 		},
 	}
-	ui.battle_screen.play_presentation(
+	_play_preview_events(ui.battle_screen,
 		[single_coin_preview_event], demo.revision + 118, 0)
 	await harness.tree.create_timer(0.72).timeout
 	if not harness._capture("coin-public-single.png"):
@@ -928,7 +941,7 @@ func run(ui: Control) -> void:
 			"results": [true, false, true, true, false, false, true, false],
 		},
 	}
-	ui.battle_screen.play_presentation(
+	_play_preview_events(ui.battle_screen,
 		[coin_preview_event], demo.revision + 119, 1)
 	await harness.tree.create_timer(1.95).timeout
 	if not harness._capture("coin-public-multi.png"):
@@ -937,7 +950,7 @@ func run(ui: Control) -> void:
 	ui.battle_screen.clear_presentation_for_resync()
 	harness._set_preview_motion("reduced", "high")
 	await harness._settle_rendered(2)
-	ui.battle_screen.play_presentation(
+	_play_preview_events(ui.battle_screen,
 		[coin_preview_event], demo.revision + 120, 1)
 	await harness.tree.create_timer(0.08).timeout
 	if not harness._capture("coin-public-reduced.png"):
@@ -953,7 +966,7 @@ func run(ui: Control) -> void:
 	demo.players[0].active.energy_card_ids.append("sv1-ener-2")
 	ui._refresh_game()
 	await harness.tree.process_frame
-	ui.battle_screen.play_presentation([{
+	_play_preview_events(ui.battle_screen, [{
 		"event_type": "energy_attached",
 		"actor": 0,
 		"card_id": "sv1-ener-2",
@@ -988,7 +1001,7 @@ func run(ui: Control) -> void:
 	demo.players[0].bench[0] = outgoing_active
 	ui._refresh_game()
 	await harness.tree.process_frame
-	ui.battle_screen.play_presentation([{
+	_play_preview_events(ui.battle_screen, [{
 		"event_type": "switched",
 		"actor": 0,
 		"source": {"player": 0, "slot": "active"},
@@ -1043,7 +1056,7 @@ func run(ui: Control) -> void:
 	demo.players[0].active.card_id = evolution_card_id
 	ui._refresh_game()
 	await harness.tree.process_frame
-	ui.battle_screen.play_presentation([{
+	_play_preview_events(ui.battle_screen, [{
 		"event_type": "pokemon_evolved",
 		"actor": 0,
 		"card_id": evolution_card_id,
@@ -1656,7 +1669,7 @@ func run(ui: Control) -> void:
 	harness.tree.root.size = Vector2i(1600, 900)
 	await harness._settle_rendered(3)
 
-	ui.battle_screen.play_presentation([
+	_play_preview_events(ui.battle_screen, [
 		{
 			"event_type": "attack_declared",
 			"actor": 0,
@@ -1682,7 +1695,7 @@ func run(ui: Control) -> void:
 		harness._finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
-	ui.battle_screen.play_presentation([{
+	_play_preview_events(ui.battle_screen, [{
 		"event_type": "pokemon_ko",
 		"actor": 0,
 		"card_id": "sv2-keldeo",

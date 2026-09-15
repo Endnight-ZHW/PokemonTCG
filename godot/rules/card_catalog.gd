@@ -36,19 +36,14 @@ func _init(isolated: bool = false, read_only: bool = false) -> void:
 		decks = _shared_decks
 		card_ir = _shared_card_ir
 	if read_only:
-		if not isolated:
-			cards = cards.duplicate(true)
-			decks = decks.duplicate(true)
-			card_ir = card_ir.duplicate(true)
 		_prepare_read_only_repository()
 
 
 static func shared() -> CardCatalog:
 	"""Return the one deeply read-only catalog used by release runtime paths."""
 	if _shared_repository == null:
-		# The runtime repository owns one isolated, immutable snapshot; mutable
-		# synthetic fixtures use an explicitly isolated catalog.
-		_shared_repository = CardCatalog.new(true, true)
+		# Parsed data is already immutable. Only synthetic fixtures need a copy.
+		_shared_repository = CardCatalog.new(false, true)
 	return _shared_repository
 
 
@@ -292,6 +287,8 @@ static func _ensure_shared_data() -> void:
 	_shared_cards = _read_json(CARDS_PATH)
 	_shared_decks = _read_json(DECKS_PATH)
 	_shared_card_ir = _read_json(CARD_IR_PATH)
+	for dataset in [_shared_cards, _shared_decks, _shared_card_ir]:
+		_deep_make_read_only(dataset)
 	_shared_loaded = true
 	_shared_load_count += 1
 

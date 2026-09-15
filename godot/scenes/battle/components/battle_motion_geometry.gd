@@ -29,9 +29,7 @@ func _event_card_ids(event: Dictionary) -> Array:
 	return result
 
 func _is_transient_opening_draw(event: Dictionary) -> bool:
-	if PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	) != "cards_drawn":
+	if str(event.get("event_type", "")) != "cards_drawn":
 		return false
 	var data: Dictionary = event.get("data", {})
 	return (
@@ -41,9 +39,7 @@ func _is_transient_opening_draw(event: Dictionary) -> bool:
 
 func _reveal_rows(event: Dictionary) -> Array[Dictionary]:
 	var data: Dictionary = event.get("data", {})
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	var raw_value: Variant = data.get(
 		"cards",
 		(

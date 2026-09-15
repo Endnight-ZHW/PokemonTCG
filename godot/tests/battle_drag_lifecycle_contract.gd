@@ -10,7 +10,6 @@ func _check(condition: bool, message: String) -> void:
 		_failures.append(message)
 
 func _run() -> void:
-	root.get_node("AppSettings").set("reduced_motion", true)
 	root.get_node("AppSettings").set("animation_mode", "reduced")
 	root.size = Vector2i(1280, 720)
 	var table := load("res://scenes/battle/components/battle_table.tscn").instantiate() as BattleTable

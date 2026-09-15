@@ -37,7 +37,6 @@ func touch(pressed: bool, index: int = 0, cancelled: bool = false) -> InputEvent
 
 func _run() -> void:
 	root.size = Vector2i(1600, 900)
-	root.get_node("AppSettings").set("reduced_motion", true)
 	root.get_node("AppSettings").set("animation_mode", "reduced")
 	await _check_gestures()
 	await _check_zone_gestures()

@@ -169,7 +169,9 @@ if ($forbiddenStaging.Count -ne 0) {
 
 $zipPath = Join-Path $distRoot "PokemonTCG-Windows-x86_64-$version.zip"
 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-Compress-Archive -LiteralPath $packageRoot -DestinationPath $zipPath -CompressionLevel Optimal
+# Release archives favor download size; this does not change runtime resources.
+[IO.Compression.ZipFile]::CreateFromDirectory(
+    $packageRoot, $zipPath, [IO.Compression.CompressionLevel]::SmallestSize, $true)
 
 $releaseFiles = @($zipPath, $windowsExe, $windowsPck, $windowsDll)
 if ($AndroidSigning -ne 'none') {

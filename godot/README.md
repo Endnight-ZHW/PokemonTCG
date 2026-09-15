@@ -33,7 +33,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 ### 可视化编辑与学习入口
 
 - 三维对战的结构、资源边界、画质策略和验证命令见
-  [`../docs/BATTLE_3D_REFACTOR.md`](../docs/BATTLE_3D_REFACTOR.md)。新安装默认标准动画；
+  [`../docs/GODOT_DEVELOPMENT_GUIDE.md`](../docs/GODOT_DEVELOPMENT_GUIDE.md)。新安装默认标准动画；
   Android 对局自动从中画质 60 FPS 开始，持续性能不足时在动作完成后降至低画质 30 FPS。
 
 - 打开 `res://tools/ui_workbench.tscn` 后按 `F6`，可安全预览标题、选牌、
@@ -150,7 +150,7 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 前台专项图形验收：`./tools/test_frontend_club_graphics.ps1`，快速检查布局可加
 `-SkipPerformance`。它覆盖五种尺寸、同一页面连续缩放、弹窗遮挡三维展示、八次进出页面，
 并在真实图形下采集首页三档帧时间。截图与 JSON 位于 `build/frontend-club/`；
-设计、对比截图和本轮验证记录见 [`../docs/FRONTEND_CLUB_REDESIGN.md`](../docs/FRONTEND_CLUB_REDESIGN.md)。
+当前设计与验证方法见 [`../docs/GODOT_DEVELOPMENT_GUIDE.md`](../docs/GODOT_DEVELOPMENT_GUIDE.md)。
 
 首页使用 `FrontendCardShowcase3D.set_cards(card_ids)` / `set_active(active)`，最多展示三张公开卡。
 该组件复用实体卡网格与纹理缓存，拥有独立 SubViewport；低画质、减少动画时静态渲染，

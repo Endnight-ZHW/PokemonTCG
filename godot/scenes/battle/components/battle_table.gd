@@ -794,24 +794,12 @@ func _ai_slot_rects(player_idx: int) -> Array[Rect2]:
 
 
 func play_presentation(
-	raw_events: Array,
-	revision: int,
-	fallback_actor: int = -1,
+	events: Array[Dictionary],
 	previous_snapshot: Dictionary = {},
 ) -> void:
 	if director == null:
 		return
-	var normalized_all := PresentationEvent.normalize_all(
-		raw_events,
-		revision,
-		fallback_actor,
-	)
-	var normalized: Array[Dictionary] = []
-	for event in normalized_all:
-		var visible_event := PresentationEvent.for_player(event, view_player)
-		if not visible_event.is_empty():
-			normalized.append(visible_event)
-	normalized = presentation_runtime.events_for_snapshot(normalized, previous_snapshot)
+	var normalized := presentation_runtime.events_for_snapshot(events, previous_snapshot)
 	if normalized.is_empty():
 		return
 	presentation_runtime._stage_presentation_targets(normalized, previous_snapshot)
@@ -1703,9 +1691,7 @@ func _on_presentation_event_completion_requested(
 	event: Dictionary,
 	completion: PresentationDirector.EventCompletion,
 ) -> void:
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	if event_type not in CARD_MOTION_EVENT_TYPES:
 		return
 	if MotionPolicy.reduced() and event_type != "coin_flip":

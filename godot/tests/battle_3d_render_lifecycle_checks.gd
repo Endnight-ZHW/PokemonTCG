@@ -15,7 +15,6 @@ static func run(tree: SceneTree, table: BattleTable, check: Callable) -> Diction
 	var settings := tree.root.get_node("AppSettings")
 	for mode in ["cinematic", "standard", "fast", "reduced"]:
 		settings.animation_mode = mode
-		settings.reduced_motion = mode == "reduced"
 		for index in [0, 6]:
 			var source := table.hand_views[index]
 			source._press_position = source.size * 0.5
@@ -62,7 +61,6 @@ static func run(tree: SceneTree, table: BattleTable, check: Callable) -> Diction
 				await _sample(tree, table, report, check)
 			check.call(not source.is_drag_masked(), "Drag cleanup leaves its hand source hidden")
 	settings.animation_mode = "standard"
-	settings.reduced_motion = false
 	# Allocate hidden flights first, then show them after a delay. Repeat with the
 	# same object pool; check startup, every moving frame, disposal and cancellation.
 	for cycle in range(4):

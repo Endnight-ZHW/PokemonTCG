@@ -46,7 +46,6 @@ func run() -> void:
 	settings = root.get_node("AppSettings")
 	settings.muted = true
 	settings.animation_mode = "reduced"
-	settings.reduced_motion = true
 	settings.quality_profile = "high"
 	root.size = SIZES[0]
 	main = load("res://scenes/main/main.tscn").instantiate() as Control
@@ -175,7 +174,6 @@ func measure_performance() -> void:
 	root.size = Vector2i(1600, 900)
 	main.shell_view.show_title()
 	settings.animation_mode = "standard"
-	settings.reduced_motion = false
 	for profile in ["high", "medium", "low"]:
 		settings.quality_profile = profile
 		settings.changed.emit()

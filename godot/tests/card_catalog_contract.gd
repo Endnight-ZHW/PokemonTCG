@@ -28,6 +28,11 @@ func _run_contract() -> void:
 	_check(repository.is_read_only_repository(), "runtime repository must be marked read-only")
 	_check(repository.cards.is_read_only(), "runtime cards dictionary must be read-only")
 	_check(repository.decks.is_read_only(), "runtime decks dictionary must be read-only")
+	var borrowed_catalog := CardCatalog.new()
+	_check(is_same(repository.cards, borrowed_catalog.cards)
+		and is_same(repository.decks, borrowed_catalog.decks)
+		and is_same(repository.card_ir, borrowed_catalog.card_ir),
+		"Runtime catalogs must share the same parsed immutable datasets")
 
 	var sample_card := repository.get_card("svi-chim")
 	var sample_attacks: Array = sample_card.get("attacks", [])

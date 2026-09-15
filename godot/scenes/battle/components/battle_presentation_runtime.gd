@@ -197,9 +197,7 @@ func _stage_presentation_hud(previous_snapshot: Dictionary) -> void:
 func _apply_event_to_presentation_hud(event: Dictionary) -> void:
 	if hud_state == null:
 		return
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	var data: Dictionary = event.get("data", {})
 	var actor := int(event.get("actor", data.get("player", table.view_player)))
 	var card_ids := table.motion_geometry._event_card_ids(event)
@@ -319,9 +317,7 @@ func _stage_slot_visual_transactions(
 				queue.append(event_id)
 			event_queues[key] = queue
 			if (
-				PresentationEvent.canonical_event_type(
-					str(event.get("event_type", "")),
-				) == "pokemon_ko"
+				str(event.get("event_type", "")) == "pokemon_ko"
 				and bool(Dictionary(event.get("data", {})).get(
 					"defer_leave_play",
 					false,
@@ -352,9 +348,7 @@ func _stage_slot_visual_transactions(
 
 
 func _slot_visual_keys_for_event(event: Dictionary) -> Array[String]:
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	if event_type not in [
 		"card_moved",
 		"cards_discarded",
@@ -453,9 +447,7 @@ func _on_presentation_event_started(event: Dictionary) -> void:
 	# source visual at takeoff, before this event mutates the cover, so it peels
 	# from the badge that is actually visible now rather than the batch snapshot.
 	table.hand_presentation._activate_attachment_source_proxies(event)
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	var data: Dictionary = event.get("data", {})
 	var keys := _slot_visual_keys_for_event(event)
 	if event_type == "card_moved":
@@ -508,9 +500,7 @@ func _apply_event_to_slot_cover(
 	var cover := _valid_card_view(slot_covers.get(key))
 	if state == null or cover == null:
 		return
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	var data: Dictionary = event.get("data", {})
 	if event_type in [
 		"confusion_failed",
@@ -689,9 +679,7 @@ func _sync_slot_snapshot_from_cover(key: String) -> void:
 
 func _finish_slot_visual_event(event: Dictionary) -> void:
 	var event_id := str(event.get("event_id", ""))
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	for key in _slot_visual_keys_for_event(event):
 		var planned_queue: Array = Array(
 			slot_event_plans.get(key, []),
@@ -1569,9 +1557,7 @@ func _flash_presentation_feedbacks(event_id: String) -> void:
 
 func _on_presentation_event_finished(event: Dictionary) -> void:
 	var event_id := str(event.get("event_id", ""))
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	_apply_presentation_zone_event(event)
 	var nodes: Array = reveals.get(event_id, [])
 	for node_value in nodes:

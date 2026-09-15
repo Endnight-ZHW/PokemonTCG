@@ -1,7 +1,6 @@
 class_name PortableRandomSource
 extends RefCounted
 
-const UINT32_MAX_PLUS_ONE := 4294967296.0
 const FALLBACK_SEED := 0x6D2B79F5
 
 static var _fresh_seed_sequence := 0
@@ -21,10 +20,6 @@ func next_u32() -> int:
 	_state ^= (_state << 5) & 0xFFFFFFFF
 	_state &= 0xFFFFFFFF
 	return _state
-
-
-func random_float() -> float:
-	return float(next_u32()) / UINT32_MAX_PLUS_ONE
 
 
 func coin() -> bool:

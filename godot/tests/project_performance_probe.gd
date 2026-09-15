@@ -26,8 +26,14 @@ func _measure(operation: Callable, count: int = 1000) -> Dictionary:
 func _run() -> void:
 	Engine.max_fps = 0
 	var settings := root.get_node("AppSettings")
-	settings.set("reduced_motion", true)
-	settings.set("animation_mode", "reduced")
+	# Load a fixture through the public settings boundary so both old and current
+	# clients resolve the same mode, regardless of saved developer preferences.
+	var config := ConfigFile.new()
+	var config_path := "user://project-performance-settings.cfg"
+	config.set_value("accessibility", "animation_mode", "reduced")
+	assert(config.save(config_path) == OK)
+	assert(settings.load_settings(config_path))
+	DirAccess.remove_absolute(config_path)
 	root.size = Vector2i(1280, 720)
 	var state: GameState = Factory.battle_state()
 	var rows: Array[Dictionary] = Factory.action_rows(state)
@@ -51,6 +57,15 @@ func _run() -> void:
 	table.update_view(view.state_for_render(), 0, rows, "", false, "local")
 	for _i in range(30):
 		await process_frame
+	var transition_events: Array = [{"event_type": "cards_drawn", "actor": 0,
+		"data": {"player": 0, "cards": ["svi-chim", "sv1-ener-2"]}},
+		{"event_type": "cards_drawn", "actor": 1,
+		"data": {"player": 1, "cards": ["sv1-ener-3"]}}]
+	# Measure the complete preparation boundary, including normalization on either
+	# side of its refactor and warm-cache prefetch; never compare only the moved work.
+	_report["prepare_transition_assets"] = _measure(func() -> void:
+		var request := BattleTransitionRequest.create(view, transition_events)
+		table.render3d.prefetch_transition_assets(request.target_view, request.events), 300)
 	_report["refresh_battle"] = _measure(func() -> void:
 		table.update_view(view.state_for_render(), 0, rows, "", false, "local"), 200)
 	var card := table.own_active

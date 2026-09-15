@@ -1738,9 +1738,7 @@ func _without_coin_flip_events(events: Array) -> Array:
 			filtered.append(event_value)
 			continue
 		var event := event_value as Dictionary
-		if PresentationEvent.canonical_event_type(
-			str(event.get("event_type", "")),
-		) == "coin_flip":
+		if str(event.get("event_type", "")) == "coin_flip":
 			continue
 		filtered.append(event_value)
 	return filtered

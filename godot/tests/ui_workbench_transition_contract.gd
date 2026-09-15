@@ -2,7 +2,6 @@ extends SceneTree
 
 var _failed := false
 var _previous_animation_mode := "standard"
-var _previous_reduced_motion := false
 var _settings: Node
 var _stage := "initialize"
 var _finished := false
@@ -30,9 +29,7 @@ func _run() -> void:
 		_finish()
 		return
 	_previous_animation_mode = str(_settings.get("animation_mode"))
-	_previous_reduced_motion = bool(_settings.get("reduced_motion"))
 	_settings.set("animation_mode", "fast")
-	_settings.set("reduced_motion", false)
 	var scene := load("res://tools/ui_workbench.tscn") as PackedScene
 	_check(scene != null, "UI Workbench scene could not be loaded")
 	if scene == null:
@@ -488,7 +485,6 @@ func _finish() -> void:
 	_finished = true
 	if _settings != null:
 		_settings.set("animation_mode", _previous_animation_mode)
-		_settings.set("reduced_motion", _previous_reduced_motion)
 	if _failed:
 		quit(1)
 		return

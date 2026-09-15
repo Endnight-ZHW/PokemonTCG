@@ -12,7 +12,6 @@ static func run(tree: SceneTree, table: BattleTable, check: Callable) -> Diction
 		tree.root.content_scale_size = dimensions
 		for mode in ["standard", "fast", "reduced"]:
 			settings.animation_mode = mode
-			settings.reduced_motion = mode == "reduced"
 			table.update_view(UIPreviewStateFactory.battle_state(), 1, [], "", false, "local")
 			for frame in range(5): await tree.process_frame
 			var draw := table.render3d.mulligan.play({"event_type": "cards_drawn", "actor": 0, "data": {"count": 7, "purpose": "mulligan_redraw", "card_ids": ids}}, 0.25)
@@ -59,7 +58,6 @@ static func run(tree: SceneTree, table: BattleTable, check: Callable) -> Diction
 			check.call(not table.render3d.world.reveal_stage.visible, "Cancelled mulligan leaves its backdrop visible")
 			report.cases += 1
 	settings.animation_mode = "standard"
-	settings.reduced_motion = false
 	tree.root.size = old_size
 	tree.root.content_scale_size = old_scale
 	for frame in range(4): await tree.process_frame

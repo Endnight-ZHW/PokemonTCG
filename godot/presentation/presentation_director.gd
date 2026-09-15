@@ -158,11 +158,6 @@ func pending_count() -> int:
 	return _queue.size()
 
 
-func wait_until_idle() -> void:
-	if _playing:
-		await sequence_finished
-
-
 ## Feedback signal handlers call this synchronously after creating their
 ## MotionHandle. Non-card events then use the real visual lifetime as their
 ## barrier instead of guessing with a Timer. Card-motion events already own a
@@ -272,9 +267,7 @@ func _run_queue() -> void:
 
 
 func _dispatch(event: Dictionary) -> void:
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	var target: Dictionary = event.get("target", {})
 	if (
 		str(target.get("slot", "")).is_empty()
@@ -607,9 +600,7 @@ func _bounded_camera_duration(event: Dictionary, requested: float) -> float:
 
 
 func _duration_for(event: Dictionary) -> float:
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	if event_type == "cards_selected" and int(event.get("amount", 0)) <= 0:
 		return 0.0
 	var readable_reveal := (

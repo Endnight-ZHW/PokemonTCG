@@ -33,11 +33,8 @@ static func attach(battle: BattleTable) -> Battle3DPresenter:
 
 func prefetch_transition_assets(view: BattleViewModel, events: Array) -> MotionHandle:
 	var paths: Array[String] = ["res://assets/cards/card_back.webp"]
-	var visible_state := BattleViewModel.player_view_state(view.state_for_render(), view.view_player)
-	if visible_state != null:
-		_collect_visible_texture_paths(StateSerializer.for_player(visible_state, view.view_player), paths)
-	for event in PresentationEvent.normalize_all(events, view.revision()):
-		_collect_visible_texture_paths(PresentationEvent.for_player(event, view.view_player), paths)
+	_collect_visible_texture_paths(view.visible_card_ids(), paths)
+	_collect_visible_texture_paths(events, paths)
 	var cache := get_node_or_null("/root/CardTextureCache")
 	if cache != null:
 		return cache.prefetch(paths)

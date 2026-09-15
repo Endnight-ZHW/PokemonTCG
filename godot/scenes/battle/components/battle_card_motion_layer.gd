@@ -960,9 +960,7 @@ func _spawn_slot_transition(
 	duration: float,
 	motion_event_id: String = "",
 ) -> bool:
-	var event_type := PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	)
+	var event_type := str(event.get("event_type", ""))
 	if event_type not in ["retreat", "switched", "promoted"]:
 		return false
 	var data: Dictionary = event.get("data", {})
@@ -1512,9 +1510,7 @@ func _spawn_reveal_motion(
 		if summary_value is Dictionary
 		else {}
 	)
-	if PresentationEvent.canonical_event_type(
-		str(event.get("event_type", "")),
-	) == "cards_selected":
+	if str(event.get("event_type", "")) == "cards_selected":
 		summary["kind"] = "public_selection"
 		summary["matched_count"] = rows.size()
 		summary["title"] = (

@@ -11,7 +11,6 @@ func _initialize() -> void:
 func _run() -> void:
 	var settings := root.get_node("AppSettings")
 	settings.animation_mode = "standard"
-	settings.reduced_motion = false
 	root.size = Vector2i(1600, 900)
 	var table := TABLE.instantiate() as BattleTable
 	root.add_child(table)
@@ -117,7 +116,7 @@ func _check_ai_highlights(table: BattleTable) -> void:
 	var old_scale_size := root.content_scale_size
 	var old_scale_mode := root.content_scale_mode
 	var settings := root.get_node("AppSettings")
-	var old_reduced: bool = settings.reduced_motion
+	var old_mode: String = settings.animation_mode
 	var old_quality: String = settings.quality_profile
 	var state := UIPreviewStateFactory.battle_state()
 	for player in state.players:
@@ -130,7 +129,7 @@ func _check_ai_highlights(table: BattleTable) -> void:
 		root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 		root.content_scale_size = Vector2i(1600, 900) if dimensions.x == 2560 else dimensions
 		for reduced in [false, true]:
-			settings.reduced_motion = reduced
+			settings.set("animation_mode", "reduced" if reduced else "standard")
 			settings.quality_profile = "low" if reduced else "high"
 			# Both absolute player identities and an AI viewed from its own side.
 			for case in [{"view": 0, "mode": "challenge", "ai": 1}, {"view": 1, "mode": "local", "ai": 0}, {"view": 1, "mode": "challenge", "ai": 1}]:
@@ -186,7 +185,7 @@ func _check_ai_highlights(table: BattleTable) -> void:
 	root.size = old_size
 	root.content_scale_size = old_scale_size
 	root.content_scale_mode = old_scale_mode
-	settings.reduced_motion = old_reduced
+	settings.animation_mode = old_mode
 	settings.quality_profile = old_quality
 	for frame in range(3): await process_frame
 

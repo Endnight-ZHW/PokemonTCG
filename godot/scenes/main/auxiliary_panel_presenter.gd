@@ -278,7 +278,6 @@ func _save_settings_values(
 	AppSettings.update(
 		float(values.get("master_volume", AppSettings.master_volume)),
 		bool(values.get("muted", AppSettings.muted)),
-		bool(values.get("reduced_motion", AppSettings.reduced_motion)),
 		int(values.get("card_cache_size", AppSettings.card_cache_size)),
 		str(values.get("animation_mode", AppSettings.animation_mode)),
 		str(values.get("quality_profile", AppSettings.quality_profile)),

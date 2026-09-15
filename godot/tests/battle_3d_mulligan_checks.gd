@@ -9,7 +9,6 @@ static func run(tree: SceneTree, table: BattleTable, check: Callable) -> Diction
 	for viewer in [0, 1]:
 		table.clear_presentation_for_resync()
 		settings.animation_mode = "standard"
-		settings.reduced_motion = false
 		var before := GameState.new()
 		for player in before.players:
 			for index in range(60): player.deck.append("sv1-151")
@@ -67,7 +66,6 @@ static func run(tree: SceneTree, table: BattleTable, check: Callable) -> Diction
 	table.update_view(session.state, 0, [], "", false, "local")
 	for frame in range(4): await tree.process_frame
 	for reduced in [false, true]:
-		settings.reduced_motion = reduced
 		settings.animation_mode = "reduced" if reduced else "standard"
 		var event: Dictionary = started.events.filter(func(value: Dictionary) -> bool: return BattleMulligan3D.handles(value) and value.event_type == "cards_drawn")[0]
 		var motion := table.render3d.mulligan.play(PresentationEvent.for_player(event, table.view_player), 0.4)
@@ -82,5 +80,4 @@ static func run(tree: SceneTree, table: BattleTable, check: Callable) -> Diction
 		table.set_local_hand_privacy_hidden(false)
 		check.call(motion.is_finished() and table.render3d.mulligan.hands.is_empty(), "Resync does not cancel the intermediate opening hand")
 	settings.animation_mode = "standard"
-	settings.reduced_motion = false
 	return report

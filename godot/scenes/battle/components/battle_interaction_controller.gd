@@ -78,15 +78,6 @@ func rows_for_source(source_key: String) -> Array[Dictionary]:
 	return result
 
 
-func actions_for_source(source_key: String) -> Array[GameAction]:
-	var result: Array[GameAction] = []
-	for row in rows_for_source(source_key):
-		var action: GameAction = row.get("action") as GameAction
-		if action:
-			result.append(action)
-	return result
-
-
 func action_groups_for_source(source_key: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for value in _groups_by_source.get(source_key, []):

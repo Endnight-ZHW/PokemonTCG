@@ -36,6 +36,13 @@ foreach ($required in @($zipPath, $apkPath, $smokeApkPath, $manifestPath, $aapt,
 $windowsExe = Join-Path $windowsRoot 'PokemonTCG.exe'
 $windowsPck = Join-Path $windowsRoot 'PokemonTCG.pck'
 $windowsDll = Join-Path $windowsRoot 'libpokemon_ai.windows.template_release.x86_64.dll'
+$actualWindowsFiles = @(Get-ChildItem -LiteralPath $windowsRoot -Recurse -File |
+    ForEach-Object { [IO.Path]::GetRelativePath($windowsRoot, $_.FullName) } | Sort-Object)
+$expectedWindowsFiles = @('PokemonTCG.exe', 'PokemonTCG.pck',
+    'libpokemon_ai.windows.template_release.x86_64.dll') | Sort-Object
+if (@(Compare-Object $expectedWindowsFiles $actualWindowsFiles).Count -ne 0) {
+    throw 'Windows release directory contains missing or stale files.'
+}
 $smoke = Start-Process -FilePath $windowsExe `
     -ArgumentList @('--', '--phase6-release-smoke') -PassThru -WindowStyle Hidden
 try {
@@ -67,7 +74,7 @@ try {
     }
     foreach ($forbidden in @(
         '.py', '.onnx', 'onnxruntime', '/research/', '/deep_ai/', '/tests/',
-        '/tools/', 'console.exe', 'ptcg_relay_server'
+        '/tools/', '/authoring/', '.tmp', '~rf', 'console.exe', 'ptcg_relay_server'
     )) {
         if ($entryNames | Where-Object { $_.ToLowerInvariant().Contains($forbidden) }) {
             throw "Windows ZIP contains forbidden content: $forbidden"
@@ -118,7 +125,7 @@ if ($releaseNative.Count -ne 1) {
     throw 'Android release APK is missing its product native library.'
 }
 $forbiddenApk = @($apkEntries | Where-Object {
-    $_ -match '(?i)(\.onnx$|onnxruntime|ptcg_relay_server|(^|/)(research|deep_ai)(/|$))'
+    $_ -match '(?i)(\.onnx$|onnxruntime|ptcg_relay_server|(^|/)(authoring|research|deep_ai|tests|tools)(/|$))'
 })
 if ($forbiddenApk.Count -ne 0) {
     throw "Android release APK contains forbidden content: $($forbiddenApk[0])"
