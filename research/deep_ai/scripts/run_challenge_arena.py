@@ -32,7 +32,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--preset",
-        choices=("smoke", "pr", "nightly", "release", "calibration"),
+        choices=("smoke", "pr", "refactor", "strategy", "nightly", "release", "calibration"),
         default="smoke",
     )
     parser.add_argument("--candidate", default="challenge_next")
@@ -43,11 +43,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--declare-only", action="store_true")
     parser.add_argument(
         "--candidate-engine",
-        choices=("turn_beam_v2", "strategic_intent_v3"),
+        choices=("deck_planner_v1", "turn_beam_v2", "strategic_intent_v3"),
     )
     parser.add_argument(
         "--baseline-engine",
-        choices=("turn_beam_v2", "strategic_intent_v3"),
+        choices=("deck_planner_v1", "turn_beam_v2", "strategic_intent_v3"),
     )
     parser.add_argument(
         "--candidate-deck-inspection",
@@ -58,14 +58,6 @@ def _parser() -> argparse.ArgumentParser:
         "--baseline-deck-inspection",
         choices=("enabled", "disabled"),
         help="A/B treatment: let the baseline use owner-only full-deck browse data.",
-    )
-    parser.add_argument(
-        "--candidate-strategy-optimization",
-        choices=("enabled", "disabled"),
-    )
-    parser.add_argument(
-        "--baseline-strategy-optimization",
-        choices=("enabled", "disabled"),
     )
     parser.add_argument("--candidate-build-manifest", type=Path)
     parser.add_argument("--baseline-build-manifest", type=Path)
@@ -100,7 +92,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    args.baseline = args.baseline or ("challenge_release_v1" if args.preset == "smoke" else "challenge_champion_v1")
+    args.baseline = args.baseline or ("challenge_release_v1" if args.preset == "smoke" else "challenge_refactor_before" if args.preset == "refactor" else "challenge_champion_v1")
     product_strategies = json.loads(PRODUCT_STRATEGIES.read_text(encoding="utf-8"))
     candidate = load_agent_spec(
         args.candidate,
@@ -148,26 +140,6 @@ def main(argv: list[str] | None = None) -> int:
                 ),
             },
         )
-    if args.candidate_strategy_optimization:
-        candidate = replace(
-            candidate,
-            evaluation_options={
-                **dict(candidate.evaluation_options),
-                "use_strategy_optimization": (
-                    args.candidate_strategy_optimization == "enabled"
-                ),
-            },
-        )
-    if args.baseline_strategy_optimization:
-        baseline = replace(
-            baseline,
-            evaluation_options={
-                **dict(baseline.evaluation_options),
-                "use_strategy_optimization": (
-                    args.baseline_strategy_optimization == "enabled"
-                ),
-            },
-        )
     if args.decision_timeout_milliseconds <= 0:
         raise ValueError("decision_timeout_milliseconds_must_be_positive")
     paired_options = {"time_budget_ms": 0, "search_worker_mode": "single"}
@@ -182,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         decision_timeout_milliseconds=args.decision_timeout_milliseconds,
     )
     anchor = None
-    if args.preset == "release":
+    if args.preset in {"release", "refactor", "strategy"}:
         anchor = load_agent_spec(args.anchor, build_manifest=args.anchor_build_manifest)
         anchor = replace(anchor, decision_timeout_milliseconds=args.decision_timeout_milliseconds,
                          evaluation_options={**dict(anchor.evaluation_options), **paired_options})

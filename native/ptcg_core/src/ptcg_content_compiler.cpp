@@ -402,6 +402,46 @@ bool validate_decks(
     return diagnostics.empty();
 }
 
+Value resolve_strategy_defaults(const Value &source, Value::Array &diagnostics) {
+    Value result = source.deep_clone();
+    const Value *shared = field(source, "shared_defaults");
+    if (shared == nullptr) return result;
+    if (!shared->is_object()) {
+        diagnostic(diagnostics, "content_strategy_defaults_invalid", "shared_defaults must be an object");
+        return result;
+    }
+    Value *rows = result.find("strategies");
+    if (rows != nullptr && rows->is_object()) {
+        for (auto &[key, profile] : rows->as_object()) {
+            if (!profile.is_object()) continue;
+            const Value *enabled = field(profile, "use_shared_defaults");
+            if (enabled == nullptr) continue;
+            if (!enabled->is_bool()) {
+                diagnostic(diagnostics, "content_strategy_defaults_invalid", "use_shared_defaults must be boolean");
+                continue;
+            }
+            const bool inherit = enabled->as_bool();
+            profile.erase("use_shared_defaults");
+            if (!inherit) continue;
+            for (const char *group : {"weights", "matchup_weights"}) {
+                const Value *defaults = field(*shared, group);
+                if (defaults == nullptr || !defaults->is_object()) {
+                    diagnostic(diagnostics, "content_strategy_defaults_invalid", "shared strategy weights must be objects");
+                    continue;
+                }
+                Value merged = defaults->deep_clone();
+                const Value *own = field(profile, group);
+                if (own != nullptr && own->is_object())
+                    for (const auto &[name, value] : own->as_object()) merged[name] = value;
+                profile[group] = std::move(merged);
+            }
+            profile.erase("use_shared_defaults");
+        }
+    }
+    result.erase("shared_defaults");
+    return result;
+}
+
 void validate_strategies(
     const Value &strategies,
     const Value &decks,
@@ -650,7 +690,8 @@ Value compile_content_bundle(const Value &bundle) {
     if (decks->as_object().size() != 10U) {
         diagnostic(diagnostics, "content_deck_count_invalid", "expected exactly 10 release decks");
     }
-    validate_strategies(*strategies, *decks, runtime_cards, diagnostics);
+    Value runtime_strategies = resolve_strategy_defaults(*strategies, diagnostics);
+    validate_strategies(runtime_strategies, *decks, runtime_cards, diagnostics);
 
     const std::string content_fingerprint = fingerprint(Value(Value::Object{
         {"cards", runtime_cards.deep_clone()},
@@ -688,7 +729,7 @@ Value compile_content_bundle(const Value &bundle) {
         {"cards", runtime_cards.deep_clone()},
         {"card_ir", std::move(card_ir)},
         {"decks", decks->deep_clone()},
-        {"ai_strategies", strategies->deep_clone()},
+        {"ai_strategies", std::move(runtime_strategies)},
         {"vm_command_descriptors", descriptors->deep_clone()},
     });
     Value summary(Value::Object{

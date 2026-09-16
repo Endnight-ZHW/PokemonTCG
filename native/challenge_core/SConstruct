@@ -2,6 +2,7 @@
 
 import sys
 import os
+import json
 from SCons.Script import Default, Environment
 rules_source_root = os.path.abspath(os.path.join("..", "ptcg_core", "src"))
 common_root = os.path.abspath(os.path.join("..", "common"))
@@ -15,25 +16,16 @@ if sys.platform == "win32":
 else:
     env.Append(CXXFLAGS=["-std=c++17", "-O2"])
 
-test_objects = [
-    env.Object(os.path.join("build", "challenge_support"), "src/challenge_support.cpp")[0],
-    env.Object(
-        os.path.join("build", "challenge_tactics_test"),
-        "tests/challenge_tactics_test.cpp",
-    )[0],
-    env.Object(
-        os.path.join("build", "ptcg_traditional_strategy"),
-        "src/ptcg_traditional_strategy.cpp",
-    )[0],
-    env.Object(
-        os.path.join("build", "ptcg_traditional_infoset"),
-        "src/ptcg_traditional_infoset.cpp",
-    )[0],
-    env.Object(
-        os.path.join("build", "ptcg_random"),
-        os.path.join(rules_source_root, "ptcg_random.cpp"),
-    )[0],
-]
+# Compile the production source manifests so tactics tests exercise the same
+# policy implementations and rules-derived facts as both native bindings.
+test_objects = [env.Object(os.path.join('build', 'challenge_tactics_test'),
+                           'tests/challenge_tactics_test.cpp')[0]]
+for component, directory in [('ptcg_core', '../ptcg_core'), ('challenge_core', '.')]:
+    with open(os.path.join(directory, 'source_manifest.json'), encoding='utf-8') as manifest_file:
+        sources = json.load(manifest_file)['runtime']
+    for name in sources:
+        test_objects.append(env.Object(os.path.join('build', component, name[:-4]),
+                                       os.path.join(directory, 'src', name))[0])
 program = env.Program(
     os.path.join("bin", "challenge_core_tests"),
     source=test_objects,

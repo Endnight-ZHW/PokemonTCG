@@ -21,6 +21,16 @@ def canonical_hash(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def rules_content_hash(catalog: Mapping[str, Any]) -> str:
+    # The bundle fingerprint also covers AI strategies. Preserve every rule,
+    # card and IR field while separating that provenance from rule identity.
+    normalized = dict(catalog)
+    if isinstance(catalog.get("card_ir"), Mapping):
+        normalized["card_ir"] = {key: value for key, value in catalog["card_ir"].items()
+                                 if key != "content_fingerprint"}
+    return canonical_hash(normalized)
+
+
 def _score(game: Mapping[str, Any]) -> float:
     return float(int(game["candidate_score_x2"])) / 2.0
 

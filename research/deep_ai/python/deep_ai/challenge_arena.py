@@ -178,7 +178,12 @@ def with_preset_contract(spec: ArenaAgentSpec, preset: str) -> ArenaAgentSpec:
     options.setdefault("node_budget", 192)
     options.setdefault("belief_samples", 3)
     options.setdefault("use_deck_inspection", True)
-    options.setdefault("use_strategy_optimization", True)
+    if options["engine"] == "deck_planner_v1":
+        for obsolete in ("use_strategy_optimization", "skip_mandatory", "internal_anytime_search"):
+            options.pop(obsolete, None)
+    else:
+        # Frozen agents retain their own historical switches in this adapter.
+        options.setdefault("use_strategy_optimization", True)
     if preset == "smoke":
         options.update({
             "internal_evaluation_smoke": True,

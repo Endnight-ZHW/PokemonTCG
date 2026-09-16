@@ -13,35 +13,35 @@ namespace ptcg::ai::challenge {
 
 std::string json_scalar_text(const Value &value) {
     switch (value.type()) {
-        case Value::Type::null_value:
+    case Value::Type::null_value:
+        return "null";
+    case Value::Type::boolean:
+        return value.as_bool() ? "true" : "false";
+    case Value::Type::integer:
+        return std::to_string(value.as_integer());
+    case Value::Type::number: {
+        const double number = value.as_number();
+        if (!std::isfinite(number))
             return "null";
-        case Value::Type::boolean:
-            return value.as_bool() ? "true" : "false";
-        case Value::Type::integer:
-            return std::to_string(value.as_integer());
-        case Value::Type::number: {
-            const double number = value.as_number();
-            if (!std::isfinite(number)) return "null";
-            std::array<char, 64> buffer{};
-            const auto converted = std::to_chars(
-                buffer.data(), buffer.data() + buffer.size(), number,
-                std::chars_format::general,
-                std::numeric_limits<double>::max_digits10);
-            if (converted.ec == std::errc{}) {
-                return std::string(buffer.data(), converted.ptr);
-            }
-            std::ostringstream fallback;
-            fallback << std::setprecision(17) << number;
-            return fallback.str();
+        std::array<char, 64> buffer{};
+        const auto converted =
+            std::to_chars(buffer.data(), buffer.data() + buffer.size(), number,
+                          std::chars_format::general, std::numeric_limits<double>::max_digits10);
+        if (converted.ec == std::errc{}) {
+            return std::string(buffer.data(), converted.ptr);
         }
-        case Value::Type::string: {
-            std::string result;
-            json_text::append_string(result, value.as_string());
-            return result;
-        }
-        case Value::Type::array:
-        case Value::Type::object:
-            throw std::logic_error("json_scalar_requires_scalar");
+        std::ostringstream fallback;
+        fallback << std::setprecision(17) << number;
+        return fallback.str();
+    }
+    case Value::Type::string: {
+        std::string result;
+        json_text::append_string(result, value.as_string());
+        return result;
+    }
+    case Value::Type::array:
+    case Value::Type::object:
+        throw std::logic_error("json_scalar_requires_scalar");
     }
     throw std::logic_error("invalid_value_type");
 }

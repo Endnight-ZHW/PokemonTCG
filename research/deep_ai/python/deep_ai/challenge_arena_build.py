@@ -7,6 +7,7 @@ import os
 import platform
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -182,6 +183,19 @@ def _mtime_utc(path: Path) -> str:
     ).isoformat().replace("+00:00", "Z")
 
 
+def replace_file_atomic(temporary: Path, path: Path) -> None:
+    # Windows readers and antivirus may briefly deny replacement. Keep the old
+    # evidence intact and retry the same complete temporary file, within 620 ms.
+    for attempt in range(6):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if attempt == 5:
+                raise
+            time.sleep(0.02 * (2 ** attempt))
+
+
 def write_json_atomic(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
@@ -190,7 +204,7 @@ def write_json_atomic(path: Path, value: Any) -> None:
         stream.write("\n")
         stream.flush()
         os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    replace_file_atomic(temporary, path)
 
 
 def write_binding_sidecar(

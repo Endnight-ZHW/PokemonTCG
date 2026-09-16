@@ -81,10 +81,13 @@ jobs:
           Push-Location research\deep_ai
           python -B -m unittest -q `
             tests.test_challenge_arena_build `
+            tests.test_challenge_controller `
+            tests.test_challenge_strategy `
             tests.test_challenge_agent_protocol `
             tests.test_evaluation_challenge `
             tests.test_evaluation_store `
             tests.test_evaluation `
+            tests.test_evaluation_protection `
             tests.test_evaluation_native
           $arenaTestExitCode = $LASTEXITCODE
           Pop-Location

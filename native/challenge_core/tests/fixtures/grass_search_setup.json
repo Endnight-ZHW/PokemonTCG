@@ -1,0 +1,1329 @@
+{
+  "description": "grass_search",
+  "snapshot": {
+    "action_log": [
+      "Arena-Seat-0 抛掷硬币：0 次正面，1 次反面。",
+      "Arena-Seat-1 选择了后攻。",
+      "Arena-Seat-0 抽取了 7 张卡牌。",
+      "Arena-Seat-1 抽取了 7 张卡牌。",
+      "Arena-Seat-1 公开了 妮莫、神奇糖果、草能量×2、树林龟、厉害钓竿、夜光能量。",
+      "Arena-Seat-1 将 妮莫、神奇糖果、草能量×2、树林龟、厉害钓竿、夜光能量 放回了牌库。",
+      "Arena-Seat-1 重洗了牌库。",
+      "Arena-Seat-1 抽取了 7 张卡牌。",
+      "Arena-Seat-0 暗置宝可梦。",
+      "Arena-Seat-0 完成了开局宝可梦放置。",
+      "Arena-Seat-1 暗置宝可梦。",
+      "Arena-Seat-1 完成了开局宝可梦放置。",
+      "Arena-Seat-0 选择抽取 1 张再战奖励牌。",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "—— Arena-Seat-0 的回合 ——",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 使用了训练家卡 巢穴球。",
+      "Arena-Seat-0 将 嘟嘟 放到了备战区。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 使用了训练家卡 高级球。",
+      "Arena-Seat-0 弃置了 高级球、恶能量。",
+      "Arena-Seat-0 展示了 嘟嘟利，并加入手牌。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 将 恶能量 附加给了备战区的宝可梦。",
+      "Arena-Seat-0 将 恶能量 附着到了 嘟嘟。",
+      "Arena-Seat-0 使用了训练家卡 宝可梦交替。",
+      "Arena-Seat-0 将 达克莱伊 换入了战斗场。",
+      "Arena-Seat-0 使用了训练家卡 高级球。",
+      "Arena-Seat-0 弃置了 坚硬束带、嘟嘟利。",
+      "Arena-Seat-0 展示了 嘟嘟利，并加入手牌。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 结束了回合。",
+      "—— Arena-Seat-1 的回合 ——",
+      "Arena-Seat-1 抽取了 1 张卡牌。",
+      "Arena-Seat-1 使用了训练家卡 宝可梦捕捉器。",
+      "Arena-Seat-1 抛掷硬币：1 次正面，0 次反面。",
+      "Arena-Seat-1 完成了卡牌选择。",
+      "Arena-Seat-0 将 嘟嘟 换入了战斗场。",
+      "Arena-Seat-1 将 草能量 附加给了战斗场的宝可梦。",
+      "Arena-Seat-1 将 草能量 附着到了 草苗龟。",
+      "Arena-Seat-1 使用了训练家卡 短裤小子。",
+      "Arena-Seat-1 将 4 张手牌 放回了牌库。",
+      "Arena-Seat-1 重洗了牌库。",
+      "Arena-Seat-1 抽取了 5 张卡牌。",
+      "Arena-Seat-1 使用了训练家卡 学习装置。",
+      "Arena-Seat-1 将 学习装置 附着到了 草苗龟。",
+      "Arena-Seat-1 的 草苗龟 使用了「咬住」。",
+      "达克莱伊 受到了 10 点伤害。",
+      "—— Arena-Seat-0 的回合 ——",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 使用 嘟嘟利 进行了进化。",
+      "Arena-Seat-0 使用了特性「暴走抽取」。",
+      "在 嘟嘟利 身上放置了 1 个伤害指示物。",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 使用了训练家卡 派帕。",
+      "Arena-Seat-0 展示了 巢穴球，并加入手牌。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 使用了训练家卡 巢穴球。",
+      "Arena-Seat-0 将 偶叫獒 放到了备战区。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 使用了训练家卡 坚硬束带。",
+      "Arena-Seat-0 将 坚硬束带 附着到了 嘟嘟利。",
+      "Arena-Seat-0 结束了回合。",
+      "—— Arena-Seat-1 的回合 ——",
+      "Arena-Seat-1 抽取了 1 张卡牌。",
+      "Arena-Seat-1 将 草能量 附加给了战斗场的宝可梦。",
+      "Arena-Seat-1 将 草能量 附着到了 草苗龟。",
+      "Arena-Seat-1 的 草苗龟 使用了「鲁莽头击」。",
+      "达克莱伊 受到了 20 点伤害。",
+      "—— Arena-Seat-0 的回合 ——",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 使用了特性「暴走抽取」。",
+      "在 嘟嘟利 身上放置了 1 个伤害指示物。",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 使用了训练家卡 巢穴球。",
+      "Arena-Seat-0 将 偶叫獒 放到了备战区。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 结束了回合。",
+      "—— Arena-Seat-1 的回合 ——",
+      "Arena-Seat-1 抽取了 1 张卡牌。",
+      "Arena-Seat-1 的 草苗龟 使用了「鲁莽头击」。",
+      "达克莱伊 受到了 20 点伤害。",
+      "—— Arena-Seat-0 的回合 ——",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 使用 獒教父ex 进行了进化。",
+      "Arena-Seat-0 使用了特性「暴走抽取」。",
+      "在 嘟嘟利 身上放置了 1 个伤害指示物。",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 将 偶叫獒 放到了备战区。",
+      "Arena-Seat-0 结束了回合。",
+      "—— Arena-Seat-1 的回合 ——",
+      "Arena-Seat-1 抽取了 1 张卡牌。",
+      "Arena-Seat-1 将 草能量 附加给了战斗场的宝可梦。",
+      "Arena-Seat-1 将 草能量 附着到了 草苗龟。",
+      "Arena-Seat-1 使用 树林龟 进行了进化。",
+      "Arena-Seat-1 使用了特性「日光甲壳」。"
+    ],
+    "active_player_idx": 1,
+    "apply_type_matchups": false,
+    "choice_sequence": 3,
+    "extra_draws": [
+      1,
+      0
+    ],
+    "first_player_idx": 0,
+    "mulligan_bonus_max": 1,
+    "mulligan_count": [
+      0,
+      1
+    ],
+    "opening_coin_winner_idx": 1,
+    "pending_promotions": [],
+    "phase": "MAIN",
+    "players": [
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "",
+          "can_evolve_this_turn": true,
+          "card_id": "svd-darkrai",
+          "damage_counters": 5,
+          "damage_prevented": false,
+          "energy_card_ids": [],
+          "evolution_stack_ids": [],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": false,
+          "status_conditions": [],
+          "used_abilities": []
+        },
+        "bench": [
+          {
+            "all_prevented": false,
+            "attached_tool_id": "svd-hard-belt",
+            "can_evolve_this_turn": true,
+            "card_id": "svd-dodrio",
+            "damage_counters": 3,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-7"
+            ],
+            "evolution_stack_ids": [
+              "svd-doduo"
+            ],
+            "healed_this_turn": false,
+            "modifiers": [
+              {
+                "condition": {
+                  "target_stage": "stage1"
+                },
+                "conflict_policy": "commutative",
+                "controller": 0,
+                "duration": "until_leave_play",
+                "hook": "MODIFY_DAMAGE",
+                "layer": "defender_adjust",
+                "operation": {
+                  "amount": -30,
+                  "kind": "damage_delta"
+                },
+                "priority": 0,
+                "scope": "attached_defender",
+                "source_ref": {
+                  "card_id": "svd-dodrio",
+                  "kind": "pokemon",
+                  "player": 0,
+                  "slot": "bench_0"
+                },
+                "stacking": "replace_same_source"
+              }
+            ],
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": [
+              "暴走抽取"
+            ]
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svd-maschiff",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": false,
+            "card_id": "svd-mabosstiff-ex",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [
+              "svd-maschiff"
+            ],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svd-maschiff",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          null
+        ],
+        "deck": [
+          "svd-doduo",
+          "svd-doduo",
+          "svd-seviper",
+          "svd-absol",
+          "svd-morpeko",
+          "svl-chat",
+          "sv3-134",
+          "svd-dark-patch",
+          "svd-dark-patch",
+          "sv1-151",
+          "sv1-153",
+          "sv1-150",
+          "sv1-150",
+          "sv2-catch",
+          "sv2-catch",
+          "sv1-176",
+          "sv2-young",
+          "sv2-young",
+          "sv2-young",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-189",
+          "sv1-189",
+          "sv1-204",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7"
+        ],
+        "discard": [
+          "sv1-151",
+          "sv1-153",
+          "sv1-153",
+          "sv1-ener-7",
+          "sv1-150",
+          "svd-dodrio",
+          "svd-hard-belt",
+          "sv1-153",
+          "sv1-204",
+          "sv1-151",
+          "sv1-151"
+        ],
+        "energy_attached_this_turn": false,
+        "hand": [
+          "svd-mabosstiff-ex"
+        ],
+        "healed_this_turn": false,
+        "name": "Arena-Seat-0",
+        "prizes": [
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": false,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      },
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "svg2-exps",
+          "can_evolve_this_turn": false,
+          "card_id": "svg2-grot",
+          "damage_counters": 0,
+          "damage_prevented": false,
+          "energy_card_ids": [
+            "sv1-ener-1",
+            "sv1-ener-1",
+            "sv1-ener-1"
+          ],
+          "evolution_stack_ids": [
+            "svg2-turt"
+          ],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": false,
+          "status_conditions": [],
+          "used_abilities": [
+            "日光甲壳"
+          ]
+        },
+        "bench": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "deck": [
+          "svg2-tort",
+          "svg2-turt",
+          "svg2-turt",
+          "svg2-turt",
+          "svg2-grot",
+          "svg2-grot",
+          "svg2-shro",
+          "svg2-shro",
+          "svg2-brel",
+          "svg2-brel",
+          "svg2-zaru",
+          "svg2-empo",
+          "svg2-hamm",
+          "svg2-hamm",
+          "sv3-134",
+          "sv1-151",
+          "sv1-151",
+          "sv1-151",
+          "sv1-153",
+          "sv1-153",
+          "sv1-153",
+          "sv1-152",
+          "sv1-152",
+          "sv1-150",
+          "sv1-150",
+          "sv2-catch",
+          "sv1-176",
+          "sv2-young",
+          "sv2-young",
+          "sv2-young",
+          "svg2-gard",
+          "svg2-gard",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-189",
+          "sv1-189",
+          "svg2-lume",
+          "svg2-lume",
+          "sv1-ener-1",
+          "sv1-ener-1"
+        ],
+        "discard": [
+          "sv2-catch",
+          "sv2-young"
+        ],
+        "energy_attached_this_turn": true,
+        "hand": [
+          "svg2-tort",
+          "sv1-ener-1",
+          "svg2-tort",
+          "sv1-153"
+        ],
+        "healed_this_turn": false,
+        "name": "Arena-Seat-1",
+        "prizes": [
+          "sv1-ener-1",
+          "sv1-ener-1",
+          "sv1-ener-1",
+          "sv1-ener-1",
+          "sv1-ener-1",
+          "sv1-ener-1"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": false,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      }
+    ],
+    "processed_action_ids": [
+      "setup:1",
+      "setup:2",
+      "setup:3",
+      "setup:4",
+      "grass_search:open"
+    ],
+    "public_deck_keys": [
+      "darkness",
+      "grass"
+    ],
+    "resolution_stack": {
+      "context": {},
+      "frames": [
+        {
+          "data": {
+            "continuation": {
+              "actor": 1,
+              "context": {},
+              "context_mode": "ability",
+              "finish_attack": false,
+              "kind": "vm",
+              "remaining_effects": [],
+              "source_slot": "active",
+              "vm": {
+                "actor": 1,
+                "command_spec": {
+                  "args": {
+                    "count": 1,
+                    "destination": "hand",
+                    "filter": "grass_pokemon",
+                    "from_zone": "deck",
+                    "reveal": true
+                  },
+                  "branches": {},
+                  "op": "search_cards"
+                },
+                "context_mode": "ability",
+                "op": "search_cards",
+                "source_slot": "active",
+                "stage": 0
+              }
+            },
+            "raw_pending": {
+              "allow_duplicates": false,
+              "can_cancel": true,
+              "max_select": 1,
+              "metadata": {
+                "continuation_kind": "search_move"
+              },
+              "min_select": 0,
+              "options": [
+                {
+                  "card_id": "svg2-tort",
+                  "index": 0,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                },
+                {
+                  "card_id": "svg2-turt",
+                  "index": 1,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                },
+                {
+                  "card_id": "svg2-turt",
+                  "index": 2,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                },
+                {
+                  "card_id": "svg2-turt",
+                  "index": 3,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                },
+                {
+                  "card_id": "svg2-grot",
+                  "index": 4,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                },
+                {
+                  "card_id": "svg2-grot",
+                  "index": 5,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                },
+                {
+                  "card_id": "svg2-shro",
+                  "index": 6,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                },
+                {
+                  "card_id": "svg2-shro",
+                  "index": 7,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                },
+                {
+                  "card_id": "svg2-brel",
+                  "index": 8,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                },
+                {
+                  "card_id": "svg2-brel",
+                  "index": 9,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                },
+                {
+                  "card_id": "svg2-zaru",
+                  "index": 10,
+                  "kind": "card",
+                  "player": 1,
+                  "zone": "deck"
+                }
+              ],
+              "player": 1,
+              "presentation": {
+                "browse_card_refs": [
+                  {
+                    "card_id": "svg2-tort",
+                    "index": 0,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-turt",
+                    "index": 1,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-turt",
+                    "index": 2,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-turt",
+                    "index": 3,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-grot",
+                    "index": 4,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-grot",
+                    "index": 5,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-shro",
+                    "index": 6,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-shro",
+                    "index": 7,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-brel",
+                    "index": 8,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-brel",
+                    "index": 9,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-zaru",
+                    "index": 10,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-empo",
+                    "index": 11,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-hamm",
+                    "index": 12,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-hamm",
+                    "index": 13,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv3-134",
+                    "index": 14,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-151",
+                    "index": 15,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-151",
+                    "index": 16,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-151",
+                    "index": 17,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-153",
+                    "index": 18,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-153",
+                    "index": 19,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-153",
+                    "index": 20,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-152",
+                    "index": 21,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-152",
+                    "index": 22,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-150",
+                    "index": 23,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-150",
+                    "index": 24,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv2-catch",
+                    "index": 25,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-176",
+                    "index": 26,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv2-young",
+                    "index": 27,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv2-young",
+                    "index": 28,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv2-young",
+                    "index": 29,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-gard",
+                    "index": 30,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-gard",
+                    "index": 31,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-180",
+                    "index": 32,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-180",
+                    "index": 33,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-180",
+                    "index": 34,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-180",
+                    "index": 35,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-189",
+                    "index": 36,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-189",
+                    "index": 37,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-lume",
+                    "index": 38,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "svg2-lume",
+                    "index": 39,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-ener-1",
+                    "index": 40,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  },
+                  {
+                    "card_id": "sv1-ener-1",
+                    "index": 41,
+                    "kind": "card",
+                    "player": 1,
+                    "zone": "deck"
+                  }
+                ],
+                "domain": "search",
+                "purpose": "search_move",
+                "source_player": 1,
+                "source_zone": "deck"
+              },
+              "request_type": "search_move"
+            }
+          },
+          "kind": "continuation",
+          "operation": "native_rules_session"
+        }
+      ],
+      "pending_request": {
+        "allow_duplicates": false,
+        "base_revision": 48,
+        "can_cancel": true,
+        "max_select": 1,
+        "min_select": 0,
+        "options": [
+          {
+            "label": "svg2-tort",
+            "option_id": "option:0",
+            "ref": {
+              "card_id": "svg2-tort",
+              "index": 0,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          },
+          {
+            "label": "svg2-turt",
+            "option_id": "option:1",
+            "ref": {
+              "card_id": "svg2-turt",
+              "index": 1,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          },
+          {
+            "label": "svg2-turt",
+            "option_id": "option:2",
+            "ref": {
+              "card_id": "svg2-turt",
+              "index": 2,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          },
+          {
+            "label": "svg2-turt",
+            "option_id": "option:3",
+            "ref": {
+              "card_id": "svg2-turt",
+              "index": 3,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          },
+          {
+            "label": "svg2-grot",
+            "option_id": "option:4",
+            "ref": {
+              "card_id": "svg2-grot",
+              "index": 4,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          },
+          {
+            "label": "svg2-grot",
+            "option_id": "option:5",
+            "ref": {
+              "card_id": "svg2-grot",
+              "index": 5,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          },
+          {
+            "label": "svg2-shro",
+            "option_id": "option:6",
+            "ref": {
+              "card_id": "svg2-shro",
+              "index": 6,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          },
+          {
+            "label": "svg2-shro",
+            "option_id": "option:7",
+            "ref": {
+              "card_id": "svg2-shro",
+              "index": 7,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          },
+          {
+            "label": "svg2-brel",
+            "option_id": "option:8",
+            "ref": {
+              "card_id": "svg2-brel",
+              "index": 8,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          },
+          {
+            "label": "svg2-brel",
+            "option_id": "option:9",
+            "ref": {
+              "card_id": "svg2-brel",
+              "index": 9,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          },
+          {
+            "label": "svg2-zaru",
+            "option_id": "option:10",
+            "ref": {
+              "card_id": "svg2-zaru",
+              "index": 10,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          }
+        ],
+        "player": 1,
+        "presentation": {
+          "browse_card_refs": [
+            {
+              "card_id": "svg2-tort",
+              "index": 0,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-turt",
+              "index": 1,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-turt",
+              "index": 2,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-turt",
+              "index": 3,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-grot",
+              "index": 4,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-grot",
+              "index": 5,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-shro",
+              "index": 6,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-shro",
+              "index": 7,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-brel",
+              "index": 8,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-brel",
+              "index": 9,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-zaru",
+              "index": 10,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-empo",
+              "index": 11,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-hamm",
+              "index": 12,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-hamm",
+              "index": 13,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv3-134",
+              "index": 14,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-151",
+              "index": 15,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-151",
+              "index": 16,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-151",
+              "index": 17,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-153",
+              "index": 18,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-153",
+              "index": 19,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-153",
+              "index": 20,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-152",
+              "index": 21,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-152",
+              "index": 22,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-150",
+              "index": 23,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-150",
+              "index": 24,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv2-catch",
+              "index": 25,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-176",
+              "index": 26,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv2-young",
+              "index": 27,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv2-young",
+              "index": 28,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv2-young",
+              "index": 29,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-gard",
+              "index": 30,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-gard",
+              "index": 31,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-180",
+              "index": 32,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-180",
+              "index": 33,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-180",
+              "index": 34,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-180",
+              "index": 35,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-189",
+              "index": 36,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-189",
+              "index": 37,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-lume",
+              "index": 38,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "svg2-lume",
+              "index": 39,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-ener-1",
+              "index": 40,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            },
+            {
+              "card_id": "sv1-ener-1",
+              "index": 41,
+              "kind": "card",
+              "player": 1,
+              "zone": "deck"
+            }
+          ],
+          "domain": "search",
+          "purpose": "search_move",
+          "source_player": 1,
+          "source_zone": "deck"
+        },
+        "prompt": "请选择要搜寻的卡牌。",
+        "request_id": "choice:48:1:search_move:2",
+        "request_type": "search_move",
+        "schema_version": 2
+      },
+      "schema_version": 3,
+      "sequence": 3
+    },
+    "result_conditions": [
+      [],
+      []
+    ],
+    "result_reason": "",
+    "result_status": "ONGOING",
+    "revision": 48,
+    "rules_options": {
+      "apply_type_matchups": false
+    },
+    "rules_profile_id": "CN_MAINLAND_3_1_0",
+    "setup_actor_idx": -1,
+    "setup_bonus_card_ids": [
+      [],
+      []
+    ],
+    "setup_ready": [
+      true,
+      true
+    ],
+    "setup_stage": "COMPLETE",
+    "snapshot_version": 3,
+    "stadium_card_id": "",
+    "stadium_owner_idx": -1,
+    "turn_fact_book": {
+      "current_turn": {
+        "knockouts": []
+      },
+      "previous_turn": {
+        "knockouts": []
+      }
+    },
+    "turn_number": 8,
+    "winner": -1
+  },
+  "rng_state": 4285842152,
+  "actor": 1,
+  "decision_seed": 912871115,
+  "match_seed": 4285842152
+}

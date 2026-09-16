@@ -1,0 +1,402 @@
+{
+  "description": "grass_evolve",
+  "snapshot": {
+    "action_log": [
+      "Arena-Seat-0 抛掷硬币：0 次正面，1 次反面。",
+      "Arena-Seat-1 选择了后攻。",
+      "Arena-Seat-0 抽取了 7 张卡牌。",
+      "Arena-Seat-1 抽取了 7 张卡牌。",
+      "Arena-Seat-1 公开了 妮莫、神奇糖果、草能量×2、树林龟、厉害钓竿、夜光能量。",
+      "Arena-Seat-1 将 妮莫、神奇糖果、草能量×2、树林龟、厉害钓竿、夜光能量 放回了牌库。",
+      "Arena-Seat-1 重洗了牌库。",
+      "Arena-Seat-1 抽取了 7 张卡牌。",
+      "Arena-Seat-0 暗置宝可梦。",
+      "Arena-Seat-0 完成了开局宝可梦放置。",
+      "Arena-Seat-1 暗置宝可梦。",
+      "Arena-Seat-1 完成了开局宝可梦放置。",
+      "Arena-Seat-0 选择抽取 1 张再战奖励牌。",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "—— Arena-Seat-0 的回合 ——",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 使用了训练家卡 巢穴球。",
+      "Arena-Seat-0 将 嘟嘟 放到了备战区。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 使用了训练家卡 高级球。",
+      "Arena-Seat-0 弃置了 高级球、恶能量。",
+      "Arena-Seat-0 展示了 嘟嘟利，并加入手牌。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 将 恶能量 附加给了备战区的宝可梦。",
+      "Arena-Seat-0 将 恶能量 附着到了 嘟嘟。",
+      "Arena-Seat-0 使用了训练家卡 宝可梦交替。",
+      "Arena-Seat-0 将 达克莱伊 换入了战斗场。",
+      "Arena-Seat-0 使用了训练家卡 高级球。",
+      "Arena-Seat-0 弃置了 坚硬束带、嘟嘟利。",
+      "Arena-Seat-0 展示了 嘟嘟利，并加入手牌。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 结束了回合。",
+      "—— Arena-Seat-1 的回合 ——",
+      "Arena-Seat-1 抽取了 1 张卡牌。",
+      "Arena-Seat-1 使用了训练家卡 宝可梦捕捉器。",
+      "Arena-Seat-1 抛掷硬币：1 次正面，0 次反面。",
+      "Arena-Seat-1 完成了卡牌选择。",
+      "Arena-Seat-0 将 嘟嘟 换入了战斗场。",
+      "Arena-Seat-1 将 草能量 附加给了战斗场的宝可梦。",
+      "Arena-Seat-1 将 草能量 附着到了 草苗龟。",
+      "Arena-Seat-1 使用了训练家卡 短裤小子。",
+      "Arena-Seat-1 将 4 张手牌 放回了牌库。",
+      "Arena-Seat-1 重洗了牌库。",
+      "Arena-Seat-1 抽取了 5 张卡牌。",
+      "Arena-Seat-1 使用了训练家卡 学习装置。",
+      "Arena-Seat-1 将 学习装置 附着到了 草苗龟。",
+      "Arena-Seat-1 的 草苗龟 使用了「咬住」。",
+      "达克莱伊 受到了 10 点伤害。",
+      "—— Arena-Seat-0 的回合 ——",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 使用 嘟嘟利 进行了进化。",
+      "Arena-Seat-0 使用了特性「暴走抽取」。",
+      "在 嘟嘟利 身上放置了 1 个伤害指示物。",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 使用了训练家卡 派帕。",
+      "Arena-Seat-0 展示了 巢穴球，并加入手牌。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 使用了训练家卡 巢穴球。",
+      "Arena-Seat-0 将 偶叫獒 放到了备战区。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 使用了训练家卡 坚硬束带。",
+      "Arena-Seat-0 将 坚硬束带 附着到了 嘟嘟利。",
+      "Arena-Seat-0 结束了回合。",
+      "—— Arena-Seat-1 的回合 ——",
+      "Arena-Seat-1 抽取了 1 张卡牌。"
+    ],
+    "active_player_idx": 1,
+    "apply_type_matchups": false,
+    "choice_sequence": 1,
+    "extra_draws": [
+      1,
+      0
+    ],
+    "first_player_idx": 0,
+    "mulligan_bonus_max": 1,
+    "mulligan_count": [
+      0,
+      1
+    ],
+    "opening_coin_winner_idx": 1,
+    "pending_promotions": [],
+    "phase": "MAIN",
+    "players": [
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "",
+          "can_evolve_this_turn": true,
+          "card_id": "svd-darkrai",
+          "damage_counters": 1,
+          "damage_prevented": false,
+          "energy_card_ids": [],
+          "evolution_stack_ids": [],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": false,
+          "status_conditions": [],
+          "used_abilities": []
+        },
+        "bench": [
+          {
+            "all_prevented": false,
+            "attached_tool_id": "svd-hard-belt",
+            "can_evolve_this_turn": false,
+            "card_id": "svd-dodrio",
+            "damage_counters": 1,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-7"
+            ],
+            "evolution_stack_ids": [
+              "svd-doduo"
+            ],
+            "healed_this_turn": false,
+            "modifiers": [
+              {
+                "condition": {
+                  "target_stage": "stage1"
+                },
+                "conflict_policy": "commutative",
+                "controller": 0,
+                "duration": "until_leave_play",
+                "hook": "MODIFY_DAMAGE",
+                "layer": "defender_adjust",
+                "operation": {
+                  "amount": -30,
+                  "kind": "damage_delta"
+                },
+                "priority": 0,
+                "scope": "attached_defender",
+                "source_ref": {
+                  "card_id": "svd-dodrio",
+                  "kind": "pokemon",
+                  "player": 0,
+                  "slot": "bench_0"
+                },
+                "stacking": "replace_same_source"
+              }
+            ],
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": [
+              "暴走抽取"
+            ]
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svd-maschiff",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          null,
+          null,
+          null
+        ],
+        "deck": [
+          "svd-mabosstiff-ex",
+          "svd-mabosstiff-ex",
+          "svd-maschiff",
+          "svd-maschiff",
+          "svd-doduo",
+          "svd-doduo",
+          "svd-seviper",
+          "svd-absol",
+          "svd-morpeko",
+          "svl-chat",
+          "sv3-134",
+          "svd-dark-patch",
+          "svd-dark-patch",
+          "sv1-151",
+          "sv1-151",
+          "sv1-153",
+          "sv1-150",
+          "sv1-150",
+          "sv2-catch",
+          "sv2-catch",
+          "sv1-176",
+          "sv2-young",
+          "sv2-young",
+          "sv2-young",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-189",
+          "sv1-189",
+          "sv1-204",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7"
+        ],
+        "discard": [
+          "sv1-151",
+          "sv1-153",
+          "sv1-153",
+          "sv1-ener-7",
+          "sv1-150",
+          "svd-dodrio",
+          "svd-hard-belt",
+          "sv1-153",
+          "sv1-204",
+          "sv1-151"
+        ],
+        "energy_attached_this_turn": false,
+        "hand": [],
+        "healed_this_turn": false,
+        "name": "Arena-Seat-0",
+        "prizes": [
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7",
+          "sv1-ener-7"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": true,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      },
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "svg2-exps",
+          "can_evolve_this_turn": true,
+          "card_id": "svg2-turt",
+          "damage_counters": 0,
+          "damage_prevented": false,
+          "energy_card_ids": [
+            "sv1-ener-1"
+          ],
+          "evolution_stack_ids": [],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": false,
+          "status_conditions": [],
+          "used_abilities": []
+        },
+        "bench": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "deck": [
+          "svg2-tort",
+          "svg2-tort",
+          "svg2-turt",
+          "svg2-turt",
+          "svg2-turt",
+          "svg2-grot",
+          "svg2-grot",
+          "svg2-shro",
+          "svg2-shro",
+          "svg2-brel",
+          "svg2-brel",
+          "svg2-zaru",
+          "svg2-empo",
+          "svg2-hamm",
+          "svg2-hamm",
+          "sv3-134",
+          "sv1-151",
+          "sv1-151",
+          "sv1-151",
+          "sv1-153",
+          "sv1-153",
+          "sv1-153",
+          "sv1-153",
+          "sv1-152",
+          "sv1-152",
+          "sv1-150",
+          "sv1-150",
+          "sv2-catch",
+          "sv1-176",
+          "sv2-young",
+          "sv2-young",
+          "sv2-young",
+          "svg2-gard",
+          "svg2-gard",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-189",
+          "sv1-189",
+          "svg2-lume",
+          "svg2-lume",
+          "sv1-ener-1",
+          "sv1-ener-1"
+        ],
+        "discard": [
+          "sv2-catch",
+          "sv2-young"
+        ],
+        "energy_attached_this_turn": false,
+        "hand": [
+          "svg2-grot",
+          "sv1-ener-1",
+          "sv1-ener-1",
+          "svg2-tort",
+          "sv1-ener-1"
+        ],
+        "healed_this_turn": false,
+        "name": "Arena-Seat-1",
+        "prizes": [
+          "sv1-ener-1",
+          "sv1-ener-1",
+          "sv1-ener-1",
+          "sv1-ener-1",
+          "sv1-ener-1",
+          "sv1-ener-1"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": false,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      }
+    ],
+    "processed_action_ids": [
+      "setup:1",
+      "setup:2",
+      "setup:3",
+      "setup:4"
+    ],
+    "public_deck_keys": [
+      "darkness",
+      "grass"
+    ],
+    "resolution_stack": {
+      "context": {},
+      "frames": [],
+      "pending_request": null,
+      "schema_version": 3,
+      "sequence": 0
+    },
+    "result_conditions": [
+      [],
+      []
+    ],
+    "result_reason": "",
+    "result_status": "ONGOING",
+    "revision": 33,
+    "rules_options": {
+      "apply_type_matchups": false
+    },
+    "rules_profile_id": "CN_MAINLAND_3_1_0",
+    "setup_actor_idx": -1,
+    "setup_bonus_card_ids": [
+      [],
+      []
+    ],
+    "setup_ready": [
+      true,
+      true
+    ],
+    "setup_stage": "COMPLETE",
+    "snapshot_version": 3,
+    "stadium_card_id": "",
+    "stadium_owner_idx": -1,
+    "turn_fact_book": {
+      "current_turn": {
+        "knockouts": []
+      },
+      "previous_turn": {
+        "knockouts": []
+      }
+    },
+    "turn_number": 4,
+    "winner": -1
+  },
+  "rng_state": 4285842152,
+  "actor": 1,
+  "decision_seed": 1369884795,
+  "match_seed": 4285842152
+}

@@ -11,10 +11,14 @@ import copy
 import json
 from pathlib import Path
 
-from compare_challenge_decisions import (
-    ExternalController, RESEARCH_ROOT, append_history, load_product_payloads,
-    mix32, native, _flatten_native_rows,
-)
+import sys
+RESEARCH_ROOT = Path(__file__).resolve().parents[1]
+for directory in (RESEARCH_ROOT / "python", RESEARCH_ROOT / "build/native"):
+    sys.path.insert(0, str(directory))
+import ptcg_ai_core as native
+from engine.game_engine import _flatten_native_rows
+from deep_ai.challenge_arena import load_product_payloads, product_engine_id
+from deep_ai.challenge_audit import ExternalController, append_history, mix32
 from deep_ai.challenge_arena_build import sha256_file
 
 
@@ -69,10 +73,10 @@ def main() -> None:
                     "request_id": pending["request_id"] if pending else f"{match_id}:{session.revision}",
                     "public_history": copy.deepcopy(histories[actor]), "deck_key": pair[actor],
                     "match_seed": seed, "seed": mix32(seed ^ session.revision ^ actor) or 17,
-                    "match_instance_id": match_id, "engine": "strategic_intent_v3", "node_budget": 192,
+                    "match_instance_id": match_id, "engine": product_engine_id(), "node_budget": 192,
                     "belief_samples": 3, "internal_evaluation_batch": args.search_workers == 1,
                     "time_budget_ms": args.time_budget_ms,
-                    "use_deck_inspection": True, "use_strategy_optimization": True}
+                    "use_deck_inspection": True}
                 request.update({"choice": pending} if pending else {"actions": _flatten_native_rows(session.legal_actions(actor))})
                 result = agent.call("decide", request=request, generation=step + 1)
                 assert result.get("success"), result

@@ -175,7 +175,8 @@ class EvaluationProtocol:
 
     @property
     def comparisons(self) -> tuple[str, ...]:
-        return ("ac", "ah", "ch") if self.mode == "promotion" else ("ac",)
+        paired_screen = self.mode == "screen" and self.context.get("paired_anchor_screen", False)
+        return ("ac", "ah", "ch") if self.mode == "promotion" or paired_screen else ("ac",)
 
     @property
     def games_per_round(self) -> int:

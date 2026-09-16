@@ -4,14 +4,51 @@ import hashlib
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from deep_ai.evaluation_protocol import GameEvidence
 from deep_ai.evaluation_store import EvaluationRunStore
+from deep_ai.challenge_arena_build import replace_file_atomic
 from tests.test_evaluation import protocol, result
 
 
 class EvaluationStoreTests(unittest.TestCase):
+    def test_atomic_replace_retries_transient_reader_lock(self):
+        target = self.root / "evidence.json"
+        temporary = self.root / "evidence.tmp"
+        target.write_text("old", encoding="utf-8")
+        temporary.write_text("complete", encoding="utf-8")
+        import os
+        replace = os.replace
+        attempts = 0
+
+        def briefly_locked(source, destination):
+            nonlocal attempts
+            attempts += 1
+            if attempts <= 2:
+                raise PermissionError("reader still owns the Windows file")
+            replace(source, destination)
+
+        with patch("deep_ai.challenge_arena_build.os.replace", side_effect=briefly_locked), \
+                patch("deep_ai.challenge_arena_build.time.sleep"):
+            replace_file_atomic(temporary, target)
+        self.assertEqual(attempts, 3)
+        self.assertEqual(target.read_text(encoding="utf-8"), "complete")
+
+    def test_atomic_replace_persistent_failure_preserves_evidence(self):
+        target = self.root / "evidence.json"
+        temporary = self.root / "evidence.tmp"
+        target.write_text("old", encoding="utf-8")
+        temporary.write_text("complete", encoding="utf-8")
+        with patch("deep_ai.challenge_arena_build.os.replace", side_effect=PermissionError) as replace, \
+                patch("deep_ai.challenge_arena_build.time.sleep"), \
+                self.assertRaises(PermissionError):
+            replace_file_atomic(temporary, target)
+        self.assertEqual(replace.call_count, 6)
+        self.assertEqual(target.read_text(encoding="utf-8"), "old")
+        self.assertEqual(temporary.read_text(encoding="utf-8"), "complete")
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

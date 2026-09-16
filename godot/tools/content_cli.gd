@@ -153,6 +153,25 @@ func _run_compiler_tests(compiler: Variant, bundle: Dictionary, baseline: Dictio
 	if bool(Dictionary(compiler.compile(invalid_strategy_card)).get("success", false)):
 		return "compiler_accepted_unknown_strategy_card"
 
+	var defaults_bundle := bundle.duplicate(true)
+	var defaults_catalog: Dictionary = defaults_bundle["strategies"]
+	defaults_catalog["shared_defaults"] = {"weights": {"hand_size": 7}, "matchup_weights": {}}
+	var inherited: Dictionary = Dictionary(defaults_catalog["strategies"])[deck_keys[0]]
+	inherited["use_shared_defaults"] = true
+	inherited["weights"] = {"hand_size": 11}
+	var inherited_result: Dictionary = compiler.compile(defaults_bundle)
+	if not bool(inherited_result.get("success", false)):
+		return "compiler_strategy_defaults_failed"
+	var inherited_runtime: Dictionary = Dictionary(inherited_result["outputs"])["ai_strategies"]
+	var inherited_profile: Dictionary = Dictionary(inherited_runtime["strategies"])[deck_keys[0]]
+	if int(Dictionary(inherited_profile["weights"])["hand_size"]) != 11:
+		return "compiler_strategy_override_lost"
+	if inherited_runtime.has("shared_defaults") or inherited_profile.has("use_shared_defaults"):
+		return "compiler_strategy_defaults_not_resolved"
+	inherited["use_shared_defaults"] = "yes"
+	if bool(Dictionary(compiler.compile(defaults_bundle)).get("success", false)):
+		return "compiler_accepted_invalid_strategy_defaults"
+
 	var invalid_descriptors := bundle.duplicate(true)
 	Dictionary(invalid_descriptors["vm_descriptors"])["descriptor_digest"] = "0".repeat(64)
 	if bool(Dictionary(compiler.compile(invalid_descriptors)).get("success", false)):
@@ -323,6 +342,11 @@ func _finalize_outputs(outputs: Dictionary) -> Dictionary:
 			return {"success": false, "error": "compiler_fingerprint_invalid"}
 	card_ir["descriptor_digest"] = descriptor_digest
 	card_ir["used_vm_ops"] = _used_vm_ops(card_ir)
+	var compiled_profiles: Dictionary = strategies.get("strategies", {})
+	for deck_key in compiled_profiles:
+		var profile: Dictionary = compiled_profiles[deck_key]
+		profile.erase("content_hash")
+		profile["content_hash"] = _canonical_json(profile).sha256_text()
 	strategies.erase("content_hash")
 	strategies["content_hash"] = _canonical_json(strategies).sha256_text()
 	var manifest_value: Variant = _read_json(DATA_ROOT + "/release_manifest.json")

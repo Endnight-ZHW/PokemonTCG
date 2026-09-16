@@ -146,7 +146,7 @@ class ChallengeExecutionTests(unittest.TestCase):
             "determinism-test",
             strategies,
             {
-                "engine": "turn_beam_v2",
+                "engine": "deck_planner_v1",
                 "node_budget": 32,
                 "belief_samples": 1,
             },

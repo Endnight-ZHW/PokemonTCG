@@ -52,7 +52,7 @@ class ActorWatchdogTests(unittest.TestCase):
 class EvaluationNativeTests(unittest.TestCase):
     def test_immediate_cancel_wakes_waiters_before_workers_initialize(self):
         catalog,decks,strategies=load_product_payloads()
-        agent=ArenaAgentSpec("test","test",strategies,{"engine":"strategic_intent_v3"})
+        agent=ArenaAgentSpec("test","test",strategies,{"engine":"deck_planner_v1"})
         pool=ptcg_ai_core.NativeChallengeArenaPool(catalog,decks,agent.native_payload(),agent.native_payload(),
                                                   {"concurrent_games":4,"deterministic":True,"inner_search_workers":1})
         pool.start([{"task_id": t.task_id, **t.conditions()} for t in protocol(max_decisions=1).tasks("ac",0)])
@@ -62,7 +62,7 @@ class EvaluationNativeTests(unittest.TestCase):
 
     def test_native_workers_reused_and_game_state_reset(self):
         catalog,decks,strategies=load_product_payloads()
-        options={"engine":"strategic_intent_v3","node_budget":8,"belief_samples":1,
+        options={"engine":"deck_planner_v1","node_budget":8,"belief_samples":1,
                  "internal_evaluation_smoke":True}
         a=ArenaAgentSpec("left","test",strategies,options)
         b=ArenaAgentSpec("right","test",strategies,options)

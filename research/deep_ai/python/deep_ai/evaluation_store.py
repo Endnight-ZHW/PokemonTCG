@@ -9,7 +9,7 @@ import secrets
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-from .challenge_arena_build import write_json_atomic
+from .challenge_arena_build import replace_file_atomic, write_json_atomic
 from .evaluation_fairness import canonical_hash
 from .evaluation_protocol import EvaluationProtocol, GameEvidence, evidence_semantics
 
@@ -68,7 +68,7 @@ def write_bytes_atomic(path: Path, value: bytes) -> None:
         stream.write(value)
         stream.flush()
         os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    replace_file_atomic(temporary, path)
 
 
 class EvaluationRunStore:

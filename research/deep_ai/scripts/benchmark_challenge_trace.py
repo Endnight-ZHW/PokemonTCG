@@ -13,7 +13,11 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from compare_challenge_decisions import ExternalController, action_semantics, load_product_payloads
+import sys
+RESEARCH_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RESEARCH_ROOT / "python"))
+from deep_ai.challenge_arena import load_product_payloads, product_engine_id
+from deep_ai.challenge_audit import ExternalController, action_semantics, decision_metadata
 from deep_ai.challenge_arena_build import sha256_file
 
 
@@ -43,11 +47,10 @@ def main():
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--time-budget-ms", type=int, default=0)
     parser.add_argument("--search-workers", type=int, choices=(1, 3), default=1)
-    parser.add_argument("--engine", choices=("turn_beam_v2", "strategic_intent_v3"))
+    parser.add_argument("--engine", choices=(product_engine_id(),))
     parser.add_argument("--assert-parity", action="store_true")
     for role in ("baseline", "candidate"):
         parser.add_argument(f"--{role}-search-workers", type=int, choices=(1, 3))
-        parser.add_argument(f"--{role}-anytime-search", choices=("enabled", "disabled"))
         parser.add_argument(f"--{role}-search-memoization", choices=("enabled", "disabled"))
     args = parser.parse_args()
     if args.rounds < 1 or args.warmups < 0 or args.time_budget_ms < 0:
@@ -59,7 +62,7 @@ def main():
     totals = {role: defaultdict(float) for role in timings}
     changed = set()
     overrides = {role: {f"internal_{feature}": getattr(args, f"{role}_{feature}") == "enabled"
-        for feature in ("anytime_search", "search_memoization")
+        for feature in ("search_memoization",)
         if getattr(args, f"{role}_{feature}") is not None} for role in timings}
     for role in timings:
         if getattr(args, f"{role}_search_workers") is not None:
@@ -96,14 +99,10 @@ def main():
                                 action_semantics(a) for a in request["actions"]]:
                             raise AssertionError(f"illegal returned action: {role} {index}")
                         results[role] = result
-                        origin = result["decision_origin"]
-                        sample[role] = {"elapsed_ms": result["elapsed_ms"], "wall_ms": wall_ms,
-                            "decision": semantic_result(result, request["kind"]),
-                            "origin": origin, "nodes_expanded": result.get("nodes_expanded", 0),
-                            "strategic_shadow_ms": result.get("strategic_shadow_ms", 0),
-                            "strategic_probe_ms": result.get("strategic_probe_ms", 0),
-                            "fallback_reason": result.get("strategic_fallback_reason", ""),
-                            "counters": result.get("native_performance_counters", {})}
+                        metadata = decision_metadata(result)
+                        origin = metadata["origin"]
+                        sample[role] = {**metadata, "elapsed_ms": result["elapsed_ms"], "wall_ms": wall_ms,
+                            "decision": semantic_result(result, request["kind"])}
                         if round_index >= 0:
                             timings[role][origin].append(result["elapsed_ms"])
                             timings[role]["all"].append(result["elapsed_ms"])

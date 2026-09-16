@@ -4,7 +4,7 @@ extends RefCounted
 ## Thin Godot adapter for the single native Challenge implementation.
 ## Rules, search, tactics, choice policy, and strategy scoring live in C++.
 
-const TRADITIONAL_ENGINE_ID := "strategic_intent_v3"
+const TRADITIONAL_ENGINE_ID := "deck_planner_v1"
 const STRATEGY_DATA_PATH := "res://data/ai_strategies.json"
 const MAX_PUBLIC_HISTORY := 4096
 const CHOICE_VIEW_FIELDS := [
@@ -56,8 +56,6 @@ func decide(
 		# ChoiceView v2 exposes this owner-only knowledge during full-deck
 		# searches. Traditional Challenge keeps the inferred prize multiset.
 		native_request["use_deck_inspection"] = true
-	if not native_request.has("use_strategy_optimization"):
-		native_request["use_strategy_optimization"] = true
 	controller.reset_match(str(native_request.get("match_instance_id", "")))
 	var result: Dictionary = controller.decide(native_request, _generation)
 	if cancel_check.is_valid() and bool(cancel_check.call()):

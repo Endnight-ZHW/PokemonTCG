@@ -180,6 +180,10 @@ class EvaluationAccumulator:
         per_deck = {}
         for deck, statistic in self.decks.items():
             value = statistic.snapshot()
+            value["noninferiority_margin"] = p.deck_margin
+            if p.mode == "screen" and p.context.get("paired_anchor_screen", False):
+                value["development_threshold_passed"] = (
+                    value["estimate"] >= -p.deck_margin - 1e-12 if statistic.n else None)
             value["status"] = ("confirmed_regression" if statistic.n and statistic.upper < -p.deck_margin
                                else "noninferior" if statistic.n and statistic.lower > -p.deck_margin
                                else "inconclusive")
@@ -190,8 +194,17 @@ class EvaluationAccumulator:
             reasons = sorted({r["failure_kind"] for r in self.faults})
             strength = "not_evaluated"
         elif p.mode in {"screen", "calibration"}:
-            status = "pass" if self.completed["ac"] == p.maximum_replicates else "continue"
+            status = "pass" if all(count == p.maximum_replicates for count in self.completed.values()) else "continue"
             reasons = ["diagnostic_only"]
+            if p.context.get("paired_anchor_screen", False) and status == "pass":
+                regressions = [deck for deck, value in per_deck.items()
+                               if value["estimate"] is not None and value["estimate"] < -p.deck_margin - 1e-12]
+                if primary["estimate"] < 0.5 - 1e-12 or regressions:
+                    status = "fail"
+                    reasons = (["screen_overall_below_half"] if primary["estimate"] < 0.5 - 1e-12 else [])
+                    reasons += [f"screen_deck_regression:{deck}" for deck in regressions]
+                else:
+                    reasons = ["development_thresholds_passed_not_statistical_promotion"]
             if p.mode == "calibration" and self.primary.n and not self.primary.lower <= 0.5 <= self.primary.upper:
                 status, reasons = "fail", ["self_play_outside_confidence_sequence"]
         elif p.mode == "regression":

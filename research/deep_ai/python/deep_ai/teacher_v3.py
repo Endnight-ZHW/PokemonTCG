@@ -218,7 +218,7 @@ class _NativeChallengeTeacher:
             "match_seed": self._seed,
             "seed": self._seed + self._decision_index * 104729,
             "match_instance_id": self._match_id,
-            "engine": "turn_beam_v2",
+            "engine": "deck_planner_v1",
             "node_budget": self._node_budget,
             "belief_samples": self._belief_samples,
         }

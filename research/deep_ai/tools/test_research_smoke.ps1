@@ -23,10 +23,12 @@ $env:PYTHONPATH = @(
     tests.test_research_smoke `
     tests.test_challenge_arena_build `
     tests.test_challenge_controller `
+    tests.test_challenge_strategy `
     tests.test_challenge_agent_protocol `
     tests.test_evaluation_challenge `
     tests.test_evaluation_store `
     tests.test_evaluation `
+    tests.test_evaluation_protection `
     tests.test_evaluation_native
 if ($LASTEXITCODE -ne 0) { throw 'Deep AI manual smoke workflow failed.' }
 & $Python -B (Join-Path $researchRoot 'scripts\calibrate_evaluation.py') `

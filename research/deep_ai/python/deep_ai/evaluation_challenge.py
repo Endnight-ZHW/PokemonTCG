@@ -9,7 +9,7 @@ from typing import Any, Callable, Sequence
 from .evaluation import evaluate
 from .evaluation_protocol import COMPARISON_ROLES, EvaluationProtocol, EvaluationTask
 from .evaluation_store import cohort_for_output
-from .evaluation_fairness import canonical_hash
+from .evaluation_fairness import canonical_hash, rules_content_hash
 from .challenge_arena_build import sha256_file, write_json_atomic
 
 
@@ -91,9 +91,10 @@ def run_challenge_evaluation(*, preset: str, candidate: Any, champion: Any, anch
         validate_agent_identity, validate_equal_search_contract, with_preset_contract,
     )
     from .v3_contract import RELEASE_DECKS
-    modes = {"smoke": "screen", "pr": "screen", "nightly": "regression", "release": "promotion", "calibration": "calibration"}
+    modes = {"smoke": "screen", "pr": "screen", "refactor": "screen", "strategy": "screen", "nightly": "regression", "release": "promotion", "calibration": "calibration"}
     mode = modes[preset]
-    if mode == "promotion" and anchor is None:
+    paired_screen = preset in {"refactor", "strategy"}
+    if (mode == "promotion" or paired_screen) and anchor is None:
         raise ValueError("evaluation_promotion_requires_frozen_anchor")
     if comparison_mode == "same-binary-strategy" and mode in {"regression", "promotion"}:
         raise ValueError("evaluation_formal_requires_external_agents")
@@ -130,17 +131,22 @@ def run_challenge_evaluation(*, preset: str, candidate: Any, champion: Any, anch
     maximum = replicates if replicates is not None else (1 if mode == "screen" else 20 if mode == "calibration" else 100)
     if mode == "screen" and not 1 <= maximum <= 3:
         raise ValueError("evaluation_screen_requires_one_to_three_rounds")
+    if paired_screen and maximum != 1:
+        raise ValueError("evaluation_refactor_requires_one_paired_matrix")
     protocol = EvaluationProtocol.create(
         backend="challenge", mode=mode, decks=("fire", "water") if preset == "smoke" else RELEASE_DECKS, participants=participants,
-        context={"rules_hash": canonical_hash(catalog), "decks_hash": canonical_hash(decks),
+        context={"rules_hash": rules_content_hash(catalog), "rules_hash_schema": "card_semantics_v1",
+                 "catalog_bundle_hash": canonical_hash(catalog), "decks_hash": canonical_hash(decks),
                  "binding_hash": binding["binding_sha256"], "evaluation_code_hash": evaluation_code_hash(),
                  "rules_profile": "CN_MAINLAND_3_1_0", "apply_type_matchups": False,
                  "comparison_mode": comparison_mode,
                  "time_budget_ms": 0, "inner_search_workers": 1,
-                 "watchdog_ms": candidate.decision_timeout_milliseconds},
+                 "watchdog_ms": candidate.decision_timeout_milliseconds,
+                 **({"paired_anchor_screen": True} if paired_screen else {})},
         seed=seed, cohort=cohort_for_output(output), maximum_replicates=maximum,
         minimum_replicates=5 if mode in {"promotion", "regression"} else 1,
         max_decisions=max_decisions,
+        deck_margin=0.0 if preset == "strategy" else 0.05,
     )
     backend = ChallengeEvaluationBackend(agents=agents, catalog=catalog, decks=decks,
                                          workers=workers, trace_all=trace_all)

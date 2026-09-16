@@ -534,7 +534,7 @@ void add_evaluation_options(Value &request, const Value &options) {
         }
     }
     if (field(request, "engine") == nullptr) {
-        request["engine"] = Value("turn_beam_v2");
+        request["engine"] = Value("deck_planner_v1");
     }
     // Default remains serial and deterministic. The explicit gameplay mode
     // is paired by the driver and uses its bounded game concurrency contract.

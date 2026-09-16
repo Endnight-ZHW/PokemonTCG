@@ -139,4 +139,20 @@ Assert-SourceManifest `
     -Groups @('runtime')
 Assert-VmDispatchOwnership
 
+$challengeRoot = Join-Path $repoRoot 'native\challenge_core\src'
+$deckKeys = (Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'godot\data\release_manifest.json') |
+    ConvertFrom-Json).release_decks
+foreach ($deckKey in $deckKeys) {
+    if (-not (Test-Path -LiteralPath (Join-Path $challengeRoot "policies\${deckKey}_policy.cpp"))) {
+        throw "Challenge deck policy is missing: $deckKey"
+    }
+}
+$deckPattern = '(==|!=)\s*"(' + (($deckKeys | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')"'
+foreach ($source in Get-ChildItem -LiteralPath $challengeRoot -Recurse -File -Filter '*.cpp') {
+    if ($source.Directory.Name -eq 'policies') { continue }
+    if ((Get-Content -Raw -LiteralPath $source.FullName) -match $deckPattern) {
+        throw "Deck-specific decisions escaped their policy: $($source.FullName)"
+    }
+}
+
 Write-Host 'SOURCE_BOUNDARIES_OK manifests=2 vm_ops=80'

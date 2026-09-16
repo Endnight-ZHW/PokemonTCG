@@ -1,129 +1,124 @@
-# challenge_core
+# Challenge deck planner
 
-`challenge_core` owns the framework-independent traditional Challenge AI. Its
-public provider/controller interfaces stay in the existing headers; search
-implementation details are split into:
+The product engine is `deck_planner_v1`. Godot and research use the same C++
+controller and rules implementation. The old v2/v3 controllers, shadow search,
+mandatory heuristic overrides and post-plan replacement have been removed.
+Historical agents remain external, frozen evaluation artifacts.
 
-- provider construction, performance counters and choice entry;
-- determinization, action ranking and state scoring;
-- post-plan tactical guards;
-- energy/retreat, card/discard and general choice policies.
+## Ownership
 
-`source_manifest.json` is the single runtime source list consumed by the Godot
-and opt-in Deep AI bindings. Search order, derived RNG seeds and performance
-counter names are compatibility behavior and must remain deterministic.
+- `ChallengeController` validates requests, owns immutable catalog knowledge,
+  selects the policy, coordinates cancellation and publishes results.
+- `DeckPolicyRegistry` registers the ten release policies in `policies/`.
+  Each policy owns its development stages, action preferences, resource retention,
+  position valuation, candidate coverage and card combinations. Fire and Water
+  allow another target to take the last nonterminal search slot; the other policies
+  protect their highest ranked action from that replacement. This applies to replies
+  and recovery too.
+  Water and Psychic prefer going second;
+  the other release policies prefer developing their board first.
+- `TurnPlanner` uses one turn expansion for our turn, opponent replies and recovery.
+  Every action and subsequent choice is settled by `RulesSession`. Opponent actions
+  use the opponent's policy and observation. The selected reply is replayed in
+  the original sampled world before recovery is scored. The same candidate set
+  is compared in every belief sample, and only complete exchanges are retained.
+- `CardEvaluator` and `planning/` supply shared card/combat facts. Policies own
+  valuation; shared code contains no deck-name decision branches.
+- `DecisionContext` owns per-request samples, memoization and the cooperative
+  deadline. Catalog/strategy knowledge is shared immutably across requests.
+- `MatchMemory` owns validated continuations, public hand knowledge constraints,
+  owner deck-inspection/prize knowledge and no-progress cycle tracking.
 
-Known opponent hand identities are conditional belief constraints rather than
-ordinary sampled cards. A fully hidden hand uses the configured three belief
-samples; once at least one identity remains known, two conditional samples
-cover the hidden remainder and next draw; a fully known hand with an empty deck
-uses one. Known-card reply actions receive a ranking-only certainty bonus so
-they survive the bounded reply frontier, while leaf evaluation distinguishes
-immediately accessible hand resources from deck outs. Turn-plan cache
-preconditions include a hash of the known opponent hand and invalidate when
-that knowledge changes.
+`source_manifest.json` is the single runtime source list for both bindings and
+native tests. Unknown deck keys use `generic_policy_v1`, limited to three actions
+of lookahead. All ten release keys have explicit policies; missing release
+strategy data fails configuration instead of silently losing deck specialization.
 
-Owner-only `ChoiceView.presentation.browse_card_refs` is consumed only for a
-full-deck search belonging to the acting player. It fixes the current deck
-multiset, infers the complementary prize multiset, and keeps that prize
-knowledge for later decisions in the same match. The memory is discarded as
-soon as it can no longer be reconciled exactly with the public state. Browse
-refs never expand `ChoiceView.options` and therefore cannot become a legal
-selection. Real search choices use the exact split to prefer a last accessible
-key component and to avoid a setup Basic whose complete relevant evolution
-line is provably prize-locked. When exact memory participates in action search,
-its known-prize fingerprint is part of turn-plan cache preconditions, so a plan
-made before inspection cannot bypass newly learned information.
+## Decision contract
 
-Fixed-budget action search uses an adaptive information policy. Most deck
-plans determinize the exact inspected deck/prize multisets, while the Psychic
-discard/engine plan keeps sampling hidden draws; paired evaluation found that
-collapsing that plan to one exact split changed its mirror closure from 2-2 to
-0-4. Real choices still use the exact memory in both cases. The diagnostic
-request field `use_deck_inspection_action_search` overrides this automatic
-policy. `use_deck_inspection=false` disables the whole behavior for paired
-Arena A/B tests; the game client enables inspection by default.
+`configure(catalog, decks, strategies)`, `decide(request, generation)`,
+`cancel(generation)`, `reset_match(match_id)` and `get_contract()` retain their
+binding signatures. Action 4, ChoiceView 2 and Snapshot 3 remain unchanged.
+The default and only supported engine is `deck_planner_v1`; old engine ids fail
+with `unsupported_engine`. Arena sends each frozen agent its own engine id.
 
-## Strategic intent v3
+Live and simulated choices share the same dispatcher and deck policy. Search,
+discard, recovery and energy choices account for complete resource combinations.
+`ResourceBundle` passes the current goal, role requirements, retained hand and
+resource delta to the policy. Reservations value the last needed copy, rather
+than adding the same bonus to every duplicate. Recycling to the deck uses that
+destination when evaluating the combination.
+A cached continuation must match the acting player, revision, public position,
+known hand/prize information and strategy version/hash. Random outcomes close
+its deterministic prefix. Cancellation never consumes a continuation or commits
+a newly inferred prize memory.
 
-`planner_v3/` contains the strategic replacement described by the design:
-public-information belief summaries, prize clocks, attacker pipelines, energy
-scheduling, persistent match plans, intent selection, goal-directed complete-
-turn compilation, partial-order pruning, opponent worst-response plus recovery
-scenarios, and full-sequence safety validation. The engine id is
-`strategic_intent_v3`; low-confidence plans fall back transactionally to the
-compatibility `turn_beam_v2` path.
+The client supplies `time_budget_ms=5000`. The cooperative deadline covers all
+search phases; it is not an OS-enforced hard deadline. A legal incumbent exists
+before optional work begins. Expiry returns verified work and publishes no
+unfinished continuation. Fixed-work runs use `time_budget_ms=0`, up to three
+belief samples and ordered result reduction. Gameplay defaults to three sample
+workers on Windows and two on Android; Arena uses one.
 
-The optimized attacker pipeline excludes a pure support engine with no
-attacker evolution from `next_slot`/`backup_slot`, while still counting every
-Benched Pokemon as protection against an immediate board-out. The behavior and
-the prize-aware choice adjustments are controlled by the evaluation-only
-`use_strategy_optimization` treatment (enabled by the game client).
+`node_budget=192` bounds primary turn expansion per belief sample. Up to three
+completed candidates receive replies (six actions, 32 expansions) and recovery
+(six actions, 24 expansions) through the same expansion function. These phases
+share the deadline. Counters report actual rule actions and choices, including
+reply replay and rejected transitions. Each simulated action has a revision
+scoped identifier. Deterministic transitions preserve the world's random stream;
+only actual random rules operations advance it. Counters include
+work that did not produce a retained plan; engine-version comparisons must also
+inspect these counters and latency instead of treating a node as equal CPU work.
 
-`strategic_intent_v3` remains the product default. Strength evaluation uses the
-shared protocol to compare the candidate, frozen champion and 0.8.0 historical
-anchor. `turn_beam_v2` remains the controller's fallback engine. See the
-[Arena guide](../../research/deep_ai/docs/native_challenge_arena.md) for the active
-reference specifications and reproducible strength comparisons.
+Results expose `policy_id`, `policy_fallback`, `turn_goal`, `plan_reason`,
+`completion_reason`, scores, work counters and cache hits. Full diagnostic requests
+can include `position_facts`. `root_evaluations` and `reply_completion_reasons`
+show comparable candidate scores and any incomplete horizon. There are no
+shadow/legacy-result fields.
 
-`strategic_combat.cpp` centralizes per-attack energy/evolution access, expected
-damage, coin/mill knockout odds, reload costs and a bounded three-attack prize
-route. Readiness and deck-access factors are heuristics, while selected action
-sequences are settled by the authoritative rules engine. Shared readiness feeds
-frequent leaf evaluation; the more expensive prize route belongs to strategic
-comparison and bounded card-bundle evaluation. Choice priors order candidates
-but complete resource combinations can change the selection.
+## Strategy authoring
 
-Reply and recovery comparisons each allow six atomic actions and require a
-completed exchange before approving a general replacement. Immediate prizes
-are a preference rather than a blanket veto on setup or sacrifice lines.
-Rules legality, proven wins, public-information boundaries and cycle protection
-remain mandatory. Attacker commitments are re-evaluated when occupants or
-resources change instead of treating a board slot as a Pokemon identity.
+Edit `godot/authoring/ai_strategies.json`. A profile explicitly opts into
+`shared_defaults` using `use_shared_defaults`; its own weights take precedence.
+The content compiler expands defaults. `tools/content.ps1 export` emits complete
+runtime profiles and recomputes their hashes. Runtime code never depends on an
+unexpanded authoring document. Card rules and deck lists are independent inputs.
 
-The optional request field `time_budget_ms` is a cooperative per-decision
-deadline covering planning, replies and choice bundles. Native default `0`
-disables it for reproducible fixed-work Arena runs; the Godot client supplies
-`5000` when omitted. Expiry returns the best verified available action and
-does not act as generation cancellation or commit an incomplete continuation.
-Actual work and deadline expiry are exposed through incremental
-`native_performance_counters` fields. This is not an OS-enforced hard deadline.
+Psychic keeps more hand resources and completes a held Xatu with Natu before
+collecting another basic attacker, except when Cresselia can use its opening
+attack or the game is closing. Its energy selector recognizes a charged Xatu
+that can immediately finish the game through a legal switch. These preferences
+live in the Psychic policy and its authored parameters.
 
-Lifetime regressions are captured in `tests/fixtures/legacy_replay_lifetime.json`
-and `tests/fixtures/mandatory_attack_lifetime.json`. Sequence replay owns an
-action value before replacing its rules session, and mandatory tactics borrow
-attack definitions directly from the catalog rather than a temporary array.
-The standalone research agent supports `sanitizer=address` in its SCons build;
-`research/deep_ai/scripts/check_challenge_memory.py` replays both real requests
-through IPC, checks legal responses and saves sanitizer output and fixture hashes.
+Readiness forecasts respect once-per-turn ability use during the current turn
+and reset that availability when predicting the owner's next turn. Regression
+fixtures execute both real turn transitions to check this boundary.
 
-## Decision execution and regression checks
+## Verification
 
-The controller captures public information once. A valid strategic continuation,
-unique legal action, or rules-proven immediate win returns before requesting the
-legacy policy. Otherwise an internal C++ supplier computes that policy once;
-the strategic planner still uses its complete action/sequence as the comparison
-baseline. Cache consumption/replacement is staged per entry and committed for
-the selected policy. No recursive controller call or whole-cache rollback is
-needed. Known-hand/prize fingerprints, action-cycle protection, and full-sequence
-safety validation remain part of the decision contract.
+```powershell
+.\tools\test_source_boundaries.ps1
+.\tools\test_challenge_core.ps1
+.\tools\content.ps1 test
+.\tools\content.ps1 check
+.\tools\test_godot_ai.ps1
+.\research\deep_ai\tools\test_research_smoke.ps1
+.\research\deep_ai\tools\run_challenge_arena.ps1 -Preset refactor -Candidate challenge_next -Workers 8
+```
 
-Real and simulated choices share one typed dispatcher. Fixed sequence replays
-match legal actions directly by their stable signatures without scoring the
-entire action set. Atomic rules transitions share one implementation, while each
-traversal retains its original seed derivation and termination rules. Legacy
-reply/recovery scenarios are computed lazily at most once per sample within a
-single strategic decision; neither results nor sampled states escape that call.
+The `refactor` preset freezes three 400-game matrices: A versus the pre-refactor
+C, A versus the historical H, and C versus H. Matching scenarios use identical
+seeds, deck directions, seats and first-player closures. C defaults to
+`challenge_refactor_before` (commit `0005e241b51288abf9557b67688c71894d21937c`);
+H remains `challenge_release_v1`. Development thresholds require reliable
+completion, A-C score at least 50%, and no deck's paired A-H minus C-H score below
+-5 percentage points. The result is a screen, never formal promotion; existing
+champion specs are not rewritten. See the Arena guide for formal evaluation.
 
-Counter field names remain compatible and report work actually performed.
-`strategic_shadow_legacy=false` and `strategic_shadow_nodes=0` describe a skipped
-legacy policy; `strategic_shadow_ms` reports its execution time when needed.
-Node-dependent diagnostic hashes can change even when actions remain identical.
-
-`research/deep_ai/tests/test_challenge_controller.py` exercises the complete
-native controller, including plan reuse/invalidation, public hand knowledge,
-generation cancellation, match reset, and fallback. The research tool
-`scripts/compare_challenge_decisions.py` runs two frozen external agents against
-the same public requests, applies only the baseline's decisions, and fails on
-the first action/choice divergence. Its output is separate from paired Arena
-strength/performance reports. See the [research workflow](../../research/deep_ai/README.md) for regression commands.
+For subsequent strategy changes, use the `strategy` preset with an explicit
+`-BaselineBuildManifest` for the frozen version being protected. It uses the
+same three matrices with a zero percentage point allowance for each deck.
+`check_challenge_strategy.py` also protects the stronger per-deck anchor score
+from prior sealed runs using the same scenarios. The latest
+[strategy validation report](STRATEGY_VALIDATION.md) records the two 1200-game
+screens, independent seeds, regression fixtures, builds and paired performance.

@@ -1,5 +1,5 @@
 {
-  "content_hash": "e7241418d5d955b887e3ee6393789e9c3b83e8ef88b28b07484ff30cdd932949",
+  "content_hash": "84921036c1e831dda60db6614e523b1f46761ff1a9d378f15e2f1550bd17b772",
   "deck_archetypes": {
     "colorless": [
       "wide_board",
@@ -89,6 +89,8 @@
       "attack_secondary": 10,
       "board_engine": 16,
       "board_primary": 28,
+      "bundle_reserve": 12,
+      "bundle_resource": 1,
       "candidate_engine": 4,
       "candidate_primary": 6,
       "choice_energy": 7,
@@ -103,6 +105,8 @@
       "evolve": 20,
       "evolve_core": 30,
       "hand_size": 1.5,
+      "plan_prize_clock": 40,
+      "plan_readiness": 0.35,
       "play_acceleration": 20,
       "play_disruption": 5,
       "play_draw": 6,
@@ -189,7 +193,7 @@
           "svi-jete"
         ]
       },
-      "content_hash": "1717db6d25a0bc6897c3acef33700c270e93e23816b359e1da7772ac7131f521",
+      "content_hash": "35ad18f1e751d8f8ae1961a90a2f27ff1d40022a16056a7a02cc5cfe1a820d18",
       "deck_key": "colorless",
       "matchup_weights": {
         "ability_engine": 3,
@@ -234,8 +238,8 @@
           }
         }
       ],
-      "strategy_id": "colorless_maushold_v1",
-      "version": 1,
+      "strategy_id": "colorless_policy_v1",
+      "version": 2,
       "weights": {
         "ambipom_call": 6,
         "ambipom_hand_attack": 5,
@@ -347,7 +351,7 @@
           "sv1-204"
         ]
       },
-      "content_hash": "cc4fcc75e190c060c5eff82d1e0610bd4d5cf57068c46c034906a718bd657801",
+      "content_hash": "c7747088ae56206c53757ec1b32cd014fe33dd80a9f729cefcb340305919ba4b",
       "deck_key": "darkness",
       "matchup_weights": {
         "ability_engine": 3,
@@ -392,8 +396,8 @@
           }
         }
       ],
-      "strategy_id": "darkness_mabosstiff_v1",
-      "version": 1,
+      "strategy_id": "darkness_policy_v1",
+      "version": 2,
       "weights": {
         "attach_primary": 18,
         "attach_secondary": 9,
@@ -499,7 +503,7 @@
           "sv1-150"
         ]
       },
-      "content_hash": "bb8c29d39ad831e17bbaca404ab1492fa6455010ec41e89141875d4b5e09e31b",
+      "content_hash": "b6c552fbf509d4db69ddc348a31ebb042cbb43b98324662c2f6da42a074b448f",
       "deck_key": "dragon",
       "matchup_weights": {
         "ability_engine": 3,
@@ -544,8 +548,8 @@
           }
         }
       ],
-      "strategy_id": "dragon_altaria_v1",
-      "version": 1,
+      "strategy_id": "dragon_policy_v1",
+      "version": 2,
       "weights": {
         "altaria_lock": 31,
         "attach_primary": 18,
@@ -651,7 +655,7 @@
           "sv1-150"
         ]
       },
-      "content_hash": "c210f76232970bec029bff260ed9f277c9ef0c34e6c14186a31b2b0940ed6023",
+      "content_hash": "3e6c2b2e5e87f1f533062dc2b907695a3f4bcec429d5702b0f33c0b7e8d11204",
       "deck_key": "fighting",
       "matchup_weights": {
         "ability_engine": 3,
@@ -696,8 +700,8 @@
           }
         }
       ],
-      "strategy_id": "fighting_lucario_v1",
-      "version": 1,
+      "strategy_id": "fighting_policy_v1",
+      "version": 4,
       "weights": {
         "attach_primary": 18,
         "attach_secondary": 9,
@@ -716,6 +720,7 @@
         "closeout": 20,
         "damage_pressure": 0.08,
         "discard_synergy": 16,
+        "energy_switch_reserve": 15,
         "evolve": 20,
         "evolve_core": 38,
         "fighting_stack": 8,
@@ -801,7 +806,7 @@
           "sv1-150"
         ]
       },
-      "content_hash": "65decc0fc046ef50550238df19079f39ca4651e361ce99b63071198bf5baca60",
+      "content_hash": "4dd16f571fac2f79a56df2091edd9c7e43c56f30ecc0258426ce528ea77419ad",
       "deck_key": "fire",
       "matchup_weights": {
         "ability_engine": 3,
@@ -846,8 +851,8 @@
           }
         }
       ],
-      "strategy_id": "fire_infernape_v1",
-      "version": 1,
+      "strategy_id": "fire_policy_v1",
+      "version": 3,
       "weights": {
         "attach_primary": 23,
         "attach_secondary": 9,
@@ -957,7 +962,7 @@
           "sv1-150"
         ]
       },
-      "content_hash": "c49f1359e40c702f79c98656b2617335f077d76f724fac2a7c55099e6b1831ad",
+      "content_hash": "ea3c5ed8a51e717558af0efbb1a00a36dcf348afd49d4e7fdedd5afcf327e5c8",
       "deck_key": "grass",
       "matchup_weights": {
         "ability_engine": 3,
@@ -1002,8 +1007,8 @@
           }
         }
       ],
-      "strategy_id": "grass_torterra_v1",
-      "version": 1,
+      "strategy_id": "grass_policy_v1",
+      "version": 5,
       "weights": {
         "attach_primary": 18,
         "attach_secondary": 9,
@@ -1011,6 +1016,7 @@
         "attack_secondary": 10,
         "board_engine": 16,
         "board_primary": 28,
+        "bootstrap_basic": 200,
         "candidate_engine": 4,
         "candidate_primary": 6,
         "choice_energy": 7,
@@ -1023,9 +1029,11 @@
         "damage_pressure": 0.08,
         "discard_synergy": 16,
         "empoleon_revival": 35,
+        "evolution_seed": 180,
         "evolve": 24,
         "evolve_core": 32,
         "evolved_board": 14,
+        "first_evolution_line": 120,
         "gardenia": 27,
         "hand_size": 1.5,
         "play_acceleration": 20,
@@ -1043,6 +1051,7 @@
         "torterra_evolution_pressure": 28,
         "torterra_headbutt": 14,
         "turtwig_setup": 18,
+        "unpaired_evolution": 180,
         "use_engine_ability": 22,
         "zarude_opening_search": 22
       }
@@ -1111,7 +1120,7 @@
           "svl-vitb"
         ]
       },
-      "content_hash": "c8a3e738374113244b96cfe5fa877e68e20ec7a6fcd71f3794f22f85bab109be",
+      "content_hash": "147aca8004ff3f4e355bd0e719ebe94aacab58b30567bb4a455476961d61d804",
       "deck_key": "lightning",
       "matchup_weights": {
         "ability_engine": 3,
@@ -1156,8 +1165,8 @@
           }
         }
       ],
-      "strategy_id": "lightning_pikachu_v1",
-      "version": 1,
+      "strategy_id": "lightning_policy_v1",
+      "version": 2,
       "weights": {
         "attach_primary": 25,
         "attach_secondary": 9,
@@ -1292,7 +1301,7 @@
           "sv1-108"
         ]
       },
-      "content_hash": "474ca2686667d692fb3e2d911c0c31fe78b5b39e20d98f3c81d567f49d0ea9c8",
+      "content_hash": "7326cc116466b1166bef8e8a81e5705b0f0f25715e228606eb73a9037a83d3a9",
       "deck_key": "psychic",
       "matchup_weights": {
         "ability_engine": 3,
@@ -1337,8 +1346,8 @@
           }
         }
       ],
-      "strategy_id": "psychic_xatu_v1",
-      "version": 1,
+      "strategy_id": "psychic_policy_v1",
+      "version": 8,
       "weights": {
         "attach_primary": 18,
         "attach_secondary": 9,
@@ -1356,17 +1365,17 @@
         "choice_resource": 4,
         "choice_setup": 10,
         "closeout": 20,
+        "complete_xatu_line": 240,
         "cresselia_active_opening": 115,
         "cresselia_first_turn_growth": 100,
         "cresselia_growth": 55,
         "cresselia_opening_route": 130,
         "damage_pressure": 0.08,
-        "discard_synergy": 16,
         "evolve": 20,
         "evolve_core": 30,
         "first_xatu_priority": 95,
         "graveyard_scaling": 15,
-        "hand_size": 1.5,
+        "hand_size": 20,
         "houndstone_before_xatu_penalty": 90,
         "latios_clean_light": 25,
         "latios_glide": 3,
@@ -1380,6 +1389,7 @@
         "play_setup": 14,
         "play_switch": 4,
         "psychic_energy_hand": 6,
+        "ready_xatu_seed": 400,
         "search_top_k": 6,
         "stage_action_bonus": 7,
         "stage_state_progress": 3,
@@ -1457,7 +1467,7 @@
           "svl-vitb"
         ]
       },
-      "content_hash": "160c3093b031cfa309814a678c55e0a40c8180502d27d56e498f9e65a8db4c17",
+      "content_hash": "3650b595402b82dca96ebc13952dafbf994e767bba141421f33a75d4679bb1ea",
       "deck_key": "steel",
       "matchup_weights": {
         "ability_engine": 3,
@@ -1502,8 +1512,8 @@
           }
         }
       ],
-      "strategy_id": "steel_zacian_zamazenta_v1",
-      "version": 1,
+      "strategy_id": "steel_policy_v1",
+      "version": 2,
       "weights": {
         "attach_primary": 22,
         "attach_secondary": 9,
@@ -1606,7 +1616,7 @@
           "sv1-150"
         ]
       },
-      "content_hash": "d3a334e15e29a2b64cf0f7c5d9a5437335b6dec7ae100bdaf75ffd197325f69c",
+      "content_hash": "81f7332892ac9d622c6317fb2a3a4f66d897d266f0a00b7dd0420d2fe376cae7",
       "deck_key": "water",
       "matchup_weights": {
         "ability_engine": 3,
@@ -1651,8 +1661,8 @@
           }
         }
       ],
-      "strategy_id": "water_greninja_v1",
-      "version": 1,
+      "strategy_id": "water_policy_v1",
+      "version": 3,
       "weights": {
         "attach_primary": 18,
         "attach_secondary": 9,

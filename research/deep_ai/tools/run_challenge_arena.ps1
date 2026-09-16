@@ -1,24 +1,21 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('smoke', 'pr', 'nightly', 'release', 'calibration')]
+    [ValidateSet('smoke', 'pr', 'refactor', 'strategy', 'nightly', 'release', 'calibration')]
     [string]$Preset = 'smoke',
     [string]$Candidate = 'challenge_next',
     [string]$Baseline = '',
     [string]$Anchor = 'challenge_release_v1',
+    [string]$BaselineBuildManifest = '',
     [string]$CacheDirectory = '',
     [switch]$DeclareOnly,
-    [ValidateSet('', 'turn_beam_v2', 'strategic_intent_v3')]
+    [ValidateSet('', 'deck_planner_v1', 'turn_beam_v2', 'strategic_intent_v3')]
     [string]$CandidateEngine = '',
-    [ValidateSet('', 'turn_beam_v2', 'strategic_intent_v3')]
+    [ValidateSet('', 'deck_planner_v1', 'turn_beam_v2', 'strategic_intent_v3')]
     [string]$BaselineEngine = '',
     [ValidateSet('', 'enabled', 'disabled')]
     [string]$CandidateDeckInspection = '',
     [ValidateSet('', 'enabled', 'disabled')]
     [string]$BaselineDeckInspection = '',
-    [ValidateSet('', 'enabled', 'disabled')]
-    [string]$CandidateStrategyOptimization = '',
-    [ValidateSet('', 'enabled', 'disabled')]
-    [string]$BaselineStrategyOptimization = '',
     [ValidateRange(1, 64)]
     [int]$Workers = 8,
     [string]$Output = '',
@@ -37,7 +34,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($Baseline)) {
-    $Baseline = if ($Preset -eq 'smoke') { 'challenge_release_v1' } else { 'challenge_champion_v1' }
+    $Baseline = if ($Preset -eq 'smoke') { 'challenge_release_v1' } elseif ($Preset -eq 'refactor') { 'challenge_refactor_before' } else { 'challenge_champion_v1' }
 }
 $researchRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $researchRoot)
@@ -66,6 +63,8 @@ if ($ComparisonMode -ne 'same-binary-strategy') {
         $baselineRuntime = "$Baseline-calibration-current"
         # Calibrate the exact same artifact, including its binary checksum.
         $baselineBuildOutput = @($candidateManifest)
+    } elseif (-not [string]::IsNullOrWhiteSpace($BaselineBuildManifest)) {
+        $baselineBuildOutput = @((Resolve-Path -LiteralPath $BaselineBuildManifest).Path)
     } else {
         $baselineSpecPath = Join-Path $researchRoot "arena\baselines\$Baseline.json"
         if (-not (Test-Path -LiteralPath $baselineSpecPath)) {
@@ -90,7 +89,7 @@ if ($ComparisonMode -ne 'same-binary-strategy') {
     }
     if ($LASTEXITCODE -ne 0) { throw 'Baseline Arena Agent build failed.' }
     $baselineManifest = [string]($baselineBuildOutput | Select-Object -Last 1)
-    if ($Preset -eq 'release') {
+    if ($Preset -in @('release', 'refactor', 'strategy')) {
         $anchorSpecPath = Join-Path $researchRoot "arena\baselines\$Anchor.json"
         $anchorSpec = Get-Content -LiteralPath $anchorSpecPath -Raw | ConvertFrom-Json
         if ([string]$anchorSpec.git_ref -notmatch '^[0-9a-fA-F]{40}$') {
@@ -145,12 +144,6 @@ if (-not [string]::IsNullOrWhiteSpace($CandidateDeckInspection)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($BaselineDeckInspection)) {
     $arguments += @('--baseline-deck-inspection', $BaselineDeckInspection)
-}
-if (-not [string]::IsNullOrWhiteSpace($CandidateStrategyOptimization)) {
-    $arguments += @('--candidate-strategy-optimization', $CandidateStrategyOptimization)
-}
-if (-not [string]::IsNullOrWhiteSpace($BaselineStrategyOptimization)) {
-    $arguments += @('--baseline-strategy-optimization', $BaselineStrategyOptimization)
 }
 if ($Replicates -gt 0) {
     $arguments += @('--replicates', [string]$Replicates)

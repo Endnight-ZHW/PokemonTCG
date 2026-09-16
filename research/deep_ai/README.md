@@ -66,10 +66,10 @@ Keep the active frozen champion and 0.8.0 anchor specifications. Superseded
 experiment specifications and evaluation reports are removed. All evaluation
 presets use the shared protocol, journal and report without format adapters. For decision
 parity, use `scripts/compare_challenge_decisions.py` with frozen baseline and
-candidate agents; `scripts/benchmark_challenge_decisions.py` measures repeated
+candidate agents; `scripts/benchmark_challenge_trace.py` measures repeated
 fixed requests. Use `scripts/check_challenge_memory.py` for the native lifetime
 fixtures. Controller tests cover plan reuse, public knowledge, cancellation,
-match reset and fallback. The manual smoke also checks replay, a CPU learner
+match reset and unknown-deck routing. The manual smoke also checks replay, a CPU learner
 step and ONNX parity.
 
 Generated replays, checkpoints and exported models under `build/` must be

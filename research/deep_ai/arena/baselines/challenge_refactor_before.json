@@ -1,0 +1,13 @@
+{
+  "schema": "ptcg.challenge_arena.agent/2",
+  "agent_id": "challenge_refactor_before",
+  "build_id": "0005e241-frozen",
+  "backend": "external_process",
+  "git_ref": "0005e241b51288abf9557b67688c71894d21937c",
+  "strategies_ref_path": "godot/data/ai_strategies.json",
+  "evaluation_options": {
+    "engine": "strategic_intent_v3",
+    "node_budget": 192,
+    "belief_samples": 3
+  }
+}

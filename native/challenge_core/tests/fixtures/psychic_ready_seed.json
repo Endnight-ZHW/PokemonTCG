@@ -1,0 +1,418 @@
+{
+  "snapshot": {
+    "action_log": [
+      "Arena-Seat-0 抛掷硬币：1 次正面，0 次反面。",
+      "Arena-Seat-0 选择了后攻。",
+      "Arena-Seat-0 抽取了 7 张卡牌。",
+      "Arena-Seat-1 抽取了 7 张卡牌。",
+      "Arena-Seat-0 公开了 勇气护符、超能量×2、能量回收、天然鸟、克拉拉、墓扬犬。",
+      "Arena-Seat-0 将 勇气护符、超能量×2、能量回收、天然鸟、克拉拉、墓扬犬 放回了牌库。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 抽取了 7 张卡牌。",
+      "Arena-Seat-1 暗置宝可梦。",
+      "Arena-Seat-1 暗置宝可梦。",
+      "Arena-Seat-1 暗置宝可梦。",
+      "Arena-Seat-1 完成了开局宝可梦放置。",
+      "Arena-Seat-0 暗置宝可梦。",
+      "Arena-Seat-0 完成了开局宝可梦放置。",
+      "Arena-Seat-1 选择抽取 1 张再战奖励牌。",
+      "Arena-Seat-1 抽取了 1 张卡牌。",
+      "—— Arena-Seat-1 的回合 ——",
+      "Arena-Seat-1 抽取了 1 张卡牌。",
+      "Arena-Seat-1 将 斗能量 附加给了战斗场的宝可梦。",
+      "Arena-Seat-1 将 斗能量 附着到了 飞天螳螂。",
+      "Arena-Seat-1 结束了回合。",
+      "—— Arena-Seat-0 的回合 ——",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 使用了训练家卡 妮莫。",
+      "Arena-Seat-0 抽取了 3 张卡牌。",
+      "Arena-Seat-0 将 拉帝欧斯 放到了备战区。",
+      "Arena-Seat-0 结束了回合。",
+      "—— Arena-Seat-1 的回合 ——",
+      "Arena-Seat-1 抽取了 1 张卡牌。",
+      "Arena-Seat-1 使用 路卡利欧 进行了进化。",
+      "Arena-Seat-1 使用了特性「旺盛斗气」。",
+      "在 路卡利欧 身上放置了 2 个伤害指示物。",
+      "Arena-Seat-1 将 斗能量 附着到了 路卡利欧。",
+      "Arena-Seat-1 重洗了牌库。",
+      "Arena-Seat-1 将 斗能量 附加给了备战区的宝可梦。",
+      "Arena-Seat-1 将 斗能量 附着到了 路卡利欧。",
+      "Arena-Seat-1 使用了训练家卡 高级球。",
+      "Arena-Seat-1 弃置了 短裤小子×2。",
+      "Arena-Seat-1 展示了 劈斧螳螂，并加入手牌。",
+      "Arena-Seat-1 重洗了牌库。",
+      "Arena-Seat-1 使用 劈斧螳螂 进行了进化。",
+      "Arena-Seat-1 结束了回合。",
+      "—— Arena-Seat-0 的回合 ——",
+      "Arena-Seat-0 抽取了 1 张卡牌。",
+      "Arena-Seat-0 将 代欧奇希斯 放到了备战区。",
+      "Arena-Seat-0 将 超能量 附加给了备战区的宝可梦。",
+      "Arena-Seat-0 将 超能量 附着到了 拉帝欧斯。",
+      "Arena-Seat-0 使用了训练家卡 派帕。",
+      "Arena-Seat-0 展示了 巢穴球、勇气护符，并加入手牌。",
+      "Arena-Seat-0 重洗了牌库。",
+      "Arena-Seat-0 使用了训练家卡 勇气护符。",
+      "Arena-Seat-0 将 勇气护符 附着到了 拉帝亚斯。"
+    ],
+    "active_player_idx": 0,
+    "apply_type_matchups": false,
+    "choice_sequence": 1,
+    "extra_draws": [
+      0,
+      1
+    ],
+    "first_player_idx": 1,
+    "mulligan_bonus_max": 1,
+    "mulligan_count": [
+      1,
+      0
+    ],
+    "opening_coin_winner_idx": 0,
+    "pending_promotions": [],
+    "phase": "MAIN",
+    "players": [
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "sv1-202",
+          "can_evolve_this_turn": true,
+          "card_id": "sv1-110",
+          "damage_counters": 0,
+          "damage_prevented": false,
+          "energy_card_ids": [],
+          "evolution_stack_ids": [],
+          "healed_this_turn": false,
+          "modifiers": [
+            {
+              "condition": {
+                "target_basic": true
+              },
+              "conflict_policy": "commutative",
+              "controller": 0,
+              "duration": "until_leave_play",
+              "hook": "MAX_HP",
+              "layer": "add",
+              "operation": {
+                "amount": 50,
+                "kind": "hp_delta"
+              },
+              "priority": 0,
+              "scope": "self",
+              "source_ref": {
+                "card_id": "sv1-110",
+                "kind": "pokemon",
+                "player": 0,
+                "slot": "active"
+              },
+              "stacking": "replace_same_source"
+            }
+          ],
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": false,
+          "status_conditions": [],
+          "used_abilities": []
+        },
+        "bench": [
+          null,
+          null,
+          null,
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "sv1-112",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": true,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "sv1-111",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-5"
+            ],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          }
+        ],
+        "deck": [
+          "sv1-107",
+          "sv1-107",
+          "sv1-107",
+          "sv1-108",
+          "sv1-109",
+          "sv1-111",
+          "sv1-113",
+          "sv1-114",
+          "sv1-104",
+          "sv1-104",
+          "sv1-106",
+          "sv1-171",
+          "sv1-151",
+          "sv1-151",
+          "sv1-153",
+          "sv1-153",
+          "sv1-153",
+          "sv1-153",
+          "sv1-150",
+          "sv1-150",
+          "sv1-150",
+          "sv1-150",
+          "sv2-catch",
+          "sv2-catch",
+          "sv1-201",
+          "sv1-202",
+          "sv1-203",
+          "sv1-176",
+          "sv2-young",
+          "sv2-young",
+          "sv1-180",
+          "sv1-204",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-ener-5"
+        ],
+        "discard": [
+          "sv1-180",
+          "sv1-204"
+        ],
+        "energy_attached_this_turn": true,
+        "hand": [
+          "sv2-young",
+          "sv1-180",
+          "sv1-108",
+          "sv1-180",
+          "sv1-189",
+          "sv1-189",
+          "sv1-151"
+        ],
+        "healed_this_turn": false,
+        "name": "Arena-Seat-0",
+        "prizes": [
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-ener-5",
+          "sv1-ener-5"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": true,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      },
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "",
+          "can_evolve_this_turn": false,
+          "card_id": "svf-klea",
+          "damage_counters": 0,
+          "damage_prevented": false,
+          "energy_card_ids": [
+            "sv1-ener-6"
+          ],
+          "evolution_stack_ids": [
+            "svf-scyt"
+          ],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": false,
+          "status_conditions": [],
+          "used_abilities": []
+        },
+        "bench": [
+          null,
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svf-pass",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          null,
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": false,
+            "card_id": "svf-luca",
+            "damage_counters": 2,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-6",
+              "sv1-ener-6"
+            ],
+            "evolution_stack_ids": [
+              "svf-rio"
+            ],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": [
+              "旺盛斗气"
+            ]
+          },
+          null
+        ],
+        "deck": [
+          "svf-rio",
+          "svf-rio",
+          "svf-luca",
+          "svf-luca",
+          "svf-scyt",
+          "svf-klea",
+          "svf-farf",
+          "svf-terr",
+          "svf-hawl",
+          "sv1-153",
+          "sv1-153",
+          "sv1-153",
+          "sv1-151",
+          "sv1-151",
+          "sv1-151",
+          "sv1-151",
+          "sv1-150",
+          "sv1-150",
+          "sv2-catch",
+          "sv2-catch",
+          "svf-potion",
+          "svf-potion",
+          "svf-ensw2",
+          "svf-ensw2",
+          "sv3-134",
+          "svi-erec",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-176",
+          "sv2-young",
+          "sv1-189",
+          "sv1-189",
+          "svf-houb",
+          "svf-houb",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6"
+        ],
+        "discard": [
+          "sv1-153",
+          "sv2-young",
+          "sv2-young"
+        ],
+        "energy_attached_this_turn": true,
+        "hand": [
+          "svf-rio"
+        ],
+        "healed_this_turn": false,
+        "name": "Arena-Seat-1",
+        "prizes": [
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": false,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      }
+    ],
+    "processed_action_ids": [
+      "setup:1",
+      "setup:2",
+      "setup:3",
+      "setup:4"
+    ],
+    "public_deck_keys": [
+      "psychic",
+      "fighting"
+    ],
+    "resolution_stack": {
+      "context": {},
+      "frames": [],
+      "pending_request": null,
+      "schema_version": 3,
+      "sequence": 0
+    },
+    "result_conditions": [
+      [],
+      []
+    ],
+    "result_reason": "",
+    "result_status": "ONGOING",
+    "revision": 26,
+    "rules_options": {
+      "apply_type_matchups": false
+    },
+    "rules_profile_id": "CN_MAINLAND_3_1_0",
+    "setup_actor_idx": -1,
+    "setup_bonus_card_ids": [
+      [],
+      []
+    ],
+    "setup_ready": [
+      true,
+      true
+    ],
+    "setup_stage": "COMPLETE",
+    "snapshot_version": 3,
+    "stadium_card_id": "",
+    "stadium_owner_idx": -1,
+    "turn_fact_book": {
+      "current_turn": {
+        "knockouts": []
+      },
+      "previous_turn": {
+        "knockouts": []
+      }
+    },
+    "turn_number": 4,
+    "winner": -1
+  },
+  "rng_state": 4088307630,
+  "description": "Paired loss: known Xatu in hand, manual energy spent; Nest Ball should complete the evolution pair."
+}

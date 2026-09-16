@@ -1,22 +1,26 @@
 #include "ptcg_traditional_card.hpp"
+#include "ptcg_traditional_policy.hpp"
 #include "challenge_support.hpp"
 #include <limits>
 #include "ptcg_json_adapter.hpp"
-#include "ptcg_traditional_infoset.hpp"
-#include "ptcg_traditional_strategy.hpp"
-#include "planner_v3/strategic_types.hpp"
+#include "information_set.hpp"
+#include "deck_policy_registry.hpp"
+#include "planning/strategic_types.hpp"
+#include "planning/strategic_facts.hpp"
+#include "ptcg_rules_session.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 
 using nlohmann::json;
-using ptcg::ai::TraditionalStrategyCatalog;
-using ptcg::ai::TraditionalInformationSet;
+using ptcg::ai::DeckPolicyRegistry;
+using ptcg::ai::InformationSet;
 using ptcg::ai::Value;
-using namespace ptcg::ai::planner_v3;
+using namespace ptcg::ai::planning;
 using Array = Value::Array;
 using Object = Value::Object;
 
@@ -42,7 +46,7 @@ bool value_array_contains(
 void check_normalized_deck_plans(
     const json &strategies_json,
     const json &cards_json,
-    const TraditionalStrategyCatalog &catalog
+    const DeckPolicyRegistry &catalog
 ) {
     const Value &plans = catalog.deck_plan_profiles();
     const Value *fire = plans.find("fire");
@@ -67,7 +71,7 @@ void check_normalized_deck_plans(
             {"energy", json::array({"sv1-ener-2"})},
         }},
     };
-    TraditionalStrategyCatalog synthetic_catalog(
+    DeckPolicyRegistry synthetic_catalog(
         ptcg::json_adapter::to_value(synthetic),
         ptcg::json_adapter::to_value(cards_json));
     const Value *novel = synthetic_catalog.deck_plan_profiles().find("novel");
@@ -172,7 +176,7 @@ void check_known_hand_determinization(const json &cards_json) {
     const Value private_draw = history_event(
         "cards_drawn", "owner", "deck", "hand", Array{});
 
-    TraditionalInformationSet retained;
+    InformationSet retained;
     std::string error;
     require(retained.capture(
             known_hand_state(2, 1),
@@ -203,7 +207,7 @@ void check_known_hand_determinization(const json &cards_json) {
                 }),
         "determinization did not fix the revealed card in opponent hand");
 
-    TraditionalInformationSet public_departure;
+    InformationSet public_departure;
     const Value played = history_event(
         "trainer_played",
         "public",
@@ -225,7 +229,7 @@ void check_known_hand_determinization(const json &cards_json) {
     require(public_departure.recommended_belief_samples(0, 3) == 3,
         "empty known hand unexpectedly reduced the belief budget");
 
-    TraditionalInformationSet ambiguous_departure;
+    InformationSet ambiguous_departure;
     const Value hidden_return = history_event(
         "cards_selected", "owner", "hand", "deck", Array{});
     require(ambiguous_departure.capture(
@@ -240,7 +244,7 @@ void check_known_hand_determinization(const json &cards_json) {
             && ambiguous_departure.known_hand(0).empty(),
         "identity-hidden hand change did not conservatively clear knowledge");
 
-    TraditionalInformationSet leaked_history;
+    InformationSet leaked_history;
     const Value leaked_owner_entry = history_event(
         "cards_selected",
         "owner",
@@ -331,7 +335,7 @@ void check_owner_deck_inspection_determinization(const json &cards_json) {
         })},
     });
 
-    TraditionalInformationSet inspected;
+    InformationSet inspected;
     std::string error;
     require(inspected.capture(
             state, 0, catalog, decks, Value::make_array(),
@@ -361,7 +365,7 @@ void check_owner_deck_inspection_determinization(const json &cards_json) {
             && card_count(sampled_prizes, "sv1-ener-2") == 1,
         "determinization ignored the inferred prize multiset");
 
-    TraditionalInformationSet remembered;
+    InformationSet remembered;
     require(remembered.capture(
             state, 0, catalog, decks, Value::make_array(),
             Value::make_array(), 47, &error)
@@ -370,7 +374,7 @@ void check_owner_deck_inspection_determinization(const json &cards_json) {
             && remembered.has_exact_hidden_zones(0),
         "a later decision could not restore inspected prize knowledge");
 
-    TraditionalInformationSet rejected;
+    InformationSet rejected;
     require(rejected.capture(
             state, 0, catalog, decks, Value::make_array(),
             Value::make_array(), 53, &error),
@@ -412,35 +416,75 @@ void check_strategic_planner_primitives() {
     require(match_loss_probability(0.4, false, true) == 0.4,
         "final-prize loss probability was not preserved");
 
-    PlanScore safe;
-    safe.catastrophe_probability = 0.05;
-    safe.prize_clock_margin = 0.5;
-    PlanScore risky = safe;
-    risky.catastrophe_probability = 0.55;
-    risky.prize_clock_margin = 3.0;
-    require(plan_score_better(safe, risky),
-        "lexicographic score traded catastrophe safety for clock margin");
-    PlanScore winning = risky;
-    winning.terminal_rank = 3;
-    require(plan_score_better(winning, safe),
-        "terminal win was not the first comparison tier");
+    require(!ptcg::ai::make_water_policy()->prefer_first(), "Water lost its opening attack preference");
+    require(!ptcg::ai::make_psychic_policy()->prefer_first(), "Psychic lost Cresselia's opening turn");
+    require(ptcg::ai::make_fire_policy()->prefer_first(), "Fire should develop its evolution line first");
 
-    ActionFootprint left;
-    left.reads.insert("slot:bench_0");
-    left.writes.insert("slot:bench_0");
-    ActionFootprint right;
-    right.reads.insert("slot:bench_1");
-    right.writes.insert("slot:bench_1");
-    require(footprints_commute(left, right),
-        "independent board actions did not commute");
-    left.consumes.insert("attachment_per_turn");
-    right.consumes.insert("attachment_per_turn");
-    require(!footprints_commute(left, right),
-        "once-per-turn resource conflict was treated as commutative");
-    right.consumes.clear();
-    right.random = true;
-    require(!footprints_commute(left, right),
-        "random action was treated as commutative");
+    // An extra attachment target must not evict the preferred engine action
+    // from a narrow continuation. This used to hide Xatu's ability after evolve.
+    const auto ranked = [](const char *kind, const char *signature, const char *purpose,
+                           std::int64_t score) {
+        return ptcg::ai::RankedAction{Value(Object{{"kind", Value(kind)}}), score,
+                                     signature, signature, purpose, 0};
+    };
+    const std::vector<ptcg::ai::RankedAction> actions{
+        ranked("USE_ABILITY", "engine", "effect:ability", 600000),
+        ranked("ATTACH_ENERGY", "energy-a", "development:energy", 500000),
+        ranked("ATTACH_ENERGY", "energy-b", "development:energy", 490000),
+        ranked("RETREAT", "retreat", "position:switch", 350000),
+        ranked("DECLARE_ATTACK", "attack", "terminal:attack", 200000),
+        ranked("END_TURN", "end", "terminal:end", -220000),
+    };
+    const auto selected = ptcg::ai::traditional_diverse_top_actions(actions, 4);
+    const auto contains = [&](const std::string &signature) {
+        return std::any_of(selected.begin(), selected.end(), [&](const auto &row) {
+            return row.signature == signature;
+        });
+    };
+    require(selected.size() == 4 && contains("engine") && contains("end") && contains("attack"),
+            "target diversity displaced the best action or a completed route");
+
+}
+
+void check_engine_next_turn(const Value &cards, const DeckPolicyRegistry &policies,
+                            const json &fixture) {
+    ptcg::ai::RulesSession session(cards);
+    std::string error;
+    require(session.restore(ptcg::json_adapter::to_value(fixture.at("snapshot")),
+                            fixture.at("rng_state").get<std::uint32_t>(), &error),
+            "engine lifecycle fixture is not a valid rules position");
+    StrategicAnalyzer analyzer(cards, Value::make_object(), policies);
+    const auto latency = [&] {
+        const auto facts = analyzer.analyze(session, BeliefSummary{}, 0);
+        const auto latios = std::find_if(facts.own_attackers.attackers.begin(),
+                                        facts.own_attackers.attackers.end(), [](const auto &row) {
+            return row.card_id == "sv1-111";
+        });
+        require(latios != facts.own_attackers.attackers.end(), "Latios is absent from the forecast");
+        return latios->earliest_ready_turn;
+    };
+    const auto xatu_available = [&] {
+        const auto actions = session.search_legal_action_candidates(0);
+        return actions.is_array() && std::any_of(actions.as_array().begin(), actions.as_array().end(),
+            [](const Value &action) {
+                const auto *source = action.find("source");
+                return action.find("kind")->string_or() == "USE_ABILITY" && source &&
+                       source->is_object() && source->find("card_id")->string_or() == "sv1-108";
+            });
+    };
+    require(!xatu_available(), "Xatu was allowed a second activation in the same turn");
+    require(latency() == 1, "same-turn forecast reused Xatu after it had activated");
+    for (std::int32_t actor : {0, 1}) {
+        const auto actions = session.search_legal_action_candidates(actor);
+        const auto end = std::find_if(actions.as_array().begin(), actions.as_array().end(),
+            [](const Value &action) { return action.find("kind")->string_or() == "END_TURN"; });
+        require(end != actions.as_array().end(), "engine fixture cannot legally end its turn");
+        Value action = *end;
+        action["action_id"] = Value("engine-next-turn-" + std::to_string(actor));
+        require(session.apply_action(action).success, "real end-turn transition failed");
+        require(latency() == 0, "next-turn forecast incorrectly kept Xatu exhausted");
+    }
+    require(xatu_available(), "real rules did not restore Xatu on its next turn");
 }
 
 std::string slot_for_card(const json &state, const std::string &card_id) {
@@ -535,7 +579,7 @@ int main(int argc, char **argv) {
         const json strategies_json = ptcg::json_adapter::read_strict_file(argv[1]);
         const json cards_json = ptcg::json_adapter::read_strict_file(argv[2]);
         const json fixture = ptcg::json_adapter::read_strict_file(argv[3]);
-        TraditionalStrategyCatalog catalog(
+        DeckPolicyRegistry catalog(
             ptcg::json_adapter::to_value(strategies_json),
             ptcg::json_adapter::to_value(cards_json)
         );
@@ -544,6 +588,9 @@ int main(int argc, char **argv) {
         check_known_hand_determinization(cards_json);
         check_owner_deck_inspection_determinization(cards_json);
         check_strategic_planner_primitives();
+        check_engine_next_turn(ptcg::json_adapter::to_value(cards_json), catalog,
+            ptcg::json_adapter::read_strict_file(
+                (std::filesystem::path(argv[3]).parent_path() / "engine_next_turn.json").string()));
 
         std::size_t count = 0;
         const auto &decks = fixture.at("decks");

@@ -60,6 +60,56 @@ class FakeBackend:
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_refactor_screen_uses_three_paired_matrices_without_promotion(self):
+        p = protocol(decks=RELEASE_DECKS)
+        p = replace(p, context_json=json.dumps({**p.context, "paired_anchor_screen": True}))
+        self.assertEqual(p.comparisons, ("ac", "ah", "ch"))
+        self.assertEqual(sum(len(p.tasks(edge, 0)) for edge in p.comparisons), 1200)
+        self.assertEqual([task.conditions() for task in p.tasks("ah", 0)],
+                         [task.conditions() for task in p.tasks("ch", 0)])
+        backend = FakeBackend(scores={"ac": 2, "ah": 1, "ch": 1})
+        with tempfile.TemporaryDirectory() as directory:
+            report = evaluate(p, backend, output=Path(directory)).summary
+        self.assertEqual(len(backend.calls), 1200)
+        self.assertEqual(report["gate_status"], "pass")
+        self.assertEqual(report["strength"]["status"], "not_evaluated")
+        self.assertFalse(report["promotion_passed"])
+        self.assertTrue(all(row["estimate"] == 0 for row in report["per_deck"].values()))
+
+    def test_refactor_screen_cannot_hide_deck_regression_with_overall_wins(self):
+        p = protocol(decks=RELEASE_DECKS)
+        p = replace(p, context_json=json.dumps({**p.context, "paired_anchor_screen": True}))
+        accumulator = EvaluationAccumulator(p)
+        for edge in p.comparisons:
+            for task in p.tasks(edge, 0):
+                score = 2 if edge == "ac" else 0 if edge == "ah" and task.candidate_deck == "psychic" else 1
+                accumulator.add(GameEvidence.from_result(p, task, result(task, score)))
+        report = accumulator.report(final=True)
+        self.assertEqual(report["gate_status"], "fail")
+        self.assertIn("screen_deck_regression:psychic", report["stop_reasons"])
+        self.assertFalse(report["promotion_passed"])
+
+    def test_zero_margin_screen_rejects_a_single_deck_loss_despite_overall_wins(self):
+        p = protocol(decks=RELEASE_DECKS, deck_margin=0.0)
+        p = replace(p, context_json=json.dumps({**p.context, "paired_anchor_screen": True}))
+        for single_loss in (False, True):
+            with self.subTest(single_loss=single_loss):
+                accumulator = EvaluationAccumulator(p)
+                affected = next(t.task_id for t in p.tasks("ah", 0) if t.candidate_deck == "grass")
+                for edge in p.comparisons:
+                    for task in p.tasks(edge, 0):
+                        score = 2 if edge == "ac" else 1
+                        if single_loss and task.task_id == affected:
+                            score = 0
+                        accumulator.add(GameEvidence.from_result(p, task, result(task, score)))
+                report = accumulator.report(final=True)
+                self.assertEqual(report["gate_status"], "fail" if single_loss else "pass")
+                self.assertEqual(report["per_deck"]["grass"]["development_threshold_passed"], not single_loss)
+                self.assertEqual(report["per_deck"]["grass"]["noninferiority_margin"], 0)
+                # A development score gate does not establish statistical noninferiority.
+                self.assertEqual(report["per_deck"]["grass"]["status"], "inconclusive")
+                self.assertFalse(report["promotion_passed"])
+
     def test_complete_matrix_and_roundtrip(self):
         p = protocol(mode="promotion", rounds=5, decks=RELEASE_DECKS)
         tasks = p.tasks("ac", 0)

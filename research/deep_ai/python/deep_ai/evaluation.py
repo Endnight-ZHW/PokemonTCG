@@ -160,7 +160,8 @@ def evaluate(protocol: EvaluationProtocol, backend: EvaluationBackend, *, output
                     report = publish()
                     if report["gate_status"] in {"fail", "infrastructure_fail"}:
                         break
-                if protocol.mode == "promotion" and report["strength"]["status"] == "improved" and not accumulator.faults:
+                paired_screen = protocol.mode == "screen" and protocol.context.get("paired_anchor_screen", False)
+                if ((protocol.mode == "promotion" and report["strength"]["status"] == "improved") or paired_screen) and not accumulator.faults:
                     for rep in range(protocol.maximum_replicates):
                         run_round("ah", rep)
                         if accumulator.faults or runtime_errors:

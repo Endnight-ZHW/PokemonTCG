@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import subprocess
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ from pathlib import Path
 
 from deep_ai.challenge_arena import canonical_hash, load_product_payloads
 from deep_ai.challenge_arena_build import load_and_verify_agent, sha256_file
+from deep_ai.challenge_audit import ExternalController, action_semantics, decision_metadata
 
 
 RESEARCH_ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +24,33 @@ def _latest_agent_manifest() -> Path | None:
 
 
 class ChallengeAgentProtocolTests(unittest.TestCase):
+    @unittest.skipUnless(_latest_agent_manifest() is not None, "Arena Agent is not built")
+    def test_public_trace_uses_the_agent_contract_without_mutating_the_recording(self):
+        catalog, decks, _ = load_product_payloads()
+        fixture = RESEARCH_ROOT.parents[1] / "native/challenge_core/tests/fixtures/replay_action_lifetime.json"
+        request = json.loads(fixture.read_text(encoding="utf-8"))["request"]
+        request["engine"] = "strategic_intent_v3"
+        recording = copy.deepcopy(request)
+        with tempfile.TemporaryDirectory() as directory:
+            agent = ExternalController(_latest_agent_manifest(), catalog, decks, Path(directory))
+            try:
+                agent.call("reset", match_id=request["match_instance_id"])
+                result = agent.call("decide", request=request, generation=request["revision"] + 1)
+                self.assertTrue(result["success"], result)
+                self.assertEqual(request, recording)
+                self.assertEqual(result["engine_id"], "deck_planner_v1")
+                self.assertIn(action_semantics(result["action"]),
+                              [action_semantics(a) for a in request["actions"]])
+                metadata = decision_metadata(result)
+                self.assertEqual(metadata["engine_id"], result["engine_id"])
+                self.assertTrue(metadata["policy_id"])
+                self.assertTrue(metadata["completion_reason"])
+            finally:
+                agent.close()
+            self.assertTrue(agent.process.stdin.closed)
+            self.assertTrue(agent.process.stdout.closed)
+            self.assertFalse(agent.reader.is_alive())
+
     @unittest.skipUnless(_latest_agent_manifest() is not None, "Arena Agent is not built")
     def test_handshake_contract_errors_and_shutdown(self) -> None:
         manifest = load_and_verify_agent(_latest_agent_manifest())

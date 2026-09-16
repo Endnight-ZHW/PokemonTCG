@@ -33,7 +33,7 @@ def main() -> None:
     config_path = args.output / "config.json"
     write_json_atomic(config_path, config)
     fixtures = RESEARCH.parents[1] / "native/challenge_core/tests/fixtures"
-    paths = [fixtures / name for name in ("legacy_replay_lifetime.json", "mandatory_attack_lifetime.json")]
+    paths = [fixtures / name for name in ("replay_action_lifetime.json", "attack_definition_lifetime.json")]
     paths.extend(args.fixture)
     requests = [json.loads(path.read_text(encoding="utf-8"))["request"] for path in paths]
     commands = []
@@ -67,8 +67,8 @@ def main() -> None:
         if not decision.get("success") or semantics(decision["action"]) not in [
                 semantics(action) for action in request["actions"]]:
             raise RuntimeError("memory_regression_illegal_decision")
-        if not decision.get("strategic_shadow_legacy") or decision.get("strategic_shadow_nodes", 0) <= 0:
-            raise RuntimeError("memory_regression_did_not_exercise_legacy_path")
+        if decision.get("engine_id") != "deck_planner_v1" or decision.get("nodes_expanded", 0) <= 0:
+            raise RuntimeError("memory_regression_did_not_exercise_planner")
     write_json_atomic(args.output / "summary.json", {"status": "pass", "cases": len(requests),
         "executable_sha256": sha256_file(args.executable), "stderr_empty": not result.stderr,
         "fixtures": [{"name": path.name, "sha256": sha256_file(path)} for path in paths]})

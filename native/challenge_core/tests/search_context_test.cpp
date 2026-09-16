@@ -1,4 +1,4 @@
-#include "decision_search_context.hpp"
+#include "decision_context.hpp"
 
 #include <atomic>
 #include <iostream>
@@ -14,7 +14,7 @@ void require(bool condition, const char *message) {
 
 int main() {
     try {
-        DecisionSearchContext context;
+        DecisionContext context;
         Value state(Value::Object{{"hand", Value(Value::Array{Value("energy")})},
             {"rules", Value("standard")}});
         Value basis = state;
@@ -39,12 +39,12 @@ int main() {
         context.memoization_enabled = false;
         require(read(state) == 8 && read(state) == 9, "ablation did not bypass cache");
 
-        DecisionSearchContext ranking;
+        DecisionContext ranking;
         Value actions(Value::Array{Value("attach"), Value("end")});
         int ranked = 0;
         const auto rank = [&](const Value &legal) {
             return ranking.memoize_values<int>(SearchMemo::Ranking, legal, state, 17, 0,
-                ranking.ranking_policy(true), [&] { return ++ranked; });
+                ranking.ranking_policy(), [&] { return ++ranked; });
         };
         ranking.set_incumbent(Value("attach"));
         require(rank(actions) == 1 && rank(actions) == 1, "ranking did not reuse the same legal set");
@@ -55,7 +55,7 @@ int main() {
         Value filtered(Value::Array{Value("end")});
         require(rank(filtered) == 3, "filtered actions reused an unfiltered ranking");
 
-        DecisionSearchContext interrupted;
+        DecisionContext interrupted;
         auto now = DecisionBudget::TimePoint{};
         interrupted.budget = std::make_shared<DecisionBudget>(now, 10, nullptr, [&] { return now; });
         const auto late = interrupted.budget->evaluate([&] {
@@ -69,7 +69,7 @@ int main() {
         require(interrupted.memoize_values<int>(SearchMemo::StateScore, basis, state, 17, 0, 0,
             [] { return 456; }) == 456, "interrupted evaluation polluted a later phase");
 
-        DecisionSearchContext parallel;
+        DecisionContext parallel;
         std::atomic<bool> valid{true};
         std::vector<std::thread> workers;
         for (int worker = 0; worker < 3; ++worker) workers.emplace_back([&] {

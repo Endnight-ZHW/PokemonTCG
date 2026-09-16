@@ -1,0 +1,303 @@
+{
+  "description": "Energy Switch completes Lucario final attack after the manual attachment and ability are spent. Reserving the item must not block a real win.",
+  "snapshot": {
+    "action_log": [
+      "玩家1 抛掷硬币：1 次正面，0 次反面。",
+      "玩家1 选择了先攻。",
+      "玩家1 抽取了 7 张卡牌。",
+      "玩家2 抽取了 7 张卡牌。",
+      "玩家1 暗置宝可梦。",
+      "玩家1 完成了开局宝可梦放置。",
+      "玩家2 暗置宝可梦。",
+      "玩家2 完成了开局宝可梦放置。",
+      "—— 玩家1 的回合 ——",
+      "玩家1 抽取了 1 张卡牌。"
+    ],
+    "active_player_idx": 0,
+    "apply_type_matchups": false,
+    "choice_sequence": 1,
+    "extra_draws": [
+      0,
+      0
+    ],
+    "first_player_idx": 1,
+    "mulligan_bonus_max": 0,
+    "mulligan_count": [
+      0,
+      0
+    ],
+    "opening_coin_winner_idx": 0,
+    "pending_promotions": [],
+    "phase": "MAIN",
+    "players": [
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "",
+          "can_evolve_this_turn": true,
+          "card_id": "svf-luca",
+          "damage_counters": 0,
+          "damage_prevented": false,
+          "energy_card_ids": [
+            "sv1-ener-6"
+          ],
+          "evolution_stack_ids": [],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": false,
+          "status_conditions": [],
+          "used_abilities": [
+            "旺盛斗气"
+          ]
+        },
+        "bench": [
+          {
+            "all_prevented": false,
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svf-rio",
+            "damage_counters": 0,
+            "damage_prevented": false,
+            "energy_card_ids": [
+              "sv1-ener-6"
+            ],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "outgoing_damage_reduction": 0,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          null,
+          null,
+          null,
+          null
+        ],
+        "deck": [
+          "svf-rio",
+          "svf-rio",
+          "svf-rio",
+          "svf-luca",
+          "svf-luca",
+          "svf-scyt",
+          "svf-scyt",
+          "svf-klea",
+          "svf-klea",
+          "svf-pass",
+          "svf-farf",
+          "svf-terr",
+          "svf-hawl",
+          "sv1-153",
+          "sv1-153",
+          "sv1-153",
+          "sv1-153",
+          "sv1-151",
+          "sv1-151",
+          "sv1-151",
+          "sv1-151",
+          "sv1-150",
+          "sv1-150",
+          "sv2-catch",
+          "sv2-catch",
+          "svf-potion",
+          "svf-potion",
+          "svf-ensw2",
+          "sv3-134",
+          "svi-erec",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-180",
+          "sv1-176",
+          "sv2-young",
+          "sv2-young",
+          "sv2-young",
+          "sv1-189",
+          "sv1-189",
+          "svf-houb",
+          "svf-houb",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6"
+        ],
+        "discard": [],
+        "energy_attached_this_turn": true,
+        "hand": [
+          "svf-ensw2"
+        ],
+        "healed_this_turn": false,
+        "name": "玩家1",
+        "prizes": [
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6",
+          "sv1-ener-6"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": false,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      },
+      {
+        "active": {
+          "all_prevented": false,
+          "attached_tool_id": "",
+          "can_evolve_this_turn": true,
+          "card_id": "svi-chim",
+          "damage_counters": 4,
+          "damage_prevented": false,
+          "energy_card_ids": [],
+          "evolution_stack_ids": [],
+          "healed_this_turn": false,
+          "outgoing_damage_reduction": 0,
+          "paralyzed_since_turn": 0,
+          "placed_this_turn": false,
+          "status_conditions": [],
+          "used_abilities": []
+        },
+        "bench": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "deck": [
+          "sv1-ener-2",
+          "sv2-catch",
+          "svi-hrot",
+          "sv1-ener-2",
+          "svi-ente",
+          "svi-chim",
+          "sv2-young",
+          "sv1-176",
+          "sv1-180",
+          "svi-infr",
+          "svi-chim",
+          "sv1-153",
+          "sv1-150",
+          "sv1-ener-2",
+          "svi-chim",
+          "svi-infr",
+          "sv2-young",
+          "sv1-ener-2",
+          "sv1-151",
+          "sv1-152",
+          "sv1-180",
+          "sv1-ener-2",
+          "svi-monf",
+          "sv1-189",
+          "sv1-ener-2",
+          "svi-monf",
+          "sv1-189",
+          "sv3-134",
+          "sv1-ener-2",
+          "sv1-151",
+          "sv1-151",
+          "sv1-150",
+          "sv1-153",
+          "sv1-151",
+          "svi-mela",
+          "sv1-ener-2",
+          "svi-infr",
+          "sv3-134",
+          "sv1-ener-2",
+          "sv1-ener-2",
+          "sv1-ener-2",
+          "svi-erec",
+          "sv1-180",
+          "svi-chiy",
+          "sv1-153",
+          "svi-infr",
+          "sv1-ener-2"
+        ],
+        "discard": [],
+        "energy_attached_this_turn": false,
+        "hand": [
+          "sv1-151"
+        ],
+        "healed_this_turn": false,
+        "name": "玩家2",
+        "prizes": [
+          "sv1-ener-2",
+          "sv1-ener-2",
+          "sv1-ener-2",
+          "sv1-ener-2",
+          "sv1-ener-2",
+          "sv1-ener-2"
+        ],
+        "retreated_this_turn": false,
+        "stadium_played_this_turn": false,
+        "stadium_used_this_turn": false,
+        "supporter_played_this_turn": false,
+        "vstar_power_used": false,
+        "was_ko_by_attack": false
+      }
+    ],
+    "processed_action_ids": [
+      "setup:1",
+      "setup:2",
+      "setup:3",
+      "setup:4"
+    ],
+    "public_deck_keys": [
+      "fighting",
+      "fire"
+    ],
+    "resolution_stack": {
+      "context": {},
+      "frames": [],
+      "pending_request": null,
+      "schema_version": 3,
+      "sequence": 0
+    },
+    "result_conditions": [
+      [],
+      []
+    ],
+    "result_reason": "",
+    "result_status": "ONGOING",
+    "revision": 100,
+    "rules_options": {
+      "apply_type_matchups": false
+    },
+    "rules_profile_id": "CN_MAINLAND_3_1_0",
+    "setup_actor_idx": -1,
+    "setup_bonus_card_ids": [
+      [],
+      []
+    ],
+    "setup_ready": [
+      true,
+      true
+    ],
+    "setup_stage": "COMPLETE",
+    "snapshot_version": 3,
+    "stadium_card_id": "",
+    "stadium_owner_idx": -1,
+    "turn_fact_book": {
+      "current_turn": {
+        "knockouts": []
+      },
+      "previous_turn": {
+        "knockouts": []
+      }
+    },
+    "turn_number": 4,
+    "winner": -1
+  },
+  "rng_state": 17,
+  "actor": 0,
+  "decision_seed": 17,
+  "match_seed": 17
+}
