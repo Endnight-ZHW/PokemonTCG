@@ -58,6 +58,7 @@ $contracts = @(
     @('frontend_layout_contract', 'FRONTEND_LAYOUT_CONTRACT_OK', 'Frontend layout contract'),
     @('modal_scroll_contract', 'MODAL_SCROLL_CONTRACT_OK', 'Single-owner modal scrolling, content reachability and reading-position restoration'),
     @('battle_feedback_lifecycle_contract', 'BATTLE_FEEDBACK_LIFECYCLE_OK', 'Battle feedback lifecycle contract'),
+    @('double_knockout_flow_contract', 'DOUBLE_KNOCKOUT_FLOW_OK', 'Reactive double knockout animation, prize selection, promotions and AI continuation'),
     @('card_view_layers_contract', 'CARD_VIEW_LAYERS_OK', 'Card view layers contract'),
     @('view_model_ownership_contract', 'VIEW_MODEL_OWNERSHIP_OK', 'Player view privacy and queued snapshot ownership'),
     @('battle_drag_lifecycle_contract', 'BATTLE_DRAG_LIFECYCLE_OK', 'Drag tracking, stale completions, cancellation and resync'),

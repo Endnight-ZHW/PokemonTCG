@@ -434,7 +434,7 @@ func reveal_presentation(
 		_presentation_tween.tween_interval(delay)
 	_presentation_tween.tween_property(content_root, "modulate:a", 1.0, duration)
 	_presentation_motion_handle = handle
-	handle.bind_tween(_presentation_tween)
+	handle.bind_tween(_presentation_tween, self)
 	handle.completed.connect(
 		_on_presentation_motion_completed.bind(handle),
 		CONNECT_ONE_SHOT,
@@ -643,13 +643,13 @@ func flash(color: Color, duration: float = 0.3) -> MotionHandle:
 		var instant_tween := create_tween()
 		instant_tween.tween_property(overlay, "color:a", 0.0, 0.08)
 		instant_tween.tween_callback(_dispose_flash_overlay.bind(overlay))
-		handle.bind_tween(instant_tween)
+		handle.bind_tween(instant_tween, self)
 		return handle
 	var tween := create_tween()
 	tween.tween_property(overlay, "color:a", 0.58, duration * 0.28)
 	tween.tween_property(overlay, "color:a", 0.0, duration * 0.72)
 	tween.tween_callback(_dispose_flash_overlay.bind(overlay))
-	handle.bind_tween(tween)
+	handle.bind_tween(tween, self)
 	return handle
 
 
@@ -689,7 +689,7 @@ func shake(strength: float = 7.0, duration: float = 0.26) -> MotionHandle:
 		_shake_motion_handle = null
 	)
 	_shake_motion_handle = handle
-	handle.bind_tween(_shake_tween)
+	handle.bind_tween(_shake_tween, self)
 	return handle
 
 

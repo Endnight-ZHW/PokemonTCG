@@ -224,7 +224,37 @@ func _run() -> void:
 		popover.queue_free()
 	card.queue_free()
 	await process_frame
+	await _check_feedback_owner_lifetime(scene)
 	_finish()
+
+
+func _check_feedback_owner_lifetime(scene: PackedScene) -> void:
+	var card := scene.instantiate() as CardView
+	root.add_child(card)
+	card.configure("svf-luca", PokemonState.new("svf-luca"))
+	var finished_flash := card.flash(Color.WHITE, 0.02)
+	await create_timer(0.12).timeout
+	_check(finished_flash.status == MotionHandle.COMPLETED,
+		"A live card's flash did not complete normally")
+	_check(not card.tree_exiting.is_connected(finished_flash.cancel),
+		"Completed feedback retained an owner-exit connection")
+	var group := MotionGroup.new()
+	var flash := card.flash(Color.WHITE, 5.0)
+	var shake := card.shake(8.0, 5.0)
+	var reveal := card.reveal_presentation(5.0)
+	for handle in [flash, shake, reveal]:
+		group.add(handle)
+	group.seal()
+	_check(not group.is_completed(), "Feedback lifetime test did not create an active barrier")
+	card.queue_free()
+	await process_frame
+	await process_frame
+	_check(group.is_completed() and group.pending_count() == 0,
+		"Removing a card left its flash, shake or reveal barrier waiting forever")
+	for handle in [flash, shake, reveal]:
+		_check(handle.is_finished(), "Removed-card feedback retained a running handle")
+	_check(finished_flash.status == MotionHandle.COMPLETED,
+		"Removing a card changed an already completed feedback result")
 
 
 func _check(condition: bool, message: String) -> void:
