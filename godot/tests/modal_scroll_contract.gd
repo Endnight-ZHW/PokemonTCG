@@ -114,7 +114,8 @@ func run() -> void:
 			await settle()
 			check_scroll_tree(main.modal_scroll)
 	main.queue_free()
-	await process_frame
+	# Let deferred GUI teardown and pending scene callbacks drain before quitting.
+	await settle(3)
 	for failure in failures:
 		push_error(failure)
 	if failures.is_empty():

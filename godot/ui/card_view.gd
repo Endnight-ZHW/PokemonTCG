@@ -16,8 +16,6 @@ signal hovered_changed(hovered: bool)
 
 const LONG_PRESS_MSEC := 350
 const MOUSE_DRAG_THRESHOLD := 8.0
-const TOUCH_DRAG_THRESHOLD := 12.0
-const TOUCH_SCROLL_AXIS_RATIO := 1.25
 const MINIMUM_TOUCH_TARGET := 48.0
 const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
 const ATTACHMENT_VISUALS := preload("res://ui/attachment_visual_descriptor.gd")
@@ -135,6 +133,7 @@ var _press_card_id := ""
 var _press_moved := false
 var _touch_pointer := -1
 var _touch_scrolling := false
+var _touch_gesture := PointerGesture.new()
 var _hovered := false
 var _base_position := Vector2.ZERO
 var _has_base_position := false
@@ -236,6 +235,8 @@ func _ready() -> void:
 func _notification(what: int) -> void:
 	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_EXIT_TREE]:
 		cancel_pointer_gesture()
+	if what == NOTIFICATION_SCROLL_BEGIN or (what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree()):
+		cancel_pointer_gesture()
 	if what == NOTIFICATION_DRAG_END and _dragging:
 		cancel_pointer_gesture()
 		_set_native_drag_masked(false)
@@ -269,6 +270,7 @@ func configure(
 		p_compact,
 	)
 	if card_id != p_card_id or hand_index != p_hand_index or owner_player != p_player or slot != p_slot or is_hidden_card != p_hidden:
+		PointerGesture.cancel_for(self)
 		cancel_pointer_gesture()
 	card_id = p_card_id
 	pokemon = p_pokemon
@@ -859,6 +861,7 @@ func cancel_pointer_gesture() -> void:
 	_long_press_fired = false
 	_touch_pointer = -1
 	_touch_scrolling = false
+	_touch_gesture.clear()
 
 
 func _handle_screen_touch(event: InputEventScreenTouch) -> void:
@@ -868,16 +871,21 @@ func _handle_screen_touch(event: InputEventScreenTouch) -> void:
 		_touch_owner = weakref(self)
 		_touch_pointer = event.index
 		_touch_scrolling = false
+		if _hovered:
+			_hovered = false
+			_update_lift()
+			hovered_changed.emit(false)
+		_touch_gesture.begin(PointerGesture.viewport_point(self, event.position), event.index)
 		_begin_pointer_press(event.position)
 		accept_event()
 		return
 	if event.index != _touch_pointer:
 		return
-	var moved := event.position.distance_to(_press_position)
+	_touch_gesture.move(PointerGesture.viewport_point(self, event.position))
 	var activate := (
 		_pressed and not _touch_scrolling and not _dragging
 		and not _long_press_fired and not _press_moved and not event.canceled
-		and moved < TOUCH_DRAG_THRESHOLD and _has_point(event.position)
+		and _touch_gesture.can_tap() and PointerGesture.tap_allowed(self) and _has_point(event.position)
 	)
 	cancel_pointer_gesture()
 	if activate:
@@ -888,38 +896,18 @@ func _handle_screen_touch(event: InputEventScreenTouch) -> void:
 func _handle_screen_drag(event: InputEventScreenDrag) -> void:
 	if event.index != _touch_pointer or not _pressed:
 		return
-	if _touch_scrolling:
-		var active_scroll := _ancestor_scroll_container()
-		if active_scroll != null:
-			active_scroll.scroll_horizontal -= int(event.relative.x)
-		accept_event()
-		return
-	var displacement := event.position - _press_position
-	if displacement.length() < TOUCH_DRAG_THRESHOLD:
+	_touch_gesture.move(PointerGesture.viewport_point(self, event.position))
+	if _touch_gesture.can_tap():
 		return
 	_press_moved = true
 	_long_press_timer.stop()
 	if _long_press_fired:
 		return
-	if absf(displacement.x) >= absf(displacement.y) * TOUCH_SCROLL_AXIS_RATIO:
+	if _touch_gesture.direction == PointerGesture.Direction.HORIZONTAL:
 		_touch_scrolling = true
-		var scroll := _ancestor_scroll_container()
-		if scroll != null:
-			scroll.scroll_horizontal -= int(event.relative.x)
-		accept_event()
-		return
-	if displacement.y < -TOUCH_DRAG_THRESHOLD and hand_index >= 0:
+	if not _touch_scrolling and _touch_gesture.can_drag_hand() and hand_index >= 0:
 		_begin_forced_drag()
 		accept_event()
-
-
-func _ancestor_scroll_container() -> ScrollContainer:
-	var current := get_parent()
-	while current != null:
-		if current is ScrollContainer:
-			return current as ScrollContainer
-		current = current.get_parent()
-	return null
 
 
 func _begin_forced_drag() -> void:
@@ -936,6 +924,11 @@ func _begin_forced_drag() -> void:
 
 func _get_drag_data(_at_position: Vector2) -> Variant:
 	if hand_index < 0 or card_id.is_empty():
+		return null
+	# Native drag can be attempted before _gui_input receives synthetic motion.
+	if not PointerGesture.hand_drag_allowed(self):
+		return null
+	if _touch_pointer >= 0 and not _touch_gesture.can_drag_hand():
 		return null
 	if not _dragging:
 		_dragging = true
@@ -1002,6 +995,8 @@ func _on_resized() -> void:
 
 
 func _on_mouse_entered() -> void:
+	if _touch_pointer >= 0 or PointerGesture.is_touch_input():
+		return
 	_hovered = true
 	_update_lift()
 	hovered_changed.emit(true)
@@ -1009,7 +1004,10 @@ func _on_mouse_entered() -> void:
 
 func _on_mouse_exited() -> void:
 	_hovered = false
-	_pressed = false
+	# Synthetic hover changes follow the cursor, not the captured finger. The
+	# touch gesture's distance, cancellation and final hit test own its release.
+	if _touch_pointer < 0:
+		_pressed = false
 	_update_lift()
 	hovered_changed.emit(false)
 

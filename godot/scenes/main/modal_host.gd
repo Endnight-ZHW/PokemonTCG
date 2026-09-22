@@ -64,6 +64,7 @@ func open(
 	opaque_shade: bool = false,
 	spec: ModalSpec = null,
 ) -> void:
+	PointerGesture.cancel_all()
 	if main.battle_screen:
 		main.battle_screen.close_log_drawer()
 		main.battle_screen.cancel_pointer_gestures()
@@ -130,6 +131,7 @@ func open(
 
 
 func close(completion: Callable = Callable()) -> void:
+	PointerGesture.cancel_all()
 	# Treat close as a transaction so repeated back/button signals cannot replace
 	# the completion that submits or cancels an authoritative choice.
 	if closing:

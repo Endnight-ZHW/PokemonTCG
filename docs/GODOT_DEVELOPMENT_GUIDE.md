@@ -56,6 +56,15 @@
 - 牌组画廊浏览高亮与已分配标签分开；双方可选择同一套牌。可执行卡牌动作来自规则返回的合法动作。
 - `ChoiceSelectionModel` 保存选择状态，`ChoicePresenter` 绑定界面。UI 不得生成新的 option ID 或扩大合法选项集合。
 - 滚动只由明确的 ScrollContainer 负责；布局改变不能重置用户阅读位置。小屏详情使用入口打开，宽屏可使用侧边面板。
+- 触屏由 `TouchInput` 统一协调物理触摸与模拟鼠标事件，列表子项将滚动交给原生
+  `ScrollContainer`；惯性滚动中的首次轻触只停止滚动。`PointerGesture` 在视口坐标中
+  记录最大位移，达到 12px 后本次触摸不能再点击或长按，即使滑回原位也是如此。
+  自定义选牌区域使用 `PointerTap`，不得仅在鼠标松开时提交选择。
+- 三维卡牌和牌堆松手时复用 `_has_point` 的投影命中区域，不能用二维布局矩形缩小
+  可点击牌面。触摸不触发鼠标悬停抬升，模拟鼠标移出也不能取消已捕获的手指。
+- 手牌横向滑动浏览，向上至少 24px 且纵向位移达到横向的 1.5 倍后拖出；方向确定后
+  不再切换。静止长按 350ms 继续查看详情。设置滑块横向调节、纵向滚动页面，
+  轻触轨道在松开后生效。日志使用独立滚动容器，阅读历史时保留位置。
 - 动画设置只保存 `animation_mode`：`cinematic`、`standard`、`fast`、`reduced`。`reduced_motion` 是只读派生属性。旧布尔设置不迁移，缺少当前字段时提示并使用标准模式。
 
 ## 3. 三维牌桌与表现队列
@@ -75,6 +84,9 @@
 - 动画完成句柄、generation 检查、取消和重同步保护必须保留。预取完成及事件回调后仍需检查批次是否被取消；重复事件不能堵住队列。
 - 飞牌落地、来源遮挡和三维姿态在 `frame_pre_draw` 对齐。伤害反馈在接触帧发生；不得为了少一次更新破坏 Tweens 与实体同步。
 - 隐藏页面或应用暂停时停止视口和装饰更新；同一局隐藏后恢复不得重置自动画质。退出场景释放临时实体和句柄。
+- 首页三维展示在可见时使用 `UPDATE_WHEN_VISIBLE`；低画质／减少动画仅停止姿态动画，
+  不按固定帧数冻结绘图缓冲。全局 `frame_post_draw` 不代表该视口已经画出有效内容，
+  冻结会使延迟绘制或缓冲重建后的透明画面无法恢复。弹窗覆盖、页面隐藏和应用暂停时仍停止绘制。
 
 ## 4. 卡牌内容、规则与 AI
 
@@ -111,6 +123,19 @@ Challenge 默认使用 `strategic_intent_v3`；`turn_beam_v2` 仍承担比较与
 
 - fast 验证产品边界、源码清单、VM 完整性、原生核心、Relay、内容和 Godot ABI。
 - standard 检查生成数据、UI／交互合同与 LAN／Relay 整局；新增动画还要跑实际图形验证。
+- `test_godot.ps1` 中的 `touch_scroll_contract` 使用完整输入分发覆盖触摸、模拟鼠标去重、
+  惯性停止、按钮/滑块/选牌/能量分配、日志及手牌拖放；同一脚本去掉 `--headless` 可在
+  实际图形渲染下运行。桌面注入测试不能替代 Android 手机和平板真机手感验收。
+- `battle_touch_resume_contract` 覆盖布局矩形外的三维手牌/奖赏点击、菜单确认退出，
+  以及真实规则执行最后一次攻击、领取最后一张奖赏、结算页轻触返回首页的完整流程。
+  `test_frontend_club_graphics.ps1` 同时运行该合同：延迟三维绘制、重建绘图缓冲、暂停恢复后
+  检查桌布像素，并保存低/中画质、横/竖屏的返回首页截图；无图形模式不做像素验收。
+- 真机专用场景为 tests/android_touch_acceptance.tscn。设置与发布包相同的 Android 签名环境变量后，
+  运行 tools/build_android_touch_acceptance.ps1，生成 build/android-tablet-test/PokemonTCG-Touch-Acceptance.apk。
+  该包使用独立包名 com.pokemontcg.touchtest；构建结束会恢复项目与导出配置，产品包继续排除测试目录。
+  通过 adb 的显式设备序列号安装并启动，Logcat 中的 ANDROID_TOUCH_REPORT 给出原生渲染、
+  完整输入分发、最后一次攻击／领取奖赏／结算返回和实际分辨率下的帧耗时结果。
+  ANDROID_TOUCH_ACCEPTANCE_OK 仅代表交互与绘制断言通过，帧耗时另行评估；测试结束卸载该独立诊断包。
 - 回归覆盖 1600×900、1280×720、900×540、2000×900、640×960、连续缩放、安全区、密集手牌、重复卡牌、附件、强制选择及换手。
 - CPU 测量使用 `tools/benchmark_project.ps1 -BaselineProject <独立Godot目录> -Runs 3`；比较双方应使用相同版本的探针、硬件、配置和 fixture，并交替执行。
 - headless 帧间隔包含调度时间，不代表 GPU 性能。实际图形探针在 1920×1080 各档预热后采样 300 帧，高／中档 P95 ≤ 20 ms，低档 ≤ 36 ms。

@@ -4,12 +4,18 @@ extends PanelContainer
 signal close_requested
 
 @onready var log_label: RichTextLabel = %LogLabel
+@onready var log_scroll: ScrollContainer = %LogScroll
 @onready var close_button: Button = %CloseButton
+var _follow_latest := true
 
 
 func _ready() -> void:
 	_resolve_nodes()
 	_configure_label()
+	log_scroll.get_v_scroll_bar().changed.connect(_on_scroll_range_changed)
+	log_scroll.get_v_scroll_bar().value_changed.connect(_on_scroll_value_changed)
+	log_scroll.scroll_started.connect(func() -> void: _follow_latest = false)
+	log_scroll.scroll_ended.connect(_on_scroll_value_changed.bind(0.0))
 	if not close_button.pressed.is_connected(_on_close_pressed):
 		close_button.pressed.connect(_on_close_pressed)
 	resized.connect(_on_resized)
@@ -18,6 +24,7 @@ func _ready() -> void:
 func update_entries(action_log: Array) -> void:
 	_resolve_nodes()
 	_configure_label()
+	var follow_latest := _follow_latest
 	if action_log.is_empty():
 		log_label.text = "尚无行动记录"
 		log_label.tooltip_text = "行动记录会按发生顺序显示在这里"
@@ -35,13 +42,18 @@ func update_entries(action_log: Array) -> void:
 			category,
 			_escape_bbcode(entry_text),
 		])
-	log_label.text = "\n".join(lines) if not lines.is_empty() else "尚无行动记录"
+	var next_text := "\n".join(lines) if not lines.is_empty() else "尚无行动记录"
+	if next_text == log_label.text:
+		return
+	log_label.text = next_text
 	log_label.tooltip_text = ""
-	call_deferred("_scroll_to_latest")
+	if follow_latest:
+		call_deferred("_scroll_to_latest")
 
 
 func _resolve_nodes() -> void:
-	log_label = get_node("Content/LogLabel") as RichTextLabel
+	log_label = %LogLabel
+	log_scroll = %LogScroll
 	close_button = get_node("Content/HeaderRow/CloseButton") as Button
 
 
@@ -53,9 +65,10 @@ func _configure_label() -> void:
 	# character. Word-smart wrapping can reserve a whole visual line for an
 	# internal ASCII token such as `bench_0`.
 	log_label.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-	log_label.scroll_active = true
-	log_label.scroll_following = true
-	DesignTokens.style_scrollbar(log_label.get_v_scroll_bar())
+	log_label.fit_content = true
+	log_label.scroll_active = false
+	log_label.scroll_following = false
+	DesignTokens.style_scrollbar(log_scroll.get_v_scroll_bar())
 
 
 func _single_line(value: String) -> String:
@@ -195,13 +208,25 @@ func _category_color(category: String) -> String:
 
 
 func _scroll_to_latest() -> void:
-	if log_label == null:
+	if log_scroll == null or not _follow_latest:
 		return
-	log_label.scroll_to_line(maxi(0, log_label.get_line_count() - 1))
+	log_scroll.scroll_vertical = int(log_scroll.get_v_scroll_bar().max_value)
+
+
+func _on_scroll_range_changed() -> void:
+	# RichTextLabel's fit-content height can settle after the first deferred
+	# update. Follow the final native range, unless the reader has scrolled away.
+	if _follow_latest:
+		_scroll_to_latest.call_deferred()
+
+
+func _on_scroll_value_changed(_value: float) -> void:
+	var bar := log_scroll.get_v_scroll_bar()
+	_follow_latest = bar.value >= bar.max_value - bar.page - 2.0
 
 
 func _on_resized() -> void:
-	if visible and log_label and not log_label.text.is_empty():
+	if visible and log_scroll and _follow_latest:
 		call_deferred("_scroll_to_latest")
 
 

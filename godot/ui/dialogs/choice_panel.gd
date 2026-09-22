@@ -520,7 +520,7 @@ func _add_preview_cards(
 			placeholder_label.add_theme_font_size_override("font_size", 16)
 			placeholder.add_child(placeholder_label)
 			placeholder.gui_input.connect(
-				energy_distribution._on_energy_placeholder_gui_input.bind(preview_index)
+				energy_distribution._on_energy_placeholder_gui_input.bind(preview_index, placeholder)
 			)
 			tile.add_child(placeholder)
 		else:
@@ -887,9 +887,11 @@ func _clear_children(parent: Node) -> void:
 
 
 func _on_tile_gui_input(event: InputEvent, option_id: String, tile: Control) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if not event.pressed:
-			_request_card_option(option_id, str(_option_card_ids.get(option_id, "")))
+	if not tile.has_meta("pointer_tap"):
+		tile.set_meta("pointer_tap", PointerTap.new())
+	var tap := tile.get_meta("pointer_tap") as PointerTap
+	if tap.handle(tile, event):
+		_request_card_option(option_id, str(_option_card_ids.get(option_id, "")))
 		tile.accept_event()
 
 

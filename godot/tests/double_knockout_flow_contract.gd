@@ -113,9 +113,25 @@ func _check_double_knockout(mode: String) -> void:
 	while main.ai_coordinator.needs_poll():
 		main.ai_coordinator.poll_result()
 		await process_frame
+	var playbacks: Array[WeakRef] = []
+	for player in [main.audio_director.ui_player, main.audio_director.sfx_player, main.audio_director.music_player]:
+		if player.playing:
+			playbacks.append(weakref(player.get_stream_playback()))
+	var scene_reference: WeakRef = weakref(main)
 	main.queue_free()
 	await process_frame
 	await process_frame
+	# AudioServer releases stopped playback on its mixing thread. Two scene
+	# frames can finish before that cleanup, especially with the dummy driver.
+	# Wait for actual release and assert it, rather than ignoring exit warnings.
+	var audio_deadline := Time.get_ticks_msec() + 1000
+	while playbacks.any(func(reference: WeakRef) -> bool: return reference.get_ref() != null):
+		if Time.get_ticks_msec() >= audio_deadline:
+			break
+		await process_frame
+	_check(scene_reference.get_ref() == null, mode + ": the match scene was not freed")
+	_check(not playbacks.any(func(reference: WeakRef) -> bool: return reference.get_ref() != null),
+		mode + ": stopped audio playback was not released")
 	print("DOUBLE_KNOCKOUT_CASE ", mode)
 
 

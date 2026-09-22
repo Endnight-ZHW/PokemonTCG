@@ -573,7 +573,7 @@ func _resolve_scene_nodes() -> void:
 	action_popover = get_node("CardActionPopover") as CardActionPopover
 	log_panel = get_node("BattleRoot/Body/BattleHUD/LogPanel") as BattleLogPanel
 	log_label = get_node(
-		"BattleRoot/Body/BattleHUD/LogPanel/Content/LogLabel"
+		"BattleRoot/Body/BattleHUD/LogPanel/Content/LogScroll/LogLabel"
 	) as RichTextLabel
 	opponent_hand_surface = get_node(
 		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentHandSurface"
@@ -1739,6 +1739,10 @@ func _input(event: InputEvent) -> void:
 	# Global input must stay read-only so it cannot dismiss transient surfaces
 	# before the blocker consumes the same pointer gesture.
 	if _modal_input_blocked or (input_blocker and input_blocker.visible):
+		return
+	if PointerGesture.is_cancelled_touch_mouse(event):
+		_blank_selection_key = ""
+		_detail_passthrough_key = ""
 		return
 	var pointer_button := event as InputEventMouseButton
 	var is_left_pointer_button := (

@@ -57,6 +57,8 @@ $contracts = @(
     @('vm_descriptor_contract_test', 'VM_DESCRIPTOR_CONTRACT_OK', 'Generated VM IR descriptor and negative-schema contract'),
     @('frontend_layout_contract', 'FRONTEND_LAYOUT_CONTRACT_OK', 'Frontend layout contract'),
     @('modal_scroll_contract', 'MODAL_SCROLL_CONTRACT_OK', 'Single-owner modal scrolling, content reachability and reading-position restoration'),
+    @('touch_scroll_contract', 'TOUCH_SCROLL_CONTRACT_OK', 'Physical touch scrolling, tap cancellation, sliders, choices and directional hand drag'),
+    @('battle_touch_resume_contract', 'BATTLE_TOUCH_RESUME_CONTRACT_OK', 'Projected hand/prize taps and battle-to-home showcase lifecycle'),
     @('battle_feedback_lifecycle_contract', 'BATTLE_FEEDBACK_LIFECYCLE_OK', 'Battle feedback lifecycle contract'),
     @('double_knockout_flow_contract', 'DOUBLE_KNOCKOUT_FLOW_OK', 'Reactive double knockout animation, prize selection, promotions and AI continuation'),
     @('card_view_layers_contract', 'CARD_VIEW_LAYERS_OK', 'Card view layers contract'),

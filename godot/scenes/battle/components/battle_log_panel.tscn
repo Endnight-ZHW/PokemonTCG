@@ -56,7 +56,7 @@ vertical_alignment = 1
 
 [node name="CloseButton" type="Button" parent="Content/HeaderRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(36, 32)
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 focus_mode = 0
 flat = true
@@ -67,15 +67,23 @@ theme_override_font_sizes/font_size = 18
 text = "×"
 tooltip_text = "收起行动日志"
 
-[node name="LogLabel" type="RichTextLabel" parent="Content"]
+[node name="LogScroll" type="ScrollContainer" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="LogLabel" type="RichTextLabel" parent="Content/LogScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0
-size_flags_vertical = 3
+mouse_filter = 1
+size_flags_horizontal = 3
+fit_content = true
+scroll_active = false
 theme_override_colors/default_color = Color(0.270588, 0.215686, 0.184314, 1)
 theme_override_constants/line_separation = 2
 theme_override_font_sizes/normal_font_size = 13
-scroll_following = true
 autowrap_mode = 1
 text = "尚无行动记录"
 

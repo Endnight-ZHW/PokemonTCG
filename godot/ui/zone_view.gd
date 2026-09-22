@@ -47,6 +47,7 @@ var _press_card_id := ""
 var _press_moved := false
 var _long_press_fired := false
 var _touch_pointer := -1
+var _touch_gesture := PointerGesture.new()
 var _long_press_timer: Timer
 
 @onready var frame: Panel = %Frame
@@ -96,6 +97,7 @@ func configure(
 	p_context: Dictionary = {},
 ) -> void:
 	if p_card_id != card_id or p_count != count:
+		PointerGesture.cancel_for(self)
 		cancel_pointer_gesture()
 	title = p_title
 	card_id = p_card_id
@@ -542,16 +544,21 @@ func _on_gui_input(event: InputEvent) -> void:
 				return
 			CardView._touch_owner = weakref(self)
 			_touch_pointer = event.index
+			_touch_gesture.begin(PointerGesture.viewport_point(self, event.position), event.index)
 			_begin_pointer_press(event.position)
 		elif event.index == _touch_pointer:
-			if _pressed and not event.canceled:
+			_touch_gesture.move(PointerGesture.viewport_point(self, event.position))
+			if _pressed and not event.canceled and _touch_gesture.can_tap() and PointerGesture.tap_allowed(self):
 				_finish_pointer_interaction(event.position)
 			cancel_pointer_gesture()
 		accept_event()
 		return
 	if event is InputEventScreenDrag:
 		if event.index == _touch_pointer:
-			_check_pointer_movement(event.position)
+			_touch_gesture.move(PointerGesture.viewport_point(self, event.position))
+			if not _touch_gesture.can_tap():
+				_press_moved = true
+				_long_press_timer.stop()
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if CardView._touch_owner != null and CardView._touch_owner.get_ref() != null:
@@ -602,12 +609,13 @@ func cancel_pointer_gesture() -> void:
 	_pressed = false
 	_press_msec = 0
 	_touch_pointer = -1
+	_touch_gesture.clear()
 	_long_press_fired = false
 	_press_moved = false
 
 
 func _notification(what: int) -> void:
-	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_EXIT_TREE]:
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_EXIT_TREE, NOTIFICATION_SCROLL_BEGIN]:
 		cancel_pointer_gesture()
 	elif what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree():
 		cancel_pointer_gesture()

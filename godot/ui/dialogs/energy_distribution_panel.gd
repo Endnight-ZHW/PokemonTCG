@@ -55,12 +55,12 @@ func configure_energy_distribution(
 func _on_energy_placeholder_gui_input(
 	event: InputEvent,
 	energy_index: int,
+	placeholder: Control,
 ) -> void:
-	if (
-		event is InputEventMouseButton
-		and event.button_index == MOUSE_BUTTON_LEFT
-		and not event.pressed
-	):
+	if not placeholder.has_meta("pointer_tap"):
+		placeholder.set_meta("pointer_tap", PointerTap.new())
+	var tap := placeholder.get_meta("pointer_tap") as PointerTap
+	if tap.handle(placeholder, event):
 		panel.energy_index_requested.emit(energy_index)
 
 func _on_energy_preview_card_activated(
@@ -440,9 +440,13 @@ func _energy_option_id_for_target(model: Dictionary, energy_index: int) -> Strin
 	return str(model.get("fallback_option_id", ""))
 
 func _on_energy_target_gui_input(event: InputEvent, target_key: String) -> void:
-	if not event is InputEventMouseButton:
+	var tile := _energy_target_tiles.get(target_key) as Control
+	if tile == null:
 		return
-	if event.button_index != MOUSE_BUTTON_LEFT or event.pressed:
+	if not tile.has_meta("pointer_tap"):
+		tile.set_meta("pointer_tap", PointerTap.new())
+	var tap := tile.get_meta("pointer_tap") as PointerTap
+	if not tap.handle(tile, event):
 		return
 	var model := _energy_target_model(target_key)
 	var current_index := panel._last_selected_ids.size()

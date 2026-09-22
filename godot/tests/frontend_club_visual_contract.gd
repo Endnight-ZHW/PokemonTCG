@@ -70,8 +70,10 @@ func run() -> void:
 			if page_kind == "title":
 				for name in ["LocalTwoPlayerButton", "AIButton", "NetworkButton", "SettingsButton", "HelpButton"]:
 					inside(page.find_child(name, true, false), "title/" + name)
-				check(page.card_stage.viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED,
-					"Reduced animation must settle to a static real 3D viewport")
+				check(not page.card_stage.is_processing(),
+					"Reduced animation must stop the decorative motion loop")
+				check(page.card_stage.viewport.render_target_update_mode == SubViewport.UPDATE_WHEN_VISIBLE,
+					"Static homepage must remain drawable while visible")
 			elif page_kind == "decks":
 				var assigned: String = page.selected_deck_key(0)
 				page._on_deck_tile_pressed("water")

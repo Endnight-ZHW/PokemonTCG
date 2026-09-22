@@ -17,7 +17,6 @@ var _animated := false
 var _quality := ""
 var _elapsed := 0.0
 var _dirty := true
-var _settle_frames := 0
 var _paths: Dictionary = {}
 var _pixel_size := Vector2i.ZERO
 var _stage: MeshInstance3D
@@ -80,6 +79,7 @@ func _ready() -> void:
 	visibility_changed.connect(_refresh_activity)
 	resized.connect(_request_frame)
 	_settings.changed.connect(_on_settings_changed)
+	_settings.runtime_quality_changed.connect(_on_settings_changed)
 	_texture_cache.texture_ready.connect(_on_texture_ready)
 	RenderingServer.frame_pre_draw.connect(_prepare_frame)
 	set_cards(card_ids if _cards_set else CARD_IDS)
@@ -156,21 +156,20 @@ func _refresh_activity() -> void:
 
 func _request_frame() -> void:
 	_dirty = true
-	_settle_frames = 3
 	if is_node_ready() and _active and not _suspended and is_visible_in_tree():
-		set_process(true)
-		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		# A static pose still needs a live render target. A few global draw
+		# notifications cannot prove this viewport is ready, and freezing it can
+		# retain transparent pixels after delayed drawing or target recreation.
+		viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+		set_process(_animated)
+		if DisplayServer.get_name() == "headless":
+			call_deferred("_prepare_frame")
 
 
 func _process(delta: float) -> void:
 	if _animated:
 		_elapsed += delta
 		_dirty = true
-	else:
-		_settle_frames -= 1
-		if _settle_frames < 0:
-			viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
-			set_process(false)
 	if DisplayServer.get_name() == "headless":
 		_prepare_frame()
 
