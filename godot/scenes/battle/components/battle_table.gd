@@ -3,15 +3,10 @@ extends Control
 
 signal menu_requested
 signal selection_clear_requested(expected_key: String)
+signal interaction_invalidated
 signal hand_card_selected(index: int, card_id: String)
 signal pokemon_selected(player: int, slot: String, card_id: String)
 signal action_requested(action: GameAction)
-signal card_drop_requested(
-	hand_index: int,
-	card_id: String,
-	target_player: int,
-	target_slot: String,
-)
 signal detail_requested(card_id: String)
 signal inspect_card_requested(context: Dictionary)
 signal inspect_zone_requested(context: Dictionary)
@@ -26,7 +21,6 @@ signal audio_requested(cue: String)
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 const CARD_BACK_TEXTURE: Texture2D = preload("res://assets/cards/card_back.webp")
-const CARD_DRAG_SESSION := preload("res://presentation/card_drag_session.gd")
 const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
 const ATTACHMENT_POPOVER := preload(
 	"res://scenes/battle/components/attachment_choice_popover.gd"
@@ -119,7 +113,7 @@ var hud: BattlePhaseHud
 var turn_label: Label
 var opponent_info: Label
 var own_info: Label
-var own_allowance_row: HBoxContainer
+var own_allowance_row: GridContainer
 var own_allowance_labels: Dictionary = {}
 var phase_labels: Dictionary = {}
 var phase_advance_button: Button
@@ -136,6 +130,9 @@ var interaction_router := BattleInteractionController.new()
 var presentation_runtime: BattlePresentationRuntime
 var choice_target_options: Dictionary = {}
 var choice_target_prompt := ""
+var active_choice: ChoiceView
+var choice_selected_count := 0
+var _submission_pending := false
 var opponent_hand_surface: Control
 var opponent_hand_count_badge: Label
 var hand_scroll: ScrollContainer
@@ -167,10 +164,6 @@ var _forced_popover_source_key := ""
 var _attachment_popover_source_key := ""
 var _hand_layout_geometry_signature := ""
 var _hand_scroll_center_generation := 0
-var _drag_source_key := ""
-var _drag_session
-var _drag_session_sequence := 0
-var _presentation_drag_proxy: Control
 var _last_action_rows_signature := ""
 var _last_selected_entity_identity := ""
 var _detail_content_signature := ""
@@ -208,22 +201,6 @@ var render3d: Battle3DPresenter
 func _ready() -> void:
 	set_process(false)
 	initialize_ui()
-
-
-func _process(_delta: float) -> void:
-	if (
-		_drag_session == null
-		or _drag_session.state != CARD_DRAG_SESSION.DRAGGING
-		or _drag_session.proxy == null
-		or not is_instance_valid(_drag_session.proxy)
-	):
-		set_process(false)
-		return
-	var proxy: Control = _drag_session.proxy
-	proxy.position = hand_view._drag_proxy_position_for_pointer(
-		hand_view._drag_pointer_position(),
-		proxy,
-	)
 
 
 func initialize_ui() -> void:
@@ -283,7 +260,7 @@ func close_log_drawer() -> void:
 
 func is_compact_layout() -> bool:
 	var available := board_canvas.size if board_canvas else size
-	return available.x < 1180.0 or available.y < 650.0
+	return available.x < 1450.0 or available.y < 650.0
 
 
 func cancel_pointer_gestures() -> void:
@@ -292,17 +269,13 @@ func cancel_pointer_gestures() -> void:
 		view.cancel_pointer_gesture()
 
 
-func cancel_unsubmitted_drag() -> void:
-	# A submitted action belongs to the authority; only an unsubmitted gesture
-	# may be returned to the hand by UI cancellation.
-	if _drag_session != null and _drag_session.state in [CARD_DRAG_SESSION.DRAGGING, CARD_DRAG_SESSION.AWAITING_VARIANT]:
-		if get_viewport().gui_is_dragging():
-			get_viewport().gui_cancel_drag()
-		clear_pending_drag("user_cancelled")
-
-
 func cancel_action_selection() -> void:
-	cancel_unsubmitted_drag()
+	if active_choice != null:
+		if active_choice.can_cancel and not is_interaction_locked():
+			choice_cancel_requested.emit()
+		return
+	if is_interaction_locked():
+		return
 	cancel_pointer_gestures()
 	board_view._reset_action_interaction_state()
 	selection_clear_requested.emit(selected_entity_key)
@@ -320,7 +293,7 @@ func handle_back() -> bool:
 		return true
 	if is_presentation_busy():
 		return false
-	if not selected_entity_key.is_empty() or (_drag_session != null and _drag_session.state in [CARD_DRAG_SESSION.DRAGGING, CARD_DRAG_SESSION.AWAITING_VARIANT]):
+	if not selected_entity_key.is_empty():
 		cancel_action_selection()
 		return true
 	return false
@@ -435,10 +408,6 @@ func _ensure_motion_components() -> void:
 
 
 
-func active_drag_context() -> Dictionary:
-	return hand_view.active_drag_context()
-
-
 func prepare_hand_identity_transition(
 	events: Array,
 	previous_snapshot: Dictionary,
@@ -446,33 +415,6 @@ func prepare_hand_identity_transition(
 ) -> void:
 	hand_view.prepare_hand_identity_transition(events, previous_snapshot, final_hand)
 
-
-func mark_drag_pending(origin_action_id: String, await_authoritative_view: bool) -> String:
-	return hand_view.mark_drag_pending(origin_action_id, await_authoritative_view)
-
-
-func drag_session_id_for_origin(origin_action_id: String) -> String:
-	return hand_view.drag_session_id_for_origin(origin_action_id)
-
-
-func prepare_pending_drag_for_transition(session_id: String) -> void:
-	hand_view.prepare_pending_drag_for_transition(session_id)
-
-
-func commit_pending_drag_source(session_id: String) -> void:
-	hand_view.commit_pending_drag_source(session_id)
-
-
-func finish_pending_drag_transition(session_id: String) -> void:
-	hand_view.finish_pending_drag_transition(session_id)
-
-
-func clear_pending_drag(reason: String = "cancelled") -> void:
-	hand_view.clear_pending_drag(reason)
-
-
-func clear_pending_drag_immediately(reason: String = "cancelled") -> void:
-	hand_view.clear_pending_drag_immediately(reason)
 
 func submit_transition(request: BattleTransitionRequest) -> PresentationHandle:
 	_ensure_presentation_coordinator()
@@ -554,7 +496,7 @@ func _resolve_scene_nodes() -> void:
 	own_info = get_node("BattleRoot/Body/BoardPanel/BoardCanvas/OwnInfo") as Label
 	own_allowance_row = get_node(
 		"BattleRoot/Body/BoardPanel/BoardCanvas/OwnAllowanceRow"
-	) as HBoxContainer
+	) as GridContainer
 	own_allowance_labels = {
 		"energy": own_allowance_row.get_node("Energy") as Label,
 		"supporter": own_allowance_row.get_node("Supporter") as Label,
@@ -627,7 +569,13 @@ func update_view(
 		or next_selected_entity_identity != _last_selected_entity_identity
 	)
 	if interaction_context_changed:
+		var target_selection_invalidated := (
+			not _selected_action_group_key.is_empty()
+			and selected_entity_key == _last_selected_source_key
+		)
 		board_view._reset_action_interaction_state()
+		if target_selection_invalidated:
+			interaction_invalidated.emit()
 	_last_selected_source_key = selected_entity_key
 	_last_action_rows_signature = next_action_rows_signature
 	_last_selected_entity_identity = next_selected_entity_identity
@@ -1469,7 +1417,6 @@ func _bind_scene_nodes() -> void:
 		zone.detail_requested.connect(board_view._on_detail_requested)
 		zone.action_requested.connect(action_requested.emit)
 		zone.action_menu_requested.connect(board_view._on_zone_action_menu_requested)
-		zone.card_dropped.connect(board_view._on_card_dropped)
 	(zones["own_prizes"] as ZoneView).stack_index_activated.connect(
 		board_view._on_prize_index_activated.bind(true))
 	(zones["opponent_prizes"] as ZoneView).stack_index_activated.connect(
@@ -1477,13 +1424,14 @@ func _bind_scene_nodes() -> void:
 	header.initialize_ui()
 	header.menu_requested.connect(board_view._on_menu_pressed)
 	header.cancel_requested.connect(cancel_action_selection)
+	header.back_requested.connect(board_view.return_to_action_menu)
 	header.detail_requested.connect(board_view._on_popover_detail_requested)
 	hud.phase_action_requested.connect(action_requested.emit)
 	if not hud.log_drawer_toggled.is_connected(board_view._on_log_drawer_toggled):
 		hud.log_drawer_toggled.connect(board_view._on_log_drawer_toggled)
 	# Keep global input enabled even while the log drawer is closed. This lets us
 	# remove a popover before GUI hit testing while preserving the original card
-	# press and its normal release/long-press/drag semantics.
+	# press and its normal release/long-press semantics.
 	set_process_input(true)
 	if action_popover:
 		action_popover.action_chosen.connect(board_view._on_popover_action_chosen)
@@ -1540,8 +1488,6 @@ func set_transition_blocked(value: bool) -> void:
 
 func set_startup_blocked(value: bool) -> void:
 	_startup_input_blocked = value
-	if value:
-		hand_view.clear_pending_drag_immediately("startup_choreography")
 	_sync_input_blocker()
 
 
@@ -1554,8 +1500,6 @@ func set_local_hand_privacy_hidden(value: bool) -> void:
 
 func set_recovery_blocked(value: bool) -> void:
 	_recovery_input_blocked = value
-	if value:
-		hand_view.clear_pending_drag_immediately("network_recovery")
 	_sync_input_blocker()
 
 
@@ -1577,18 +1521,23 @@ func _sync_input_blocker() -> void:
 			or _director_input_blocked
 			or _startup_input_blocked
 			or _recovery_input_blocked
+			or _submission_pending
 		)
 		input_blocker.visible = blocked
 		if blocked:
 			cancel_pointer_gestures()
 		if not blocked:
 			input_blocker.mouse_default_cursor_shape = Control.CURSOR_ARROW
+	if _initialized and state_ref != null and board_view != null:
+		board_view._refresh_header()
+		board_view._refresh_actions()
+		board_view._refresh_target_hints()
 
 
 func _on_presentation_input_blocker_gui_input(event: InputEvent) -> void:
 	# Presentation remains mutation-locked, but public field cards stay available
 	# for read-only inspection. The blocker consumes every other gesture exactly
-	# as before, so playing, dragging and target selection cannot race the staged
+	# as before, so playing and target selection cannot race the staged
 	# presentation snapshot.
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
@@ -1728,10 +1677,7 @@ func _bind_card_view(view: CardView) -> void:
 	view.set_catalog(catalog)
 	view.activated.connect(board_view._on_card_activated)
 	view.detail_requested.connect(board_view._on_card_view_detail_requested.bind(view))
-	view.card_dropped.connect(board_view._on_card_dropped)
 	view.action_requested.connect(action_requested.emit)
-	view.drag_started.connect(hand_view._on_hand_drag_started)
-	view.drag_ended.connect(hand_view._on_hand_drag_ended)
 
 
 func _input(event: InputEvent) -> void:
@@ -1753,7 +1699,10 @@ func _input(event: InputEvent) -> void:
 		var blank_key := _blank_selection_key
 		_blank_selection_key = ""
 		if not blank_key.is_empty() and blank_key == selected_entity_key and pointer_button.position.distance_to(_blank_press_position) < CardView.MOUSE_DRAG_THRESHOLD and not get_viewport().gui_is_dragging():
-			cancel_action_selection()
+			if board_view.is_selecting_action_target():
+				set_task_hint("这里不是合法目标，请选择青色标记的位置")
+			else:
+				cancel_action_selection()
 			get_viewport().set_input_as_handled()
 			return
 		if not _detail_passthrough_key.is_empty():
@@ -1806,7 +1755,7 @@ func _input(event: InputEvent) -> void:
 	):
 		# On very narrow layouts the detail surface can be forced over its source.
 		# Remove both transient surfaces before GUI hit testing and let the original
-		# gesture reach CardView; this preserves click, long-press and drag semantics.
+		# gesture reach CardView; this preserves click and long-press semantics.
 		_detail_passthrough_key = selected_entity_key
 		hide_card_detail()
 		if action_popover and action_popover.visible:
@@ -1831,7 +1780,7 @@ func _input(event: InputEvent) -> void:
 		return
 	# Hide the full-screen popover before GUI hit testing, but deliberately do
 	# not handle the event. CardView must receive the original press so its
-	# release, long-press and drag thresholds stay intact.
+	# release, long-press and movement thresholds stay intact.
 	action_popover.dismiss()
 
 
@@ -1982,3 +1931,33 @@ func _player_label(player_idx: int) -> String:
 	if state_ref == null or player_idx < 0:
 		return ""
 	return state_ref.get_player(player_idx).name
+
+
+func interaction_wait_message() -> String:
+	if _recovery_input_blocked:
+		return "正在恢复连接并同步局面，请稍候"
+	if _submission_pending:
+		return "操作已提交，正在等待对局确认"
+	if _startup_input_blocked:
+		return "正在准备对局，请稍候"
+	if _transition_input_blocked or _director_input_blocked or is_presentation_busy():
+		return "正在结算效果，请稍候"
+	return ""
+
+
+func is_interaction_locked() -> bool:
+	return _modal_input_blocked or _local_hand_privacy_hidden or not interaction_wait_message().is_empty()
+
+
+func set_submission_pending(value: bool) -> void:
+	_submission_pending = value
+	_sync_input_blocker()
+
+
+func set_choice_guidance(request: ChoiceView, selected_count: int = 0) -> void:
+	active_choice = request
+	choice_selected_count = selected_count
+	if _initialized:
+		board_view._refresh_actions()
+		board_view._refresh_target_hints()
+		board_view._refresh_header()

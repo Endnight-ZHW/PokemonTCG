@@ -77,7 +77,7 @@ func _spawn_flying_card(
 		table.hand_presentation._cancel_hand_layout_motion(flying)
 		motion_start = flying.position + flying.size * 0.5
 		flying_size = flying.size
-		# A staged hand proxy may already have reflowed, and a drag proxy may be
+		# A staged hand proxy may already have reflowed and may be
 		# tilted at its parked target. Continue from that exact pose instead of
 		# snapping back to the batch snapshot rotation.
 		start_rotation = flying.rotation_degrees
@@ -96,7 +96,7 @@ func _spawn_flying_card(
 			table.motion_geometry._motion_depth_for_point((start + finish) * 0.5),
 		)
 	flying.set_meta("card_motion_entity", true)
-	for stale_pose in ["physical_start_pose", "drag_start_world_pose", "physical_flip_progress"]:
+	for stale_pose in ["physical_start_pose", "physical_flip_progress"]:
 		if flying.has_meta(stale_pose):
 			flying.remove_meta(stale_pose)
 	if flying is CardMotionEntity:
@@ -150,15 +150,7 @@ func _spawn_flying_card(
 	# before their first motion update created a fan of intersecting card backs.
 	if existing_flyer == null:
 		flying.visible = false
-	var drag_continuation := flying.has_meta("drag_session_id")
-	var travel_distance := motion_start.distance_to(finish)
-	if drag_continuation:
-		# The player already performed the large spatial movement. Successful
-		# authority only needs a short physical settle from the release/park pose;
-		# replaying the normal 74 px arc reads as a second card placement.
-		duration = minf(duration, clampf(travel_distance / 420.0, 0.12, 0.22))
-		delay = 0.0
-	var spin := 2.0 if drag_continuation else (
+	var spin := (
 		16.0 + float(index) * 2.0
 		if event_type in ["cards_discarded", "pokemon_ko"]
 		else -7.0 + float(index) * 3.0
@@ -254,11 +246,7 @@ func _update_physical_flyer(
 		end_pose = (landing as CardMotionEntity).world_pose
 	elif landing is ZoneView:
 		end_pose = table.render3d.zone_pose_at_screen_point(landing as ZoneView, to_table * destination)
-	if flying.has_meta("drag_session_id") and flying.current_pose() is Transform3D:
-		if not flying.has_meta("drag_start_world_pose"):
-			flying.set_meta("drag_start_world_pose", flying.current_pose())
-		start_pose = flying.get_meta("drag_start_world_pose")
-	elif flying.has_meta("physical_start_pose"):
+	if flying.has_meta("physical_start_pose"):
 		start_pose = flying.get_meta("physical_start_pose")
 	else:
 		if flying.current_pose() is Transform3D:
@@ -267,7 +255,7 @@ func _update_physical_flyer(
 	var pose := start_pose.interpolate_with(end_pose, progress)
 	flying.source_pose = start_pose
 	flying.target_pose = end_pose
-	var arc := 0.18 if flying.has_meta("drag_session_id") else clampf(start_pose.origin.distance_to(end_pose.origin) * 0.18, 0.4, 1.4)
+	var arc := clampf(start_pose.origin.distance_to(end_pose.origin) * 0.18, 0.4, 1.4)
 	pose.origin.y += sin(progress * PI) * arc
 	pose.basis = BattleProjection3D.rotate_card_basis(pose.basis, Basis(Vector3.FORWARD, sin(progress * PI) * deg_to_rad(spin) * 0.45))
 	if flying.has_meta("reveal_transferred"):

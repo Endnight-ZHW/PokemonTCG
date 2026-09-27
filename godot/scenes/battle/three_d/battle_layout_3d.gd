@@ -62,17 +62,22 @@ func hand_mirror_center() -> Vector2:
 	# The hands belong to the screen edges; the field belongs to the cloth.
 	return presenter.size * 0.5 + presenter.world.framing_offset
 
-func hand_area(own: bool) -> Rect2:
+func hand_area(own: bool, for_opponent: bool = false) -> Rect2:
 	var size := presenter.size
 	var center := hand_mirror_center()
 	var table := presenter.table
 	var to_table := table.get_global_transform_with_canvas().affine_inverse()
 	var turn := to_table * table.header.turn_label.get_global_rect()
-	var task := to_table * table.header.task_hint_label.get_global_rect()
-	var half_width := minf(center.x - turn.end.x, task.position.x - center.x) - 12.0
+	var half_width := minf(center.x - turn.end.x, size.x - 16.0 - center.x) - 12.0
 	var width := maxf(120.0, minf(size.x * 0.60, half_width * 2.0))
+	if size.y > size.x and not for_opponent:
+		width = maxf(240.0, size.x * 0.60)
 	var height := table.hand_view._current_hand_card_size().y * 1.65
 	var near_top := field_area().end.y + maxf(4.0, size.y * 0.007)
+	if size.y > size.x and not for_opponent:
+		for key in ["own_deck", "own_discard"]:
+			var zone := table.zones[key] as ZoneView
+			near_top = maxf(near_top, presenter.world.projection.project_pose_bounds(zone_base(zone)).end.y + 12.0)
 	var y := near_top if own else center.y * 2.0 - near_top - height
 	return Rect2(Vector2(center.x - width * 0.5, y), Vector2(width, height))
 
@@ -91,6 +96,9 @@ func zone_base(zone: ZoneView) -> Transform3D:
 	var to_table := table.get_global_transform_with_canvas().affine_inverse() * reference.get_global_transform_with_canvas()
 	width *= to_table.x.length()
 	var projection := presenter.world.projection
+	var portrait := presenter.size.y > presenter.size.x
+	if portrait and key.ends_with("prizes"):
+		width = minf(width, 70.0)
 	var reference_center := _zone_center(reference)
 	reference_center += presenter.world.framing_offset
 	if key.ends_with("deck") or key.ends_with("discard"):
@@ -99,11 +107,16 @@ func zone_base(zone: ZoneView) -> Transform3D:
 		var dock_right := phase_left - 8.0
 		var dock_left := field_rect(table.own_bench[4]).end.x + 8.0
 		var pile_gap := 8.0
+		if portrait:
+			dock_right = presenter.size.x - 16.0
+			width = minf(width, 60.0)
 		if dock_right > dock_left + pile_gap:
 			width = minf(width, (dock_right - dock_left - pile_gap) * 0.5)
 			reference_center.x = dock_right - width * (1.5 if key.ends_with("deck") else 0.5)
 			if key.ends_with("deck"):
 				reference_center.x -= pile_gap
+	if portrait and key.ends_with("prizes"):
+		reference_center.x = 12.0 + width * 0.5
 	if key.begins_with("own_") or key.begins_with("opponent_"):
 		var canvas_to_table := table.get_global_transform_with_canvas().affine_inverse()
 		var header_bottom := canvas_to_table * (table.header.get_global_transform_with_canvas() * Vector2(0, table.header.size.y))
@@ -115,7 +128,7 @@ func zone_base(zone: ZoneView) -> Transform3D:
 			var menu_bottom := canvas_to_table * (menu.get_global_transform_with_canvas() * Vector2(0, menu.size.y))
 			var caption := table.header.turn_label
 			var caption_bottom := canvas_to_table * (caption.get_global_transform_with_canvas() * Vector2(0, caption.size.y))
-			top_clearance = maxf(menu_bottom.y, caption_bottom.y) + 8.0
+			top_clearance = maxf(menu_bottom.y, caption_bottom.y) + (40.0 if portrait else 8.0)
 		var clearance_layers := 6 if key.ends_with("prizes") else 0
 		var minimum_far_center := top_clearance + width * 0.60 + width * CardEntity3D.THICKNESS * 0.38 * clearance_layers
 		if key.ends_with("prizes"):

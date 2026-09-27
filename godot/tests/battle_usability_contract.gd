@@ -166,6 +166,7 @@ func _check_table() -> void:
 	var rows := UIPreviewStateFactory.action_rows(state)
 	table.update_view(state, 0, rows, "hand:0", false, "local")
 	check(table.opponent_hand_views[0].size.is_equal_approx(table.hand_view._current_opponent_hand_card_size()), "Refreshing the opponent hand ignored its responsive card size")
+	table.action_popover._on_action_button_pressed(table.action_popover._rows[0].action)
 	var selected: Array[int] = [0]
 	table.pokemon_selected.connect(func(_player: int, _slot: String, _id: String) -> void: selected[0] += 1)
 	table.board_view._on_card_activated(state.players[1].active.card_id, -1, 1, "active")
@@ -317,8 +318,11 @@ func _check_hand_effect_previews() -> void:
 		await settle(5)
 		for index in range(kinds.size()):
 			var card_id := str(state.players[0].hand[index])
+			# Finish the previous target-selection step before changing cards.
+			if table.board_view.is_selecting_action_target():
+				table.header.back_requested.emit()
 			# Use CardView's activation route so Main's selection refresh and the
-			# automatic single-action target mode both participate in this check.
+			# explicit action-button target mode both participate in this check.
 			table.hand_views[index].activated.emit(card_id, index, 0, "")
 			await settle()
 			main._refresh_game()
@@ -340,8 +344,11 @@ func _check_hand_effect_previews() -> void:
 				check(not preview_rect.intersects(table.hand_views[index].visual_global_bounds()),
 					"Hand preview covers its selected source: " + label)
 			if index != 5:
+				check(table.action_popover.visible and not table.board_view.is_selecting_action_target(),
+					"Selecting a source bypassed its action button: " + label)
+				table.action_popover._on_action_button_pressed(table.action_popover._rows[0].action)
 				check(table.board_view.is_selecting_action_target() and not table.action_popover.visible,
-					"Preview interrupted one-tap target selection: " + label)
+					"Action button failed to enter target selection: " + label)
 			if index in [0, 1, 3, 4, 6]:
 				await _capture_hand_preview(card_id)
 		# The basic Pokemon remains inspectable while a bench click still chooses
@@ -376,6 +383,7 @@ func _check_hand_effect_previews() -> void:
 		await _check_unavailable_card_hints(main, state)
 	# Explicit compact inspection still returns to the pending target choice.
 	table.hand_views[6].activated.emit("svg2-zaru", 6, 0, "")
+	table.action_popover._on_action_button_pressed(table.action_popover._rows[0].action)
 	table.header.detail_requested.emit()
 	await settle()
 	check(main.modal_layer.visible, "Compact targeted hand selection cannot open card details")
@@ -492,10 +500,10 @@ func _check_confirmations() -> void:
 	await settle()
 	check(main.selected_entity_key == selection and not main.modal_layer.visible, "Inspector back did not restore the selected card")
 	main._clear_battle_selection()
-	main.battle_screen.hand_view._on_hand_drag_started(0)
+	main._select_hand_card(0, "sv1-ener-2")
 	main._show_pause_overlay()
 	await settle()
-	check(main.battle_screen.active_drag_context().is_empty(), "Opening a modal stranded an unsubmitted drag")
+	check(main.selected_entity_key.is_empty() and not main.battle_screen.action_popover.visible, "Opening a modal stranded an action selection")
 	main.modal_confirm.pressed.emit()
 	await settle()
 	var mandatory := ChoiceView.new("usability:mandatory", state.revision, "confirm", 0, "必须完成的效果选择", [{"option_id": "yes", "label": "执行"}, {"option_id": "no", "label": "不执行"}], 1, 1, false, false)

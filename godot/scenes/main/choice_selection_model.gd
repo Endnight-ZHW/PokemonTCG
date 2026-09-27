@@ -874,7 +874,7 @@ func _zone_name(zone: String) -> String:
 		"hand": "手牌",
 		"deck": "牌库",
 		"discard": "弃牌区",
-		"prizes": "奖赏卡区",
+		"prizes": "奖励卡区",
 		"lost_zone": "放逐区",
 	}.get(zone, zone)
 
@@ -903,7 +903,7 @@ func _choice_title(request: ChoiceView) -> String:
 		"coin_flip": "硬币结算",
 		"choose_turn_order": "选择先后攻",
 		"choose_mulligan_draw_count": "选择再战奖励抽牌数",
-		"select_prize": "选择奖赏卡",
+		"select_prize": "选择奖励卡",
 		"choose_trigger_order": "选择效果结算顺序",
 		"confirm_trigger": "确认是否使用效果",
 		"confirm": "确认操作",
@@ -919,7 +919,7 @@ func _choice_title(request: ChoiceView) -> String:
 		"clara": "从弃牌区回收卡牌",
 		"shuffle_from_discard": "将卡牌洗回牌库",
 		"distribute_energy": "分配能量",
-		"select_energy_target": "选择附能目标",
+		"select_energy_target": "选择赋能目标",
 		"select_energy_source": "选择能量来源",
 		"select_own_bench_energy": "选择能量附着目标",
 		"select_prize_energy_target": "选择宝藏能量附着目标",
@@ -1069,7 +1069,7 @@ func _choice_view_has_card_options(request: ChoiceView) -> bool:
 
 func _choice_count_unit(request: ChoiceView) -> String:
 	if request.request_type == "select_prize":
-		return "张奖赏卡"
+		return "张奖励卡"
 	if request.request_type == "select_attachment":
 		return "个附着物"
 	if request.request_type in [

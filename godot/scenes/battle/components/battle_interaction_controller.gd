@@ -1,7 +1,7 @@
 class_name BattleInteractionController
 extends RefCounted
 
-## Owns the card-first interaction and drag-target index used by BattleTable.
+## Owns the button action and target index used by BattleTable.
 ##
 ## Source keys deliberately match BattleTable's selection keys:
 ##   hand:<index>
@@ -40,6 +40,8 @@ func rebuild(action_rows: Array[Dictionary]) -> void:
 
 	for input_row in action_rows:
 		var row := _normalized_row(input_row)
+		if bool(row.get("disabled", false)):
+			continue
 		var action: GameAction = row.get("action") as GameAction
 		if action == null:
 			_unreachable_rows.append(row)
@@ -105,47 +107,6 @@ func matching_actions(source_key: String, target_key: String) -> Array[GameActio
 		if action:
 			result.append(action)
 	return result
-
-
-func matching_drag_rows(
-	hand_index: int,
-	target_player: int,
-	target_slot: String,
-) -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	var source_key := hand_key(hand_index)
-	var requested_target_key := target_key(target_player, target_slot)
-	for row in rows_for_source(source_key):
-		var action := row.get("action") as GameAction
-		if action == null:
-			continue
-		if (
-			requested_target_key in target_keys_for_action(action, row)
-			or requested_target_key in drag_target_keys_for_action(action, row)
-		):
-			result.append(row)
-	return result
-
-
-func matching_drag_actions(
-	hand_index: int,
-	target_player: int,
-	target_slot: String,
-) -> Array[GameAction]:
-	var result: Array[GameAction] = []
-	for row in matching_drag_rows(hand_index, target_player, target_slot):
-		var action := row.get("action") as GameAction
-		if action:
-			result.append(action)
-	return result
-
-
-func is_drop_legal(
-	hand_index: int,
-	target_player: int,
-	target_slot: String,
-) -> bool:
-	return not matching_drag_actions(hand_index, target_player, target_slot).is_empty()
 
 
 func unreachable_rows() -> Array[Dictionary]:
@@ -230,18 +191,6 @@ static func source_key_for_action(action: GameAction, row: Dictionary = {}) -> S
 	if not slot.is_empty():
 		return pokemon_key(action.actor, slot)
 	return ""
-
-
-static func drag_target_keys_for_action(
-	_action: GameAction,
-	row: Dictionary = {},
-) -> Array[String]:
-	var result: Array[String] = []
-	for value in row.get("drag_target_keys", []):
-		var key := str(value)
-		if not key.is_empty() and key not in result:
-			result.append(key)
-	return result
 
 
 static func target_keys_for_action(

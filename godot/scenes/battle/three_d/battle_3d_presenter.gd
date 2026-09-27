@@ -177,7 +177,7 @@ func _process(delta: float) -> void:
 		if table.state_ref == null or table._startup_input_blocked or (preflight != null and not preflight.is_finished()) or not DisplayServer.window_is_focused():
 			settings.reset_battle_frame_samples()
 		else:
-			settings.record_battle_frame(delta, not table.is_presentation_busy() and table.active_drag_context().is_empty())
+			settings.record_battle_frame(delta, not table.is_presentation_busy())
 	if DisplayServer.get_name() == "headless":
 		_sync_render_frame()
 
@@ -280,7 +280,10 @@ func _layout_opponent_info() -> void:
 	if table.opponent_info.has_meta("full_caption"):
 		table.opponent_info.text = str(table.opponent_info.get_meta("full_caption"))
 		if limit < 180.0:
-			table.opponent_info.text = "对方 · 手牌%d" % int(table.opponent_info.get_meta("hand_count", 0))
+			table.opponent_info.text = ("手%d" if limit < 96.0 else "对方 · 手牌%d") % int(table.opponent_info.get_meta("hand_count", 0))
+	if size.y > size.x:
+		table.opponent_info.position = to_parent * Vector2(12, prizes.position.y - 34.0)
+		table.opponent_info.size = Vector2(140, 28)
 	if is_inf(left):
 		return
 	var badge := table.opponent_hand_count_badge
@@ -387,7 +390,7 @@ func _surface_pose(anchor: Control, width: float, height: float, tilt: float = 0
 
 func _sync_card(card: CardView) -> void:
 	var entity := _entity(card)
-	var shown := _shown(card) and not card.is_presentation_hidden() and not card.is_drag_masked() and not _covered_card(card)
+	var shown := _shown(card) and not card.is_presentation_hidden() and not _covered_card(card)
 	entity.visible = shown
 	var hand := card.hand_index >= 0 or card.get_parent() == table.opponent_hand_surface
 	var root: Control = card.feedback_root if card.feedback_root != null else card
@@ -421,7 +424,7 @@ func _sync_card(card: CardView) -> void:
 	var thinking := table.ai_thinking_overlay
 	if not hand and not card.empty and thinking != null and thinking.active and card.owner_player == thinking.ai_player:
 		thinking_tint = thinking.card_highlight_color()
-	entity.set_highlight(card.selected, card.targetable, card._hovered, card.empty and not card.is_hidden_card, thinking_tint)
+	entity.set_highlight(card.selected, card.targetable, card._hovered, card.empty and not card.is_hidden_card, thinking_tint, card.actionable and not card.is_hidden_card, _quality != "low" and not MotionPolicy.reduced(), card._target_accent)
 	var flash_color := Color.BLACK
 	var flash_strength := 0.0
 	for overlay in card._flash_overlays:
@@ -429,7 +432,10 @@ func _sync_card(card: CardView) -> void:
 			flash_strength = overlay.color.a
 			flash_color = overlay.color
 	entity.set_feedback(flash_color, flash_strength)
-	_apply_hand_clip(entity, hand)
+	if hand and card.get_parent() == table.opponent_hand_surface:
+		_clip_far_hand_below_task(entity)
+	else:
+		_apply_hand_clip(entity, hand)
 	entity.update_contact_shadow()
 	_sync_attachments(card, entity)
 
@@ -515,7 +521,8 @@ func _sync_zone(zone: ZoneView) -> void:
 			entity.set_surface(null, true)
 			continue
 		entity.set_surface(zone.image.texture, zone.is_hidden_zone or i != count - 1)
-		entity.set_highlight(zone.actionable, zone._drop_highlighted, false, count == 0)
+		var valid_target := zone.targetable and (zone.target_stack_indices.is_empty() or i in zone.target_stack_indices)
+		entity.set_highlight(false, valid_target, false, count == 0, Color.TRANSPARENT, zone.actionable, _quality != "low" and not MotionPolicy.reduced())
 		entity.update_contact_shadow()
 	for i in range(maxi(1, count), 6):
 		var entity := world.entities.get(_key(zone, str(i))) as CardEntity3D
@@ -569,9 +576,8 @@ func _sync_token(anchor: Control) -> void:
 		entity.transform = _hand_surface_pose(anchor, anchor.size.x, ordinal, count, 0.36 + ordinal * 0.025, false, false)
 	else:
 		var reveal := anchor.has_meta("face_texture")
-		var dragging := anchor.has_meta("drag_session_id")
-		var height := 2.0 if reveal else 0.30 if dragging else 0.12
-		var tilt := 35.0 if reveal else 4.0 if dragging else -12.0
+		var height := 2.0 if reveal else 0.12
+		var tilt := 35.0 if reveal else -12.0
 		entity.transform = _surface_pose(anchor, anchor.size.x, height, deg_to_rad(tilt))
 		if reveal:
 			var to_table := table.get_global_transform_with_canvas().affine_inverse() * anchor.get_global_transform_with_canvas()
@@ -593,7 +599,10 @@ func _sync_token(anchor: Control) -> void:
 		entity.visual_id = (anchor as CardMotionEntity).visual_id
 		(anchor as CardMotionEntity).physical_entity = entity
 	var staged_hand := anchor.has_meta("snapshot_hand_key") or anchor.has_meta("snapshot_opponent_hand_index")
-	_apply_hand_clip(entity, anchor.has_meta("face_texture") or anchor.has_meta("reveal_transferred") or anchor.has_meta("mulligan_hand") or (staged_hand and not anchor.has_meta("motion_event_id") and not anchor.has_meta("drag_session_id")))
+	if anchor.has_meta("snapshot_opponent_hand_index") and not anchor.has_meta("motion_event_id"):
+		_clip_far_hand_below_task(entity)
+	else:
+		_apply_hand_clip(entity, anchor.has_meta("face_texture") or anchor.has_meta("reveal_transferred") or anchor.has_meta("mulligan_hand") or (staged_hand and not anchor.has_meta("motion_event_id")))
 	entity.update_contact_shadow()
 	if anchor.has_meta("face_texture"):
 		entity.contact_shadow.visible = false
@@ -686,7 +695,7 @@ func _pick_surface(screen_position: Vector2, expand_touch: bool = false) -> Dict
 		var anchor := (row.ref as WeakRef).get_ref() as Control
 		if anchor == null or not _shown(anchor) or not (anchor is CardView or anchor is ZoneView):
 			continue
-		if anchor is CardView and ((anchor as CardView).is_presentation_hidden() or (anchor as CardView).is_drag_masked()):
+		if anchor is CardView and ((anchor as CardView).is_presentation_hidden()):
 			continue
 		if anchor is ZoneView and (anchor as ZoneView).is_stack_presentation_hidden():
 			continue
@@ -802,3 +811,10 @@ func stats() -> Dictionary:
 	result["draw_calls"] = viewport.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
 	result["primitives"] = viewport.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_PRIMITIVES_IN_FRAME)
 	return result
+
+
+func _clip_far_hand_below_task(entity: CardEntity3D) -> void:
+	var task_panel := table.header.get_node("TaskPanel") as Control
+	var bottom := table.get_global_transform_with_canvas().affine_inverse() * task_panel.get_global_rect().end
+	var top := clampf((bottom.y + 4.0) / maxf(1.0, size.y), 0.0, 1.0)
+	entity.set_screen_clip(Rect2(0, top, 1, 1 - top), true)

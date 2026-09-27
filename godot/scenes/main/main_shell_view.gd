@@ -606,10 +606,10 @@ func build_game_screen() -> void:
 	main.battle_screen.name = "GameScreen"
 	main.battle_screen.menu_requested.connect(main._show_pause_overlay)
 	main.battle_screen.selection_clear_requested.connect(main._on_selection_clear_requested)
+	main.battle_screen.interaction_invalidated.connect(show_toast.bind("局面已更新，请重新选择操作。", true))
 	main.battle_screen.hand_card_selected.connect(main._select_hand_card)
 	main.battle_screen.pokemon_selected.connect(main._on_battle_pokemon_selected)
 	main.battle_screen.action_requested.connect(main._execute_action)
-	main.battle_screen.card_drop_requested.connect(main._on_battle_card_dropped)
 	main.battle_screen.inspect_card_requested.connect(main._show_card_inspector)
 	main.battle_screen.inspect_zone_requested.connect(main._show_zone_inspector)
 	main.battle_screen.choice_target_selected.connect(main._on_battle_choice_target_selected)

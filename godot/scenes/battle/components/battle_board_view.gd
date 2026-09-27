@@ -20,6 +20,7 @@ func _refresh_header(display_state: GameState = null) -> void:
 			table.ai_thinking,
 			_current_task_hint(),
 		)
+		table.header.apply_guidance(_guidance())
 	else:
 		var display_actor := (
 			active_state.setup_actor_idx
@@ -63,13 +64,13 @@ func _refresh_field_info(display_state: GameState) -> void:
 		return
 	var own := display_state.get_player(table.view_player)
 	var opponent := display_state.get_player(1 - table.view_player)
-	table.opponent_info.text = "%s · 手牌 %d · 牌库 %d · 奖赏 %d" % [
+	table.opponent_info.text = "%s · 手牌 %d · 牌库 %d · 奖励 %d" % [
 		"对方",
 		opponent.hand.size(),
 		opponent.deck.size(),
 		opponent.prizes.size(),
 	]
-	table.own_info.text = "%s · 手牌 %d · 牌库 %d · 奖赏 %d" % [
+	table.own_info.text = "%s · 手牌 %d · 牌库 %d · 奖励 %d" % [
 		"我方",
 		own.hand.size(),
 		own.deck.size(),
@@ -77,6 +78,11 @@ func _refresh_field_info(display_state: GameState) -> void:
 	]
 	table.own_info.accessibility_name = "%s，%s" % [own.name, table.own_info.text]
 	table.own_info.tooltip_text = table.own_info.text
+	table.own_info.set_meta("full_caption", table.own_info.text)
+	var compact_caption := "手牌 %d · 牌库 %d\n奖励卡 %d" % [own.hand.size(), own.deck.size(), own.prizes.size()]
+	table.own_info.set_meta("compact_caption", compact_caption)
+	if table.is_compact_layout() or table.board_canvas.size.x < 1450.0:
+		table.own_info.text = compact_caption
 	table.opponent_info.accessibility_name = "%s，%s" % [opponent.name, table.opponent_info.text]
 	table.opponent_info.tooltip_text = table.opponent_info.text
 	table.opponent_info.set_meta("full_caption", table.opponent_info.text)
@@ -100,7 +106,7 @@ func _refresh_field_zones(own: PlayerState, opponent: PlayerState) -> void:
 		table._zone_context(1 - table.view_player, "discard", opponent.discard, opponent.discard.size(), false),
 	)
 	(table.zones["opponent_prizes"] as ZoneView).configure(
-		"奖赏卡",
+		"奖励卡",
 		"",
 		opponent.prizes.size(),
 		true,
@@ -121,7 +127,7 @@ func _refresh_field_zones(own: PlayerState, opponent: PlayerState) -> void:
 		table._zone_context(table.view_player, "discard", own.discard, own.discard.size(), false),
 	)
 	(table.zones["own_prizes"] as ZoneView).configure(
-		"奖赏卡",
+		"奖励卡",
 		"",
 		own.prizes.size(),
 		true,
@@ -141,6 +147,10 @@ func _refresh_actions() -> void:
 	if table.hud:
 		table.hud.update_phase(table.state_ref, table.view_player, table.ai_thinking, table.game_mode, table.action_rows)
 	table.phase_advance_button = table.hud.phase_advance_button if table.hud else null
+	if table.phase_advance_button and (table.is_interaction_locked() or table.active_choice != null or not table.choice_target_options.is_empty()):
+		table.phase_advance_button.disabled = true
+		table.phase_advance_button.set_meta("action", null)
+		table.phase_advance_button.text = "完成当前选择" if table.active_choice != null else "请稍候"
 
 	# CardView only receives read-only legality state. It never creates action
 	# buttons and never derives rules from card data.
@@ -199,12 +209,10 @@ func _refresh_log(display_state: GameState = null) -> void:
 
 func _refresh_target_hints() -> void:
 	var selected_rows := _rows_for_active_selection()
-	# A drag is an explicit interaction with its own source card. It must take
-	# precedence over any card that happened to remain selected before the drag;
-	# otherwise the table highlights the old card's targets and can reject a
-	# completely legal drop from the card currently under the pointer.
-	if not table._drag_source_key.is_empty():
-		selected_rows = table.interaction_router.rows_for_source(table._drag_source_key)
+	var selecting := not selected_rows.is_empty() or table.active_choice != null or not table.choice_target_options.is_empty()
+	var locked := table.is_interaction_locked()
+	for hand_card in table.hand_views:
+		hand_card.set_actionable(not locked and not selecting and table.interaction_router.has_source(BattleInteractionController.hand_key(hand_card.hand_index)))
 	var selected_target_labels: Dictionary = {}
 	for row in selected_rows:
 		var action := row.get("action") as GameAction
@@ -225,20 +233,14 @@ func _refresh_target_hints() -> void:
 		var slot_key := str(slot_key_value)
 		var target_key := "pokemon:%s" % slot_key
 		var view := table.slot_views[slot_key] as CardView
-		var allowed_hand_indices: Array[int] = []
-		for source_key in table.interaction_router.source_keys():
-			if not source_key.begins_with("hand:"):
-				continue
-			if table.interaction_router.is_target_legal(source_key, target_key):
-				allowed_hand_indices.append(source_key.trim_prefix("hand:").to_int())
 		var source_key := target_key
-		var source_actionable := table.interaction_router.has_source(source_key)
+		var source_actionable := not locked and not selecting and table.interaction_router.has_source(source_key)
 		var disabled_reason := (
 			_disabled_reason_for_source(source_key)
 			if view.selected and not source_actionable
 			else ""
 		)
-		var target_hint := str(selected_target_labels.get(target_key, ""))
+		var target_hint := "" if locked else str(selected_target_labels.get(target_key, ""))
 		var slot_choice_value: Variant = table.choice_target_options.get(target_key)
 		var is_attachment_source := (
 			slot_choice_value is Dictionary
@@ -254,42 +256,29 @@ func _refresh_target_hints() -> void:
 			source_actionable,
 			disabled_reason,
 			target_hint,
-			allowed_hand_indices,
 		)
 		if target_hint.is_empty():
 			view.set_targetable(false)
 
-	var stadium_hand_indices: Array[int] = []
-	for source_key in table.interaction_router.source_keys():
-		if source_key.begins_with("hand:"):
-			var hand_index := source_key.trim_prefix("hand:").to_int()
-			if table.interaction_router.is_drop_legal(hand_index, table.view_player, "stadium"):
-				stadium_hand_indices.append(hand_index)
-	(table.zones["stadium"] as ZoneView).set_drop_target(
-		table.view_player,
-		"stadium",
-		stadium_hand_indices,
-	)
-	var stadium_highlighted := false
-	if not table._drag_source_key.is_empty():
-		for row in selected_rows:
-			var action := row.get("action") as GameAction
-			if action and "stadium" in BattleInteractionController.drag_target_keys_for_action(action, row):
-				stadium_highlighted = true
-				break
-	(table.zones["stadium"] as ZoneView).set_drop_highlight(stadium_highlighted)
+	for scene_key in ["stadium", "own_discard", "opponent_discard"]:
+		var zone := table.zones[scene_key] as ZoneView
+		var key := "stadium" if scene_key == "stadium" else BattleInteractionController.zone_key(table.view_player if scene_key == "own_discard" else 1 - table.view_player, "discard")
+		var enabled := not locked and not selecting and table.interaction_router.has_source(key)
+		zone.set_actionable(enabled)
+		zone.set_action_menu(enabled)
+	(table.zones["stadium"] as ZoneView).set_targetable(not locked and selected_target_labels.has("stadium"))
 	for own_zone in [true, false]:
 		var zone_key := "own_prizes" if own_zone else "opponent_prizes"
 		var prize_player := table.view_player if own_zone else 1 - table.view_player
 		var prize_zone := table.zones[zone_key] as ZoneView
-		var has_choice := false
+		var prize_indices: Array[int] = []
 		for index in range(prize_zone.count):
 			if table.choice_target_options.has(
 				"prize:%d:%d" % [prize_player, index]
 			):
-				has_choice = true
-				break
-		prize_zone.set_actionable(has_choice)
+				prize_indices.append(index)
+		prize_zone.set_actionable(false)
+		prize_zone.set_targetable(not prize_indices.is_empty() and not locked, prize_indices)
 
 
 func _configure_slot(
@@ -356,7 +345,6 @@ func _layout_board() -> void:
 	if table.is_compact_layout() and table._read_only_detail_key.is_empty():
 		table.hide_card_detail()
 	_layout_coin_showcase()
-	table.hand_view._reconcile_drag_after_layout_change()
 	table._refresh_ai_thinking_indicator()
 	if table.effects:
 		table.effects.queue_redraw()
@@ -871,11 +859,11 @@ func _compact_card_action_row(row: Dictionary) -> Dictionary:
 		return result
 	match action.kind:
 		"PLAY_BASIC":
-			result["label"] = "放置到场上"
+			result["label"] = "放置"
 		"EVOLVE":
 			result["label"] = "进化"
 		"ATTACH_ENERGY":
-			result["label"] = "附能"
+			result["label"] = "赋能"
 		"PLAY_TRAINER":
 			var trainer_type := _trainer_type_for_action(action)
 			result["label"] = (
@@ -895,7 +883,7 @@ func _compact_card_action_row(row: Dictionary) -> Dictionary:
 		"RETREAT":
 			result["label"] = "撤退到这里 · %s" % _retreat_compact_suffix(action)
 		"PROMOTE":
-			result["label"] = "晋升为战斗宝可梦"
+			result["label"] = "设为战斗宝可梦"
 		"USE_STADIUM":
 			result["label"] = "发动效果"
 	return result
@@ -993,7 +981,7 @@ func _refresh_turn_allowance_chips(player: PlayerState) -> void:
 	if player == null or table.own_allowance_labels.is_empty():
 		return
 	var rows := {
-		"energy": ["附能", player.energy_attached_this_turn],
+		"energy": ["赋能", player.energy_attached_this_turn],
 		"supporter": ["支援", player.supporter_played_this_turn],
 		"retreat": ["撤退", player.retreated_this_turn],
 		"stadium": ["竞技场", player.stadium_played_this_turn],
@@ -1005,7 +993,8 @@ func _refresh_turn_allowance_chips(player: PlayerState) -> void:
 		var allowance_label := table.own_allowance_labels.get(key) as Label
 		if allowance_label == null:
 			continue
-		allowance_label.text = "%s  %s" % [str(row[0]), "已用" if used else "可用"]
+		allowance_label.text = "%s\n%s" % [str(row[0]), "已使用" if used else "未使用"]
+		allowance_label.tooltip_text = "%s：本回合%s" % [str(row[0]), "已使用" if used else "未使用"]
 		allowance_label.add_theme_stylebox_override(
 			"normal",
 			_allowance_chip_style(used),
@@ -1029,6 +1018,12 @@ func _allowance_chip_style(used: bool) -> StyleBoxFlat:
 func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 	if table.own_info == null or table.own_allowance_row == null:
 		return
+	if table.is_compact_layout() or table.board_canvas.size.x < 1450.0:
+		_layout_compact_status()
+		return
+	table.own_allowance_row.columns = 4
+	table.own_info.autowrap_mode = TextServer.AUTOWRAP_OFF
+	table.own_info.text = str(table.own_info.get_meta("full_caption", table.own_info.text))
 	var stadium_rect := Rect2()
 	var stadium := table.zones.get("stadium") as ZoneView
 	if stadium:
@@ -1037,7 +1032,7 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 			Rect2(Vector2.ZERO, stadium.size).grow(4.0),
 			table.board_canvas,
 		)
-	var status_height := 48.0 if float(metrics["height"]) < 600.0 else 56.0
+	var status_height := 76.0
 	var own_active_rect: Rect2 = field_plan["own_active_rect"]
 	if table.render3d and table.render3d.is_projection_ready():
 		own_active_rect = table.render3d.layout.field_rect(table.own_active)
@@ -1090,7 +1085,7 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 	table.own_allowance_row.size = allowance_rect.size
 	var compact_status := allowance_rect.size.x < 300.0
 	var separation := 3 if compact_status else 6
-	table.own_allowance_row.add_theme_constant_override("separation", separation)
+	table.own_allowance_row.add_theme_constant_override("h_separation", separation)
 	table.own_info.add_theme_font_size_override("font_size", 12 if compact_status else 13)
 	table.opponent_info.add_theme_font_size_override("font_size", 12 if compact_status else 13)
 	var compact_unit := maxf(
@@ -1122,16 +1117,10 @@ func _layout_current_status() -> void:
 
 func _routed_action_rows() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	if table.presentation_runtime.actions_suppressed:
+	if table.presentation_runtime.actions_suppressed or table.is_interaction_locked() or table.active_choice != null or not table.choice_target_options.is_empty():
 		return result
 	for value in table.action_rows:
 		var row := value.duplicate()
-		var action := row.get("action") as GameAction
-		# Playing a Stadium is a no-target action on the rules layer, but the UI
-		# also accepts the same action when that hand card is dragged onto the
-		# Stadium zone. This metadata never enters GameAction serialization.
-		if action and action.kind == "PLAY_TRAINER" and _trainer_type_for_action(action) == "Stadium":
-			row["drag_target_keys"] = ["stadium"]
 		result.append(row)
 	return result
 
@@ -1152,7 +1141,6 @@ func _action_rows_semantic_signature(rows: Array[Dictionary]) -> String:
 			str(row.get("target_key", "")),
 			str(row.get("group_key", "")),
 			_stable_value_signature(row.get("target_keys", [])),
-			_stable_value_signature(row.get("drag_target_keys", [])),
 			str(bool(row.get("disabled", false))),
 		]
 		result.append("|".join(parts))
@@ -1187,34 +1175,20 @@ func _stable_value_signature(value: Variant) -> String:
 	return str(value)
 
 
-func _current_task_hint() -> String:
-	if not table.choice_target_options.is_empty():
-		return table.choice_target_prompt if not table.choice_target_prompt.is_empty() else "选择场上的卡牌"
-	if table.selected_entity_key.is_empty():
-		return ""
-	if (
-		table._popover_dismissed_source_key == table.selected_entity_key
-		and table._selected_action_group_key.is_empty()
-	):
-		return "再次点击卡牌取消选择"
+func _guidance() -> Dictionary:
+	if not table.choice_target_options.is_empty() and table.active_choice == null and table.interaction_wait_message().is_empty():
+		return {"text": table.choice_target_prompt, "tone": "required", "can_cancel": false, "can_back": false}
 	var groups := table.interaction_router.action_groups_for_source(table.selected_entity_key)
-	if groups.is_empty():
-		return _disabled_reason_for_source(table.selected_entity_key)
-	if not table._selected_action_group_key.is_empty():
-		var selected_group := _group_by_key(groups, table._selected_action_group_key)
-		var rows: Array = selected_group.get("rows", [])
-		if not rows.is_empty():
-			var action := (rows[0] as Dictionary).get("action") as GameAction
-			return "选择%s目标" % _target_hint_for_action(action)
-	if groups.size() > 1:
-		return "选择一个卡牌动作"
-	var only_group: Dictionary = groups[0]
-	if bool(only_group.get("requires_target", false)):
-		var rows: Array = only_group.get("rows", [])
-		if not rows.is_empty():
-			var action := (rows[0] as Dictionary).get("action") as GameAction
-			return "选择%s目标" % _target_hint_for_action(action)
-	return "确认要执行的卡牌动作"
+	return BattleGuidanceModel.resolve(
+		table.state_ref, table.view_player, table.selected_entity_key, groups,
+		table._selected_action_group_key, table.active_choice, table.choice_selected_count,
+		table.interaction_wait_message(), _disabled_reason_for_source(table.selected_entity_key), table.ai_thinking,
+		table.choice_target_prompt,
+	)
+
+
+func _current_task_hint() -> String:
+	return str(_guidance().text)
 
 
 func is_selecting_action_target() -> bool:
@@ -1267,9 +1241,9 @@ func _disabled_reason_for_source(source_key: String) -> String:
 		if table.state_ref.phase == "SETUP" and not table.catalog.is_basic_pokemon(card_id):
 			return "准备阶段只能放置基础宝可梦"
 		if supertype == "Energy" and player.energy_attached_this_turn:
-			return "本回合已附能"
+			return "本回合已赋能"
 		if supertype == "Energy":
-			return "当前没有可附能的宝可梦"
+			return "当前没有可赋能的宝可梦"
 		if trainer_type == "Supporter" and player.supporter_played_this_turn:
 			return "本回合已使用支援者"
 		if trainer_type == "Stadium" and player.stadium_played_this_turn:
@@ -1315,9 +1289,6 @@ func _rows_for_active_selection() -> Array[Dictionary]:
 		for value in selected_group.get("rows", []):
 			result.append(value as Dictionary)
 		return result
-	if groups.size() == 1:
-		for value in (groups[0] as Dictionary).get("rows", []):
-			result.append(value as Dictionary)
 	return result
 
 
@@ -1354,7 +1325,7 @@ func _target_hint_for_action(action: GameAction) -> String:
 		"EVOLVE":
 			return "进化"
 		"ATTACH_ENERGY":
-			return "附能"
+			return "赋能"
 		"RETREAT":
 			return "撤退"
 		"PLAY_TRAINER":
@@ -1371,6 +1342,9 @@ func _target_hint_for_action(action: GameAction) -> String:
 
 func _refresh_action_popover() -> void:
 	if table.action_popover == null:
+		return
+	if table.is_interaction_locked() or table.active_choice != null or not table.choice_target_options.is_empty():
+		table.action_popover.dismiss(false)
 		return
 	if not table._read_only_detail_key.is_empty():
 		table.action_popover.dismiss(false)
@@ -1395,13 +1369,6 @@ func _refresh_action_popover() -> void:
 	if not table._selected_action_group_key.is_empty():
 		table.action_popover.dismiss(false)
 		return
-	if (
-		groups.size() == 1
-		and bool(groups[0].get("requires_target", false))
-	):
-		# A single targeted action enters target selection immediately.
-		table.action_popover.dismiss(false)
-		return
 	var popover_rows := _popover_rows_for_groups(groups)
 	_present_popover_rows(
 		table.selected_entity_key,
@@ -1411,13 +1378,13 @@ func _refresh_action_popover() -> void:
 
 func _popover_rows_for_groups(groups: Array[Dictionary]) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	if groups.size() == 1:
-		for row_value in groups[0].get("rows", []):
-			result.append(_compact_card_action_row(row_value as Dictionary))
-		return result
 	for group in groups:
 		var rows: Array = group.get("rows", [])
 		if rows.is_empty():
+			continue
+		if not bool(group.get("requires_target", false)):
+			for direct_row in rows:
+				result.append(_compact_card_action_row(direct_row as Dictionary))
 			continue
 		var row := _compact_card_action_row(rows[0] as Dictionary)
 		if str(group.get("action_type", "")) == "RETREAT":
@@ -1427,7 +1394,7 @@ func _popover_rows_for_groups(groups: Array[Dictionary]) -> Array[Dictionary]:
 			row["label"] = "撤退"
 			row["hint"] = "选择备战宝可梦"
 		elif bool(group.get("requires_target", false)):
-			row["hint"] = "选择合法目标"
+			row["hint"] = BattleGuidanceModel.target_prompt(row.get("action") as GameAction)
 		result.append(row)
 	return result
 
@@ -1604,7 +1571,7 @@ func _show_forced_action_rows(
 
 
 func _on_popover_action_chosen(action: GameAction) -> void:
-	if action == null:
+	if action == null or table.is_interaction_locked() or table.active_choice != null or not table.choice_target_options.is_empty():
 		return
 	for row in table._forced_popover_rows:
 		if row.get("action") == action:
@@ -1614,7 +1581,10 @@ func _on_popover_action_chosen(action: GameAction) -> void:
 			table.action_requested.emit(action)
 			return
 	var group := _group_for_action(table._popover_source_key, action)
-	if not group.is_empty() and bool(group.get("requires_target", false)):
+	if group.is_empty():
+		table.set_task_hint("操作已更新，请重新选择卡牌按钮")
+		return
+	if bool(group.get("requires_target", false)):
 		if table.is_compact_layout():
 			table.hide_card_detail()
 		table._selected_action_group_key = str(group.get("key", ""))
@@ -1627,7 +1597,6 @@ func _on_popover_action_chosen(action: GameAction) -> void:
 
 
 func _on_popover_dismissed() -> void:
-	var dismissed_forced_source := table._forced_popover_source_key
 	if not table._popover_source_key.is_empty():
 		table._popover_dismissed_source_key = table._popover_source_key
 		if table._forced_popover_source_key == table._popover_source_key:
@@ -1635,13 +1604,6 @@ func _on_popover_dismissed() -> void:
 			table._forced_popover_source_key = ""
 	table._popover_source_key = ""
 	_refresh_header()
-	if (
-		table._drag_session != null
-		and table._drag_session.state == table.CARD_DRAG_SESSION.AWAITING_VARIANT
-		and dismissed_forced_source
-		== BattleInteractionController.hand_key(table._drag_session.hand_index)
-	):
-		table.hand_view._return_drag_session("variant_cancelled")
 
 
 func _reset_action_interaction_state(dismiss_popover := true) -> void:
@@ -1717,15 +1679,13 @@ func _on_card_activated(
 	player: int,
 	slot_name: String,
 ) -> void:
+	if table.is_interaction_locked():
+		return
 	var clicked_key := (
 		BattleInteractionController.hand_key(hand_index)
 		if hand_index >= 0
 		else BattleInteractionController.pokemon_key(player, slot_name)
 	)
-	if not table.selected_entity_key.is_empty() and clicked_key == table.selected_entity_key:
-		_reset_action_interaction_state()
-		table.selection_clear_requested.emit(clicked_key)
-		return
 	if table.choice_target_options.has(clicked_key):
 		var choice_value: Variant = table.choice_target_options[clicked_key]
 		if (
@@ -1737,7 +1697,10 @@ func _on_card_activated(
 		else:
 			table.choice_target_selected.emit(str(choice_value))
 		return
-	if not table.selected_entity_key.is_empty() and clicked_key != table.selected_entity_key:
+	if table.active_choice != null or not table.choice_target_options.is_empty():
+		table.set_task_hint("请选择发光的合法选项")
+		return
+	if is_selecting_action_target():
 		var target_rows := _matching_active_selection_rows(clicked_key)
 		if target_rows.size() == 1:
 			var target_action := target_rows[0].get("action") as GameAction
@@ -1747,9 +1710,12 @@ func _on_card_activated(
 		elif target_rows.size() > 1:
 			_show_forced_action_rows(target_rows)
 			return
-		if hand_index < 0 and is_selecting_action_target():
-			table.set_task_hint("这个位置不能作为目标，请选择青色标记的位置")
-			return
+		table.set_task_hint("这个位置不能作为目标，请选择青色标记的位置")
+		return
+	if not table.selected_entity_key.is_empty() and clicked_key == table.selected_entity_key:
+		_reset_action_interaction_state()
+		table.selection_clear_requested.emit(clicked_key)
+		return
 	if hand_index < 0 and card_id.is_empty():
 		return
 	if hand_index >= 0:
@@ -1761,7 +1727,7 @@ func _on_card_activated(
 func _on_prize_index_activated(index: int, own_zone: bool) -> void:
 	var player := table.view_player if own_zone else 1 - table.view_player
 	var key := "prize:%d:%d" % [player, index]
-	if table.choice_target_options.has(key):
+	if not table.is_interaction_locked() and table.choice_target_options.has(key):
 		table.choice_target_selected.emit(str(table.choice_target_options[key]))
 
 
@@ -1816,6 +1782,8 @@ func _on_zone_inspected(context: Dictionary) -> void:
 
 
 func _on_zone_action_menu_requested(context: Dictionary) -> void:
+	if table.is_interaction_locked() or table.active_choice != null or not table.choice_target_options.is_empty():
+		return
 	var zone_name := str(context.get("zone", ""))
 	var zone_player := int(context.get("player", -1))
 	var source_key := BattleInteractionController.zone_key(zone_player, zone_name)
@@ -1834,33 +1802,36 @@ func _on_zone_action_menu_requested(context: Dictionary) -> void:
 		)
 
 
-func _on_card_dropped(
-	hand_index: int,
-	card_id: String,
-	target_player: int,
-	target_slot: String,
-) -> void:
-	var matching_rows := table.interaction_router.matching_drag_rows(
-		hand_index,
-		target_player,
-		target_slot,
-	)
-	if matching_rows.is_empty():
+
+
+func return_to_action_menu() -> void:
+	if table.active_choice != null or table.is_interaction_locked():
 		return
-	table.hand_view._park_drag_session(target_player, target_slot)
-	if matching_rows.size() > 1:
-		if table._drag_session != null:
-			table._drag_session.state = table.CARD_DRAG_SESSION.AWAITING_VARIANT
-		_show_forced_action_rows(
-			matching_rows,
-			BattleInteractionController.hand_key(hand_index),
-		)
-		return
-	if table._drag_session != null:
-		table._drag_session.state = table.CARD_DRAG_SESSION.AWAITING_VARIANT
-	table.card_drop_requested.emit(
-		hand_index,
-		card_id,
-		target_player,
-		target_slot,
-	)
+	_reset_action_interaction_state()
+	_refresh_action_popover()
+	_refresh_target_hints()
+	_refresh_header()
+
+
+func _layout_compact_status() -> void:
+	var rail := table.hud.get_node("PhasePanel") as Control
+	var to_board := table.board_canvas.get_global_transform_with_canvas().affine_inverse()
+	var rect := to_board * rail.get_global_rect()
+	var top := minf(rect.end.y + 8.0, table.board_canvas.size.y - 144.0)
+	table.own_info.position = Vector2(rect.position.x, top)
+	table.own_info.size = Vector2(rect.size.x, 48)
+	table.own_info.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	table.own_info.add_theme_stylebox_override("normal", DesignTokens.panel_style(DesignTokens.PANEL, 7, DesignTokens.BORDER_SOFT, 1, 2))
+	table.own_info.add_theme_font_size_override("font_size", 11)
+	table.own_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	table.own_info.text = str(table.own_info.get_meta("compact_caption", table.own_info.text))
+	var row := table.own_allowance_row
+	row.columns = 2
+	row.position = Vector2(rect.position.x, top + 52.0)
+	row.add_theme_constant_override("h_separation", 4)
+	row.add_theme_constant_override("v_separation", 4)
+	for label in table.own_allowance_labels.values():
+		label.custom_minimum_size = Vector2((rect.size.x - 4.0) * 0.5, 32)
+		label.add_theme_font_size_override("font_size", 11)
+		label.add_theme_stylebox_override("normal", DesignTokens.panel_style(DesignTokens.PANEL, 7, DesignTokens.BORDER_SOFT, 1, 2))
+	row.size = Vector2(rect.size.x, maxf(68.0, row.get_combined_minimum_size().y))

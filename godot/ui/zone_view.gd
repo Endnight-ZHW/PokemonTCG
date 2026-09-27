@@ -7,12 +7,6 @@ signal inspected(context: Dictionary)
 signal detail_requested(card_id: String)
 signal action_requested(action: GameAction)
 signal action_menu_requested(context: Dictionary)
-signal card_dropped(
-	hand_index: int,
-	card_id: String,
-	target_player: int,
-	target_slot: String,
-)
 
 const CARD_BACK_TEXTURE: Texture2D = preload("res://assets/cards/card_back.webp")
 const LONG_PRESS_MSEC := 350
@@ -38,8 +32,8 @@ var stack_visual_direction := "up"
 var table_depth := 0.55
 var _stack_card_size := Vector2.ZERO
 var actionable := false
-var _allowed_drop_hand_indices: Array[int] = []
-var _drop_highlighted := false
+var targetable := false
+var target_stack_indices: Array[int] = []
 var _pressed := false
 var _press_msec := 0
 var _press_position := Vector2.ZERO
@@ -56,7 +50,7 @@ var _long_press_timer: Timer
 @onready var count_label: Label = %CountLabel
 @onready var empty_label: Label = %EmptyLabel
 @onready var action_button: Button = %ActionButton
-@onready var drop_hint: Label = %DropHint
+@onready var target_hint: Label = %TargetHint
 var fallback_back_panel: Panel
 var fallback_back_label: Label
 var _pending_action_row: Dictionary = {}
@@ -265,28 +259,12 @@ func _has_point(point: Vector2) -> bool:
 	return Rect2(Vector2.ZERO, size).has_point(point)
 
 
-func set_drop_target(
-	player: int,
-	slot: String,
-	allowed_hand_indices: Array = [],
-) -> void:
-	target_player = player
-	target_slot = slot
-	_allowed_drop_hand_indices.clear()
-	for value in allowed_hand_indices:
-		var hand_index := int(value)
-		if hand_index >= 0 and hand_index not in _allowed_drop_hand_indices:
-			_allowed_drop_hand_indices.append(hand_index)
-	if drop_hint:
-		drop_hint.visible = _drop_highlighted and not _allowed_drop_hand_indices.is_empty()
-		drop_hint.text = "打出竞技场"
-	_apply_frame_style()
-
-
-func set_drop_highlight(value: bool) -> void:
-	_drop_highlighted = value and not _allowed_drop_hand_indices.is_empty()
-	if drop_hint:
-		drop_hint.visible = _drop_highlighted
+func set_targetable(value: bool, indices: Array[int] = []) -> void:
+	targetable = value
+	target_stack_indices.assign(indices if value else [])
+	if target_hint:
+		target_hint.visible = targetable
+		target_hint.text = "领取奖励卡" if stack_visual_mode == "prizes" else "选择目标"
 	_apply_frame_style()
 
 
@@ -674,27 +652,6 @@ func _on_action_pressed() -> void:
 		action_menu_requested.emit(inspect_context.duplicate(true))
 
 
-func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
-	if (
-		target_slot.is_empty()
-		or not data is Dictionary
-		or str(data.get("kind", "")) != "hand_card"
-	):
-		return false
-	return _allowed_drop_hand_indices.has(int(data.get("hand_index", -1)))
-
-
-func _drop_data(_at_position: Vector2, data: Variant) -> void:
-	if not _can_drop_data(Vector2.ZERO, data):
-		return
-	card_dropped.emit(
-		int(data.get("hand_index", -1)),
-		str(data.get("card_id", "")),
-		target_player,
-		target_slot,
-	)
-
-
 static func _fallback_card_back_texture() -> Texture2D:
 	if _fallback_card_back_cache != null:
 		return _fallback_card_back_cache
@@ -899,16 +856,16 @@ func _apply_frame_style() -> void:
 	elif not card_id.is_empty():
 		fill = DesignTokens.PANEL
 		border = DesignTokens.CYAN.darkened(0.18)
-	if actionable or _drop_highlighted:
+	if actionable or targetable:
 		border = DesignTokens.CYAN
 	var frame_style := DesignTokens.panel_style(
 		fill,
 		_card_corner_radius(),
 		border,
-		2 if actionable or _drop_highlighted or stack_visual_mode in ["deck", "discard"] else 1,
+		2 if actionable or targetable or stack_visual_mode in ["deck", "discard"] else 1,
 		0,
 	)
-	if actionable or _drop_highlighted:
+	if actionable or targetable:
 		frame_style.shadow_color = Color(DesignTokens.STATE_TARGET, 0.16)
 		frame_style.shadow_size = 3
 		frame_style.shadow_offset = Vector2.ZERO

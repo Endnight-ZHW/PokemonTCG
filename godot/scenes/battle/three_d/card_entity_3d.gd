@@ -18,6 +18,8 @@ var outline: MeshInstance3D
 var _front: ShaderMaterial
 var _outline_material: ShaderMaterial
 var _outline_tint := Color.TRANSPARENT
+var _outline_pulse := false
+var _outline_scale := 1.0
 var contact_shadow: MeshInstance3D
 var _current_front: Texture2D
 var _current_reverse: Texture2D
@@ -131,18 +133,26 @@ func set_feedback(color: Color, strength: float) -> void:
 	_front.set_shader_parameter("feedback_strength", strength)
 
 
-func set_highlight(selected: bool, targetable: bool, hovered: bool, empty: bool = false, thinking_tint: Color = Color.TRANSPARENT) -> void:
+func set_highlight(selected: bool, targetable: bool, hovered: bool, empty: bool = false, thinking_tint: Color = Color.TRANSPARENT, actionable: bool = false, animate: bool = false, target_tint: Color = DesignTokens.STATE_TARGET) -> void:
 	body.visible = not empty
 	var thinking := thinking_tint.a > 0.0 and not empty
-	outline.visible = selected or targetable or hovered or empty or thinking
-	var tint := DesignTokens.STATE_SELECTED if selected else DesignTokens.STATE_TARGET if targetable else DesignTokens.STATE_INFO
-	if thinking and not selected and not targetable and not hovered:
+	outline.visible = selected or targetable or actionable or hovered or empty or thinking
+	var tint := DesignTokens.STATE_SELECTED if selected else target_tint if targetable else DesignTokens.STATE_SUCCESS if actionable else DesignTokens.STATE_INFO
+	if thinking and not selected and not targetable and not actionable and not hovered:
 		tint = thinking_tint
 	if empty and not selected and not targetable and not hovered:
 		tint = DesignTokens.TABLE_STITCH
+	var pulse := animate and (targetable or actionable) and not selected
 	if _outline_tint != tint:
 		_outline_tint = tint
 		_outline_material.set_shader_parameter("tint", tint)
+	if _outline_pulse != pulse:
+		_outline_pulse = pulse
+		_outline_material.set_shader_parameter("pulse_enabled", pulse)
+	var ring_scale := 1.018 if selected or targetable else 1.0
+	if not is_equal_approx(_outline_scale, ring_scale):
+		_outline_scale = ring_scale
+		outline.scale = Vector3(ring_scale, 1.0, ring_scale)
 
 
 func release() -> void:
@@ -195,15 +205,18 @@ static func _make_mesh(ring: bool) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	var perimeter := _perimeter()
 	if ring:
-		var outer := _perimeter(0.030)
-		var inner := _perimeter(0.012)
+		var outer := _perimeter(0.042)
+		var inner := _perimeter(0.006)
 		var surface := SurfaceTool.new()
 		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 		for i in range(outer.size()):
 			var j := (i + 1) % outer.size()
-			for p in [outer[i], outer[j], inner[i], outer[j], inner[j], inner[i]]:
+			var points := [outer[i], outer[j], inner[i], outer[j], inner[j], inner[i]]
+			for vertex in range(6):
+				var point: Vector2 = points[vertex]
 				surface.set_normal(Vector3.UP)
-				surface.add_vertex(Vector3(p.x, 0.002, p.y))
+				surface.set_uv(Vector2(1.0 if vertex in [2, 4, 5] else 0.0, 0.0))
+				surface.add_vertex(Vector3(point.x, 0.002, point.y))
 		surface.commit(mesh)
 		return mesh
 	var surface := SurfaceTool.new()

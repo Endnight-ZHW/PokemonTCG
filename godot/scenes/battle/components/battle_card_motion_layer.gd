@@ -467,10 +467,6 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			existing_flyer = staged_source_proxies[index]
 		elif index < staged_attachment_proxies.size():
 			existing_flyer = staged_attachment_proxies[index]
-		if index == 0 and str(source.get("zone", "")) == "hand":
-			if table._presentation_drag_proxy != null:
-				table.hand_presentation._dispose_snapshot_hand_source(existing_flyer)
-				existing_flyer = table._presentation_drag_proxy
 		var card_id := str(card_ids[index]) if index < card_ids.size() else event_card_id
 		var landing_view := _motion_landing_control(
 			target,
@@ -562,8 +558,6 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 				else 1
 			),
 		})
-		if index == 0 and str(source.get("zone", "")) == "hand":
-			table._presentation_drag_proxy = null
 	for index in range(motion_count, staged_source_proxies.size()):
 		table.hand_presentation._dispose_snapshot_hand_source(staged_source_proxies[index])
 	for index in range(motion_count, staged_attachment_proxies.size()):
@@ -662,7 +656,7 @@ func _spawn_card_motion_spec(
 		return null
 	var existing_flyer := table.presentation_runtime._valid_control(spec.get("existing_flyer"))
 	if existing_flyer != null and bool(spec.get("texture_authoritative", false)):
-		# Reused drag/snapshot entities retain their node tree. Refresh the face at
+		# Reused snapshot entities retain their node tree. Refresh the face at
 		# authority handoff so a stale placeholder cannot survive into flight.
 		_set_paper_card_texture(existing_flyer, texture)
 	var flying := motion_entities._spawn_flying_card(

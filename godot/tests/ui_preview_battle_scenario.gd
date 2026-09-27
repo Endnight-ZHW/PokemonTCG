@@ -564,6 +564,10 @@ func run(ui: Control) -> void:
 		push_error("Battle card became unreachable through transparent layout surfaces")
 		harness._finish(1)
 		return
+	if not ui.battle_screen.action_popover.visible or ui.battle_screen.action_popover.action_buttons.get_child_count() == 0:
+		push_error("Battle fixture failed to expose an explicit action button")
+		harness._finish(1)
+		return
 	var preview_action_button := ui.battle_screen.action_popover.action_buttons.get_child(
 		0
 	) as Button

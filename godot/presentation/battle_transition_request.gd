@@ -14,7 +14,6 @@ var events: Array[Dictionary] = []
 var revision := -1
 var origin_action_id := ""
 var origin_request_id := ""
-var drag_session_id := ""
 var cause := CAUSE_REFRESH
 var critical := true
 
@@ -26,7 +25,6 @@ static func create(
 	p_cause: String = CAUSE_REFRESH,
 	p_origin_action_id: String = "",
 	p_origin_request_id: String = "",
-	p_drag_session_id: String = "",
 	p_critical: bool = true,
 ) -> BattleTransitionRequest:
 	var result := BattleTransitionRequest.new()
@@ -38,6 +36,5 @@ static func create(
 	result.cause = p_cause
 	result.origin_action_id = p_origin_action_id
 	result.origin_request_id = p_origin_request_id
-	result.drag_session_id = p_drag_session_id
 	result.critical = p_critical
 	return result

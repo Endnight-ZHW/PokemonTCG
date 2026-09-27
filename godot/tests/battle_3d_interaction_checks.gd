@@ -10,10 +10,10 @@ static func run(table: BattleTable, expect: Callable) -> void:
 	presenter.sync_surfaces()
 	expect.call(not active.contains_visual_global_point(center), "Masked card still accepts input through the touch fallback")
 	active.set_presentation_hidden(false)
-	active.set_drag_masked(true)
+	active.set_presentation_hidden(true)
 	presenter.sync_surfaces()
-	expect.call(not active.contains_visual_global_point(center), "Drag source remains clickable after visual ownership transfers")
-	active.set_drag_masked(false)
+	expect.call(not active.contains_visual_global_point(center), "Masked source remains clickable after visual ownership transfers")
+	active.set_presentation_hidden(false)
 	presenter.sync_surfaces()
 	var prizes := table.zones["own_prizes"] as ZoneView
 	var top := presenter.world.entities[presenter._key(prizes, str(prizes.count - 1))] as CardEntity3D
@@ -143,9 +143,9 @@ static func check_layouts(table: BattleTable, expect: Callable) -> void:
 			expect.call(presenter.prize_index_at_global_point(prizes, global_point) == index, "Exposed prize edge selects the wrong physical index at %s" % resolution)
 	var stadium := table.zones["stadium"] as ZoneView
 	stadium.configure("竞技场", "", 0)
-	stadium.set_drop_highlight(true)
+	stadium.set_targetable(true)
 	presenter.sync_surfaces()
 	var empty_surface := presenter.world.entities[presenter._key(stadium, "0")] as CardEntity3D
 	expect.call(empty_surface.visible and not empty_surface.body.visible and empty_surface.outline.visible, "Empty stadium has no physical drop outline")
 	var empty_center := presenter.global_bounds(stadium).get_center()
-	expect.call(presenter.contains_global_point(stadium, empty_center), "Empty physical stadium does not accept its drop target")
+	expect.call(presenter.contains_global_point(stadium, empty_center), "Empty physical stadium does not accept its selection target")

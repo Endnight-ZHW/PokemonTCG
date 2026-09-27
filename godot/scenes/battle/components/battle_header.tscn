@@ -77,103 +77,68 @@ content_margin_bottom = 5.0
 shadow_color = Color(0.270588, 0.215686, 0.184314, 0.12)
 shadow_size = 3
 
-[node name="Header" type="HBoxContainer"]
-custom_minimum_size = Vector2(0, 58)
-layout_mode = 2
+[node name="Header" type="Control"]
+custom_minimum_size = Vector2(0, 122)
 mouse_filter = 2
-theme_override_constants/separation = 0
-editor_description = "全宽悬浮战斗头部。回合与任务分居两侧，为上下贴边的大尺寸手牌留出中央区域。"
 script = ExtResource("1_header")
 
-[node name="LeftInset" type="Control" parent="."]
-custom_minimum_size = Vector2(12, 0)
-layout_mode = 2
-mouse_filter = 2
-
 [node name="MenuButton" type="Button" parent="."]
-focus_mode = 0
 unique_name_in_owner = true
-custom_minimum_size = Vector2(84, 48)
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_colors/font_color = Color(0.270588, 0.215686, 0.184314, 1)
-theme_override_colors/font_hover_color = Color(0.270588, 0.215686, 0.184314, 1)
-theme_override_colors/font_pressed_color = Color(0.639216, 0.372549, 0.196078, 1)
-theme_override_font_sizes/font_size = 14
+focus_mode = 0
+custom_minimum_size = Vector2(72, 48)
 theme_override_styles/normal = SubResource("Style_menu_normal")
 theme_override_styles/hover = SubResource("Style_menu_hover")
 theme_override_styles/pressed = SubResource("Style_menu_pressed")
 text = "菜单"
 
-[node name="MenuContextGap" type="Control" parent="."]
-custom_minimum_size = Vector2(12, 0)
-layout_mode = 2
-mouse_filter = 2
-
 [node name="TurnLabel" type="Label" parent="."]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(292, 44)
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_colors/font_color = Color(0.639216, 0.372549, 0.196078, 1)
-theme_override_font_sizes/font_size = 15
+mouse_filter = 2
 theme_override_styles/normal = SubResource("Style_turn_context")
-text = "第 1 回合 · 玩家 1 · 准备阶段"
-horizontal_alignment = 0
+text = "第 1 回合 · 我方 · 准备阶段"
 vertical_alignment = 1
 text_overrun_behavior = 3
-clip_text = true
 
-[node name="CenterSpacerLeft" type="Control" parent="."]
-layout_mode = 2
-size_flags_horizontal = 3
+[node name="TaskPanel" type="Panel" parent="."]
 mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_task_hint")
+
+[node name="TaskIcon" type="Label" parent="."]
+mouse_filter = 2
+theme_override_font_sizes/font_size = 24
+text = "◆"
+vertical_alignment = 1
 
 [node name="TaskHint" type="Label" parent="."]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(300, 44)
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_colors/font_color = Color(0.270588, 0.215686, 0.184314, 1)
-theme_override_font_sizes/font_size = 15
-theme_override_styles/normal = SubResource("Style_task_hint")
-text = "选择基础宝可梦放到战斗场"
-horizontal_alignment = 0
-vertical_alignment = 1
-text_overrun_behavior = 3
-clip_text = true
-
-[node name="HeaderSpacer" type="Control" parent="."]
-visible = false
-layout_mode = 2
-size_flags_horizontal = 3
 mouse_filter = 2
+text = "选择基础宝可梦，点击「放置」设置战斗宝可梦"
+vertical_alignment = 1
+autowrap_mode = 3
 
 [node name="RightInset" type="Control" parent="."]
-custom_minimum_size = Vector2(108, 0)
-layout_mode = 2
 mouse_filter = 2
+
+[node name="BackActionButton" type="Button" parent="RightInset"]
+visible = false
+custom_minimum_size = Vector2(88, 48)
+focus_mode = 0
+theme_type_variation = &"BattleCompactButton"
+theme_override_font_sizes/font_size = 14
+text = "返回操作"
 
 [node name="DetailButton" type="Button" parent="RightInset"]
 visible = false
-offset_top = 5.0
-offset_right = 48.0
-offset_bottom = 53.0
-custom_minimum_size = Vector2(48, 48)
+custom_minimum_size = Vector2(52, 48)
 focus_mode = 0
 theme_type_variation = &"BattleCompactButton"
-theme_override_font_sizes/font_size = 12
-theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 14
 text = "详情"
 
 [node name="CancelSelectionButton" type="Button" parent="RightInset"]
 visible = false
-offset_left = 52.0
-offset_top = 5.0
-offset_right = 100.0
-offset_bottom = 53.0
-custom_minimum_size = Vector2(48, 48)
+custom_minimum_size = Vector2(52, 48)
 focus_mode = 0
 theme_type_variation = &"BattleCompactButton"
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 14
 text = "取消"

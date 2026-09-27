@@ -144,7 +144,7 @@ static func _check_mulligan_bonus_placement_controls(
 	header.update_header(state, 0, false)
 	_expect(
 		failures,
-		header.task_hint_label.text == "可继续放置备战宝可梦，或完成准备",
+		"可继续放置备战宝可梦" in header.task_hint_label.text,
 		"mulligan bonus placement incorrectly tells its actor to wait",
 	)
 	header.update_header(state, 1, false)
@@ -218,7 +218,7 @@ static func _check_pending_promotion_hints(failures: Array[String]) -> void:
 	header.update_header(state, 1, false)
 	_expect(
 		failures,
-		header.task_hint_label.text == "选择备战宝可梦晋升到战斗区",
+		"设为战斗宝可梦" in header.task_hint_label.text,
 		"pending promotion does not instruct its actual actor",
 	)
 	header.free()
@@ -429,7 +429,7 @@ static func _check_layout_case(
 		"%s did not reserve %.0fpx for the command rail and right margin"
 		% [label, required_command_reserve],
 	)
-	if content_size.y >= 500.0:
+	if content_size.y >= 500.0 and content_size.x >= 1450.0:
 		_expect(
 			failures,
 			float(metrics.get("pile_dock_shift", 0.0)) >= 32.0 - EPSILON,
@@ -439,7 +439,7 @@ static func _check_layout_case(
 		for zone_key in ["own_deck", "own_discard", "opponent_deck", "opponent_discard"]:
 			var pile_position := Vector2(zone_positions[zone_key])
 			_expect(failures, pile_position.x + zone_size.x <= command_dock_left + EPSILON,
-				"%s %s entered the phase rail in a short safe area" % [label, zone_key])
+				"%s %s entered the phase/status rail in a compact safe area" % [label, zone_key])
 	_expect(
 		failures,
 		BattlePhaseHud.PHASE_PANEL_OFFSET_Y >= 112.0,

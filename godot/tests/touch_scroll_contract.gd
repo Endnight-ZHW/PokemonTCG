@@ -253,13 +253,13 @@ func check_hand() -> void:
 	var row := HBoxContainer.new()
 	scroll.add_child(row)
 	var cards: Array[CardView] = []
-	var drags := [0]
+	var activations := [0]
 	for index in range(8):
 		var card := load("res://ui/card_view.tscn").instantiate() as CardView
 		card.custom_minimum_size = Vector2(120, 175)
 		row.add_child(card)
 		card.configure("sv1-ener-1", null, false, index, 0)
-		card.drag_started.connect(func(_index): drags[0] += 1)
+		card.activated.connect(func(_id, _index, _player, _slot): activations[0] += 1)
 		cards.append(card)
 	root.add_child(scroll)
 	await settle()
@@ -270,16 +270,16 @@ func check_hand() -> void:
 	move_touch(start + Vector2(-58, -90))
 	touch_button(false, pointer)
 	await settle()
-	check(scroll.scroll_horizontal > 10 and drags[0] == 0, "Horizontal hand browsing turned into card drag")
+	check(scroll.scroll_horizontal > 10 and activations[0] == 0 and not root.gui_is_dragging(), "Horizontal hand browsing turned into card drag")
 	scroll.scroll_horizontal = 0
 	await settle()
 	start = cards[1].get_global_rect().get_center()
 	touch_button(true, start)
 	move_touch(start + Vector2(0, -15))
-	check(drags[0] == 0, "Hand drag started below 24px")
+	check(activations[0] == 0 and not root.gui_is_dragging(), "Hand drag started below 24px")
 	move_touch(start + Vector2(0, -45))
 	await settle()
-	check(drags[0] == 1 and root.gui_is_dragging(), "Intentional upward hand drag did not start")
+	check(activations[0] == 0 and not root.gui_is_dragging(), "Upward hand movement created a drag or activation")
 	router.cancel_gesture()
 	touch_button(false, pointer)
 	await settle()
@@ -290,12 +290,8 @@ func check_hand() -> void:
 	root.add_child(target)
 	target.configure("")
 	target.configure_target(0, "active")
-	target.set_interaction_state(false, "", "放置卡牌", [1])
-	var drops := [0]
-	target.card_dropped.connect(func(index, _id, player, slot):
-		check(index == 1 and player == 0 and slot == "active", "Touch drop changed the legal target or card identity")
-		drops[0] += 1
-	)
+	target.set_interaction_state(false, "", "放置卡牌")
+	target.activated.connect(func(_id, _index, _player, _slot): activations[0] += 1)
 	await settle()
 	start = cards[1].get_global_rect().get_center()
 	touch_button(true, start)
@@ -305,7 +301,7 @@ func check_hand() -> void:
 	await settle()
 	touch_button(false, pointer)
 	await settle()
-	check(drops[0] == 1 and not root.gui_is_dragging(), "Legal touch drop was lost, duplicated or left a drag active")
+	check(activations[0] == 0 and not root.gui_is_dragging(), "Dragging onto a legal target activated or played a card")
 	target.queue_free()
 	scroll.queue_free()
 	await settle()

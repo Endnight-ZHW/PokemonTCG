@@ -18,28 +18,6 @@ const CARD_SCALE := 1.22
 func _init(value: Battle3DPresenter) -> void:
 	presenter = value
 
-func return_drag(proxy: CardMotionEntity, source: CardView, center: Vector2, tween: Tween, duration: float) -> void:
-	if proxy == null or source == null or not presenter.is_projection_ready(): return
-	presenter._sync_token(proxy)
-	var start := proxy.physical_entity.transform
-	var old_position := proxy.position
-	proxy.position = center - proxy.size * 0.5
-	var ordinal := source.hand_index
-	var count := presenter.table.hand_views.filter(func(card: CardView) -> bool: return card.visible).size()
-	var highlighted := source.selected or source._hovered
-	var height := 0.36 + ordinal * 0.025 + (0.6 if highlighted else 0.0)
-	var finish := presenter._hand_surface_pose(proxy, source.size.x, ordinal, count, height, true, highlighted)
-	proxy.position = old_position
-	proxy.source_pose = start
-	proxy.target_pose = finish
-	proxy.world_pose = start
-	proxy.has_world_pose = true
-	# Return the held card to the fan's actual orientation and scale. A screen
-	# position-only return snaps from the held tilt to the fan on its last frame.
-	tween.tween_method(func(progress: float) -> void:
-		if is_instance_valid(proxy): proxy.world_pose = start.interpolate_with(finish, progress),
-		0.0, 1.0, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-
 func reflow_card(card: CardView, target_position: Vector2, target_rotation: float, tween: Tween, duration: float) -> void:
 	if not presenter.is_projection_ready(): return
 	var start := presenter.card_pose(card)
@@ -117,7 +95,7 @@ func pose(root: Control, width: float, ordinal: int, count: int, height: float, 
 	return _pose_at(u, ordinal, count, height, highlighted)
 
 func _ensure_rig(width: float, count: int) -> void:
-	var corridor := presenter.layout.hand_area(true)
+	var corridor := presenter.layout.hand_area(true, self == presenter.opponent_hand_fan)
 	var signature := "%s|%s|%s|%d" % [presenter.size, corridor, width, count]
 	if signature != _signature:
 		_signature = signature

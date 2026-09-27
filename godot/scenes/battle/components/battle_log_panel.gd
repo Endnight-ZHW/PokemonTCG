@@ -176,8 +176,8 @@ func _escape_bbcode(text: String) -> String:
 func _entry_category(text: String) -> String:
 	if "回合" in text or "准备" in text or "游戏开始" in text:
 		return "回合"
-	if "奖赏卡" in text:
-		return "奖赏卡"
+	if "奖励卡" in text:
+		return "奖励卡"
 	if "气绝" in text or "昏厥" in text or "KO" in text:
 		return "气绝"
 	if "伤害" in text or "受到" in text:
@@ -188,7 +188,7 @@ func _entry_category(text: String) -> String:
 	):
 		return "状态"
 	if "附着" in text and "能量" in text:
-		return "附能"
+		return "赋能"
 	if "撤退" in text:
 		return "撤退"
 	return "行动"
@@ -197,11 +197,11 @@ func _entry_category(text: String) -> String:
 func _category_color(category: String) -> String:
 	var color: Color = {
 		"回合": DesignTokens.GOLD,
-		"奖赏卡": DesignTokens.PURPLE,
+		"奖励卡": DesignTokens.PURPLE,
 		"气绝": DesignTokens.STATE_DANGER,
 		"伤害": DesignTokens.STATE_DANGER,
 		"状态": DesignTokens.PURPLE,
-		"附能": DesignTokens.STATE_TARGET,
+		"赋能": DesignTokens.STATE_TARGET,
 		"撤退": DesignTokens.STATE_SUCCESS,
 	}.get(category, DesignTokens.TEXT_MUTED)
 	return "#" + color.to_html(false)

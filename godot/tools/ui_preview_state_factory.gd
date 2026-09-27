@@ -144,7 +144,7 @@ static func action_rows(state: GameState) -> Array[Dictionary]:
 			_hand_ref(state, 0),
 			_pokemon_ref(0, "active", state.players[0].active.card_id),
 		),
-		"label": "附能到战斗宝可梦",
+		"label": "赋能到战斗宝可梦",
 	})
 	rows.append({
 		"action": GameAction.create(

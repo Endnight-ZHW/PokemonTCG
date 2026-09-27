@@ -113,7 +113,6 @@ func cancel_all(reason: String = "cancelled", replacement: BattleViewModel = nul
 	_cancel_preflight()
 	if _table != null:
 		_table.clear_presentation_visuals_for_resync()
-		_table.clear_pending_drag_immediately(reason)
 	if not _active.is_empty():
 		var active_handle := _active.get("handle") as PresentationHandle
 		if active_handle != null:
@@ -180,11 +179,7 @@ func _pump() -> void:
 		if not _table.director.has_seen_event(str(event.get("event_id", ""))):
 			new_events.append(event)
 	_table.prepare_hand_identity_transition(new_events, previous_snapshot, final_state.get_player(request.target_view.view_player).hand)
-	if not request.drag_session_id.is_empty():
-		_table.prepare_pending_drag_for_transition(request.drag_session_id)
 	_apply_view(request.target_view, final_state)
-	if not request.drag_session_id.is_empty():
-		_table.commit_pending_drag_source(request.drag_session_id)
 	if request.events.is_empty() or _table.director == null:
 		_finish_active(run_generation)
 		return
@@ -225,10 +220,7 @@ func _finish_active(
 	if run_generation != _generation or _active.is_empty():
 		return
 	var handle := _active.get("handle") as PresentationHandle
-	var request := _active.get("request") as BattleTransitionRequest
 	_active.clear()
-	if request != null and not request.drag_session_id.is_empty() and _table != null:
-		_table.finish_pending_drag_transition(request.drag_session_id)
 	if handle != null:
 		handle.finish(status, reason)
 		transition_finished.emit(handle)

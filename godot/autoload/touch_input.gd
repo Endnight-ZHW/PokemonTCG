@@ -262,10 +262,6 @@ func tap_allowed(control: Control) -> bool:
 	return not _blocked and gesture.can_tap() and (source == control or (source != null and control.is_ancestor_of(source)))
 
 
-func hand_drag_allowed(control: Control) -> bool:
-	return not gesture.active or (not _blocked and _source_control() == control and gesture.can_drag_hand())
-
-
 func cancel_gesture() -> void:
 	if not gesture.active or _cancelling:
 		return

@@ -113,27 +113,8 @@ func _stage_snapshot_hand_sources(
 			staged_keys[key] = true
 		table.presentation_runtime.event_hand_sources[event_id] = event_keys
 
-	var drag_snapshot_key := ""
-	if table._presentation_drag_proxy != null and table._drag_session != null:
-		var drag_index := int(table._drag_session.hand_index)
-		var candidate_key := "snapshot:%d" % drag_index
-		var candidate_row: Dictionary = table.presentation_runtime.hand_snapshot_rows.get(
-			candidate_key,
-			{},
-		)
-		if (
-			staged_keys.has(candidate_key)
-			and str(candidate_row.get("card_id", "")) == table._drag_session.card_id
-		):
-			drag_snapshot_key = candidate_key
-
 	for key_value in staged_keys.keys():
 		var key := str(key_value)
-		if key == drag_snapshot_key:
-			# The user's drag entity already owns this visual card and may be parked
-			# at its target. Creating a snapshot copy here would briefly put a second
-			# complete face back into the hand.
-			continue
 		var row: Dictionary = table.presentation_runtime.hand_snapshot_rows.get(key, {})
 		var card_id := str(row.get("card_id", ""))
 		var texture := table.card_motion_layer._texture_for_card_id(card_id)

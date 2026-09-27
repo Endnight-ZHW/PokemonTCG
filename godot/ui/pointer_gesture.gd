@@ -3,7 +3,6 @@ extends RefCounted
 
 ## Positions are in viewport coordinates, never in a moving card's local space.
 const TAP_SLOP := 12.0
-const HAND_DRAG_DISTANCE := 24.0
 const AXIS_RATIO := 1.5
 enum Direction { PENDING, HORIZONTAL, UP, DOWN }
 
@@ -42,10 +41,6 @@ func can_tap() -> bool:
 	return active and not cancelled and maximum_distance < TAP_SLOP
 
 
-func can_drag_hand() -> bool:
-	return active and not cancelled and direction == Direction.UP and origin.y - position.y >= HAND_DRAG_DISTANCE
-
-
 func cancel() -> void:
 	cancelled = true
 
@@ -81,11 +76,6 @@ static func tap_allowed(control: Control) -> bool:
 static func is_touch_input() -> bool:
 	var router := touch_router()
 	return router != null and bool(router.get("using_touch"))
-
-
-static func hand_drag_allowed(control: Control) -> bool:
-	var router := touch_router()
-	return router == null or bool(router.call("hand_drag_allowed", control))
 
 
 static func cancel_for(control: Control) -> void:

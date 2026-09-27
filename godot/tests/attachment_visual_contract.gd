@@ -279,7 +279,7 @@ func _run() -> void:
 		"Pre-attach CardView did not predict the complete future tool-badge rect",
 	)
 
-	card.set_interaction_state(false, "", "选择能量", [], false)
+	card.set_interaction_state(false, "", "选择能量")
 	await process_frame
 	_check(
 		card.get_node_or_null("%InteractionHint") == null

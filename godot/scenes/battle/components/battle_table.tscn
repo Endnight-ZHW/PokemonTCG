@@ -170,7 +170,7 @@ vertical_alignment = 1
 text_overrun_behavior = 3
 clip_text = true
 
-[node name="OwnAllowanceRow" type="HBoxContainer" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
+[node name="OwnAllowanceRow" type="GridContainer" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
 unique_name_in_owner = true
 z_index = 46
 mouse_filter = 2

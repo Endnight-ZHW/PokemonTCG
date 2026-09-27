@@ -68,7 +68,6 @@ func open(
 	if main.battle_screen:
 		main.battle_screen.close_log_drawer()
 		main.battle_screen.cancel_pointer_gestures()
-		main.battle_screen.cancel_unsubmitted_drag()
 		main.battle_screen._modal_input_blocked = true
 	main._clear_battle_selection("", false)
 	# Opening a modal is a hard interaction boundary, including for any stale
@@ -173,6 +172,7 @@ func finish_close(close_generation: int) -> void:
 	modal_layer.visible = false
 	if main.battle_screen:
 		main.battle_screen._modal_input_blocked = false
+		main.battle_screen._sync_input_blocker()
 	_free_children_immediate(modal_body)
 	modal_shade.color.a = MODAL_SHADE_ALPHA
 	modal_panel.modulate = Color.WHITE

@@ -114,10 +114,11 @@ static func check_hand_layout(tree: SceneTree, table: BattleTable, check: Callab
 			check.call(a.end.y > p.size.y and b.position.y < 0.0,
 				"Resting hands no longer dock beyond their respective screen edges")
 			check_visible_hand(table, table.hand_views[index], check)
-			for caption in [table.header.turn_label, table.header.task_hint_label]:
-				check.call(not b.intersects(to_table * caption.get_global_rect()),
-					"Top corner caption covers an opponent hand card")
 			var entity := p.world.entities.get(p._key(table.opponent_hand_views[index])) as CardEntity3D
+			var rendered_back := b.intersection(Rect2(entity.screen_clip.position * p.size, entity.screen_clip.size * p.size)) if entity != null and entity.clip_enabled else b
+			for caption in [table.header.turn_label, table.header.task_hint_label]:
+				check.call(not rendered_back.intersects(to_table * caption.get_global_rect()),
+					"Task guidance covers a rendered opponent hand card")
 			check.call(entity != null and entity.face_down and entity.face_texture == null,
 				"Symmetric opponent fan exposes a private face")
 			var near_pose := p.card_pose(table.hand_views[index])
@@ -142,7 +143,7 @@ static func check_hand_layout(tree: SceneTree, table: BattleTable, check: Callab
 			for bench in table.own_bench + table.opponent_bench:
 				var bounds := p.world.projection.project_pose_bounds(p.card_pose(bench))
 				check.call(not a.intersects(bounds) and not b.intersects(bounds),
-					"Enlarged field card overlaps a hand at %s, count=%d" % [p.size, count])
+					"Field card overlaps a hand at %s, count=%d index=%d slot=%s player=%d: own=%s opponent=%s field=%s" % [p.size, count, index, bench.slot, bench.owner_player, a, b, bounds])
 	check.call(report.position_error < 1.0 and report.size_error < 1.0 and report.silhouette_error < 1.0,
 		"Opposing hands differ in projected size or placement at %s: %s" % [p.size, report])
 	# Historical sizes must use the historical cloth center. Recentring the mat

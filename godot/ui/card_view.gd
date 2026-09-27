@@ -3,15 +3,7 @@ extends Control
 
 signal activated(card_id: String, hand_index: int, player: int, slot: String)
 signal detail_requested(card_id: String)
-signal card_dropped(
-	hand_index: int,
-	card_id: String,
-	target_player: int,
-	target_slot: String,
-)
 signal action_requested(action: GameAction)
-signal drag_started(hand_index: int)
-signal drag_ended
 signal hovered_changed(hovered: bool)
 
 const LONG_PRESS_MSEC := 350
@@ -141,10 +133,6 @@ var _content_signature := ""
 var _disabled_reason := ""
 var _legal_target_hint := ""
 var _target_accent := DesignTokens.CYAN
-var _allowed_drop_hand_indices: Array[int] = []
-var _dragging := false
-var _drag_masked := false
-var _native_drag_masked := false
 var _presentation_hidden := false
 var _presentation_tween: Tween
 var _presentation_motion_handle: MotionHandle
@@ -237,11 +225,6 @@ func _notification(what: int) -> void:
 		cancel_pointer_gesture()
 	if what == NOTIFICATION_SCROLL_BEGIN or (what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree()):
 		cancel_pointer_gesture()
-	if what == NOTIFICATION_DRAG_END and _dragging:
-		cancel_pointer_gesture()
-		_set_native_drag_masked(false)
-		_dragging = false
-		drag_ended.emit()
 
 
 func _process(_delta: float) -> void:
@@ -302,7 +285,6 @@ func set_table_depth(value: float, near_side: bool = true) -> void:
 func configure_target(player: int, target_slot_value: String) -> void:
 	if target_player != player or target_slot != target_slot_value:
 		_legal_target_hint = ""
-		_allowed_drop_hand_indices.clear()
 		set_targetable(false)
 	target_player = player
 	target_slot = target_slot_value
@@ -313,17 +295,12 @@ func set_interaction_state(
 	p_actionable: bool,
 	disabled_reason := "",
 	legal_target_hint := "",
-	allowed_hand_indices: Array = [],
-	_show_inline_target_hint := true,
 ) -> void:
-	# Keep the legacy fifth argument for callers. Instructions now belong to the
-	# battle header; cards convey interaction state through outlines only.
 	if (
 		actionable == p_actionable
 		and _disabled_reason == disabled_reason
 		and _legal_target_hint == legal_target_hint
-		and _allowed_drop_hand_indices == allowed_hand_indices
-		and targetable == (not legal_target_hint.is_empty() or not allowed_hand_indices.is_empty())
+		and targetable == (not legal_target_hint.is_empty())
 	):
 		return
 	# Read-only presentation state supplied by the interaction router. CardView
@@ -331,10 +308,8 @@ func set_interaction_state(
 	actionable = p_actionable
 	_disabled_reason = disabled_reason
 	_legal_target_hint = legal_target_hint
-	_replace_allowed_drop_hand_indices(allowed_hand_indices)
 	set_targetable(
 		not _legal_target_hint.is_empty()
-		or not _allowed_drop_hand_indices.is_empty()
 	)
 	_refresh_interaction_visuals()
 
@@ -354,7 +329,6 @@ func set_legal_target_hint(text: String) -> void:
 	_legal_target_hint = text
 	set_targetable(
 		not _legal_target_hint.is_empty()
-		or not _allowed_drop_hand_indices.is_empty()
 	)
 
 
@@ -362,7 +336,6 @@ func clear_interaction_state() -> void:
 	actionable = false
 	_disabled_reason = ""
 	_legal_target_hint = ""
-	_allowed_drop_hand_indices.clear()
 	set_targetable(false)
 	_refresh_interaction_visuals()
 
@@ -382,7 +355,6 @@ func set_targetable(value: bool) -> void:
 	targetable = value
 	if not value:
 		_legal_target_hint = ""
-		_allowed_drop_hand_indices.clear()
 		_target_accent = DesignTokens.CYAN
 	if target_glow:
 		target_glow.visible = value
@@ -465,33 +437,6 @@ func clear_presentation_state() -> void:
 
 func is_presentation_hidden() -> bool:
 	return _presentation_hidden
-
-
-func set_drag_masked(value: bool) -> void:
-	# This mask is owned by the drag coordinator and is deliberately independent
-	# from presentation staging. A pending authoritative action can therefore keep
-	# the source hidden after Godot's native drag has already ended.
-	if _drag_masked == value:
-		return
-	_drag_masked = value
-	_apply_content_visibility()
-
-
-func is_drag_masked() -> bool:
-	return _drag_masked
-
-
-func clear_drag_mask() -> void:
-	set_drag_masked(false)
-
-
-func cancel_drag_state() -> void:
-	# Resync/scene teardown must not wait for NOTIFICATION_DRAG_END: the native
-	# drag may outlive the authoritative view replacement by one input frame.
-	cancel_pointer_gesture()
-	_dragging = false
-	_set_native_drag_masked(false)
-	set_drag_masked(false)
 
 
 func global_center() -> Vector2:
@@ -826,8 +771,6 @@ func _gui_input(event: InputEvent) -> void:
 		if Vector2(event.position).distance_to(_press_position) >= MOUSE_DRAG_THRESHOLD:
 			_press_moved = true
 			_long_press_timer.stop()
-			if hand_index >= 0 and not _long_press_fired:
-				_begin_forced_drag()
 			accept_event()
 
 
@@ -842,7 +785,7 @@ func _begin_pointer_press(at_position: Vector2) -> void:
 
 
 func _on_long_press_timeout() -> void:
-	if not _pressed or _press_moved or _dragging or _touch_scrolling or not is_visible_in_tree():
+	if not _pressed or _press_moved or _touch_scrolling or not is_visible_in_tree():
 		return
 	if card_id.is_empty() or card_id != _press_card_id:
 		cancel_pointer_gesture()
@@ -883,7 +826,7 @@ func _handle_screen_touch(event: InputEventScreenTouch) -> void:
 		return
 	_touch_gesture.move(PointerGesture.viewport_point(self, event.position))
 	var activate := (
-		_pressed and not _touch_scrolling and not _dragging
+		_pressed and not _touch_scrolling
 		and not _long_press_fired and not _press_moved and not event.canceled
 		and _touch_gesture.can_tap() and PointerGesture.tap_allowed(self) and _has_point(event.position)
 	)
@@ -905,73 +848,18 @@ func _handle_screen_drag(event: InputEventScreenDrag) -> void:
 		return
 	if _touch_gesture.direction == PointerGesture.Direction.HORIZONTAL:
 		_touch_scrolling = true
-	if not _touch_scrolling and _touch_gesture.can_drag_hand() and hand_index >= 0:
-		_begin_forced_drag()
-		accept_event()
-
-
-func _begin_forced_drag() -> void:
-	if _dragging:
-		return
-	var data: Variant = _get_drag_data(Vector2.ZERO)
-	if data == null:
-		return
-	_pressed = false
-	if _long_press_timer != null:
-		_long_press_timer.stop()
-	force_drag(data, null)
 
 
 func _get_drag_data(_at_position: Vector2) -> Variant:
-	if hand_index < 0 or card_id.is_empty():
-		return null
-	# Native drag can be attempted before _gui_input receives synthetic motion.
-	if not PointerGesture.hand_drag_allowed(self):
-		return null
-	if _touch_pointer >= 0 and not _touch_gesture.can_drag_hand():
-		return null
-	if not _dragging:
-		_dragging = true
-		_set_native_drag_masked(true)
-		drag_started.emit(hand_index)
-	return {
-		"kind": "hand_card",
-		"hand_index": hand_index,
-		"card_id": card_id,
-	}
+	return null
 
 
-func drag_grab_offset_local() -> Vector2:
-	# Keep the physical grab point stable when CardView hands visual ownership to
-	# the table's persistent drag proxy. Clamping also makes synthetic/keyboard
-	# drags deterministic when no real pointer press preceded the request.
-	return Vector2(
-		clampf(_press_position.x, 0.0, size.x),
-		clampf(_press_position.y, 0.0, size.y),
-	)
+func _can_drop_data(_at_position: Vector2, _data: Variant) -> bool:
+	return false
 
 
-func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
-	if (
-		target_slot.is_empty()
-		or not data is Dictionary
-		or str(data.get("kind", "")) != "hand_card"
-		or not data.has("hand_index")
-	):
-		return false
-	var dropped_hand_index := int(data.get("hand_index", -1))
-	return _allowed_drop_hand_indices.has(dropped_hand_index)
-
-
-func _drop_data(_at_position: Vector2, data: Variant) -> void:
-	if not _can_drop_data(Vector2.ZERO, data):
-		return
-	card_dropped.emit(
-		int(data.get("hand_index", -1)),
-		str(data.get("card_id", "")),
-		target_player,
-		target_slot,
-	)
+func _drop_data(_at_position: Vector2, _data: Variant) -> void:
+	pass
 
 
 func _on_resized() -> void:
@@ -1144,15 +1032,6 @@ func _resolve_scene_nodes() -> void:
 		animation_player = get_node_or_null("AnimationPlayer") as AnimationPlayer
 
 
-func _replace_allowed_drop_hand_indices(indices: Array) -> void:
-	_allowed_drop_hand_indices.clear()
-	for value in indices:
-		var index := int(value)
-		if index < 0 or _allowed_drop_hand_indices.has(index):
-			continue
-		_allowed_drop_hand_indices.append(index)
-
-
 func _normalize_interaction_overlay_z_order() -> void:
 	# Keep every interaction outline in this CardView's effective Z layer. Scene
 	# order still draws these nodes after Frame on their own card, while a sibling
@@ -1171,7 +1050,7 @@ func _normalize_interaction_overlay_z_order() -> void:
 func _make_card_content_input_transparent() -> void:
 	# CardView owns the full pointer gesture. Visual descendants must not become
 	# separate hit targets or they can split a press/release pair and prevent the
-	# card's activation, long-press, or drag handlers from completing.
+	# card's activation or long-press handlers from completing.
 	for child in get_children():
 		_make_control_branch_input_transparent(child)
 
@@ -1360,13 +1239,6 @@ func _set_presentation_alpha(alpha: float) -> void:
 	_sync_detached_selection_ring()
 
 
-func _set_native_drag_masked(value: bool) -> void:
-	if _native_drag_masked == value:
-		return
-	_native_drag_masked = value
-	_apply_content_visibility()
-
-
 func _apply_content_visibility() -> void:
 	_resolve_scene_nodes()
 	if content_root:
@@ -1375,7 +1247,7 @@ func _apply_content_visibility() -> void:
 
 
 func _content_is_visible() -> bool:
-	return not _drag_masked and not _native_drag_masked
+	return not _presentation_hidden
 
 
 func _sync_detached_selection_ring() -> void:

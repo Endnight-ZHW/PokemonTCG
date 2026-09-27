@@ -44,7 +44,7 @@ static func board_metrics(width: float, height: float, config: Dictionary) -> Di
 	)
 	# Short safe areas put the near-side pile badges beside the phase rail.
 	# Keep these docks inside the board reservation instead of using its edge.
-	if height < 500.0:
+	if height < 500.0 or width < 1450.0:
 		pile_dock_shift = 0.0
 	var left_zone_x := layout_origin_x + side_margin
 	var side_zone_x := minf(

@@ -563,7 +563,7 @@ func _show_card_art_preview() -> void:
 
 
 func _show_zone() -> void:
-	preview_caption.text = "区域查看 · 公开弃牌与隐藏牌库/奖赏卡"
+	preview_caption.text = "区域查看 · 公开弃牌与隐藏牌库/奖励卡"
 	var panel := _centered_panel(Vector2(820, 620))
 	var content := ZONE_INSPECTOR_PANEL_SCENE.instantiate() as ZoneInspectorPanel
 	panel.add_child(content)
@@ -893,7 +893,6 @@ func _build_presentation_fixture(kind: String) -> Dictionary:
 		BattleTransitionRequest.CAUSE_REFRESH,
 		"workbench:%d" % event_sequence,
 		"",
-		"",
 		false,
 	)
 	return {
@@ -939,7 +938,7 @@ func _presentation_label(kind: String) -> String:
 		"opening_draw": "连续抽 7 张",
 		"opponent_opening_draw": "对手开局抽 7 张",
 		"search_results": "公开检索结果",
-		"attach_energy": "附能",
+		"attach_energy": "赋能",
 		"evolve": "进化",
 		"attack": "攻击蓄力",
 		"damage": "伤害",

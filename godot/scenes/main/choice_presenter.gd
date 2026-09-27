@@ -6,7 +6,7 @@ signal cancel_requested
 signal response_ready(request: ChoiceView, response: ChoiceResponse)
 signal field_choice_started
 signal click_requested
-signal retreat_confirmed(action: GameAction)
+signal action_confirmed(action: GameAction)
 
 const CHOICE_PANEL_SCENE := preload("res://ui/dialogs/choice_panel.tscn")
 const COIN_SHOWCASE := preload("res://scenes/battle/components/coin_showcase.gd")
@@ -26,6 +26,9 @@ func configure(p_host: ModalHost, p_model: ChoiceSelectionModel) -> void:
 	choice_model = p_model
 
 func clear() -> void:
+	if is_instance_valid(battle_screen):
+		battle_screen.clear_choice_targets()
+		battle_screen.set_choice_guidance(null)
 	active_request = null
 	active_choice_panel = null
 	choice_model.clear()
@@ -53,6 +56,7 @@ func show_choice(request: ChoiceView, state: GameState, p_catalog: CardCatalog,
 	choice_model.configure(request, state, catalog, current_view_player)
 	if battle_screen:
 		battle_screen.clear_choice_targets()
+		battle_screen.set_choice_guidance(request)
 	if request.request_type == "coin_flip":
 		_show_coin_flip_choice(request)
 		return
@@ -98,7 +102,7 @@ func show_choice(request: ChoiceView, state: GameState, p_catalog: CardCatalog,
 			else ModalSpec.SizeMode.PREFERRED
 		),
 	)
-	var display_prompt := choice_model._choice_prompt_text(request)
+	var display_prompt := BattleGuidanceModel.choice_prompt(request, 0, choice_model._choice_prompt_text(request))
 	host.open(
 		display_prompt,
 		choice_model._choice_confirm_cta(request, 0),
@@ -213,7 +217,7 @@ func _finish_coin_flip_reveal(generation: int, request_id: String) -> void:
 		return
 	host.modal_confirm.disabled = false
 
-func show_retreat_confirmation(action: GameAction, state: GameState, p_catalog: CardCatalog) -> void:
+func show_retreat_confirmation(action: GameAction, state: GameState, p_catalog: CardCatalog, on_cancel: Callable = Callable()) -> void:
 	click_requested.emit()
 	host.open(
 		"确认撤退",
@@ -226,6 +230,7 @@ func show_retreat_confirmation(action: GameAction, state: GameState, p_catalog: 
 			ModalSpec.SizeMode.FIT_CONTENT,
 		),
 	)
+	host.back_action = host.close.bind(on_cancel)
 	var lines := retreat_confirmation_lines(action, state, p_catalog)
 	var body := Label.new()
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -235,11 +240,11 @@ func show_retreat_confirmation(action: GameAction, state: GameState, p_catalog: 
 	host.modal_body.add_child(body)
 	host.modal_confirm.pressed.connect(func() -> void:
 		click_requested.emit()
-		host.close(retreat_confirmed.emit.bind(action))
+		host.close(action_confirmed.emit.bind(action))
 	, CONNECT_ONE_SHOT)
 	host.modal_cancel.pressed.connect(func() -> void:
 		click_requested.emit()
-		host.close()
+		host.close(on_cancel)
 	, CONNECT_ONE_SHOT)
 
 func _show_choice_blocked_reason(reason: String) -> void:
@@ -287,6 +292,8 @@ func _clear_energy_distribution() -> void:
 func refresh_selection() -> void:
 	if active_request == null:
 		return
+	if is_instance_valid(battle_screen):
+		battle_screen.set_choice_guidance(active_request, selected_choice_ids.size())
 	var disabled_reasons := choice_model._choice_option_disabled_reasons(active_request)
 	if active_choice_panel:
 		active_choice_panel.refresh_selection(
@@ -404,7 +411,7 @@ func action_label(action: GameAction, current_state: GameState, p_catalog: CardC
 			return "进化 · %s → %s" % [
 				_source_card_name(action, current_state, p_catalog), choice_model._slot_name(str(action.primary_slot()))]
 		"ATTACH_ENERGY":
-			return "附能 · %s → %s" % [
+			return "赋能 · %s → %s" % [
 				_source_card_name(action, current_state, p_catalog), choice_model._slot_name(str(action.target_slot()))]
 		"PLAY_TRAINER":
 			var target := str(action.target_slot())
@@ -451,3 +458,30 @@ func _source_card_name(action: GameAction, current_state: GameState, p_catalog: 
 	if hand_idx >= 0 and hand_idx < player.hand.size():
 		return p_catalog.card_name(player.hand[hand_idx])
 	return "卡牌"
+
+
+func show_attack_confirmation(action: GameAction, state: GameState, p_catalog: CardCatalog, on_cancel: Callable) -> void:
+	var active := state.get_player(action.actor).active
+	if active == null:
+		return
+	var attacks: Array = p_catalog.get_card(active.card_id).get("attacks", [])
+	if action.attack_index() < 0 or action.attack_index() >= attacks.size():
+		return
+	var attack: Dictionary = attacks[action.attack_index()]
+	click_requested.emit()
+	host.open("确认攻击", "确认攻击并结束回合", "返回操作", false,
+		ModalSpec.battle(Vector2(640, 420), false, ModalSpec.SizeMode.FIT_CONTENT))
+	var body := Label.new()
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_theme_font_size_override("font_size", 18)
+	var damage := str(attack.get("damage_text", ""))
+	if damage.is_empty() and int(attack.get("damage", 0)) > 0:
+		damage = str(attack.get("damage", 0))
+	body.text = "%s 将使用「%s」。\n卡面伤害：%s\n%s\n\n攻击结算后将结束本回合。" % [p_catalog.card_name(active.card_id), str(attack.get("name", "招式")), damage if not damage.is_empty() else "见招式说明", str(attack.get("text", ""))]
+	host.modal_body.add_child(body)
+	host.back_action = host.close.bind(on_cancel)
+	host.modal_cancel.pressed.connect(host.close.bind(on_cancel), CONNECT_ONE_SHOT)
+	host.modal_confirm.pressed.connect(func() -> void:
+		click_requested.emit()
+		host.close(action_confirmed.emit.bind(action))
+	, CONNECT_ONE_SHOT)

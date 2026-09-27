@@ -307,6 +307,19 @@ func _update_battle_preview(
 	ui.ai_thinking = ai_is_thinking
 	ui.game_mode = mode
 	if ui.battle_screen:
+		# These are independent, owner-visible fixtures, not a continuation of
+		# the live match used to mount Main. Invalidate its opening callback and
+		# explicitly finish the privacy/input gates before exposing legal actions.
+		ui._startup_choreography_generation += 1
+		ui._startup_choreography_running = false
+		ui.battle_screen.cancel_presentations("preview_fixture")
+		ui.battle_screen._cancel_startup_shuffle()
+		ui.battle_screen.set_startup_blocked(false)
+		ui.battle_screen.set_recovery_blocked(false)
+		ui.battle_screen.set_submission_pending(false)
+		ui.battle_screen.set_local_hand_privacy_hidden(false)
+		ui.battle_screen._modal_input_blocked = false
+		ui.choice_presenter.clear()
 		ui.battle_screen.update_view(
 			preview_state,
 			0,

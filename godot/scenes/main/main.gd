@@ -249,7 +249,7 @@ func _build_shell() -> void:
 	choice_presenter.response_ready.connect(_submit_choice_response)
 	choice_presenter.field_choice_started.connect(_on_field_choice_started)
 	choice_presenter.click_requested.connect(_play_click)
-	choice_presenter.retreat_confirmed.connect(_execute_action_now)
+	choice_presenter.action_confirmed.connect(_execute_action_now)
 	auxiliary_panels = AuxiliaryPanelPresenter.new()
 	add_child(auxiliary_panels)
 	auxiliary_panels.host = modal_host_controller
@@ -422,12 +422,10 @@ func _poll_network() -> void:
 				if event_type == "error" and current_screen == SCREEN_GAME:
 					# Only the rejection correlated to our in-flight submission owns its
 					# parked visual. An unrelated or delayed ERROR must not tear down the
-					# current drag/presentation batch or start a recovery snapshot that
+					# current presentation batch or start a recovery snapshot that
 					# could accidentally release that submission. Protocol-level stale /
 					# sequence errors already request resync inside the controller.
 					if bool(event.get("matched_pending", false)):
-						if battle_screen:
-							battle_screen.clear_pending_drag("network_error")
 						network_controller.request_resync()
 				# These transport events are terminal. Clear the controller now so the
 				# lobby can immediately start a clean retry; protocol-level "error"
@@ -454,8 +452,6 @@ func _poll_network() -> void:
 				# error arrives; otherwise its public coin event is played twice.
 				_prune_coin_presentation_tombstones()
 				shell_view.show_toast("动作确认超时，正在重新同步局面。", true)
-				if battle_screen:
-					battle_screen.clear_pending_drag("network_timeout")
 
 func _handle_network_disconnected(reason: String = "") -> void:
 	var was_lobby := current_screen == SCREEN_NETWORK
@@ -557,15 +553,12 @@ func _apply_network_view(
 			)
 			_continue_after_network_transition()
 			return
-		var drag_session_id := battle_screen.drag_session_id_for_origin(
-			origin_action_id)
 		var handle := _submit_battle_transition(
 			presentation_events,
 			state.active_player_idx,
 			BattleTransitionRequest.CAUSE_NETWORK,
 			origin_action_id,
 			origin_request_id,
-			drag_session_id,
 		)
 		_continue_when_presented(
 			handle,
@@ -956,6 +949,8 @@ func _sanitize_battle_selection() -> void:
 	# index or field slot before the next frame. Clear both halves together.
 	if _selected_entity_is_valid(selected_entity_key):
 		return
+	if not selected_entity_key.is_empty():
+		shell_view.show_toast("局面已更新，请重新选择卡牌或操作。", true)
 	selected_entity_key = ""
 	selected_entity_identity = ""
 	if battle_screen:
@@ -977,6 +972,7 @@ func _capture_battle_view_model() -> BattleViewModel:
 func _render_battle_view_model(view: BattleViewModel) -> void:
 	if view == null or battle_screen == null:
 		return
+	battle_screen.set_submission_pending(game_mode == MODE_NETWORK and network_controller.submission_locked())
 	var render_state := view.state_for_render()
 	if render_state == null:
 		return
@@ -995,7 +991,6 @@ func _submit_battle_transition(
 	cause: String,
 	origin_action_id: String = "",
 	origin_request_id: String = "",
-	drag_session_id: String = "",
 ) -> PresentationHandle:
 	if battle_screen == null:
 		return null
@@ -1009,7 +1004,6 @@ func _submit_battle_transition(
 		cause,
 		origin_action_id,
 		origin_request_id,
-		drag_session_id,
 	)
 
 func _submit_battle_transition_to_view(
@@ -1019,7 +1013,6 @@ func _submit_battle_transition_to_view(
 	cause: String,
 	origin_action_id: String = "",
 	origin_request_id: String = "",
-	drag_session_id: String = "",
 ) -> PresentationHandle:
 	if battle_screen == null or target_view == null:
 		return null
@@ -1028,13 +1021,12 @@ func _submit_battle_transition_to_view(
 	# state before its flow continuation runs.  In local setup that intermediate
 	# state is the outgoing player marked ready with every action disabled; if the
 	# deferred pump/continuation is interrupted, hot-seat play is stranded on the
-	# "waiting for opponent" surface.  Commit idle, non-drag views synchronously so
+	# "waiting for opponent" surface.  Commit idle views synchronously so
 	# ownership handoffs and pending-choice routing happen in the same call stack.
-	# Busy transitions and drag sessions still use the coordinator to preserve
+	# Busy transitions still use the coordinator to preserve
 	# ordering and proxy cleanup.
 	if (
 		events.is_empty()
-		and drag_session_id.is_empty()
 		and not battle_screen.is_presentation_busy()
 	):
 		_render_battle_view_model(target_view)
@@ -1046,7 +1038,6 @@ func _submit_battle_transition_to_view(
 		cause,
 		origin_action_id,
 		origin_request_id,
-		drag_session_id,
 		true,
 	)
 	return battle_screen.submit_transition(request)
@@ -1211,26 +1202,6 @@ func _on_battle_pokemon_selected(
 				slot,
 			)
 		return
-	# Re-selecting the source is an explicit UI toggle, never a target choice.
-	# This keeps cancellation deterministic even for actions that can target the
-	# source Pokemon itself.
-	if selected_entity_key == "pokemon:%d:%s" % [player_idx, slot]:
-		_select_pokemon(player_idx, slot, card_id)
-		return
-	if selected_entity_key.begins_with("hand:"):
-		var hand_index := selected_entity_key.trim_prefix("hand:").to_int()
-		var candidates := _matching_drop_actions(hand_index, player_idx, slot)
-		if candidates.size() == 1:
-			_execute_action(candidates[0])
-			return
-	elif selected_entity_key.begins_with("pokemon:"):
-		var candidates := _matching_selected_pokemon_target_actions(
-			player_idx,
-			slot,
-		)
-		if candidates.size() == 1:
-			_execute_action(candidates[0])
-			return
 	_select_pokemon(player_idx, slot, card_id)
 
 func _battle_card_inspection_is_read_only() -> bool:
@@ -1245,125 +1216,19 @@ func _battle_card_inspection_is_read_only() -> bool:
 		return actor != network_player_idx
 	return actor != 0 or ai_thinking
 
-func _on_battle_card_dropped(
-	hand_index: int,
-	card_id: String,
-	target_player: int,
-	target_slot: String,
-) -> void:
-	if state == null or hand_index < 0:
-		if battle_screen:
-			battle_screen.clear_pending_drag("invalid_drop")
-		return
-	var actor := _current_actor()
-	var actor_hand := state.get_player(actor).hand if actor in [0, 1] else []
-	var drag_context := battle_screen.active_drag_context() if battle_screen else {}
-	var identity_valid := (
-		hand_index < actor_hand.size()
-		and str(actor_hand[hand_index]) == card_id
-		and (
-			drag_context.is_empty()
-			or (
-				int(drag_context.get("revision", -1)) == state.revision
-				and int(drag_context.get("hand_index", -1)) == hand_index
-				and str(drag_context.get("card_id", "")) == card_id
-			)
-		)
-	)
-	if not identity_valid:
-		if battle_screen:
-			battle_screen.clear_pending_drag("stale_drag")
-		shell_view.show_toast("手牌状态已经变化，请重新拖动。", true)
-		return
-	var candidates := _matching_drop_actions(hand_index, target_player, target_slot)
-	if candidates.size() == 1:
-		_execute_action(candidates[0])
-		return
-	if candidates.size() > 1:
-		# BattleTable owns the variant popover and keeps the drag proxy parked.
-		return
-	# BattleTable/CardView only emit drops for legal targets. Keep this branch as
-	# a silent stale-state guard for network revisions racing with a drag.
-	if battle_screen:
-		battle_screen.clear_pending_drag("illegal_drop")
-
-func _matching_drop_actions(
-	hand_index: int,
-	target_player: int,
-	target_slot: String,
-) -> Array[GameAction]:
-	var result: Array[GameAction] = []
-	for row in _current_action_rows():
-		var action: GameAction = row.get("action")
-		if action == null or action.hand_index() != hand_index:
-			continue
-		if (
-			target_slot == "stadium"
-			and action.kind == "PLAY_TRAINER"
-			and action.actor == target_player
-			and action.actor in [0, 1]
-			and hand_index >= 0
-		):
-			var actor_hand := state.get_player(action.actor).hand
-			if (
-				hand_index < actor_hand.size()
-				and catalog.is_stadium(str(actor_hand[hand_index]))
-			):
-				result.append(action)
-			continue
-		var action_slot := action.target_slot(action.primary_slot())
-		var action_player := action.actor
-		if action.target:
-			action_player = action.target.player
-			if action_slot.is_empty():
-				action_slot = action.target.slot
-		if action_player == target_player and action_slot == target_slot:
-			result.append(action)
-	return result
-
-func _matching_selected_pokemon_target_actions(
-	target_player: int,
-	target_slot: String,
-) -> Array[GameAction]:
-	var result: Array[GameAction] = []
-	var parts := selected_entity_key.split(":")
-	if parts.size() < 3:
-		return result
-	var selected_player := int(parts[1])
-	var selected_slot := str(parts[2])
-	for row in _current_action_rows():
-		var action: GameAction = row.get("action")
-		if action == null or action.target == null:
-			continue
-		if (
-			action.target.player != target_player
-			or action.target.slot != target_slot
-		):
-			continue
-		var belongs_to_selected := (
-			action.source
-			and action.source.player == selected_player
-			and action.source.slot == selected_slot
-		)
-		if (
-			action.kind == "RETREAT"
-			and selected_player == action.actor
-			and selected_slot == "active"
-		):
-			belongs_to_selected = true
-		if belongs_to_selected:
-			result.append(action)
-	return result
-
 func _execute_action(action: GameAction) -> StepResult:
+	if state == null or action == null:
+		return StepResult.new(false, "对局已结束。")
 	if modal_host_controller.visible or modal_host_controller.closing:
 		return StepResult.new(false, "请先完成或关闭当前弹窗。")
 	if _battle_submission_locked():
 		var locked_message := "动画或局面同步尚未完成，请稍候。"
-		if battle_screen:
-			battle_screen.clear_pending_drag("submission_locked")
 		shell_view.show_toast(locked_message, true)
 		return StepResult.new(false, locked_message)
+	if action.kind == "DECLARE_ATTACK":
+		var confirmed_action := _versioned_confirmation_action(action)
+		choice_presenter.show_attack_confirmation(confirmed_action, state, catalog, _restore_confirmation_selection.bind(state, confirmed_action))
+		return StepResult.new(true, "等待确认攻击。")
 	if action.kind == "RETREAT":
 		_show_retreat_confirmation(action)
 		return StepResult.new(true, "等待确认撤退。")
@@ -1376,38 +1241,25 @@ func _execute_action_now(action: GameAction) -> StepResult:
 	if state == null or action == null:
 		return StepResult.new(false, "对局已结束。")
 	if action.base_revision >= 0 and action.base_revision != state.revision:
-		if battle_screen:
-			battle_screen.clear_pending_drag("stale_action")
 		_refresh_game()
 		shell_view.show_toast("局面已更新，请重新选择操作。", true)
 		return StepResult.new(false, "操作已过期。")
 	if _battle_submission_locked():
 		var locked_message := "动画或局面同步尚未完成，请稍候。"
-		if battle_screen:
-			battle_screen.clear_pending_drag("submission_locked")
 		shell_view.show_toast(locked_message, true)
 		return StepResult.new(false, locked_message)
-	var drag_context := battle_screen.active_drag_context() if battle_screen else {}
-	var action_hand_index := action.hand_index()
-	var action_uses_drag := (
-		not drag_context.is_empty()
-		and action_hand_index >= 0
-		and action_hand_index == int(drag_context.get("hand_index", -1))
-	)
 	if game_mode == MODE_NETWORK:
 		_play_click()
 		var accepted := network_controller.submit_action(action)
+		if battle_screen:
+			battle_screen.set_submission_pending(accepted and network_controller.submission_locked())
 		if not accepted:
 			shell_view.show_toast("动作未发送或被房主拒绝。", true)
-			if action_uses_drag and battle_screen:
-				battle_screen.clear_pending_drag("network_submit_rejected")
 		else:
 			selected_entity_key = ""
 			selected_entity_identity = ""
 			if battle_screen:
 				battle_screen.hide_card_detail()
-			if action_uses_drag and battle_screen:
-				battle_screen.mark_drag_pending(action.action_id, true)
 			# The host settles authoritatively in submit_action() and queues its own
 			# state event. Drain it now so submit_transition() makes the Main-level
 			# busy guard effective before another pointer event can submit again.
@@ -1421,18 +1273,9 @@ func _execute_action_now(action: GameAction) -> StepResult:
 	action.action_id = "local:%d:%d" % [state.revision, action_sequence]
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	# Reserve the live drag proxy while the table still renders the action's base
-	# revision. GameState is settled in place and increments revision before this
-	# method regains control; marking it afterwards makes a valid drag look stale
-	# and forces Presentation to create a second card from the old hand snapshot.
-	var drag_session_id := ""
-	if action_uses_drag and battle_screen:
-		drag_session_id = battle_screen.mark_drag_pending(action.action_id, false)
 	var result := _rules_apply_action(action)
 	if not result.success:
 		shell_view.show_toast(result.message, true)
-		if action_uses_drag and battle_screen:
-			battle_screen.clear_pending_drag("rules_rejected")
 		_refresh_game()
 		return result
 	selected_entity_key = ""
@@ -1454,7 +1297,6 @@ func _execute_action_now(action: GameAction) -> StepResult:
 			BattleTransitionRequest.CAUSE_LOCAL_ACTION,
 			action.action_id,
 			"",
-			drag_session_id,
 		)
 		_continue_when_presented(
 			prefix_handle,
@@ -1476,7 +1318,6 @@ func _execute_action_now(action: GameAction) -> StepResult:
 		BattleTransitionRequest.CAUSE_LOCAL_ACTION,
 		action.action_id,
 		"",
-		drag_session_id,
 	)
 	_continue_when_presented(
 		handle,
@@ -1661,12 +1502,16 @@ func _submit_choice_response(
 		if request.request_type == "coin_flip" and not response.cancelled:
 			_remember_coin_presentation_tombstone(request.request_id)
 		var choice_sent := network_controller.submit_choice(response)
+		if battle_screen:
+			battle_screen.set_submission_pending(choice_sent and network_controller.submission_locked())
 		if not choice_sent:
 			_presented_coin_request_ids.erase(request.request_id)
 			shell_view.show_toast(
 				"取消请求未发送。" if response.cancelled else "选择未发送或被房主拒绝。",
 				true,
 			)
+			if network_choice_view != null and not network_controller.submission_locked():
+				_show_choice_overlay(network_choice_view)
 			return
 		if network_controller.host:
 			_poll_network()
@@ -1677,6 +1522,7 @@ func _submit_choice_response(
 	if not result.success:
 		shell_view.show_toast(result.message, true)
 		_refresh_game()
+		_route_step_pending_choice(result)
 		return
 	var presentation_events: Array = _choice_presentation_events(request, result.events)
 	var presented_revision := state.revision
@@ -2389,7 +2235,6 @@ func _apply_runtime_settings() -> void:
 func _notification(what: int) -> void:
 	if what in [NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT] and battle_screen != null:
 		battle_screen.cancel_pointer_gestures()
-		battle_screen.cancel_unsubmitted_drag()
 	if what == NOTIFICATION_APPLICATION_PAUSED:
 		CardTextureCache.clear()
 		if game_mode == MODE_CHALLENGE:
@@ -2475,7 +2320,8 @@ func _refresh_choice_buttons() -> void:
 	choice_presenter.refresh_selection()
 
 func _show_retreat_confirmation(action: GameAction) -> void:
-	choice_presenter.show_retreat_confirmation(_versioned_confirmation_action(action), state, catalog)
+	var captured := _versioned_confirmation_action(action)
+	choice_presenter.show_retreat_confirmation(captured, state, catalog, _restore_confirmation_selection.bind(state, captured))
 
 func _versioned_confirmation_action(action: GameAction) -> GameAction:
 	var captured := GameAction.from_dict(action.to_dict())
@@ -2542,3 +2388,14 @@ func _show_settings(resume_choice_context: Dictionary = {}) -> void:
 
 func _suspended_choice_context(context: Dictionary) -> Dictionary:
 	return _suspend_field_choice_for_auxiliary_modal() if context.is_empty() else context
+
+
+func _restore_confirmation_selection(expected_state: GameState, action: GameAction) -> void:
+	if state != expected_state or state == null or state.revision != action.base_revision or current_screen != SCREEN_GAME:
+		return
+	var pokemon := state.get_player(action.actor).active
+	if pokemon == null:
+		return
+	selected_entity_key = "pokemon:%d:active" % action.actor
+	selected_entity_identity = _entity_identity_for_key(selected_entity_key)
+	_refresh_game()

@@ -31,6 +31,7 @@ func run(ui: Control) -> void:
 			harness._finish(1)
 			return
 		if table.detail_panel.visible and table.detail_panel.get_global_rect().intersects(table.own_info.get_global_rect()):
+			harness._capture("battle-ui-layout-failure.png")
 			push_error("Card details cover player counters at %s" % dimensions)
 			harness._finish(1)
 			return
@@ -61,6 +62,7 @@ func run(ui: Control) -> void:
 		ui.shell_view.safe_area.add_theme_constant_override("margin_%s" % edge, 48)
 	await harness._settle_rendered(4)
 	harness._update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo), "hand:0")
+	ui.battle_screen.action_popover._on_action_button_pressed(ui.battle_screen.action_popover._rows[0].action)
 	await harness._settle_rendered(4)
 	var safe_table := ui.battle_screen as BattleTable
 	var safe_rail := safe_table.hud.get_node("PhasePanel") as Control

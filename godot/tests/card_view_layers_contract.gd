@@ -188,31 +188,11 @@ func _run() -> void:
 		and is_equal_approx(card.modulate.a, 1.0),
 		"Presentation masking escaped ContentRoot",
 	)
-	card.set_drag_masked(true)
 	card.set_presentation_hidden(false)
-	_check(
-		card.is_drag_masked()
-		and not card.content_root.visible
-		and is_equal_approx(card.content_root.modulate.a, 1.0),
-		"Drag masking was not independent from presentation alpha",
-	)
-	card.set_drag_masked(false)
-	_check(
-		not card.is_drag_masked() and card.content_root.visible,
-		"Clearing the drag mask did not restore card content",
-	)
-	card._set_native_drag_masked(true)
-	card.set_drag_masked(true)
-	card.set_drag_masked(false)
-	_check(
-		not card.content_root.visible,
-		"Coordinator mask clearing incorrectly released the native drag mask",
-	)
-	card._set_native_drag_masked(false)
-	_check(
-		card.content_root.visible,
-		"CardView did not restore content after every drag-mask owner released it",
-	)
+	_check(not card.is_presentation_hidden() and is_equal_approx(card.content_root.modulate.a, 1.0),
+		"Revealing a card did not restore its presentation")
+	_check(card._get_drag_data(Vector2.ZERO) == null,
+		"CardView still creates a native card drag")
 	card.configure("", null, true, -1, 1)
 	await process_frame
 	_check(
