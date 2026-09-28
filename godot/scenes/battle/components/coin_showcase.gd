@@ -4,63 +4,6 @@ extends Control
 signal audio_requested(cue: String)
 
 const COIN_SIZE := 104.0
-const FIRST_TOSS_DURATION := 0.90
-const FOLLOWUP_TOSS_DURATION := 0.55
-const QUICK_TOSS_DURATION := 0.16
-const RESULT_GAP := 0.08
-const FINAL_HOLD := 0.34
-
-
-class CoinToken:
-	extends Control
-
-	var face_heads := true:
-		set(value):
-			face_heads = value
-			if face_label != null:
-				face_label.text = "正" if face_heads else "反"
-			queue_redraw()
-	var face_label: Label
-
-
-	func _ready() -> void:
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		custom_minimum_size = Vector2(COIN_SIZE, COIN_SIZE)
-		size = custom_minimum_size
-		pivot_offset = size * 0.5
-		face_label = Label.new()
-		face_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		face_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		face_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		face_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		face_label.add_theme_font_size_override("font_size", 34)
-		face_label.add_theme_color_override("font_color", Color("3b2600"))
-		face_label.add_theme_color_override(
-			"font_outline_color",
-			Color(1.0, 0.91, 0.52, 0.62),
-		)
-		face_label.add_theme_constant_override("outline_size", 2)
-		face_label.text = "正" if face_heads else "反"
-		add_child(face_label)
-
-
-	func _draw() -> void:
-		var center := size * 0.5
-		draw_circle(center + Vector2(0, 3), COIN_SIZE * 0.49, Color(0.20, 0.11, 0.01, 0.72))
-		draw_circle(center, COIN_SIZE * 0.49, Color("d18b16"))
-		draw_circle(center, COIN_SIZE * 0.445, Color("ffd45e"))
-		draw_circle(center, COIN_SIZE * 0.365, Color("e8a92d"))
-		draw_circle(center + Vector2(-8, -9), COIN_SIZE * 0.27, Color("ffd967"))
-		draw_arc(
-			center,
-			COIN_SIZE * 0.40,
-			-2.65,
-			-0.55,
-			24,
-			Color(1.0, 0.96, 0.72, 0.92),
-			3.0,
-			true,
-		)
 
 
 var title_text := "抛硬币"
@@ -68,25 +11,15 @@ var persistent := false
 var results: Array[bool] = []
 var _history_count := 0
 var _current_index := -1
-var _current_face := true
 var _toss_progress := 0.0
 var _generation := 0
 var _active_handle: MotionHandle
 var _active_tween: Tween
-var _token: CoinToken
+var render_in_table := false
+var embedded_stage: CoinStage3D
 var _title_label: Label
 var _summary_label: Label
 var _history_label: Label
-var _physical_rendering := false
-
-
-func set_physical_rendering(value: bool) -> void:
-	if _physical_rendering == value:
-		return
-	_physical_rendering = value
-	if _token != null:
-		_token.modulate.a = 0.0 if value else 1.0
-	queue_redraw()
 
 
 func _init() -> void:
@@ -116,12 +49,10 @@ func play(
 		results.append(bool(value))
 	_history_count = 0
 	_current_index = -1
-	_current_face = results[0] if not results.is_empty() else true
 	_toss_progress = 0.0
 	modulate = Color.WHITE
 	visible = true
 	_build_nodes()
-	_token.face_heads = _current_face
 	_update_text()
 	_layout_nodes()
 	queue_redraw()
@@ -136,9 +67,8 @@ func play(
 	_active_tween = create_tween()
 	if MotionPolicy.reduced():
 		_active_tween.tween_callback(_show_reduced_result)
-		_active_tween.tween_interval(0.45)
+		_active_tween.tween_interval(MotionPolicy.PROFILE.coin_reduced_hold)
 	else:
-		var motion_scale := _motion_scale()
 		for index in range(results.size()):
 			var duration := _duration_for_index(index)
 			_active_tween.tween_callback(_begin_toss.bind(index))
@@ -147,14 +77,13 @@ func play(
 				0.0,
 				1.0,
 				duration,
-			).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+			).set_trans(Tween.TRANS_LINEAR)
 			_active_tween.tween_callback(_complete_toss.bind(index))
 			_active_tween.tween_interval(
-				(RESULT_GAP if index + 1 < results.size() else FINAL_HOLD)
-				* motion_scale
+				(MotionPolicy.PROFILE.coin_result_gap if index + 1 < results.size() else MotionPolicy.PROFILE.coin_result_hold)
 			)
 	if not persistent:
-		_active_tween.tween_property(self, "modulate:a", 0.0, 0.16)
+		_active_tween.tween_property(self, "modulate:a", 0.0, MotionPolicy.duration("coin_fade"))
 	handle.completed.connect(
 		_on_playback_completed.bind(run_generation),
 		CONNECT_ONE_SHOT,
@@ -184,18 +113,21 @@ func _exit_tree() -> void:
 
 
 func _build_nodes() -> void:
-	if _token != null:
+	if _title_label != null:
 		return
+	if not render_in_table:
+		embedded_stage = CoinStage3D.new()
+		embedded_stage.name = "PhysicalCoinStage"
+		embedded_stage.sample_pose = render_coin
+		add_child(embedded_stage)
+		embedded_stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_title_label = Label.new()
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_title_label.add_theme_font_size_override("font_size", 20)
-	_title_label.add_theme_color_override("font_color", DesignTokens.GOLD)
+	_title_label.add_theme_color_override("font_color", DesignTokens.TEXT)
 	add_child(_title_label)
-
-	_token = CoinToken.new()
-	add_child(_token)
 
 	_summary_label = Label.new()
 	_summary_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -216,31 +148,42 @@ func _build_nodes() -> void:
 
 
 func _layout_nodes() -> void:
-	if _token == null:
+	if _title_label == null:
 		return
-	var width := maxf(custom_minimum_size.x, size.x)
-	var height := maxf(custom_minimum_size.y, size.y)
-	_title_label.position = Vector2(18, 12)
-	_title_label.size = Vector2(maxf(0.0, width - 36), 32)
-	var base_center := Vector2(width * 0.5, minf(118.0, height * 0.43))
-	var lift := _coin_lift(_toss_progress)
-	_token.position = base_center - Vector2(COIN_SIZE, COIN_SIZE) * 0.5 + Vector2(0, -lift)
-	_token.scale = Vector2(
-		1.0 + 0.05 * sin(_toss_progress * PI),
-		_coin_vertical_scale(_toss_progress),
-	)
-	_token.rotation = sin(_toss_progress * TAU * 2.0) * 0.055
-	_summary_label.position = Vector2(18, height - 98)
-	_summary_label.size = Vector2(maxf(0.0, width - 36), 28)
-	_history_label.position = Vector2(24, height - 65)
-	_history_label.size = Vector2(maxf(0.0, width - 48), 58)
+	_title_label.position = Vector2(12, 3)
+	_title_label.size = Vector2(maxf(0.0, size.x - 24), 32)
+	var footer := _result_rect()
+	_summary_label.position = footer.position + Vector2(12, 7)
+	_summary_label.size = Vector2(footer.size.x - 24, 28)
+	_history_label.position = footer.position + Vector2(12, 38)
+	_history_label.size = Vector2(footer.size.x - 24, maxf(0.0, footer.size.y - 43))
+	if embedded_stage != null:
+		embedded_stage._sync_frame()
+
+
+## Both the table and choice modal sample this exact authoritative timeline.
+func render_coin(coin: CoinEntity3D, projection: BattleProjection3D, to_render := Transform2D.IDENTITY) -> void:
+	coin.visible = is_visible_in_tree() and not results.is_empty() and _current_index >= 0
+	if not coin.visible:
+		return
+	var index := clampi(_current_index, 0, results.size() - 1)
+	var start_heads: bool = results[index - 1] if index > 0 else not results[index]
+	var center := _coin_center()
+	coin.pose_for_toss(projection, to_render * center, COIN_SIZE * 1.12 * to_render.x.length(),
+		_toss_progress, results[index], start_heads, MotionPolicy.reduced())
+
+
+func is_playing() -> bool:
+	return _active_handle != null and not _active_handle.is_finished()
+
+
+func _coin_center() -> Vector2:
+	return Vector2(size.x * 0.5, size.y * 0.50)
 
 
 func _begin_toss(index: int) -> void:
 	_current_index = index
 	_toss_progress = 0.0
-	_current_face = results[index - 1] if index > 0 else not results[index]
-	_token.face_heads = _current_face
 	audio_requested.emit("coin_toss")
 	_update_text()
 	_layout_nodes()
@@ -251,36 +194,33 @@ func _set_toss_progress(progress: float, index: int) -> void:
 	if index != _current_index:
 		return
 	_toss_progress = clampf(progress, 0.0, 1.0)
-	var half_turn := int(floor(_toss_progress * 17.0))
-	var start_face := results[index - 1] if index > 0 else not results[index]
-	_current_face = (
-		results[index]
-		if _toss_progress >= 0.94
-		else (start_face if half_turn % 2 == 0 else not start_face)
-	)
-	_token.face_heads = _current_face
+	if _toss_progress >= MotionPolicy.PROFILE.coin_contact_fraction:
+		_land_toss(index)
 	_layout_nodes()
 	queue_redraw()
 
 
 func _complete_toss(index: int) -> void:
 	_current_index = index
-	_history_count = maxi(_history_count, index + 1)
-	_current_face = results[index]
 	_toss_progress = 1.0
-	_token.face_heads = _current_face
-	audio_requested.emit("coin_land")
+	_land_toss(index)
 	_update_text()
 	_layout_nodes()
 	queue_redraw()
 
 
+func _land_toss(index: int) -> void:
+	if _history_count > index:
+		return
+	_history_count = index + 1
+	audio_requested.emit("coin_land")
+	_update_text()
+
+
 func _show_reduced_result() -> void:
 	_history_count = results.size()
 	_current_index = results.size() - 1
-	_current_face = results[-1]
 	_toss_progress = 1.0
-	_token.face_heads = _current_face
 	audio_requested.emit("coin_land")
 	_update_text()
 	_layout_nodes()
@@ -332,79 +272,50 @@ func _update_text() -> void:
 
 
 func _duration_for_index(index: int) -> float:
-	var motion_scale := _motion_scale()
 	if results.size() > 6 and index >= 3 and index < results.size() - 1:
-		return QUICK_TOSS_DURATION * motion_scale
-	return (
-		FIRST_TOSS_DURATION if index == 0 else FOLLOWUP_TOSS_DURATION
-	) * motion_scale
-
-
-func _motion_scale() -> float:
-	var base := float(MotionPolicy.BASE_DURATIONS.get("card_place", 0.46))
-	if base <= 0.0:
-		return 1.0
-	return maxf(0.1, MotionPolicy.duration("card_place") / base)
-
-
-func _coin_lift(progress: float) -> float:
-	if progress <= 0.82:
-		return sin((progress / 0.82) * PI) * 94.0
-	var bounce_progress := (progress - 0.82) / 0.18
-	return sin(bounce_progress * PI) * (1.0 - bounce_progress) * 13.0
-
-
-func _coin_vertical_scale(progress: float) -> float:
-	if MotionPolicy.reduced() or progress <= 0.0 or progress >= 1.0:
-		return 1.0
-	return maxf(0.08, absf(cos(progress * PI * 17.0)))
+		return MotionPolicy.duration("coin_quick")
+	return MotionPolicy.duration("coin_first" if index == 0 else "coin_followup")
 
 
 func _draw() -> void:
 	var rect := Rect2(Vector2.ZERO, size)
 	if rect.size.x <= 0.0 or rect.size.y <= 0.0:
 		return
-	if _physical_rendering:
-		draw_style_box(_showcase_style(), Rect2(0, 0, size.x, 52))
-		draw_style_box(_showcase_style(), Rect2(0, size.y - 105, size.x, 105))
-		return
-	draw_style_box(
-		_showcase_style(),
-		rect.grow(-2.0),
-	)
-	var base_center := Vector2(rect.size.x * 0.5, minf(118.0, rect.size.y * 0.43))
-	var lift_ratio := clampf(_coin_lift(_toss_progress) / 94.0, 0.0, 1.0)
-	var shadow_size := Vector2(92.0 - lift_ratio * 30.0, 18.0 - lift_ratio * 6.0)
-	var shadow_center := base_center + Vector2(0, COIN_SIZE * 0.54)
-	var points := PackedVector2Array()
-	for index in range(32):
-		var angle := TAU * float(index) / 32.0
-		points.append(shadow_center + Vector2(
-			cos(angle) * shadow_size.x * 0.5,
-			sin(angle) * shadow_size.y * 0.5,
-		))
-	draw_colored_polygon(points, Color(0.0, 0.0, 0.0, 0.34 - lift_ratio * 0.16))
-	if _current_index >= 0 and _toss_progress >= 0.82:
-		var burst_progress := clampf((_toss_progress - 0.82) / 0.18, 0.0, 1.0)
-		for index in range(12):
-			var angle := TAU * float(index) / 12.0 + float(_current_index) * 0.37
-			var radius := lerpf(48.0, 78.0, burst_progress)
-			var particle_center := base_center + Vector2.from_angle(angle) * radius
-			var particle_radius := lerpf(4.0, 1.6, burst_progress)
-			draw_circle(
-				particle_center,
-				particle_radius,
-				Color(1.0, 0.78, 0.25, 0.88 - burst_progress * 0.28),
-			)
+	var title_width := _label_plate_width(_title_label, 56, 180)
+	var title_rect := Rect2((size.x - title_width) * 0.5, 0, title_width, 40)
+	draw_style_box(_showcase_style(), title_rect)
+	draw_line(title_rect.position + Vector2(18, 39), title_rect.end - Vector2(18, 1), Color(DesignTokens.GOLD, 0.55), 1.5, true)
+	draw_style_box(_showcase_style(), _result_rect())
+	var center := _coin_center()
+	var landing := MotionPolicy.PROFILE.coin_contact_fraction
+	if _toss_progress >= landing and not MotionPolicy.reduced():
+		var contact := clampf((_toss_progress - landing) / (1.0 - landing), 0.0, 1.0)
+		draw_arc(center, lerpf(52, 68, contact), 0, TAU, 48, Color(DesignTokens.GOLD, sin(contact * PI) * 0.42), 1.5, true)
+
+
+func _label_plate_width(label: Label, padding: float, minimum: float) -> float:
+	var content := 0.0
+	if label != null:
+		var font := label.get_theme_font("font")
+		for line in label.text.split("\n"):
+			content = maxf(content, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, label.get_theme_font_size("font_size")).x)
+	return minf(size.x - 24, maxf(minimum, content + padding))
+
+
+func _result_rect() -> Rect2:
+	var width := maxf(_label_plate_width(_summary_label, 40, 240), _label_plate_width(_history_label, 40, 240))
+	var rows := maxi(1, ceili(float(_history_count) / 10.0))
+	var height := minf(105, 46 + rows * 22)
+	return Rect2((size.x - width) * 0.5, size.y - height, width, height)
 
 
 func _showcase_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = DesignTokens.PANEL
-	style.border_color = DesignTokens.GOLD
+	style.border_color = Color(DesignTokens.GOLD, 0.55)
 	style.set_border_width_all(1)
-	style.set_corner_radius_all(16)
+	style.set_corner_radius_all(8)
 	style.shadow_color = DesignTokens.SHADOW
-	style.shadow_size = 12
-	style.shadow_offset = Vector2(0, 5)
+	style.shadow_size = 6
+	style.shadow_offset = Vector2(0, 3)
 	return style

@@ -127,25 +127,25 @@ func _run() -> void:
 		"Idempotent set_selected restarted an active visual animation",
 	)
 
-	card.shake(8.0, 0.10)
-	await create_timer(0.03).timeout
-	await process_frame
+	card.battle_fx_offset = Vector2(0.06, 0.0)
+	card.battle_fx_lift = 0.02
+	card.battle_fx_tilt = 0.03
+	card.battle_fx_strength = 0.4
 	_check(
 		card.position == layout_position
 		and card.interaction_root.position.y < -11.0
-		and not card.feedback_root.position.is_zero_approx(),
-		"Shake layer mismatch layout=%s actual=%s interaction=%s feedback=%s" % [
-			layout_position,
-			card.position,
-			card.interaction_root.position,
-			card.feedback_root.position,
-		],
+		and card.feedback_root.position.is_zero_approx(),
+		"Physical feedback overwrote the layout or selection pose",
 	)
-	await create_timer(0.12).timeout
+	card.clear_presentation_state()
 	_check(
 		card.position == layout_position
-		and card.feedback_root.position.is_zero_approx(),
-		"Shake did not restore FeedbackRoot without moving the layout root",
+		and card.interaction_root.position.y < -11.0
+		and card.battle_fx_offset.is_zero_approx()
+		and is_zero_approx(card.battle_fx_lift)
+		and is_zero_approx(card.battle_fx_tilt)
+		and is_zero_approx(card.battle_fx_strength),
+		"Clearing feedback failed to preserve selection and restore the physical pose",
 	)
 
 	card.set_selected(false)
@@ -210,31 +210,36 @@ func _run() -> void:
 
 func _check_feedback_owner_lifetime(scene: PackedScene) -> void:
 	var card := scene.instantiate() as CardView
+	var other := scene.instantiate() as CardView
 	root.add_child(card)
+	root.add_child(other)
 	card.configure("svf-luca", PokemonState.new("svf-luca"))
-	var finished_flash := card.flash(Color.WHITE, 0.02)
+	other.configure("svf-luca", PokemonState.new("svf-luca"))
+	var finished_reveal := card.reveal_presentation(0.02)
 	await create_timer(0.12).timeout
-	_check(finished_flash.status == MotionHandle.COMPLETED,
-		"A live card's flash did not complete normally")
-	_check(not card.tree_exiting.is_connected(finished_flash.cancel),
-		"Completed feedback retained an owner-exit connection")
+	_check(finished_reveal.status == MotionHandle.COMPLETED,
+		"A live card's reveal did not complete normally")
+	_check(not card.tree_exiting.is_connected(finished_reveal.cancel),
+		"Completed presentation retained an owner-exit connection")
 	var group := MotionGroup.new()
-	var flash := card.flash(Color.WHITE, 5.0)
-	var shake := card.shake(8.0, 5.0)
-	var reveal := card.reveal_presentation(5.0)
-	for handle in [flash, shake, reveal]:
-		group.add(handle)
+	var reveals := [card.reveal_presentation(5.0), other.reveal_presentation(5.0)]
+	for handle in reveals: group.add(handle)
 	group.seal()
-	_check(not group.is_completed(), "Feedback lifetime test did not create an active barrier")
+	_check(not group.is_completed(), "Presentation lifetime test did not create an active barrier")
 	card.queue_free()
 	await process_frame
 	await process_frame
+	_check(not group.is_completed() and group.pending_count() == 1,
+		"Removing one card completed another card's presentation barrier")
+	other.queue_free()
+	await process_frame
+	await process_frame
 	_check(group.is_completed() and group.pending_count() == 0,
-		"Removing a card left its flash, shake or reveal barrier waiting forever")
-	for handle in [flash, shake, reveal]:
-		_check(handle.is_finished(), "Removed-card feedback retained a running handle")
-	_check(finished_flash.status == MotionHandle.COMPLETED,
-		"Removing a card changed an already completed feedback result")
+		"Removing the cards left their reveal barrier waiting forever")
+	for handle in reveals:
+		_check(handle.status == MotionHandle.CANCELLED, "Removed-card reveal was not cancelled")
+	_check(finished_reveal.status == MotionHandle.COMPLETED,
+		"Removing a card changed an already completed presentation result")
 
 
 func _check(condition: bool, message: String) -> void:

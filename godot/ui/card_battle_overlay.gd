@@ -20,6 +20,19 @@ func set_physical_rect(rect: Rect2) -> void:
 	_layout_battle_overlay()
 
 
+func status_visual_global_rect(status: String) -> Rect2:
+	if card.status_row == null or card.pokemon == null:
+		return Rect2()
+	var ordinal := card.pokemon.status_conditions.find(status)
+	var badges := card.status_row.get_children()
+	if ordinal >= 0 and ordinal < badges.size():
+		var badge := badges[ordinal] as Control
+		if badge.visible: return _control_visual_global_rect(badge)
+	for child in badges:
+		if (child as Control).visible: return _control_visual_global_rect(child)
+	return Rect2()
+
+
 func attachment_visual_global_rect(
 	attachment_type: String,
 	attachment_card_id: String = "",

@@ -18,6 +18,7 @@ var battle_screen: BattleTable
 var audio_director: AudioDirector
 var active_request: ChoiceView
 var active_choice_panel: ChoicePanel
+var active_coin_showcase: CoinShowcase
 var selected_choice_ids: Array[String]:
 	get: return choice_model.selected_ids
 
@@ -26,18 +27,26 @@ func configure(p_host: ModalHost, p_model: ChoiceSelectionModel) -> void:
 	choice_model = p_model
 
 func clear() -> void:
+	active_request = null
+	_clear_coin_playback()
 	if is_instance_valid(battle_screen):
 		battle_screen.clear_choice_targets()
 		battle_screen.set_choice_guidance(null)
-	active_request = null
 	active_choice_panel = null
 	choice_model.clear()
+
+func _clear_coin_playback() -> void:
+	if is_instance_valid(active_coin_showcase):
+		active_coin_showcase.clear()
+	active_coin_showcase = null
 
 func _confirm_choice() -> void:
 	confirm_requested.emit()
 
 func submit_response(cancelled: bool = false) -> void:
 	if active_request == null:
+		return
+	if is_instance_valid(active_coin_showcase) and active_coin_showcase.is_playing():
 		return
 	var request := active_request
 	var response := ChoiceResponse.new(request.request_id,
@@ -48,6 +57,7 @@ func submit_response(cancelled: bool = false) -> void:
 
 func show_choice(request: ChoiceView, state: GameState, p_catalog: CardCatalog,
 		current_view_player: int, table: BattleTable, audio: AudioDirector) -> void:
+	_clear_coin_playback()
 	catalog = p_catalog
 	battle_screen = table
 	audio_director = audio
@@ -182,10 +192,11 @@ func _show_coin_flip_choice(request: ChoiceView) -> void:
 	var showcase := COIN_SHOWCASE.new() as CoinShowcase
 	showcase.name = "CoinShowcase"
 	showcase.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	showcase.custom_minimum_size = Vector2(540, 300)
+	showcase.custom_minimum_size = Vector2(260, 286)
 	if audio_director:
 		showcase.audio_requested.connect(audio_director.play_cue)
 	host.modal_body.add_child(showcase)
+	active_coin_showcase = showcase
 	var reveal_generation := host.generation
 	var playback := showcase.play(results, true, "硬币结果")
 	host.modal_confirm.disabled = not playback.is_finished()
@@ -201,11 +212,12 @@ func _show_coin_flip_choice(request: ChoiceView) -> void:
 	host.modal_confirm.pressed.connect(_confirm_choice, CONNECT_ONE_SHOT)
 
 func _on_coin_choice_playback_completed(
-	_handle: MotionHandle,
+	handle: MotionHandle,
 	generation: int,
 	request_id: String,
 ) -> void:
-	_finish_coin_flip_reveal(generation, request_id)
+	if handle.status != MotionHandle.CANCELLED:
+		_finish_coin_flip_reveal(generation, request_id)
 
 func _finish_coin_flip_reveal(generation: int, request_id: String) -> void:
 	if (
@@ -291,6 +303,9 @@ func _clear_energy_distribution() -> void:
 
 func refresh_selection() -> void:
 	if active_request == null:
+		return
+	if active_request.request_type == "coin_flip":
+		host.modal_confirm.disabled = is_instance_valid(active_coin_showcase) and active_coin_showcase.is_playing()
 		return
 	if is_instance_valid(battle_screen):
 		battle_screen.set_choice_guidance(active_request, selected_choice_ids.size())

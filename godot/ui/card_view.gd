@@ -89,6 +89,14 @@ const ENERGY_BADGE_SEPARATION := 2.0
 
 var card_id := ""
 var local_visual_id := ""
+## Additive battle pose, independent of layout/input anchors and hover tweens.
+var battle_fx_offset := Vector2.ZERO
+var battle_fx_lift := 0.0
+var battle_fx_tilt := 0.0
+var battle_fx_color := Color.BLACK
+var battle_fx_strength := 0.0
+var battle_fx_desaturation := 0.0
+var battle_fx_sweep := -1.0
 var hand_index := -1
 var owner_player := -1
 var slot := ""
@@ -137,14 +145,11 @@ var _presentation_hidden := false
 var _presentation_tween: Tween
 var _presentation_motion_handle: MotionHandle
 var _lift_tween: Tween
-var _shake_tween: Tween
-var _shake_motion_handle: MotionHandle
 var _interaction_target_offset := Vector2.ZERO
 var _interaction_target_scale := Vector2.ONE
 var _interaction_target_reduced := false
 var _interaction_target_initialized := false
 var _active_state_animation := ""
-var _flash_overlays: Array[ColorRect] = []
 var _table_depth := 0.5
 var _near_side := true
 var depth_edge: Panel
@@ -228,8 +233,7 @@ func _notification(what: int) -> void:
 
 
 func _process(_delta: float) -> void:
-	# SelectionRing intentionally stays at the legacy root path for ChoicePanel
-	# styling compatibility. Mirror the layered transforms without ever writing
+	# SelectionRing uses the stable root path shared with ChoicePanel. Mirror the layered transforms without ever writing
 	# CardView.position, which belongs exclusively to the external layout owner.
 	_sync_detached_selection_ring()
 
@@ -419,18 +423,8 @@ func reveal_presentation(
 func clear_presentation_state() -> void:
 	_presentation_hidden = false
 	_kill_presentation_tween()
-	if _shake_tween and _shake_tween.is_valid():
-		if _shake_motion_handle != null and not _shake_motion_handle.is_finished():
-			_shake_motion_handle.cancel()
-		else:
-			_shake_tween.kill()
-	_shake_tween = null
-	_shake_motion_handle = null
-	if feedback_root:
-		feedback_root.position = Vector2.ZERO
-	_clear_flash_overlays()
-	# Older presentation callers may still mask the CardView root directly.
-	# Reconcile that legacy alpha without using the layout transform properties.
+	reset_battle_feedback()
+	# Restore root opacity when reconciling presentation masks.
 	modulate.a = 1.0
 	_set_presentation_alpha(1.0)
 
@@ -571,73 +565,14 @@ func _minimum_touch_rect(control_size: Vector2) -> Rect2:
 	return Rect2((control_size - hit_size) * 0.5, hit_size)
 
 
-func flash(color: Color, duration: float = 0.3) -> MotionHandle:
-	var handle := MotionHandle.new()
-	if frame == null:
-		handle.finish()
-		return handle
-	var overlay := ColorRect.new()
-	_flash_overlays.append(overlay)
-	overlay.color = Color(color.r, color.g, color.b, 0.0)
-	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# Stay above every local badge (maximum 9) without escaping the battle-card
-	# layer and flashing over the HUD/action popover when a hand card is selected.
-	overlay.z_index = 10
-	(content_root if content_root else self).add_child(overlay)
-	if duration <= 0.0 or _reduced_motion_enabled():
-		overlay.color.a = 0.34
-		var instant_tween := create_tween()
-		instant_tween.tween_property(overlay, "color:a", 0.0, 0.08)
-		instant_tween.tween_callback(_dispose_flash_overlay.bind(overlay))
-		handle.bind_tween(instant_tween, self)
-		return handle
-	var tween := create_tween()
-	tween.tween_property(overlay, "color:a", 0.58, duration * 0.28)
-	tween.tween_property(overlay, "color:a", 0.0, duration * 0.72)
-	tween.tween_callback(_dispose_flash_overlay.bind(overlay))
-	handle.bind_tween(tween, self)
-	return handle
-
-
-func shake(strength: float = 7.0, duration: float = 0.26) -> MotionHandle:
-	var handle := MotionHandle.new()
-	_resolve_scene_nodes()
-	if feedback_root == null:
-		handle.finish()
-		return handle
-	if _reduced_motion_enabled():
-		feedback_root.position = Vector2.ZERO
-		handle.finish()
-		return handle
-	if _shake_tween and _shake_tween.is_valid():
-		if _shake_motion_handle != null and not _shake_motion_handle.is_finished():
-			_shake_motion_handle.cancel()
-		else:
-			_shake_tween.kill()
-	feedback_root.position = Vector2.ZERO
-	_shake_tween = create_tween()
-	for offset in [
-		Vector2(strength, 0),
-		Vector2(-strength, 0),
-		Vector2(strength * 0.65, 0),
-		Vector2(-strength * 0.65, 0),
-		Vector2.ZERO,
-	]:
-		_shake_tween.tween_property(
-			feedback_root,
-			"position",
-			offset,
-			duration / 5.0,
-		)
-	_shake_tween.tween_callback(func() -> void:
-		feedback_root.position = Vector2.ZERO
-		_shake_tween = null
-		_shake_motion_handle = null
-	)
-	_shake_motion_handle = handle
-	handle.bind_tween(_shake_tween, self)
-	return handle
+func reset_battle_feedback() -> void:
+	battle_fx_offset = Vector2.ZERO
+	battle_fx_lift = 0.0
+	battle_fx_tilt = 0.0
+	battle_fx_color = Color.BLACK
+	battle_fx_strength = 0.0
+	battle_fx_desaturation = 0.0
+	battle_fx_sweep = -1.0
 
 
 func _refresh() -> void:
@@ -915,6 +850,9 @@ func _update_lift() -> void:
 		desired_scale = Vector2.ONE * hover_scale
 		desired_offset.y = -hover_lift
 	var reduced := _reduced_motion_enabled()
+	if reduced and has_meta("physical_presenter"):
+		desired_scale = Vector2.ONE
+		desired_offset = Vector2.ZERO
 	if (
 		_interaction_target_initialized
 		and _interaction_target_offset.is_equal_approx(desired_offset)
@@ -937,11 +875,12 @@ func _update_lift() -> void:
 		_lift_tween.kill()
 	_lift_tween = create_tween().set_parallel(true)
 	_lift_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	var lift_duration := MotionPolicy.duration("hover") if has_meta("physical_presenter") else interaction_duration
 	_lift_tween.tween_property(
-		interaction_root, "scale", desired_scale, interaction_duration
+		interaction_root, "scale", desired_scale, lift_duration
 	)
 	_lift_tween.tween_property(
-		interaction_root, "position", desired_offset, interaction_duration
+		interaction_root, "position", desired_offset, lift_duration
 	)
 
 
@@ -957,7 +896,7 @@ func _refresh_state_animation() -> void:
 	if animation_player == null:
 		return
 	var desired_animation := "RESET"
-	if _reduced_motion_enabled():
+	if _physical_presenter() != null or _reduced_motion_enabled():
 		desired_animation = "RESET"
 	elif selected:
 		desired_animation = "selected_pulse"
@@ -1268,33 +1207,6 @@ func _sync_detached_selection_ring() -> void:
 			feedback_offset = feedback_root.position * interaction_root.scale
 		selection_ring.position = interaction_root.position + feedback_offset
 	selection_ring.pivot_offset = selection_ring.size * 0.5
-
-
-func _dispose_flash_overlay(overlay_value: Variant) -> void:
-	var overlay_is_valid := is_instance_valid(overlay_value)
-	var live_overlays: Array[ColorRect] = []
-	for existing_value in _flash_overlays:
-		if not is_instance_valid(existing_value):
-			continue
-		if overlay_is_valid and existing_value == overlay_value:
-			continue
-		live_overlays.append(existing_value)
-	_flash_overlays = live_overlays
-	if not overlay_is_valid:
-		return
-	var overlay := overlay_value as ColorRect
-	if overlay:
-		overlay.queue_free()
-
-
-func _clear_flash_overlays() -> void:
-	for overlay_value in _flash_overlays.duplicate():
-		if not is_instance_valid(overlay_value):
-			continue
-		var overlay := overlay_value as ColorRect
-		if overlay:
-			overlay.queue_free()
-	_flash_overlays.clear()
 
 
 func _card_data(value: String) -> Dictionary:

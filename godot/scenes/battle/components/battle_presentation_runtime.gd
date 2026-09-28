@@ -9,10 +9,8 @@ var active_event_id := ""
 
 var reveals: Dictionary = {}
 var mask_counts: Dictionary = {}
-var feedbacks: Dictionary = {}
 var landing_feedbacks: Dictionary = {}
 var covers: Dictionary = {}
-var cover_tweens: Dictionary = {}
 var slot_covers: Dictionary = {}
 var slot_cover_states: Dictionary = {}
 var slot_event_queues: Dictionary = {}
@@ -27,6 +25,14 @@ var hand_snapshot_rows: Dictionary = {}
 var attachment_source_proxies: Dictionary = {}
 var attachment_source_specs: Dictionary = {}
 var zone_states: Dictionary = {}
+var feedback_cues: Dictionary = {}
+var feedback_events: Dictionary = {}
+var feedback_handles: Dictionary = {}
+var feedback_views: Dictionary = {}
+var feedback_motion_sources: Dictionary = {}
+var accent_sources: Dictionary = {}
+var contact_commits: Dictionary = {}
+var landing_barriers: Dictionary = {}
 
 
 func configure(p_table: BattleTable) -> void:
@@ -40,13 +46,253 @@ func clear() -> void:
 
 func _registries() -> Array[Dictionary]:
 	return [
-		reveals, mask_counts, feedbacks, landing_feedbacks, covers, cover_tweens,
+		reveals, mask_counts, landing_feedbacks, covers,
 		slot_covers, slot_cover_states, slot_event_queues, slot_event_plans,
 		deferred_ko_slots, event_hand_targets, hand_target_cursor,
 		hand_removed_counts, event_hand_sources, hand_proxy_by_key,
 		hand_snapshot_rows, attachment_source_proxies, attachment_source_specs,
 		zone_states,
+		feedback_cues, feedback_events, feedback_handles, feedback_views, feedback_motion_sources, accent_sources,
+		contact_commits, landing_barriers,
 	]
+
+
+func _feedback_card(endpoint: Dictionary) -> CardView:
+	var player := int(endpoint.get("player", -1))
+	var slot := str(endpoint.get("slot", ""))
+	var cover := _valid_card_view(slot_covers.get("%d:%s" % [player, slot]))
+	return cover if cover != null else table.get_slot_view(player, slot)
+
+
+func _on_feedback_requested(event: Dictionary, duration: float) -> void:
+	var handle := play_feedback(event, duration)
+	_register_presentation_feedback_motion(handle)
+
+
+func play_feedback(event: Dictionary, duration: float, moving_card: Control = null, contact_fraction: float = 0.0) -> MotionHandle:
+	var source_card := _feedback_card(event.get("source", {}))
+	var source_id := ""
+	if source_card != null and not source_card.is_hidden_card:
+		source_id = source_card.card_id
+	var cue := BattleFeedbackCue.from_event(event, source_id, table.catalog, duration)
+	if moving_card != null:
+		cue.motion_driven = true
+		cue.impact_fraction = contact_fraction
+		feedback_motion_sources[cue.event_id] = weakref(moving_card)
+	feedback_cues[cue.event_id] = cue
+	feedback_events[cue.event_id] = event
+	if table.render3d == null or not table.render3d.is_projection_ready():
+		_on_feedback_impact(cue.event_id)
+		_on_feedback_released(cue)
+		var finished := MotionHandle.new()
+		finished.finish()
+		return finished
+	cue.quality = table.render3d.world.quality
+	_refresh_feedback_geometry(cue)
+	var handle := table.render3d.world.feedback.play(cue)
+	if not handle.is_finished():
+		feedback_handles[cue.event_id] = handle
+	return handle
+
+
+func _feedback_point(endpoint: Dictionary) -> Vector3:
+	var renderer := table.render3d
+	var pose: Variant = _feedback_surface_pose(_feedback_anchor(endpoint))
+	if pose is Transform3D:
+		return pose.origin + pose.basis.y * CardEntity3D.THICKNESS * 0.5
+	var to_table := table.get_global_transform_with_canvas().affine_inverse() * table.effects.get_global_transform_with_canvas()
+	var point := to_table * table.resolve_endpoint_center(endpoint)
+	return renderer.world.projection.screen_to_world(point, 0.16)
+
+
+func _feedback_anchor(endpoint: Dictionary) -> Control:
+	var card := _feedback_card(endpoint)
+	return card if card != null else table.motion_geometry._zone_view_for_endpoint(endpoint)
+
+
+func _feedback_surface_pose(anchor: Control) -> Variant:
+	if not is_instance_valid(anchor) or table.render3d == null or not table.render3d.is_projection_ready():
+		return null
+	if anchor is CardView:
+		return table.render3d.card_pose(anchor as CardView)
+	if anchor is ZoneView:
+		return table.render3d.zone_pose(anchor as ZoneView)
+	if anchor is CardMotionEntity:
+		var pose: Variant = (anchor as CardMotionEntity).current_pose()
+		if pose is Transform3D and anchor.has_meta("physical_settle"):
+			pose = BattleCardPath3D.settle(pose, float(anchor.get_meta("physical_settle")))
+		return pose
+	return null
+
+
+func play_surface_accent(anchor: Control, color: Color, kind: String, duration: float = -1.0) -> void:
+	if MotionPolicy.reduced(): return
+	var pose: Variant = _feedback_surface_pose(anchor)
+	if not pose is Transform3D: return
+	var cue := BattleFeedbackCue.new()
+	cue.kind = kind
+	cue.color = color
+	cue.duration = MotionPolicy.duration("landing") if duration < 0.0 else duration
+	cue.quality = table.render3d.world.quality
+	cue.bind_surface(pose)
+	accent_sources[cue.get_instance_id()] = weakref(anchor)
+	_register_presentation_feedback_motion(table.render3d.world.feedback.play(cue))
+
+
+func _refresh_feedback_geometry(cue: BattleFeedbackCue) -> void:
+	cue.source = _feedback_point(cue.source_endpoint)
+	var source_ref := feedback_motion_sources.get(cue.event_id) as WeakRef
+	var moving_card := source_ref.get_ref() as CardMotionEntity if source_ref != null else null
+	if moving_card != null and moving_card.current_pose() is Transform3D:
+		cue.source = (moving_card.current_pose() as Transform3D).origin + Vector3.UP * 0.045
+	var pose: Variant = _feedback_surface_pose(_feedback_anchor(cue.target_endpoint))
+	if pose is Transform3D:
+		cue.bind_surface(pose)
+	else:
+		cue.target = _feedback_point(cue.target_endpoint)
+	var target := _feedback_card(cue.target_endpoint)
+	if target != null:
+		cue.badge_target = cue.target
+		var badge := Rect2()
+		if target.battle_overlay != null:
+			if cue.kind in ["energy", "tool"]:
+				badge = target.battle_overlay.attachment_layout_visual_global_rect("energy" if cue.kind == "energy" else "tool", cue.attachment_card_id)
+			elif cue.kind in ["status", "status_damage", "cleanse"]:
+				badge = target.battle_overlay.status_visual_global_rect(cue.status)
+		if badge.has_area():
+			var center_on_table := table.get_global_transform_with_canvas().affine_inverse() * badge.get_center()
+			cue.badge_target = table.render3d.world.projection.screen_to_world(center_on_table, cue.target.y + 0.02)
+		return
+	# A zone has its own calibrated physical card dimensions. Do not replace
+	# those with the old 110px Control placeholder used by the 2D layout.
+	if not cue.has_surface_pose:
+		var projection := table.render3d.world.projection
+		var center := projection.world_to_screen(cue.target)
+		cue.width = projection.screen_to_world(center + Vector2(110, 0), cue.target.y).distance_to(cue.target)
+
+
+func _commit_event_at_contact(event: Dictionary) -> void:
+	var event_id := str(event.get("event_id", ""))
+	if contact_commits.has(event_id):
+		return
+	contact_commits[event_id] = true
+	var type := str(event.get("event_type", ""))
+	if type in BattleFeedbackCue.STATE_EVENTS or type in ["energy_attached", "pokemon_evolved", "tool_attached"]:
+		for key in _slot_visual_keys_for_event(event):
+			_apply_event_to_slot_cover(key, event, "landing")
+
+
+func _on_feedback_impact(event_id: String) -> void:
+	if not feedback_cues.has(event_id):
+		return
+	var cue := feedback_cues[event_id] as BattleFeedbackCue
+	_commit_event_at_contact(feedback_events.get(event_id, {}))
+	if not cue.spatial and table.world_feedback != null:
+		# Keep this outline on the reconciled card, since the temporary cover is
+		# released in the same frame in reduced mode. No transform tween is used.
+		table.world_feedback.show_static_outline(table.get_slot_view(int(cue.target_endpoint.get("player", -1)), str(cue.target_endpoint.get("slot", ""))), cue.color)
+	if not cue.text.is_empty():
+		var layer := _world_feedback_layer()
+		if layer != null:
+			var target := _feedback_card(cue.target_endpoint)
+			var text_size := 28
+			var target_rect := Rect2()
+			if target != null:
+				text_size = int(clampf(target.visual_global_bounds().size.x / maxf(0.01, layer.get_global_transform_with_canvas().x.length()) * 0.20, 24.0, 64.0))
+				target_rect = layer.get_global_transform_with_canvas().affine_inverse() * target.visual_global_bounds()
+			layer.floating_text(cue.text, _world_feedback_point(table.resolve_endpoint_center(cue.target_endpoint)),
+				cue.text_color, cue.spatial, maxf(0.0, cue.duration * (1.0 - cue.impact_fraction) - 0.04), text_size, target_rect)
+	if not cue.audio.is_empty():
+		table.audio_requested.emit(cue.audio)
+	if cue.kind == "ko" and cue.spatial and table.camera_rig != null:
+		table.camera_rig.impulse(MotionPolicy.PROFILE.ko_camera_pixels / 7.0,
+			minf(MotionPolicy.PROFILE.ko_camera_seconds, cue.duration * 0.5), false)
+
+
+func _on_feedback_sampled(cue: BattleFeedbackCue, progress: float) -> void:
+	var accent_source := accent_sources.get(cue.get_instance_id()) as WeakRef
+	if accent_source != null:
+		var pose: Variant = _feedback_surface_pose(accent_source.get_ref() as Control)
+		if pose is Transform3D: cue.bind_surface(pose)
+	if cue.event_id.is_empty() or not feedback_cues.has(cue.event_id):
+		return
+	_refresh_feedback_geometry(cue)
+	var source := _feedback_card(cue.source_endpoint)
+	var target := _feedback_card(cue.target_endpoint)
+	var views: Array = []
+	for view in [source, target]:
+		if view != null and view not in views:
+			view.reset_battle_feedback()
+			views.append(view)
+	feedback_views[cue.event_id] = views
+	var p := clampf((progress - cue.impact_fraction) / maxf(0.01, 1.0 - cue.impact_fraction), 0.0, 1.0)
+	var pulse := sin(p * PI) * (1.0 - p)
+	var direction := (table.render3d.world.projection.world_to_screen(cue.target) - table.render3d.world.projection.world_to_screen(cue.source)).normalized()
+	if source != null and cue.lunge:
+		var lunge := smoothstep(0.0, cue.impact_fraction, progress) if progress < cue.impact_fraction else pow(1.0 - p, 2.0)
+		source.battle_fx_offset = direction * MotionPolicy.PROFILE.attack_lunge * lunge
+		source.battle_fx_lift = MotionPolicy.PROFILE.charge_lift * sin(progress * PI)
+		source.battle_fx_tilt = -0.035 * sin(progress * PI)
+	if target != null:
+		target.battle_fx_color = cue.color
+		target.battle_fx_strength = pulse * 0.8
+		match cue.kind:
+			"land":
+				target.battle_fx_lift = sin(progress * PI) * 0.012
+			"charge":
+				target.battle_fx_lift = MotionPolicy.PROFILE.charge_lift * sin(progress * PI)
+				target.battle_fx_strength = sin(progress * PI) * 0.65
+			"attack", "recoil", "status_damage":
+				if direction.is_zero_approx():
+					direction = Vector2(0, 1)
+				target.battle_fx_offset = direction * MotionPolicy.PROFILE.hit_recoil * sin(p * PI * 2.0) * (1.0 - p)
+				target.battle_fx_tilt = pulse * 0.045
+			"ko":
+				target.battle_fx_desaturation = smoothstep(0.0, 0.65, progress) * 0.85
+			"evolution", "energy", "trainer", "stadium", "tool":
+				target.battle_fx_sweep = progress
+				target.battle_fx_strength = sin(progress * PI) * 0.7
+				if cue.kind == "evolution":
+					target.battle_fx_lift = sin(progress * PI) * 0.025
+
+
+func _on_feedback_released(cue: BattleFeedbackCue) -> void:
+	accent_sources.erase(cue.get_instance_id())
+	for value in feedback_views.get(cue.event_id, []):
+		var view := _valid_card_view(value)
+		if view != null:
+			view.reset_battle_feedback()
+	feedback_views.erase(cue.event_id)
+	feedback_cues.erase(cue.event_id)
+	feedback_events.erase(cue.event_id)
+	feedback_handles.erase(cue.event_id)
+	feedback_motion_sources.erase(cue.event_id)
+
+
+func _complete_landing_handle(_handle: MotionHandle, event_id: String) -> void:
+	var barrier := landing_barriers.get(event_id) as MotionHandle
+	landing_barriers.erase(event_id)
+	if barrier != null:
+		barrier.finish()
+
+
+func _cancel_landing_handle(handle: MotionHandle, event_id: String) -> void:
+	if handle.status != MotionHandle.CANCELLED:
+		return
+	landing_barriers.erase(event_id)
+	landing_feedbacks.erase(event_id)
+	var active := feedback_handles.get(event_id) as MotionHandle
+	if active != null:
+		active.cancel()
+
+
+func complete_unlaunched_landing(event_id: String) -> void:
+	if not landing_feedbacks.has(event_id):
+		return
+	var row: Dictionary = landing_feedbacks[event_id]
+	landing_feedbacks.erase(event_id)
+	play_feedback(row.get("event", {}), 0.0)
+	_complete_landing_handle(null, event_id)
 
 func _on_floating_text_requested(
 	text: String,
@@ -93,57 +339,78 @@ func _on_burst_requested(
 	target: Dictionary,
 	color: Color,
 ) -> void:
-	_burst_world_at_motion_point(table.resolve_endpoint_center(target), color, kind)
-	var player := int(target.get("player", -1))
-	var slot_name := str(target.get("slot", ""))
-	var view := _valid_card_view(slot_covers.get(
-		"%d:%s" % [player, slot_name],
-	))
-	if view == null:
-		view = table.get_slot_view(player, slot_name)
-	if view:
-		_register_presentation_feedback_motion(view.flash(color, 0.36))
-		if kind in ["impact", "ko"]:
-			_register_presentation_feedback_motion(
-				view.shake(8.0 if kind == "impact" else 11.0, 0.3),
-			)
+	var anchor := _feedback_anchor(target)
+	if MotionPolicy.reduced():
+		if anchor is CardView and table.world_feedback != null:
+			table.world_feedback.show_static_outline(anchor, color)
+		return
+	# The physical accent owns this feedback. Do not allocate a second legacy
+	# ColorRect flash and feed its opacity back into the physical card shader.
+	play_surface_accent(anchor, color, kind)
 
 
-func _on_card_landing_feedback_scheduled(
-	event: Dictionary,
-	feedback: Dictionary,
-) -> void:
+func _on_card_landing_feedback_scheduled(event: Dictionary, duration: float) -> void:
 	var event_id := str(event.get("event_id", ""))
 	if event_id.is_empty():
 		return
-	landing_feedbacks[event_id] = feedback.duplicate(true)
+	landing_feedbacks[event_id] = {"event": event.duplicate(true), "duration": duration}
+	# Register before the motion group seals. Contact happens later inside the
+	# flight, and may not append a child to an already sealed MotionGroup.
+	var barrier := MotionHandle.new()
+	landing_barriers[event_id] = barrier
+	barrier.completed.connect(_cancel_landing_handle.bind(event_id), CONNECT_ONE_SHOT)
+	_register_presentation_feedback_motion(barrier)
 
 
-func _play_card_landing_feedback(
-	flying: Control,
-	finish: Vector2,
-) -> bool:
+func _play_card_landing_feedback(flying: Control, _finish: Vector2) -> bool:
 	if flying == null:
 		return false
 	var event_id := str(flying.get_meta("motion_event_id", ""))
+	if feedback_cues.has(event_id) and (feedback_cues[event_id] as BattleFeedbackCue).motion_driven:
+		return true
 	if event_id.is_empty() or not landing_feedbacks.has(event_id):
 		return false
-	var feedback: Dictionary = landing_feedbacks.get(event_id, {})
+	var feedback: Dictionary = landing_feedbacks[event_id]
 	landing_feedbacks.erase(event_id)
-	_burst_world_at_motion_point(
-		finish,
-		feedback.get("color", DesignTokens.CYAN) as Color,
-		str(feedback.get("kind", "card_land")),
-	)
-	var camera_strength := float(feedback.get("camera_strength", 0.0))
-	var camera_duration := float(feedback.get("camera_duration", 0.0))
-	if table.camera_rig != null and camera_strength > 0.0:
-		table.camera_rig.impulse(
-			camera_strength,
-			camera_duration,
-			table._settings_reduced_motion(),
-		)
+	var handle := play_feedback(feedback.get("event", {}), float(feedback.get("duration", 0.0)))
+	if handle.is_finished():
+		_complete_landing_handle(handle, event_id)
+	else:
+		handle.completed.connect(_complete_landing_handle.bind(event_id), CONNECT_ONE_SHOT)
 	return true
+
+
+func sample_card_motion_feedback(flying: Control, progress: float) -> void:
+	var event_id := str(flying.get_meta("motion_event_id", ""))
+	if event_id.is_empty() or table.render3d == null:
+		return
+	if landing_feedbacks.has(event_id):
+		var feedback: Dictionary = landing_feedbacks[event_id]
+		var event: Dictionary = feedback.get("event", {})
+		if str(event.get("event_type", "")) not in ["energy_attached", "pokemon_evolved"]:
+			return
+		landing_feedbacks.erase(event_id)
+		var handle := play_feedback(event, float(flying.get_meta("motion_total_seconds", 0.0)),
+			flying, float(flying.get_meta("motion_contact_fraction", 1.0)))
+		if handle.is_finished():
+			_complete_landing_handle(handle, event_id)
+			return
+		handle.completed.connect(_complete_landing_handle.bind(event_id), CONNECT_ONE_SHOT)
+		var flight_handle := flying.get_meta("motion_handle") as MotionHandle
+		flight_handle.completed.connect(_finish_motion_feedback.bind(event_id), CONNECT_ONE_SHOT)
+	var source_ref := feedback_motion_sources.get(event_id) as WeakRef
+	if source_ref != null and source_ref.get_ref() == flying:
+		table.render3d.world.feedback.advance(event_id, progress)
+
+
+func _finish_motion_feedback(handle: MotionHandle, event_id: String) -> void:
+	var feedback := feedback_handles.get(event_id) as MotionHandle
+	if feedback == null:
+		return
+	if handle.status == MotionHandle.CANCELLED:
+		feedback.cancel()
+	else:
+		table.render3d.world.feedback.advance(event_id, 1.0)
 
 
 func _world_feedback_layer() -> BattleEffectLayer:
@@ -158,18 +425,6 @@ func _world_feedback_point(motion_point: Vector2) -> Vector2:
 		return motion_point
 	var global_point := table.effects.get_global_transform_with_canvas() * motion_point
 	return layer.get_global_transform_with_canvas().affine_inverse() * global_point
-
-
-func _burst_world_at_motion_point(
-	motion_point: Vector2,
-	color: Color,
-	kind: String,
-) -> void:
-	if MotionPolicy.reduced():
-		return
-	var layer := _world_feedback_layer()
-	if layer:
-		layer.burst(_world_feedback_point(motion_point), color, kind)
 
 
 func _stage_presentation_hud(previous_snapshot: Dictionary) -> void:
@@ -479,13 +734,7 @@ func _on_presentation_event_started(event: Dictionary) -> void:
 		return
 	if event_type in [
 		"cards_discarded",
-		"confusion_failed",
-		"damage_counters_placed",
-		"damage_dealt",
 		"energy_attached",
-		"healed",
-		"status_applied",
-		"status_removed",
 	]:
 		for key in keys:
 			_apply_event_to_slot_cover(key, event, "takeoff")
@@ -678,8 +927,8 @@ func _sync_slot_snapshot_from_cover(key: String) -> void:
 
 
 func _finish_slot_visual_event(event: Dictionary) -> void:
+	_commit_event_at_contact(event)
 	var event_id := str(event.get("event_id", ""))
-	var event_type := str(event.get("event_type", ""))
 	for key in _slot_visual_keys_for_event(event):
 		var planned_queue: Array = Array(
 			slot_event_plans.get(key, []),
@@ -691,12 +940,6 @@ func _finish_slot_visual_event(event: Dictionary) -> void:
 			slot_event_plans[key] = planned_queue
 		if not slot_event_queues.has(key):
 			continue
-		if event_type in [
-			"energy_attached",
-			"pokemon_evolved",
-			"tool_attached",
-		]:
-			_apply_event_to_slot_cover(key, event, "landing")
 		_sync_slot_snapshot_from_cover(key)
 		var queue: Array = slot_event_queues.get(key, [])
 		queue.erase(event_id)
@@ -743,6 +986,12 @@ func _release_retained_slot_target_mask(key: String) -> void:
 
 
 func _clear_slot_visual_transactions() -> void:
+	for values in feedback_views.values():
+		for value in values:
+			var view := _valid_card_view(value)
+			if view != null:
+				view.reset_battle_feedback()
+	contact_commits.clear()
 	for key_value in slot_covers.keys():
 		_release_slot_state_cover(str(key_value))
 	slot_covers.clear()
@@ -862,9 +1111,6 @@ func _stage_presentation_targets(
 			reveals[event_id] = targets
 			for target in targets:
 				_mask_presentation_node(target)
-		var feedback_targets := _presentation_feedback_targets_for_event(event)
-		if not feedback_targets.is_empty():
-			feedbacks[event_id] = feedback_targets
 		_stage_presentation_cover(event)
 
 
@@ -1247,26 +1493,6 @@ func _presentation_targets_for_event(event: Dictionary) -> Array[Control]:
 	return result
 
 
-func _presentation_feedback_targets_for_event(event: Dictionary) -> Array[Control]:
-	var result: Array[Control] = []
-	var event_type := str(event.get("event_type", ""))
-	if event_type in ["pokemon_evolved", "energy_attached", "tool_attached"]:
-		table.motion_geometry._append_unique_control(
-			result,
-			table.motion_geometry._slot_view_for_endpoint(_event_target_endpoint(event)),
-		)
-	if event_type == "energy_attached":
-		table.motion_geometry._append_unique_control(
-			result,
-			table.motion_geometry._slot_view_for_endpoint(_event_source_endpoint(event)),
-		)
-	elif event_type == "cards_discarded":
-		var source := _event_source_endpoint(event)
-		if not str(source.get("attachment_type", "")).is_empty():
-			table.motion_geometry._append_unique_control(result, table.motion_geometry._slot_view_for_endpoint(source))
-	return result
-
-
 func _should_mask_slot_result(event: Dictionary) -> bool:
 	var target := _event_target_endpoint(event)
 	var slot_name := str(target.get("slot", ""))
@@ -1438,7 +1664,6 @@ func _reveal_presentation_node(
 	mask_counts.erase(instance_id)
 	if node is CardView:
 		handle = (node as CardView).reveal_presentation(reveal_duration)
-		(node as CardView).flash(DesignTokens.GOLD, 0.22)
 	elif node is ZoneView:
 		(node as ZoneView).reveal_presentation(reveal_duration)
 		handle.finish()
@@ -1499,7 +1724,6 @@ func _spawn_presentation_cover(card_id_value: String, target_view: CardView) -> 
 		target_view.size,
 		"PresentationCover",
 		96,
-		0.68,
 	)
 	cover.size = target_view.size
 	cover.position = table._effects_local(target_view.global_center()) - cover.size * 0.5
@@ -1509,12 +1733,12 @@ func _spawn_presentation_cover(card_id_value: String, target_view: CardView) -> 
 
 
 func _finish_presentation_covers(event_id: String) -> bool:
-	var covers: Array = covers.get(event_id, [])
+	var event_covers: Array = covers.get(event_id, [])
 	covers.erase(event_id)
-	if covers.is_empty():
+	if event_covers.is_empty():
 		return false
 	var had_cover := false
-	for cover_value in covers:
+	for cover_value in event_covers:
 		var cover := _valid_control(cover_value)
 		if cover == null:
 			continue
@@ -1528,31 +1752,18 @@ func _finish_presentation_covers(event_id: String) -> bool:
 func _dispose_presentation_cover(cover: Control) -> void:
 	if cover == null or not is_instance_valid(cover):
 		return
-	cover_tweens.erase(cover.get_instance_id())
 	cover.visible = false
 	cover.modulate.a = 0.0
 	cover.queue_free()
 
 
 func _clear_presentation_covers() -> void:
-	for tween_value in cover_tweens.values():
-		var tween := tween_value as Tween
-		if tween and tween.is_valid():
-			tween.kill()
-	cover_tweens.clear()
-	for covers in covers.values():
-		for cover_value in covers:
+	for event_covers in covers.values():
+		for cover_value in event_covers:
 			var cover := _valid_control(cover_value)
 			_dispose_presentation_cover(cover)
 	covers.clear()
 	table.motion_entities._clear_effect_child_controls(["PresentationCover"])
-
-
-func _flash_presentation_feedbacks(event_id: String) -> void:
-	# Landing/reveal owns the visible flash while its motion barrier is active.
-	# Keeping a second flash here starts it after the event barrier has already
-	# completed and sequence cleanup truncates it in the same call stack.
-	feedbacks.erase(event_id)
 
 
 func _on_presentation_event_finished(event: Dictionary) -> void:
@@ -1581,8 +1792,8 @@ func _on_presentation_event_finished(event: Dictionary) -> void:
 	if event_type == "coin_flip" and table.coin_showcase != null:
 		table.coin_showcase.clear()
 	table.motion_entities._clear_active_flyers_for_event(event_id)
-	_flash_presentation_feedbacks(event_id)
 	_apply_event_to_presentation_hud(event)
+	contact_commits.erase(event_id)
 	active_event_id = ""
 
 
@@ -1602,7 +1813,6 @@ func _clear_presentation_masks(reveal: bool) -> void:
 	mask_counts.clear()
 	_clear_presentation_covers()
 	_clear_slot_visual_transactions()
-	feedbacks.clear()
 	landing_feedbacks.clear()
 	event_hand_targets.clear()
 	hand_target_cursor.clear()
@@ -1610,6 +1820,7 @@ func _clear_presentation_masks(reveal: bool) -> void:
 	zone_states.clear()
 	hud_state = null
 	actions_suppressed = false
+	contact_commits.clear()
 	active_event_id = ""
 	if table.state_ref != null:
 		table.board_view._refresh_field()

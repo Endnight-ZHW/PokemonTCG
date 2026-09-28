@@ -1,16 +1,7 @@
 class_name BattleAnnouncementLayer
 extends Control
 
-const ENTER_OFFSET := Vector2(0.0, -10.0)
-## These totals intentionally match PresentationDirector.ANNOUNCEMENT_DURATIONS.
-## Reduced motion removes translation/fades, but retains a short semantic hold.
-const MODE_TIMINGS := {
-	"cinematic": Vector3(0.12, 0.26, 0.08),
-	"standard": Vector3(0.10, 0.20, 0.07),
-	"fast": Vector3(0.06, 0.16, 0.05),
-	"reduced": Vector3(0.0, 0.22, 0.0),
-}
-
+const ENTER_OFFSET := Vector2(-20.0, 0.0)
 @onready var motion_root: Control = %MotionRoot
 @onready var announcement_panel: PanelContainer = %AnnouncementPanel
 @onready var announcement_label: Label = %AnnouncementLabel
@@ -20,6 +11,8 @@ var _generation := 0
 var _active_tween: Tween
 var _active_handle: MotionHandle
 var _queue: Array[Dictionary] = []
+var _accent := Color.WHITE
+var _rule_progress := 0.0
 
 
 func _ready() -> void:
@@ -105,10 +98,13 @@ func _play_next() -> void:
 	var enter_duration := timings.x
 	var hold_duration := timings.y
 	var exit_duration := timings.z
+	var total := maxf(0.01, enter_duration + hold_duration + exit_duration)
+	_accent = color
+	_rule_progress = 1.0 if reduced_motion else 0.0
 
 	current_text = text
 	announcement_label.text = text
-	announcement_label.add_theme_color_override("font_color", color)
+	announcement_label.add_theme_color_override("font_color", DesignTokens.TEXT)
 	announcement_label.add_theme_color_override(
 		"font_outline_color",
 		DesignTokens.PANEL,
@@ -138,13 +134,16 @@ func _play_next() -> void:
 			1.0,
 			enter_duration,
 		).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		_active_tween.chain().tween_interval(hold_duration)
+		_active_tween.tween_method(_set_rule_progress, 0.0, enter_duration / total, enter_duration)
+		_active_tween.chain().tween_method(_set_rule_progress, enter_duration / total, (enter_duration + hold_duration) / total, hold_duration)
 	_active_tween.chain().tween_property(
 		motion_root,
 		"modulate:a",
 		0.0,
 		exit_duration,
 	)
+	if not reduced_motion:
+		_active_tween.parallel().tween_method(_set_rule_progress, (enter_duration + hold_duration) / total, 1.0, exit_duration)
 	handle.completed.connect(
 		_on_active_completed.bind(run_generation),
 		CONNECT_ONE_SHOT,
@@ -176,24 +175,39 @@ func _stop_tween() -> void:
 
 
 func _timings(reduced_motion: bool) -> Vector3:
-	if reduced_motion:
-		return MODE_TIMINGS["reduced"]
-	var mode := "cinematic"
-	var settings := get_tree().root.get_node_or_null("AppSettings") if get_tree() else null
-	if settings != null:
-		mode = str(settings.get("animation_mode"))
-	return MODE_TIMINGS.get(mode, MODE_TIMINGS["cinematic"])
+	return MotionPolicy.announcement_timings("reduced" if reduced_motion else MotionPolicy.mode())
 
 
 func _announcement_style(accent: Color) -> StyleBoxFlat:
 	var style := DesignTokens.panel_style(
 		DesignTokens.PANEL,
-		12,
-		accent.darkened(0.08),
+		6,
+		accent.lerp(DesignTokens.PANEL, 0.55),
 		1,
 		10,
 	)
 	style.shadow_color = DesignTokens.SHADOW
-	style.shadow_size = 10
-	style.shadow_offset = Vector2(0.0, 4.0)
+	style.border_width_left = 4
+	style.shadow_size = 6
+	style.shadow_offset = Vector2(0.0, 2.0)
 	return style
+
+
+func _set_rule_progress(value: float) -> void:
+	_rule_progress = value
+	queue_redraw()
+
+
+func _draw() -> void:
+	if current_text.is_empty() or announcement_panel == null: return
+	var rect := get_global_transform_with_canvas().affine_inverse() * announcement_panel.get_global_rect()
+	var alpha := motion_root.modulate.a
+	var tint := Color(_accent, alpha * 0.7)
+	for side in [-1.0, 1.0]:
+		var x := rect.get_center().x + float(side) * (rect.size.x * 0.5 + 14.0)
+		var center := Vector2(x, rect.get_center().y)
+		draw_colored_polygon(PackedVector2Array([center + Vector2(0, -4), center + Vector2(4, 0), center + Vector2(0, 4), center + Vector2(-4, 0)]), tint)
+	var begin := Vector2(rect.position.x + 10, rect.end.y + 4)
+	var end := Vector2(rect.end.x - 10, rect.end.y + 4)
+	draw_line(begin, end, Color(_accent, alpha * 0.14), 2, true)
+	draw_line(begin, begin.lerp(end, _rule_progress), tint, 2, true)

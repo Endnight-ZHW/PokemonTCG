@@ -1,19 +1,23 @@
 class_name BattleHandFan3D
 extends RefCounted
 
-## One physical circular fan. Existing semantic positions still drive reflow and
+## One shallow physical fan. Existing semantic positions still drive reflow and
 ## identity-preserving browsing. Card tops stay visible at the screen edge while
 ## the lower bodies extend off screen, preserving a readable printed size.
 var presenter: Battle3DPresenter
 var _signature := ""
 var _rig := Transform3D.IDENTITY
 var _radius := 1.0
+var _horizontal_spread := 1.0
 var _half_angle := 0.0
+var _screen_progress := PackedFloat32Array()
 var _mirrored_poses: Dictionary = {}
 var _mirror_camera_transform := Transform3D.IDENTITY
 var _mirror_transform := Transform3D.IDENTITY
-const REST_RADIUS := 13.0
+const REST_RADIUS := 24.0
 const CARD_SCALE := 1.22
+const PREFERRED_SPACING := 0.82
+const DISTRIBUTION_SAMPLES := 48
 
 func _init(value: Battle3DPresenter) -> void:
 	presenter = value
@@ -69,7 +73,6 @@ func reflow_proxy(control: Control, target_position: Vector2, target_rotation: f
 func pose(root: Control, width: float, ordinal: int, count: int, height: float, highlighted: bool) -> Transform3D:
 	var table := presenter.table
 	var to_table := table.get_global_transform_with_canvas().affine_inverse()
-	var scroll_rect := to_table * table.hand_scroll.get_global_rect()
 	_ensure_rig(width, count)
 	var center := to_table * (root.get_global_transform_with_canvas() * (root.size * 0.5))
 	var card_size := table.hand_view._current_hand_card_size()
@@ -81,17 +84,7 @@ func pose(root: Control, width: float, ordinal: int, count: int, height: float, 
 	var span := maxf(1.0, content_width - card_size.x)
 	var surface_start := to_table * table.hand_surface.get_global_transform_with_canvas().origin
 	var leading := surface_start.x + (surface_width - content_width + card_size.x) * 0.5
-	var trailing := leading + span
-	var focus := scroll_rect.get_center().x
 	var u := (center.x - leading) / span
-	if content_width > available + 1.0:
-		var lens := 0.6 / maxf(1.0, scroll_rect.size.x)
-		var a := atan((leading - focus) * lens)
-		var b := atan((trailing - focus) * lens)
-		var browsed := (atan((center.x - focus) * lens) - a) / maxf(0.0001, b - a)
-		var centered_scroll := (content_width - available) * 0.5
-		var browsing := clampf(absf(table.hand_scroll.scroll_horizontal - centered_scroll) / maxf(1.0, centered_scroll), 0.0, 1.0)
-		u = lerpf(u, browsed, browsing * 0.25)
 	return _pose_at(u, ordinal, count, height, highlighted)
 
 func _ensure_rig(width: float, count: int) -> void:
@@ -104,7 +97,7 @@ func _ensure_rig(width: float, count: int) -> void:
 		_mirror_camera_transform = Transform3D.IDENTITY
 
 func _pose_at(u: float, ordinal: int, count: int, height: float, highlighted: bool) -> Transform3D:
-	var angle := lerpf(-_half_angle, _half_angle, clampf(u, 0.0, 1.0)) if count > 1 else 0.0
+	var angle := _distributed_angle(u) if count > 1 else 0.0
 	var result := _rig * _local_pose(angle)
 	# Layer along the shared fan normal so neighbouring cards never interpenetrate.
 	result.origin += _rig.basis.y * (ordinal * CardEntity3D.THICKNESS * 1.35)
@@ -169,12 +162,16 @@ func _build_mirror(count: int) -> void:
 	_mirror_transform = depth * mirrored
 
 func _local_pose(angle: float) -> Transform3D:
-	return Transform3D(Basis(Vector3.UP, -angle), Vector3(sin(angle) * _radius, 0, (1.0 - cos(angle)) * _radius))
+	return Transform3D(Basis(Vector3.UP, -angle), Vector3(sin(angle) * _radius * _horizontal_spread, 0, (1.0 - cos(angle)) * _radius))
 
 func _build_rig(corridor: Rect2, width: float, count: int) -> void:
 	var projection := presenter.world.projection
-	_half_angle = deg_to_rad(minf(8.0, maxf(0.0, (count - 1) * 1.6)))
+	# Add room for each card before compressing the fan at its safe horizontal
+	# bounds. A fixed 8-degree span previously stopped growing after six cards.
+	var wanted_span := maxi(0, count - 1) * PREFERRED_SPACING
+	_half_angle = minf(deg_to_rad(8.0), asin(minf(0.95, wanted_span / (REST_RADIUS * 2.0))))
 	_radius = REST_RADIUS
+	_horizontal_spread = maxf(1.0, wanted_span / maxf(0.001, sin(_half_angle) * _radius * 2.0))
 	_rig = projection.pose_for_screen(corridor.get_center(), width * CARD_SCALE, 0.0, 1.0, deg_to_rad(24.0))
 	var maximum_scale := _rig.basis.x.length()
 	for iteration in range(3):
@@ -186,12 +183,37 @@ func _build_rig(corridor: Rect2, width: float, count: int) -> void:
 			# Increase overlap before reducing card size. Uniformly shrinking a
 			# wide 20-card fan made every card unnecessarily tiny on small screens.
 			var edge_width := projection.project_pose_bounds(_rig * _local_pose(_half_angle)).size.x
-			_radius *= maxf(0.05, (corridor.size.x - edge_width) / maxf(1.0, bounds.size.x - edge_width))
+			_horizontal_spread *= maxf(0.05, (corridor.size.x - edge_width) / maxf(1.0, bounds.size.x - edge_width))
 			bounds = _fan_bounds(count)
 		# Anchor the readable upper edge. Fitting the bottom to the viewport made
 		# hand cards smaller than the bench whenever the field needed more space.
 		var offset := Vector2(corridor.get_center().x - bounds.get_center().x, corridor.position.y - bounds.position.y)
 		_rig.origin = projection.screen_to_world(projection.world_to_screen(_rig.origin) + offset, _rig.origin.y)
+	_build_distribution(count)
+
+
+func _build_distribution(count: int) -> void:
+	# Equal angles are not equal screen distances under perspective. Cache an
+	# inverse projection of the fan, so rendering, picking and flight targets all
+	# share uniformly spaced centers without per-card iterative projection work.
+	_screen_progress.clear()
+	var middle_layer := _rig.basis.y * (maxi(0, count - 1) * 0.5 * CardEntity3D.THICKNESS * 1.35)
+	for index in range(DISTRIBUTION_SAMPLES + 1):
+		var angle := lerpf(-_half_angle, _half_angle, float(index) / DISTRIBUTION_SAMPLES)
+		var point := (_rig * _local_pose(angle)).origin + middle_layer
+		_screen_progress.append(presenter.world.projection.world_to_screen(point).x)
+	var start := _screen_progress[0]
+	var span := maxf(0.001, _screen_progress[-1] - start)
+	for index in range(_screen_progress.size()):
+		_screen_progress[index] = (_screen_progress[index] - start) / span
+
+
+func _distributed_angle(progress: float) -> float:
+	var u := clampf(progress, 0.0, 1.0)
+	if _screen_progress.size() < 2: return lerpf(-_half_angle, _half_angle, u)
+	var index := clampi(_screen_progress.bsearch(u), 1, _screen_progress.size() - 1)
+	var fraction := (u - _screen_progress[index - 1]) / maxf(0.00001, _screen_progress[index] - _screen_progress[index - 1])
+	return lerpf(-_half_angle, _half_angle, (index - 1 + fraction) / DISTRIBUTION_SAMPLES)
 
 func _fan_bounds(count: int) -> Rect2:
 	var bounds := Rect2()

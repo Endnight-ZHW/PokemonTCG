@@ -929,21 +929,18 @@ func _flying_card_timing(
 	event_duration: float,
 	stagger: bool = true,
 ) -> Dictionary:
-	var playable_duration := maxf(0.0, event_duration - table.FLYING_CARD_FINISH_PAD)
+	var playable_duration := maxf(0.0, event_duration)
 	if playable_duration < table.MIN_FLYING_CARD_DURATION:
 		return {"spawn": false, "delay": 0.0, "duration": 0.0}
 	var count := maxi(1, total_count)
 	var clamped_index := clampi(index, 0, count - 1)
 	var delay_step := 0.0
 	if stagger and count > 1:
-		delay_step = table.motion_stagger_delay
+		delay_step = MotionPolicy.duration("multi_card_stagger")
 	var delay := float(clamped_index) * delay_step
 	# Each card receives the full physical flight. Subtracting its launch delay
 	# made every card land on the same frame, defeating the stagger visually.
-	var flight_duration := playable_duration
-	if flight_duration < table.MIN_FLYING_CARD_DURATION:
-		return {"spawn": false, "delay": 0.0, "duration": 0.0}
-	return {"spawn": true, "delay": delay, "duration": flight_duration}
+	return {"spawn": true, "delay": delay, "duration": playable_duration}
 
 func _flying_card_size(event_type: String) -> Vector2:
 	if event_type in ["pokemon_played", "pokemon_evolved", "stadium_changed"]:

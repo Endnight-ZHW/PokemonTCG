@@ -128,9 +128,11 @@ func set_screen_clip(rect: Rect2, enabled: bool) -> void:
 	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if enabled else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
-func set_feedback(color: Color, strength: float) -> void:
+func set_feedback(color: Color, strength: float, desaturation: float = 0.0, sweep: float = -1.0) -> void:
 	_front.set_shader_parameter("feedback_color", Vector3(color.r, color.g, color.b))
 	_front.set_shader_parameter("feedback_strength", strength)
+	_front.set_shader_parameter("feedback_desaturation", desaturation)
+	_front.set_shader_parameter("feedback_sweep", sweep)
 
 
 func set_highlight(selected: bool, targetable: bool, hovered: bool, empty: bool = false, thinking_tint: Color = Color.TRANSPARENT, actionable: bool = false, animate: bool = false, target_tint: Color = DesignTokens.STATE_TARGET) -> void:

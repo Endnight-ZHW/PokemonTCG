@@ -26,7 +26,6 @@ const ATTACHMENT_POPOVER := preload(
 	"res://scenes/battle/components/attachment_choice_popover.gd"
 )
 const MIN_FLYING_CARD_DURATION := 0.06
-const FLYING_CARD_FINISH_PAD := 0.0
 const SLOT_COMPOSITE_LIFT_SCALE := 0.08
 const SLOT_COMPOSITE_CLEARANCE := 8.0
 const MAX_ACTIVE_FLYERS_HIGH := 12
@@ -96,7 +95,7 @@ const ZERO_CARD_SEMANTIC_MOTION_TYPES: Array[String] = [
 @export_group("Refresh")
 @export var resync_fade_duration := 0.16
 @export_group("Dynamic Card Motion")
-@export var motion_stagger_delay := 0.10
+
 var state_ref: GameState
 var catalog: CardCatalog = CardCatalog.shared()
 var view_player := 0
@@ -772,23 +771,11 @@ func play_startup_shuffle(mulligan_counts: Array = []) -> MotionHandle:
 		_ensure_presentation_coordinator()
 		presentation_coordinator.set_preflight(handle)
 		return handle
-	var mode_scale: float = float({
-		"cinematic": 1.0,
-		"standard": 0.82,
-		"fast": 0.58,
-		"reduced": 0.0,
-	}.get(_settings_animation_mode(), 0.82))
 	var reduced := MotionPolicy.reduced()
-	var duration := 0.22 if reduced else maxf(0.46, 0.85 * mode_scale)
+	var duration := MotionPolicy.PROFILE.reduced_announcement_hold if reduced else MotionPolicy.duration("deck_shuffled")
 	for player_idx in [0, 1]:
 		var endpoint := {"player": player_idx, "zone": "deck"}
-		if reduced:
-			presentation_runtime._burst_world_at_motion_point(
-				resolve_endpoint_center(endpoint),
-				DesignTokens.CYAN,
-				"shuffle",
-			)
-		else:
+		if not reduced:
 			card_motion_layer._spawn_shuffle_motion(endpoint, duration, "", true)
 		var mulligan_count := (
 			maxi(0, int(mulligan_counts[player_idx]))
@@ -1322,6 +1309,7 @@ func _bind_scene_nodes() -> void:
 	if coin_showcase == null:
 		coin_showcase = CoinShowcase.new()
 		coin_showcase.name = "BattleCoinShowcase"
+		coin_showcase.render_in_table = true
 		coin_showcase.z_index = 95
 		coin_showcase.visible = false
 		coin_showcase.audio_requested.connect(card_motion_layer._on_coin_showcase_audio_requested)
@@ -1477,7 +1465,7 @@ func _bind_scene_nodes() -> void:
 	director.card_landing_feedback_scheduled.connect(
 		presentation_runtime._on_card_landing_feedback_scheduled,
 	)
-	director.camera_impulse_requested.connect(card_motion_layer._on_camera_impulse_requested)
+	director.feedback_requested.connect(presentation_runtime._on_feedback_requested)
 	_sync_input_blocker()
 
 

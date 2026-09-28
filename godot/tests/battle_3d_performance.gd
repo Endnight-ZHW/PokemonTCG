@@ -6,6 +6,7 @@ var _report := {"schema": "ptcg.battle3d_performance/1", "profiles": []}
 
 
 func _initialize() -> void:
+	preload("res://tests/graphics_test_driver.gd").attach(self)
 	call_deferred("_run")
 
 
@@ -23,6 +24,12 @@ func _run() -> void:
 	settings.animation_mode = "standard"
 	var table := TABLE.instantiate() as BattleTable
 	root.add_child(table)
+	var coin := CoinShowcase.new()
+	coin.position = Vector2(660, 310)
+	coin.size = Vector2(600, 286)
+	root.add_child(coin)
+	coin.play([true, false], true, "硬币结果")
+	_report["scenarios"] = ["dense_hands", "attribute_hits", "evolution", "card_flights", "modal_coin"]
 	var state := UIPreviewStateFactory.battle_state()
 	for player in state.players:
 		for i in range(5):
@@ -44,8 +51,21 @@ func _run() -> void:
 		var drawn_before := Engine.get_frames_drawn()
 		var previous := Time.get_ticks_usec()
 		for i in range(300):
+			if i % 120 == 0:
+				coin.play([true, false], true, "硬币结果")
 			if i % 60 == 0:
-				table.world_feedback.burst(Vector2(800, 500), Color("72bfac"), "impact")
+				for effect_index in range(3):
+					var cue := BattleFeedbackCue.new()
+					cue.kind = "evolution" if effect_index == 2 else "attack"
+					cue.element = BattleFeedbackCue.ELEMENTS[(i / 60 + effect_index) % BattleFeedbackCue.ELEMENTS.size()]
+					cue.color = MotionPolicy.PROFILE.element_color(cue.element)
+					cue.source = table.render3d.card_pose(table.own_active).origin
+					cue.target = table.render3d.card_pose(table.opponent_active).origin + Vector3(effect_index * 0.8, 0.1, 0)
+					cue.width = table.render3d.card_pose(table.own_active).basis.x.length()
+					cue.duration = 0.50
+					cue.impact_fraction = 0.42 if cue.kind == "attack" else 0.0
+					cue.quality = quality
+					table.render3d.world.feedback.play(cue)
 				for n in range(4):
 					table.motion_entities._spawn_flying_card(table.hand_views[0].image.texture,
 						Vector2(1200, 180 + n * 15), Vector2(650 + n * 50, 800), 0.45,
@@ -75,6 +95,7 @@ func _run() -> void:
 	file.store_string(JSON.stringify(_report, "\t"))
 	file.close()
 	print("BATTLE_3D_PERFORMANCE_JSON=" + JSON.stringify(_report))
+	coin.queue_free()
 	table.queue_free()
 	await process_frame
 	quit(0)

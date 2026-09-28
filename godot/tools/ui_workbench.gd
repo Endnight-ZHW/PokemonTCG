@@ -27,6 +27,9 @@ var presentation_before_view: BattleViewModel
 var presentation_after_view: BattleViewModel
 var presentation_request: BattleTransitionRequest
 var _checkpoint_generation := 0
+var animation_element := "Fire"
+var animation_viewer := 0
+var animation_action := "attack"
 
 @onready var preview_host: Control = %PreviewHost
 @onready var preview_caption: Label = %PreviewCaption
@@ -55,6 +58,8 @@ func show_preview(kind: String) -> void:
 			_show_choice()
 		"energy_choice":
 			_show_energy_choice()
+		"coin_choice_heads", "coin_choice_tails", "coin_choice_multi":
+			_show_real_coin_choice(kind)
 		"ai_thinking":
 			_show_ai_thinking()
 		"battle_stress":
@@ -402,6 +407,141 @@ func _bind_toolbar() -> void:
 		button.custom_minimum_size.y = 48.0
 		var percent := float(button.get_meta("checkpoint"))
 		button.pressed.connect(set_presentation_checkpoint.bind(percent, ""))
+	_bind_animation_toolbar()
+
+
+func _bind_animation_toolbar() -> void:
+	var host := get_node("Layout/Sidebar/Scroll/Buttons") as VBoxContainer
+	var title := Label.new()
+	title.text = "属性动画实验台"
+	host.add_child(title)
+	var actions := OptionButton.new()
+	actions.name = "AnimationAction"
+	actions.custom_minimum_size.y = 48
+	for key in BattleAnimationPreview.ACTIONS:
+		actions.add_item(str(BattleAnimationPreview.ACTIONS[key]))
+		actions.set_item_metadata(actions.item_count - 1, key)
+	actions.item_selected.connect(func(index: int) -> void: animation_action = str(actions.get_item_metadata(index)))
+	host.add_child(actions)
+	var elements := OptionButton.new()
+	elements.name = "AnimationElement"
+	elements.custom_minimum_size.y = 48
+	for value in BattleFeedbackCue.ELEMENTS:
+		elements.add_item(EnergyIconCatalog.type_display_name_for(value))
+		elements.set_item_metadata(elements.item_count - 1, value)
+	elements.select(BattleFeedbackCue.ELEMENTS.find(animation_element))
+	elements.item_selected.connect(func(index: int) -> void: animation_element = str(elements.get_item_metadata(index)))
+	host.add_child(elements)
+	var viewers := OptionButton.new()
+	viewers.name = "AnimationViewer"
+	viewers.custom_minimum_size.y = 48
+	viewers.add_item("玩家一视角")
+	viewers.add_item("玩家二视角")
+	viewers.item_selected.connect(func(index: int) -> void: animation_viewer = index)
+	host.add_child(viewers)
+	var settings := get_node_or_null("/root/AppSettings")
+	for setting in ["animation_mode", "quality_profile"]:
+		var picker := OptionButton.new()
+		picker.name = "AnimationMode" if setting == "animation_mode" else "AnimationQuality"
+		picker.custom_minimum_size.y = 48
+		var values := ["cinematic", "standard", "fast", "reduced"] if setting == "animation_mode" else ["high", "medium", "low"]
+		var labels := ["电影动画", "标准动画", "快速动画", "减少动画"] if setting == "animation_mode" else ["高画质", "中画质", "低画质"]
+		for index in range(values.size()):
+			picker.add_item(labels[index])
+			picker.set_item_metadata(index, values[index])
+		if settings != null:
+			picker.select(maxi(0, values.find(str(settings.get(setting)))))
+		picker.item_selected.connect(func(index: int) -> void:
+			if settings != null:
+				settings.set(setting, picker.get_item_metadata(index))
+				settings.changed.emit())
+		host.add_child(picker)
+	var play := Button.new()
+	play.text = "播放所选动画"
+	play.custom_minimum_size.y = 48
+	play.pressed.connect(func() -> void: trigger_presentation("fx:" + animation_action))
+	host.add_child(play)
+	var save := Button.new()
+	save.text = "保存当前关键帧"
+	save.custom_minimum_size.y = 48
+	save.pressed.connect(_save_animation_frame)
+	host.add_child(save)
+	for kind in ["mulligan", "opponent_mulligan"]:
+		var preview := Button.new()
+		preview.text = "重新起手 · 己方" if kind == "mulligan" else "重新起手 · 对手"
+		preview.custom_minimum_size.y = 48
+		preview.pressed.connect(show_preview.bind(kind))
+		host.add_child(preview)
+	for kind in ["coin_choice_heads", "coin_choice_tails", "coin_choice_multi"]:
+		var preview := Button.new()
+		preview.name = kind
+		preview.text = {"coin_choice_heads": "实卡 · 捕捉器正面", "coin_choice_tails": "实卡 · 捕捉器反面", "coin_choice_multi": "实卡 · 连续投币"}[kind]
+		preview.custom_minimum_size.y = 48
+		preview.pressed.connect(show_preview.bind(kind))
+		host.add_child(preview)
+	for child in host.get_children():
+		if child is BaseButton:
+			(child as BaseButton).focus_mode = Control.FOCUS_NONE
+		if child is OptionButton:
+			(child as OptionButton).get_popup().allow_search = false
+
+
+func _save_animation_frame() -> void:
+	await RenderingServer.frame_post_draw
+	var folder := ProjectSettings.globalize_path("res://../build/animation-preview")
+	DirAccess.make_dir_recursive_absolute(folder)
+	var filename := "%s-%s-p%d-%d.png" % [current_presentation_kind.replace(":", "-"), animation_element, animation_viewer, Time.get_ticks_msec()]
+	get_viewport().get_texture().get_image().save_png(folder.path_join(filename))
+	_set_checkpoint_status("已保存 · " + filename)
+
+
+func _show_real_coin_choice(kind: String) -> void:
+	# Exercise the same Main -> native choice -> ChoicePresenter path as a match.
+	# A synthetic coin_flip event alone cannot preview an interactive coin choice.
+	var match_ui: Node = load("res://scenes/main/main.tscn").instantiate()
+	preview_host.add_child(match_ui)
+	var generation := _checkpoint_generation
+	var state := GameState.new()
+	var actor := animation_viewer
+	state.phase = "MAIN"
+	state.setup_stage = GameState.SETUP_COMPLETE
+	state.active_player_idx = actor
+	state.first_player_idx = 1 - actor
+	state.turn_number = 4
+	for player in state.players:
+		player.active = PokemonState.new("sv1-104")
+		player.bench[0] = PokemonState.new("svl-emol")
+		player.bench[1] = PokemonState.new("svl-chin")
+		player.hand.assign(["sv1-151", "sv1-ener-3"])
+		player.deck.assign(["sv1-ener-3", "sv1-153", "sv1-189", "sv1-151"])
+		player.prizes.assign(["sv1-ener-3", "sv1-151", "sv1-153"])
+	var multi := kind == "coin_choice_multi"
+	if multi:
+		state.players[actor].active = PokemonState.new("svg-swa")
+		state.players[actor].active.energy_card_ids.assign(["sv1-ener-3", "sv1-ener-3"])
+	else:
+		state.players[actor].hand.push_front("sv2-catch")
+	var seed_value := 1 if kind == "coin_choice_tails" else 2
+	match_ui.game_mode = "local"
+	match_ui.rng = PortableRandomSource.new(seed_value)
+	match_ui.native_rules = NativeRulesSessionAdapter.new(catalog)
+	if not match_ui.native_rules.restore(state.snapshot(), seed_value):
+		_set_checkpoint_status("实卡预览局面加载失败")
+		return
+	match_ui.state = match_ui.native_rules.state
+	match_ui.current_view_player = actor
+	match_ui.shell_view.build_game_screen()
+	current_presentation_kind = kind
+	preview_caption.text = "实际卡牌结算 · %s" % ("连续投币招式" if multi else "宝可梦捕捉器")
+	_set_checkpoint_status("实时出牌 · 结果展示后可继续结算")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if generation != _checkpoint_generation or not is_instance_valid(match_ui):
+		return
+	for action in match_ui._rules_legal_actions(actor).concrete_actions():
+		if (multi and action.kind == "DECLARE_ATTACK" and action.attack_index() == 0) or (not multi and action.kind == "PLAY_TRAINER" and action.source.card_id == "sv2-catch"):
+			match_ui._execute_action_now(action)
+			return
 
 
 func _show_title() -> void:
@@ -772,6 +912,8 @@ func _presentation_event(kind: String) -> Dictionary:
 
 func _build_presentation_fixture(kind: String) -> Dictionary:
 	event_sequence += 1
+	if kind.begins_with("fx:"):
+		return BattleAnimationPreview.build(kind.trim_prefix("fx:"), animation_element, animation_viewer, event_sequence, catalog)
 	var before := UIPreviewStateFactory.battle_state(20260623 + event_sequence)
 	if kind == "opponent_opening_draw":
 		before = GameState.new()
@@ -933,6 +1075,8 @@ func _normalize_checkpoint(percent: float) -> int:
 
 
 func _presentation_label(kind: String) -> String:
+	if kind.begins_with("fx:"):
+		return "%s · %s" % [str(BattleAnimationPreview.ACTIONS.get(kind.trim_prefix("fx:"), kind)), EnergyIconCatalog.type_display_name_for(animation_element)]
 	return {
 		"draw": "抽牌",
 		"opening_draw": "连续抽 7 张",

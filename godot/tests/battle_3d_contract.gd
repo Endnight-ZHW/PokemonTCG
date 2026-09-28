@@ -5,6 +5,7 @@ const TABLE: PackedScene = preload("res://scenes/battle/components/battle_table.
 
 
 func _initialize() -> void:
+	preload("res://tests/graphics_test_driver.gd").attach(self)
 	call_deferred("_run")
 
 
@@ -12,6 +13,8 @@ func _run() -> void:
 	var settings := root.get_node("AppSettings")
 	settings.animation_mode = "standard"
 	root.size = Vector2i(1600, 900)
+	# Resting-geometry checks must not inherit a hover from the previous window.
+	if DisplayServer.get_name() != "headless": Input.warp_mouse(Vector2(2, 2))
 	var table := TABLE.instantiate() as BattleTable
 	root.add_child(table)
 	var state := UIPreviewStateFactory.battle_state()

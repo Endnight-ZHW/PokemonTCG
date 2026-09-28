@@ -1,47 +1,49 @@
 class_name MotionPolicy
 extends RefCounted
 
-const BASE_DURATIONS := {
-	"hand_reflow": 0.22,
-	"draw_flight": 0.42,
-	"draw_landing": 0.12,
-	"card_place": 0.46,
-	"energy_attach": 0.42,
-	"switch": 0.48,
-	"evolution": 0.65,
-	"damage": 0.26,
-	"ko": 0.75,
-	"return": 0.28,
-	"multi_card_stagger": 0.10,
-	"panel": 0.16,
-}
-
-const MODE_SCALES := {
-	"cinematic": 1.0,
-	"standard": 0.82,
-	"fast": 0.58,
-	"reduced": 0.0,
-}
+const PROFILE: BattleAnimationProfile = preload("res://presentation/default_battle_animation.tres")
 
 
-static func duration(kind: String, mode: String = "") -> float:
-	var resolved_mode := mode
-	if resolved_mode.is_empty():
-		var settings := _settings()
-		resolved_mode = (
-			str(settings.get("animation_mode"))
-			if settings != null
-			else "cinematic"
-		)
-	var scale: float = float(MODE_SCALES.get(resolved_mode, 1.0))
-	return float(BASE_DURATIONS.get(kind, 0.0)) * scale
+static func mode() -> String:
+	var settings := _settings()
+	return str(settings.get("animation_mode")) if settings != null else "standard"
+
+
+static func duration(kind: String, speed_mode: String = "") -> float:
+	return PROFILE.duration(kind, mode() if speed_mode.is_empty() else speed_mode)
+
+
+static func event_duration(event: Dictionary, speed_mode: String = "", queue_size: int = 0) -> float:
+	var resolved := mode() if speed_mode.is_empty() else speed_mode
+	var kind := str(event.get("event_type", ""))
+	if kind == "cards_selected" and int(event.get("amount", 0)) <= 0:
+		return 0.0
+	var readable := kind == "cards_revealed" or (kind == "cards_selected" and str(event.get("visibility", "public")) == "public")
+	if readable:
+		return PROFILE.reduced_public_hold if resolved == "reduced" else maxf(PROFILE.public_reveal_floor, duration("cards_revealed", resolved))
+	if kind in ["turn_end", "checkup", "turn_start", "turn_order_chosen", "setup_revealed", "deck_exhausted"]:
+		var timing := announcement_timings(resolved)
+		return timing.x + timing.y + timing.z
+	var result := duration(kind, resolved)
+	if queue_size > 8 and kind not in ["pokemon_evolved", "attack_declared", "pokemon_ko"]:
+		result *= 0.55
+	return result
+
+
+static func announcement_timings(speed_mode: String = "") -> Vector3:
+	var resolved := mode() if speed_mode.is_empty() else speed_mode
+	if resolved == "reduced":
+		return Vector3(0.0, PROFILE.reduced_announcement_hold, 0.0)
+	var total := maxf(0.24, duration("announcement", resolved))
+	return Vector3(total * 0.24, total * 0.60, total * 0.16)
+
+
+static func landing_duration(event_type: String, total: float) -> float:
+	return maxf(0.0, total) * (0.28 if event_type == "pokemon_evolved" else 0.22)
 
 
 static func reduced() -> bool:
-	var settings := _settings()
-	if settings == null:
-		return false
-	return bool(settings.get("reduced_motion"))
+	return mode() == "reduced"
 
 
 static func _settings() -> Node:

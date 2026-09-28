@@ -4,6 +4,7 @@ var failures: Array[String] = []
 
 
 func _initialize() -> void:
+	preload("res://tests/graphics_test_driver.gd").attach(self)
 	call_deferred("_run")
 
 

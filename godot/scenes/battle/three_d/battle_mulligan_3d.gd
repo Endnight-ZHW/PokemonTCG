@@ -51,9 +51,9 @@ func play(event: Dictionary, duration: float) -> MotionHandle:
 	if actor != table.view_player and kind == "cards_revealed":
 		public_reveal.begin(actor, ids)
 		row.public = true
-		duration = maxf(duration, 2.8 if MotionPolicy.reduced() else 3.3)
+		duration = maxf(duration, MotionPolicy.PROFILE.mulligan_reduced_hold if MotionPolicy.reduced() else MotionPolicy.PROFILE.mulligan_public_hold)
 	elif bool(row.get("public", false)) and kind == "card_moved":
-		duration = maxf(duration, 0.55)
+		duration = maxf(duration, MotionPolicy.duration("return") if MotionPolicy.reduced() else MotionPolicy.PROFILE.mulligan_return)
 	row.phase = kind
 	row.progress = 0.0
 	row.duration = maxf(0.01, duration)
@@ -107,11 +107,9 @@ func sync() -> void:
 				var flight_duration := float(row.duration) - fade_delay
 				var delay := minf(0.09, maxf(0.0, flight_duration - 0.24) / maxi(1, cards.size() - 1))
 				progress = clampf((progress * float(row.duration) - fade_delay - index * delay) / maxf(0.12, flight_duration - (cards.size() - 1) * delay), 0.0, 1.0)
-				progress = sin(progress * PI * 0.5)
 				if public: pose = BattleCardPath3D.transfer(presenter.world.projection, pose, row.deck_pose, progress, 12.0)
 				else:
-					pose = (row.deck_pose as Transform3D).interpolate_with(pose, progress) if phase == "cards_drawn" else pose.interpolate_with(row.deck_pose, progress)
-					pose.origin.y += sin(progress * PI) * 0.55
+					pose = BattleCardPath3D.travel(row.deck_pose, pose, progress, "cards_drawn", index) if phase == "cards_drawn" else BattleCardPath3D.travel(pose, row.deck_pose, progress, "card_moved", index)
 				card.visible = progress < 0.9999 if phase == "card_moved" else progress > 0.0001
 				_flip(card, row.starts[index], CardEntity3D.BACK if phase == "card_moved" else row.faces[index], progress)
 			elif phase == "cards_revealed":

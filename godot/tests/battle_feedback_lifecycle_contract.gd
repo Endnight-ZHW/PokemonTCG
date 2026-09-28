@@ -12,6 +12,7 @@ func _run() -> void:
 	var previous_mode := str(settings.get("animation_mode"))
 	await _run_announcement_modes(settings)
 	_run_reduced_slots(settings)
+	_run_sequential_feedback(settings)
 	_run_public_selection_readability()
 	await _run_fast_feedback_barrier(settings)
 	settings.set("animation_mode", previous_mode)
@@ -162,6 +163,27 @@ func _run_public_selection_readability() -> void:
 	geometry.free()
 
 
+func _run_sequential_feedback(settings: Node) -> void:
+	settings.set("animation_mode", "standard")
+	var layer := BattleEffectLayer.new()
+	root.add_child(layer)
+	layer.size = Vector2(640, 480)
+	var target := Rect2(530, 180, 90, 125)
+	for index in range(6):
+		layer.floating_text("-%d" % (10 + index * 10), target.get_center(), DesignTokens.RED, true, 0.10, 28, target)
+		layer._process(0.04)
+	for index in range(layer.floating_texts.size()):
+		var row: Dictionary = layer.floating_texts[index]
+		var rect := Rect2(Vector2(row.position) - Vector2(Vector2(row.extent).x * 0.5, 28), Vector2(Vector2(row.extent).x, 28))
+		_expect(Rect2(Vector2.ZERO, layer.size).encloses(rect) and rect.end.x < target.position.x, "Sequential damage feedback covers its target or leaves the screen")
+		for previous in range(index):
+			var other: Dictionary = layer.floating_texts[previous]
+			var old_rect := Rect2(Vector2(other.position) - Vector2(Vector2(other.extent).x * 0.5, 28), Vector2(Vector2(other.extent).x, 28))
+			_expect(not rect.intersects(old_rect), "Damage results from different frames overlap")
+	layer.clear_transients()
+	layer.queue_free()
+
+
 func _run_fast_feedback_barrier(settings: Node) -> void:
 	settings.set("animation_mode", "fast")
 	var director := PresentationDirector.new()
@@ -179,25 +201,12 @@ func _run_fast_feedback_barrier(settings: Node) -> void:
 	root.add_child(director)
 	camera.configure(camera_target)
 	director.set_speed_mode("fast")
-	director.floating_text_requested.connect(func(
-		text: String,
-		_target: Dictionary,
-		color: Color,
-	) -> void:
-		var handle := layer.floating_text(
-			text,
-			Vector2(300.0, 220.0),
-			color,
-			true,
-		)
+	director.feedback_requested.connect(func(event: Dictionary, duration: float) -> void:
+		var handle := layer.floating_text("-%d" % int(event.get("amount", 0)),
+			Vector2(300.0, 220.0), DesignTokens.RED, true, duration * 0.5)
 		director.register_feedback_motion(handle)
-	)
-	director.camera_impulse_requested.connect(func(
-		strength: float,
-		duration: float,
-	) -> void:
-		var handle := camera.impulse(strength, duration, false)
-		director.register_feedback_motion(handle)
+		# Exercise explicit registration of a bounded camera primitive as well.
+		director.register_feedback_motion(camera.impulse(0.3, duration * 0.5, false))
 	)
 	director.play([PresentationEvent.normalize({
 		"event_type": "damage_dealt",
@@ -211,6 +220,7 @@ func _run_fast_feedback_barrier(settings: Node) -> void:
 		if not director.is_playing():
 			break
 		await process_frame
+	_expect(not layer.floating_texts.is_empty(), "feedback cue did not reach its consumer")
 	var camera_transform := camera_target.camera.transform
 	var text_position := (
 		Vector2(layer.floating_texts[0].get("position", Vector2.ZERO))

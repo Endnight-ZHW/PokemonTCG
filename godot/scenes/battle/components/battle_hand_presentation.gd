@@ -127,7 +127,6 @@ func _stage_snapshot_hand_sources(
 			size_value,
 			"SnapshotHandProxy",
 			84 + int(row.get("snapshot_index", 0)),
-			table.motion_geometry._motion_depth_for_point(center),
 		)
 		proxy.position = center - size_value * 0.5
 		proxy.rotation_degrees = float(row.get("rotation_degrees", 0.0))
@@ -204,7 +203,6 @@ func _stage_opponent_hand_transaction(
 			size_value,
 			"SnapshotOpponentHandProxy",
 			86 + index,
-			table.motion_geometry._motion_depth_for_point(center),
 		)
 		# This entity is a stationary replacement for the pre-transition hand,
 		# not an in-flight card. It becomes a motion entity only if a later event
@@ -445,7 +443,6 @@ func _reconcile_opponent_hand_proxy_count() -> void:
 			size_value,
 			"SnapshotOpponentHandProxy",
 			86 + _presentation_opponent_hand_proxies.size(),
-			table.motion_geometry._motion_depth_for_point(center),
 		)
 		proxy.remove_meta("card_motion_entity")
 		proxy.position = center - size_value * 0.5
@@ -1453,7 +1450,6 @@ func _activate_attachment_source_proxies(event: Dictionary) -> void:
 			proxy_size,
 			"AttachmentSourceProxy",
 			94 + ordinal,
-			table.motion_geometry._motion_depth_for_point(center),
 		)
 		proxy.position = center - proxy.size * 0.5
 		proxy.rotation_degrees = rotation

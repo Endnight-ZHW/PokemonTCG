@@ -9,6 +9,7 @@ const BattleDetailScenario = preload("res://tests/ui_preview_battle_detail_scena
 
 
 func _initialize() -> void:
+	preload("res://tests/graphics_test_driver.gd").attach(self)
 	root.size = Vector2i(1600, 900)
 	call_deferred("_render_previews")
 

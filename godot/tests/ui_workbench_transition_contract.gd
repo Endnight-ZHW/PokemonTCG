@@ -358,7 +358,7 @@ func _check_motion_card_faces(
 	var paper_flyers := 0
 	for value in battle.card_motion_layer.entities:
 		var flyer := value as Control
-		if flyer == null or not bool(flyer.get_meta("paper_card_token", false)):
+		if not flyer is CardMotionEntity:
 			continue
 		paper_flyers += 1
 		var image := flyer as CardMotionEntity

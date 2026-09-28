@@ -57,86 +57,20 @@ signal floating_text_requested(text: String, target: Dictionary, color: Color)
 signal burst_requested(kind: String, target: Dictionary, color: Color)
 signal card_motion_requested(event: Dictionary, duration: float)
 signal audio_requested(cue: String)
-signal camera_impulse_requested(strength: float, duration: float)
-## This signal schedules metadata for the card-motion executor. It must not play
-## the feedback immediately: the executor owns the exact contact frame and
-## should emit the requested burst/camera impulse when the proxy lands.
-signal card_landing_feedback_scheduled(event: Dictionary, feedback: Dictionary)
+signal feedback_requested(event: Dictionary, duration: float)
+## Reserve the feedback barrier before the motion group seals. The physical
+## executor owns its clock: evolve/attach begin in flight, and contact effects
+## and visible state updates occur only when the proxy actually lands.
+signal card_landing_feedback_scheduled(event: Dictionary, duration: float)
 signal event_ignored(event: Dictionary)
 
 const FEEDBACK_CHANNEL_KEY := "feedback_channel"
 const FEEDBACK_CHANNEL_ANNOUNCEMENT := "announcement"
-const ANNOUNCEMENT_EVENT_TYPES := [
-	"turn_end",
-	"checkup",
-	"turn_start",
-	"turn_order_chosen",
-	"setup_revealed",
-]
-const ANNOUNCEMENT_DURATIONS := {
-	"cinematic": 0.46,
-	"standard": 0.37,
-	"fast": 0.27,
-	"reduced": 0.22,
-}
-const STATUS_DISPLAY_NAMES := {
-	"POISONED": "中毒",
-	"BURNED": "灼伤",
-	"ASLEEP": "睡眠",
-	"PARALYZED": "麻痹",
-	"CONFUSED": "混乱",
-}
-const EVENT_DURATIONS := {
-	"cards_drawn": 0.54,
-	"cards_revealed": 2.50,
-	"cards_discarded": 0.48,
-	"card_moved": 0.46,
-	"cards_selected": 0.42,
-	"pokemon_played": 0.46,
-	"trainer_played": 0.46,
-	"stadium_changed": 0.50,
-	"tool_attached": 0.46,
-	"energy_attached": 0.46,
-	"pokemon_evolved": 0.65,
-	"attack_declared": 0.30,
-	"confusion_failed": 0.34,
-	"dazzled_failed": 0.30,
-	"damage_dealt": 0.26,
-	"damage_counters_placed": 0.26,
-	"damage_prevented": 0.28,
-	"direct_knockout_applied": 0.34,
-	"healed": 0.30,
-	"status_applied": 0.28,
-	"status_removed": 0.28,
-	"retreat": 0.46,
-	"switched": 0.46,
-	"promoted": 0.48,
-	"pokemon_ko": 0.75,
-	"prize_taken": 0.42,
-	"deck_shuffled": 0.85,
-	"deck_exhausted": 0.42,
-	"coin_flip": 0.50,
-	"turn_order_chosen": 0.42,
-	"setup_revealed": 0.54,
-	"turn_end": 0.20,
-	"checkup": 0.22,
-	"turn_start": 0.35,
-	"game_over": 0.45,
-}
-
-@export_category("Playback Timing")
-@export_group("Speed Modes")
-@export_range(0.05, 2.0, 0.01) var cinematic_speed_scale := 1.0
-@export_range(0.05, 2.0, 0.01) var standard_speed_scale := 0.82
-@export_range(0.05, 2.0, 0.01) var fast_speed_scale := 0.58
-@export_range(0.0, 1.0, 0.01) var reduced_motion_speed_scale := 0.0
-
 var _queue: Array[Dictionary] = []
 var _seen_event_ids: Dictionary = {}
 var _playing := false
 var _cancelled := false
-var _speed_scale := 1.0
-var _speed_mode := "cinematic"
+var _speed_mode := "standard"
 var _generation := 0
 var _active_completion: EventCompletion
 var _active_feedback_group: MotionGroup
@@ -209,13 +143,7 @@ func clear_for_resync() -> void:
 
 
 func set_speed_mode(mode: String) -> void:
-	_speed_mode = mode if mode in ANNOUNCEMENT_DURATIONS else "cinematic"
-	_speed_scale = {
-		"cinematic": cinematic_speed_scale,
-		"standard": standard_speed_scale,
-		"fast": fast_speed_scale,
-		"reduced": reduced_motion_speed_scale,
-	}.get(_speed_mode, 1.0)
+	_speed_mode = mode if mode in MotionPolicy.PROFILE.mode_scales else "standard"
 
 
 func _run_queue() -> void:
@@ -275,8 +203,12 @@ func _dispatch(event: Dictionary) -> void:
 	):
 		target = event.get("source", {})
 	var source: Dictionary = event.get("source", {})
-	var amount := int(event.get("amount", 0))
 	var data: Dictionary = event.get("data", {})
+	if event_type in BattleFeedbackCue.FEEDBACK_EVENTS:
+		feedback_requested.emit(event, _duration_for(event))
+		if event_type == "pokemon_ko":
+			card_motion_requested.emit(event, _duration_for(event))
+		return
 	match event_type:
 		"cards_drawn":
 			audio_requested.emit("card_draw")
@@ -297,159 +229,25 @@ func _dispatch(event: Dictionary) -> void:
 			audio_requested.emit("card_move")
 			card_motion_requested.emit(event, _duration_for(event))
 		"cards_selected":
-			if amount > 0:
+			if int(event.get("amount", 0)) > 0:
 				audio_requested.emit("card_move")
 				card_motion_requested.emit(event, _duration_for(event))
-		"pokemon_played":
-			audio_requested.emit("card_place")
-			_schedule_card_landing_feedback(
-				event,
-				"card_place",
-				DesignTokens.CYAN,
-			)
+		"pokemon_played", "trainer_played", "stadium_changed", "tool_attached", "energy_attached", "pokemon_evolved":
+			if event_type == "energy_attached" and not str(source.get("slot", "")).is_empty():
+				burst_requested.emit("attachment_release", source, DesignTokens.GOLD)
+			_schedule_card_landing_feedback(event)
 			card_motion_requested.emit(event, _duration_for(event))
-		"trainer_played", "stadium_changed", "tool_attached":
-			audio_requested.emit("card_place")
-			_schedule_card_landing_feedback(
-				event,
-				"trainer",
-				DesignTokens.BLUE,
-			)
-			card_motion_requested.emit(event, _duration_for(event))
-		"energy_attached":
-			audio_requested.emit("energy_attach")
-			if not str(source.get("slot", "")).is_empty():
-				burst_requested.emit(
-					"attachment_release",
-					source,
-					DesignTokens.GOLD,
-				)
-			_schedule_card_landing_feedback(
-				event,
-				"energy",
-				DesignTokens.GOLD,
-			)
-			card_motion_requested.emit(event, _duration_for(event))
-		"pokemon_evolved":
-			audio_requested.emit("evolution")
-			_schedule_card_landing_feedback(
-				event,
-				"evolution",
-				DesignTokens.CYAN,
-				0.35,
-				0.28,
-			)
-			card_motion_requested.emit(event, _duration_for(event))
-		"attack_declared":
-			audio_requested.emit("attack_charge")
-			camera_impulse_requested.emit(
-				0.25,
-				_bounded_camera_duration(event, 0.2),
-			)
-			burst_requested.emit("charge", event.get("source", {}), DesignTokens.GOLD)
-		"confusion_failed":
-			audio_requested.emit("attack_hit")
-			camera_impulse_requested.emit(
-				0.48,
-				_bounded_camera_duration(event, 0.2),
-			)
-			floating_text_requested.emit(
-				"混乱 -%d" % max(30, amount),
-				target,
-				DesignTokens.PURPLE,
-			)
-			burst_requested.emit("status", target, DesignTokens.PURPLE)
-		"dazzled_failed":
-			audio_requested.emit("status")
-			floating_text_requested.emit(
-				"眩目：攻击失败",
-				target,
-				DesignTokens.CYAN,
-			)
-			burst_requested.emit("status", target, DesignTokens.CYAN)
-		"damage_dealt", "damage_counters_placed":
-			audio_requested.emit("attack_hit")
-			camera_impulse_requested.emit(
-				0.75,
-				_bounded_camera_duration(event, 0.24),
-			)
-			floating_text_requested.emit(
-				"-%d" % max(10, amount),
-				target,
-				DesignTokens.RED,
-			)
-			burst_requested.emit("impact", target, DesignTokens.RED)
-		"damage_prevented":
-			audio_requested.emit("status")
-			floating_text_requested.emit("伤害无效", target, DesignTokens.CYAN)
-			burst_requested.emit("shield", target, DesignTokens.CYAN)
-		"direct_knockout_applied":
-			# This is an attack effect, not damage and not damage-counter placement.
-			# Keep it off the hit channel so AFTER_DAMAGE hooks remain rule-owned and
-			# the later pokemon_ko event remains the sole KO declaration.
-			audio_requested.emit("status")
-			camera_impulse_requested.emit(
-				0.48,
-				_bounded_camera_duration(event, 0.22),
-			)
-			floating_text_requested.emit("直接昏厥", target, DesignTokens.PURPLE)
-			burst_requested.emit("direct_ko", target, DesignTokens.PURPLE)
-		"healed":
-			audio_requested.emit("heal")
-			floating_text_requested.emit(
-				"+%d" % max(10, amount),
-				target,
-				DesignTokens.GREEN,
-			)
-			burst_requested.emit("heal", target, DesignTokens.GREEN)
-		"status_applied":
-			audio_requested.emit("status")
-			var status := str(data.get("status", ""))
-			floating_text_requested.emit(
-				_status_display_name(status),
-				target,
-				DesignTokens.status_color(status),
-			)
-		"status_removed":
-			audio_requested.emit("status")
-			var removed_status := str(data.get("status", ""))
-			floating_text_requested.emit(
-				"%s解除" % _status_display_name(removed_status),
-				target,
-				DesignTokens.GREEN,
-			)
 		"retreat", "switched", "promoted":
 			audio_requested.emit("card_move")
-			card_motion_requested.emit(event, _duration_for(event))
-		"pokemon_ko":
-			audio_requested.emit("pokemon_ko")
-			camera_impulse_requested.emit(
-				1.0,
-				_bounded_camera_duration(event, 0.38),
-			)
-			var ko_target := _ko_feedback_target(event, source, target)
-			floating_text_requested.emit("击倒", ko_target, DesignTokens.PURPLE)
-			burst_requested.emit("ko", ko_target, DesignTokens.PURPLE)
-			# A deferred KO event is only the public declaration/feedback window.
-			# It still enters the motion executor so that the executor can seal the
-			# event completion group after registering impact feedback. The
-			# serialized ko_leave_play card_moved event that follows it remains the
-			# sole owner of every physical departure from the old Pokemon stack.
 			card_motion_requested.emit(event, _duration_for(event))
 		"prize_taken":
 			audio_requested.emit("prize")
 			card_motion_requested.emit(event, _duration_for(event))
 		"coin_flip":
 			card_motion_requested.emit(event, _duration_for(event))
-			burst_requested.emit("coin", target, DesignTokens.GOLD)
 		"deck_shuffled":
 			audio_requested.emit("shuffle")
-			var deck_target := {
-				"player": int(data.get("player", event.get("actor", -1))),
-				"zone": "deck",
-			}
 			card_motion_requested.emit(event, _duration_for(event))
-			burst_requested.emit("shuffle", deck_target, DesignTokens.CYAN)
 		"deck_exhausted":
 			audio_requested.emit("status")
 			floating_text_requested.emit(
@@ -503,8 +301,6 @@ func _dispatch(event: Dictionary) -> void:
 				_feedback_target(target, FEEDBACK_CHANNEL_ANNOUNCEMENT),
 				DesignTokens.CYAN,
 			)
-		"game_over":
-			audio_requested.emit("victory")
 		_:
 			event_ignored.emit(event)
 
@@ -551,92 +347,13 @@ func _on_feedback_group_completed(
 	completion.finish()
 
 
-func _schedule_card_landing_feedback(
-	event: Dictionary,
-	kind: String,
-	color: Color,
-	camera_strength: float = 0.0,
-	camera_duration: float = 0.0,
-) -> void:
-	card_landing_feedback_scheduled.emit(event, {
-		"kind": kind,
-		"color": color,
-		"camera_strength": camera_strength,
-		"camera_duration": camera_duration,
-	})
-
-
-func _status_display_name(status: String) -> String:
-	var normalized := status.strip_edges().to_upper()
-	if normalized.is_empty():
-		return "状态"
-	return str(STATUS_DISPLAY_NAMES.get(normalized, status))
-
-
-func _ko_feedback_target(
-	event: Dictionary,
-	source: Dictionary,
-	fallback: Dictionary,
-) -> Dictionary:
-	if not str(source.get("slot", "")).is_empty():
-		return source
-	var data: Dictionary = event.get("data", {})
-	var slot := str(data.get("slot", ""))
-	if not slot.is_empty():
-		return {
-			"player": int(data.get("player", event.get("actor", -1))),
-			"slot": slot,
-		}
-	return fallback
-
-
-func _bounded_camera_duration(event: Dictionary, requested: float) -> float:
-	var event_duration := _duration_for(event)
-	if requested <= 0.0 or event_duration <= 0.0:
-		return 0.0
-	# One 30 FPS frame is ~33 ms. A 40 ms margin makes the final reset happen
-	# before the event barrier regardless of SceneTree process ordering.
-	return minf(requested, maxf(0.0, event_duration - 0.04))
+func _schedule_card_landing_feedback(event: Dictionary) -> void:
+	card_landing_feedback_scheduled.emit(event,
+		MotionPolicy.landing_duration(str(event.get("event_type", "")), _duration_for(event)))
 
 
 func _duration_for(event: Dictionary) -> float:
-	var event_type := str(event.get("event_type", ""))
-	if event_type == "cards_selected" and int(event.get("amount", 0)) <= 0:
-		return 0.0
-	var readable_reveal := (
-		event_type == "cards_revealed"
-		or (
-			event_type == "cards_selected"
-			and str(event.get("visibility", PresentationEvent.PUBLIC))
-				== PresentationEvent.PUBLIC
-		)
-	)
-	# Public card identities remain readable even when spatial motion is disabled.
-	# This is a semantic result hold, not an animation delay.
-	if readable_reveal and _speed_mode == "reduced":
-		return 1.15
-	if event_type in ANNOUNCEMENT_EVENT_TYPES:
-		return float(ANNOUNCEMENT_DURATIONS.get(_speed_mode, 0.46))
-	var base := (
-		float(EVENT_DURATIONS.get("cards_revealed", 2.50))
-		if readable_reveal
-		else float(EVENT_DURATIONS.get(event_type, 0.0))
-	)
-	if base <= 0.0 or _speed_scale <= 0.0:
-		return 0.0
-	if _queue.size() > 8 and not readable_reveal and event_type not in [
-		"cards_revealed",
-		"pokemon_evolved",
-		"attack_declared",
-		"pokemon_ko",
-	]:
-		base *= 0.55
-	var duration := maxf(0.02, base * _speed_scale)
-	if readable_reveal:
-		# Preserve the result-reading window in fast mode; only the travel and
-		# stagger are compressed below this floor.
-		return maxf(1.85, duration)
-	return duration
+	return MotionPolicy.event_duration(event, _speed_mode, _queue.size())
 
 
 func _trim_seen() -> void:

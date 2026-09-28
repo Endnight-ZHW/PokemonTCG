@@ -393,19 +393,7 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			# immediate visual handoff while still remapping any later same-batch
 			# mutations to the Pokemon that just entered each destination slot.
 			_spawn_slot_transition(event, 0.0, motion_event_id)
-		var reduced_feedback: Dictionary = table.presentation_runtime.landing_feedbacks.get(
-			motion_event_id,
-			{},
-		)
-		table.presentation_runtime.landing_feedbacks.erase(motion_event_id)
-		table.presentation_runtime._burst_world_at_motion_point(
-			table.resolve_endpoint_center(target),
-			reduced_feedback.get(
-				"color",
-				_motion_landing_color(event_type),
-			) as Color,
-			str(reduced_feedback.get("kind", "card_move")),
-		)
+		table.presentation_runtime.complete_unlaunched_landing(motion_event_id)
 		_finish_event_motion_dispatch(motion_event_id)
 		return
 	if event_type == "deck_shuffled":
@@ -500,10 +488,10 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			continue
 		var start := starts[index] if index < starts.size() else base_start
 		var finish := finishes[index] if index < finishes.size() else base_finish
-		var timing := geometry._flying_card_timing(index, motion_count, duration)
+		var timing := geometry._flying_card_timing(index, motion_count, duration, not bool(data.get("ko_leave_play", false)))
 		if not bool(timing.get("spawn", false)):
 			table.hand_presentation._dispose_snapshot_hand_source(existing_flyer)
-			_landing_burst(finish, event_type)
+			_landing_burst(landing_view, event_type)
 			continue
 		var landing_attachment_type := str(target.get("attachment_type", ""))
 		var landing_attachment_index := _landing_attachment_index_for_event(
@@ -522,6 +510,7 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			"duration": float(timing.get("duration", 0.0)),
 			"delay": float(timing.get("delay", 0.0)),
 			"event_type": event_type,
+			"path_kind": "ko_leave_play" if bool(data.get("ko_leave_play", false)) else event_type,
 			"ordinal": index,
 			"start_size": (
 				start_sizes[index] if index < start_sizes.size() else base_size
@@ -682,6 +671,7 @@ func _spawn_card_motion_spec(
 		int(spec.get("opponent_hand_stage_count_delta", 0)),
 	)
 	if flying != null:
+		flying.set_meta("motion_kind", str(spec.get("path_kind", spec.get("event_type", ""))))
 		var source_zone := spec.get("source_zone") as ZoneView
 		if source_zone != null and existing_flyer == null and table.render3d != null and table.render3d.is_projection_ready():
 			var to_table := table.get_global_transform_with_canvas().affine_inverse() * table.effects.get_global_transform_with_canvas()
@@ -855,6 +845,13 @@ func _register_event_motion_handle(event_id: String, handle: MotionHandle) -> vo
 
 
 func _finish_event_motion_dispatch(event_id: String) -> void:
+	var has_flight := false
+	for entity in entities:
+		if is_instance_valid(entity) and str(entity.get_meta("motion_event_id", "")) == event_id:
+			has_flight = true
+			break
+	if not has_flight:
+		table.presentation_runtime.complete_unlaunched_landing(event_id)
 	if event_id.is_empty() or not event_motion_completions.has(event_id):
 		return
 	var row: Dictionary = event_motion_completions.get(event_id, {})
@@ -1071,7 +1068,7 @@ func _spawn_slot_transition(
 					destination_queue,
 					motion_event_id,
 				)
-			_landing_burst(finish, event_type)
+			_landing_burst(finish_view, event_type)
 			spawned = true
 			continue
 		_spawn_slot_composite_motion(
@@ -1155,6 +1152,7 @@ func _spawn_slot_composite_motion(
 	mover.set_table_depth(geometry._motion_depth_for_point((start + finish) * 0.5), true)
 	self.add(mover)
 
+	var handoff_seconds := MotionPolicy.landing_duration(event_type, duration)
 	var tween := create_tween()
 	if delay > 0.0:
 		tween.tween_interval(delay)
@@ -1169,8 +1167,9 @@ func _spawn_slot_composite_motion(
 		),
 		0.0,
 		1.0,
-		duration,
+		maxf(0.02, duration - handoff_seconds),
 	).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	tween.tween_callback(_slot_landing_feedback.bind(mover, finish, event_type, handoff_seconds * 0.65))
 	if destination_queue.is_empty():
 		tween.tween_callback(_begin_slot_composite_handoff.bind(
 			mover,
@@ -1181,7 +1180,7 @@ func _spawn_slot_composite_motion(
 			_update_slot_composite_handoff.bind(mover, landing_view, finish),
 			0.0,
 			1.0,
-			0.10,
+			handoff_seconds,
 		).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 		tween.tween_callback(_finish_slot_composite.bind(
 			mover,
@@ -1190,6 +1189,7 @@ func _spawn_slot_composite_motion(
 			event_type,
 		))
 	else:
+		tween.tween_interval(handoff_seconds)
 		tween.tween_callback(_finish_retained_slot_composite.bind(
 			mover,
 			landing_view,
@@ -1246,8 +1246,18 @@ func _update_slot_composite_motion(
 		var projection := table.render3d.world.projection
 		var units := projection.screen_to_world(Vector2(bend, 0)).x - projection.screen_to_world(Vector2.ZERO).x
 		pose.origin.x += sin(progress * PI) * units * 0.65
-		pose.origin.y += sin(progress * PI) * 0.45
+		pose.origin.y += sin(progress * PI) * source.basis.x.length() * 0.14
+		pose.basis = BattleProjection3D.rotate_card_basis(pose.basis,
+			Basis(Vector3.FORWARD, sin(progress * PI) * signf(bend) * 0.08))
 		mover.set_meta("physical_pose", pose)
+
+
+func _slot_landing_feedback(mover: CardView, finish: Vector2, event_type: String, duration: float) -> void:
+	if not is_instance_valid(mover):
+		return
+	finish = _motion_entity_finish(mover, finish)
+	if not table.presentation_runtime._play_card_landing_feedback(mover, finish):
+		table.presentation_runtime.play_surface_accent(mover, _motion_landing_color(event_type), "card_land", duration)
 
 
 func _begin_slot_composite_handoff(
@@ -1289,7 +1299,7 @@ func _finish_slot_composite(
 	mover_value: Variant,
 	landing_value: Variant,
 	fallback_finish: Vector2,
-	event_type: String,
+	_event_type: String,
 ) -> void:
 	var mover := table.presentation_runtime._valid_card_view(mover_value)
 	if mover == null:
@@ -1303,8 +1313,6 @@ func _finish_slot_composite(
 	mover.visible = false
 	if landing_view != null:
 		landing_view.modulate.a = 1.0
-	if not table.presentation_runtime._play_card_landing_feedback(mover, finish):
-		_landing_burst(finish, event_type)
 
 
 func _finish_retained_slot_composite(
@@ -1312,14 +1320,13 @@ func _finish_retained_slot_composite(
 	landing_value: Variant,
 	destination_key: String,
 	destination_queue: Array,
-	fallback_finish: Vector2,
-	event_type: String,
+	_fallback_finish: Vector2,
+	_event_type: String,
 ) -> void:
 	var mover := table.presentation_runtime._valid_card_view(mover_value)
 	var landing_view := table.presentation_runtime._valid_card_view(landing_value)
 	if mover == null or landing_view == null:
 		return
-	var finish := _motion_entity_finish(mover, fallback_finish)
 	_retain_slot_composite_as_cover(
 		mover,
 		landing_view,
@@ -1327,8 +1334,6 @@ func _finish_retained_slot_composite(
 		destination_queue,
 		str(mover.get_meta("motion_event_id", "")),
 	)
-	if not table.presentation_runtime._play_card_landing_feedback(mover, finish):
-		_landing_burst(finish, event_type)
 
 
 func _retain_slot_composite_as_cover(
@@ -1401,9 +1406,9 @@ func _complete_slot_transition_without_motion(event: Dictionary) -> void:
 		table.presentation_runtime._release_slot_state_cover(key)
 
 
-func _landing_burst(finish: Vector2, event_type: String) -> void:
-	table.presentation_runtime._burst_world_at_motion_point(
-		finish,
+func _landing_burst(anchor: Control, event_type: String) -> void:
+	table.presentation_runtime.play_surface_accent(
+		anchor,
 		_motion_landing_color(event_type),
 		"card_land",
 	)
@@ -1489,14 +1494,8 @@ func _spawn_reveal_motion(
 	if card_back == null and not rows.is_empty():
 		return false
 	var face_textures: Array[Texture2D] = []
-	var destination_points: Array[Vector2] = []
 	for row in rows:
 		face_textures.append(_texture_for_card_id(str(row.get("card_id", ""))))
-		var destination := geometry._reveal_destination(row, actor)
-		destination_points.append(geometry._snapshot_endpoint_center(
-			destination,
-			table.resolve_endpoint_center(destination),
-		))
 	var data: Dictionary = event.get("data", {})
 	var summary_value: Variant = data.get("summary", {})
 	var summary := (
@@ -1517,12 +1516,11 @@ func _spawn_reveal_motion(
 		card_back,
 		face_textures,
 		source_origin,
-		destination_points,
 		geometry._reveal_content_rect(),
 		summary,
 		duration,
 		MotionPolicy.reduced(),
-		BattleRevealTransfer3D.start.bind(table, event) if table.render3d != null and table.render3d.is_projection_ready() else Callable(),
+		BattleRevealTransfer3D.start.bind(table, event),
 	)
 	_register_event_motion_handle(motion_event_id, handle)
 	return true
@@ -1560,9 +1558,9 @@ func _spawn_shuffle_motion(
 			table._effects_local(zone_transform * source_zone.get_stack_visual_extent())
 			- extent_origin
 		)
-	var playable_duration := maxf(0.0, duration - table.FLYING_CARD_FINISH_PAD)
+	var playable_duration := maxf(0.0, duration)
 	if playable_duration < table.MIN_FLYING_CARD_DURATION:
-		_landing_burst(origin, "deck_shuffled")
+		_landing_burst(source_zone, "deck_shuffled")
 		return true
 	var spawned := false
 	for index in range(count):
@@ -1587,13 +1585,9 @@ func _spawn_shuffle_motion(
 			card_size,
 			"CardMotionEntity",
 			110 + index,
-			geometry._motion_depth_for_point(origin),
 		)
 		flyer.set_meta("shuffle_card", true)
 		flyer.set_meta("startup_shuffle", startup)
-		flyer.set_meta("shuffle_from_physical_pile", source_zone != null)
-		flyer.set_meta("shuffle_source_center", origin)
-		flyer.set_meta("shuffle_source_extent", pile_extent)
 		flyer.set_meta("shuffle_source_zone", source_zone)
 		flyer.set_meta("card_motion_entity", true)
 		flyer.set_meta("motion_start", start)
@@ -1728,13 +1722,3 @@ func _clear_transient_visuals() -> void:
 		table.announcement_layer.clear()
 	motion_entities._clear_effect_child_controls()
 	table.presentation_runtime._clear_all_presentation_nodes()
-
-
-func _on_camera_impulse_requested(strength: float, duration: float) -> void:
-	if table.camera_rig != null:
-		var handle := table.camera_rig.impulse(
-			strength,
-			duration,
-			table._settings_reduced_motion(),
-		)
-		table.director.register_feedback_motion(handle)

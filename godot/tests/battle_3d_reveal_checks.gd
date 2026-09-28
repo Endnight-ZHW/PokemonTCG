@@ -11,13 +11,11 @@ static func run(tree: SceneTree, table: BattleTable, check: Callable) -> Diction
 	for count in [0, 1, 2, 7]:
 		var rows: Array[Dictionary] = []
 		var faces: Array[Texture2D] = []
-		var destinations: Array[Vector2] = []
 		for index in range(count):
 			var card_id := "sv1-151" if index % 2 == 0 else "svi-chim"
 			rows.append({"card_id": card_id, "matched": true, "outcome_label": "加入手牌"})
 			faces.append(table.card_motion_layer._texture_for_card_id(card_id))
-			destinations.append(table.size * Vector2(0.5, 0.9))
-		table.reveal_layer.present(rows, CardEntity3D.BACK, faces, table.size * Vector2(0.8, 0.8), destinations,
+		table.reveal_layer.present(rows, CardEntity3D.BACK, faces, table.size * Vector2(0.8, 0.8),
 			Rect2(Vector2.ZERO, table.size), {"kind": "public_selection", "title": "公开检索结果"}, 10.0, true)
 		for resolution in [Vector2i(1600, 900), Vector2i(900, 540), Vector2i(2000, 900)]:
 			tree.root.content_scale_size = resolution

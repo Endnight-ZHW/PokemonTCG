@@ -31,6 +31,16 @@ Invoke-BattleGraphicsCheck -Script 'res://tests/battle_3d_contract.gd' `
     -Marker 'BATTLE_3D_CONTRACT_OK' -LogName 'battle3d-graphics-contract.log'
 Invoke-BattleGraphicsCheck -Script 'res://tests/battle_3d_visual_contract.gd' `
     -Marker 'BATTLE_3D_VISUAL_CONTRACT_OK' -LogName 'battle3d-visual-contract.log'
+Invoke-BattleGraphicsCheck -Script 'res://tests/battle_animation_visual.gd' `
+    -Marker 'BATTLE_ANIMATION_VISUAL_OK' -LogName 'battle-animation-visual.log'
+Invoke-BattleGraphicsCheck -Script 'res://tests/battle_coin_choice_contract.gd' `
+    -Marker 'BATTLE_COIN_CHOICE_OK' -LogName 'coin-choice-graphics.log'
+Invoke-BattleGraphicsCheck -Script 'res://tests/battle_landing_feedback_contract.gd' `
+    -Marker 'BATTLE_LANDING_FEEDBACK_OK' -LogName 'battle-landing-feedback.log'
+Invoke-BattleGraphicsCheck -Script 'res://tests/battle_hand_distribution_contract.gd' `
+    -Marker 'BATTLE_HAND_DISTRIBUTION_OK' -LogName 'battle-hand-distribution.log'
+Invoke-BattleGraphicsCheck -Script 'res://tests/battle_animation_motion_review.gd' `
+    -Marker 'BATTLE_ANIMATION_MOTION_OK' -LogName 'battle-animation-motion.log'
 Invoke-BattleGraphicsCheck -Script 'res://tests/battle_card_effect_hand_contract.gd' `
     -Marker 'BATTLE_CARD_EFFECT_HAND_OK' -LogName 'battle3d-card-effect-hand.log'
 Invoke-BattleGraphicsCheck -Script 'res://tests/double_knockout_flow_contract.gd' `

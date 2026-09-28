@@ -5,6 +5,7 @@ var report := {"gray_samples": [], "shuffle_frames": 0, "max_packet_layers": 0.0
 const SYMMETRY = preload("res://tests/battle_3d_symmetry_checks.gd")
 
 func _initialize() -> void:
+	preload("res://tests/graphics_test_driver.gd").attach(self)
 	call_deferred("_run")
 
 func check(value: bool, message: String) -> void:

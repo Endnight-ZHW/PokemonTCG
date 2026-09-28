@@ -68,18 +68,38 @@ func hand_area(own: bool, for_opponent: bool = false) -> Rect2:
 	var table := presenter.table
 	var to_table := table.get_global_transform_with_canvas().affine_inverse()
 	var turn := to_table * table.header.turn_label.get_global_rect()
+	var cache_key := "hand_area:%s:%s" % [own, for_opponent]
+	var signature: Array = [size, center, turn, table.hand_view._current_hand_card_size(),
+		presenter.world.projection.viewport.size, presenter.world.camera.transform]
+	for key in ["own_prizes", "own_deck", "own_discard"]:
+		var zone := table.zones[key] as ZoneView
+		signature.append_array([zone.count, zone.get_stack_face_size(), to_table * zone.get_global_rect()])
+	if _poses.has(cache_key) and _poses[cache_key].signature == signature:
+		return _poses[cache_key].rect
 	var half_width := minf(center.x - turn.end.x, size.x - 16.0 - center.x) - 12.0
-	var width := maxf(120.0, minf(size.x * 0.60, half_width * 2.0))
+	var width := maxf(120.0, minf(size.x * 0.78, half_width * 2.0))
 	if size.y > size.x and not for_opponent:
-		width = maxf(240.0, size.x * 0.60)
+		width = maxf(240.0, size.x - 32.0)
 	var height := table.hand_view._current_hand_card_size().y * 1.65
 	var near_top := field_area().end.y + maxf(4.0, size.y * 0.007)
 	if size.y > size.x and not for_opponent:
 		for key in ["own_deck", "own_discard"]:
 			var zone := table.zones[key] as ZoneView
 			near_top = maxf(near_top, presenter.world.projection.project_pose_bounds(zone_base(zone)).end.y + 12.0)
+	else:
+		# Both mirrored fans may expand into spare edge space, but their corners
+		# must leave the actual Prize/Deck/Discard piles reachable.
+		for key in ["own_prizes", "own_deck", "own_discard"]:
+			var zone := table.zones[key] as ZoneView
+			var projection := presenter.world.projection
+			var bounds := projection.project_pose_bounds(presenter.zone_pose(zone)).merge(projection.project_pose_bounds(zone_base(zone), 0.0))
+			if bounds.end.y + 12.0 <= near_top: continue
+			var half_clearance := center.x - bounds.end.x - 12.0 if bounds.get_center().x < center.x else bounds.position.x - center.x - 12.0
+			width = minf(width, maxf(120.0, half_clearance * 2.0))
 	var y := near_top if own else center.y * 2.0 - near_top - height
-	return Rect2(Vector2(center.x - width * 0.5, y), Vector2(width, height))
+	var rect := Rect2(Vector2(center.x - width * 0.5, y), Vector2(width, height))
+	_poses[cache_key] = {"signature": signature, "rect": rect}
+	return rect
 
 func zone_base(zone: ZoneView) -> Transform3D:
 	var table := presenter.table

@@ -105,11 +105,17 @@ static func _shuffle(tree: SceneTree, table: BattleTable, check: Callable, repor
 					check.call(Rect2(Vector2.ZERO, table.size).encloses(table.render3d.world.projection.project_bounds(physical)), "Shuffle packet leaves the rendered viewport")
 					var dock := table.render3d.global_bounds(zone)
 					var to_global := table.get_global_transform_with_canvas()
-					check.call(dock.grow(dock.size.x * 0.22).encloses(to_global * table.render3d.world.projection.project_bounds(physical)), "Quick shuffle moves too far outside its deck dock")
+					var inside_dock := dock.grow(dock.size.x * 0.22).encloses(to_global * table.render3d.world.projection.project_bounds(physical))
+					if not inside_dock and not report.has("first_dock_overflow"):
+						report["first_dock_overflow"] = {"screen": str(dimensions), "count": card_count, "side": side, "progress": progress, "packet": packet.get_meta("shuffle_packet_index"), "dock": str(dock), "bounds": str(to_global * table.render3d.world.projection.project_bounds(physical))}
+					check.call(inside_dock, "Quick shuffle moves too far outside its deck dock")
 				check.call(is_equal_approx(layers, card_count), "Shuffle creates or loses visible paper thickness")
 				for first in range(count):
 					for second in range(first + 1, count):
-						check.call(not _intersects(packets[first], packets[second]), "Shuffle packets intersect during insertion")
+						var overlap := _intersects(packets[first], packets[second])
+						if overlap and not report.has("first_overlap"):
+							report["first_overlap"] = {"screen": str(dimensions), "count": card_count, "side": side, "progress": progress, "pair": [first, second]}
+						check.call(not overlap, "Shuffle packets intersect during insertion")
 				if dimensions.x == 1600 and card_count == 60 and side == "own_deck" and frame in [0, 20, 30, 40, 48, 60]:
 					tree.root.get_texture().get_image().save_png("res://../build/battle3d-shuffle-hand-fixes/shuffle-%02d.png" % frame)
 				report.shuffle_samples += 1

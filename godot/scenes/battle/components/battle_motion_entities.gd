@@ -10,7 +10,7 @@ func configure(p_table: BattleTable) -> void:
 
 func _create_paper_card_token(
 	texture: Texture2D, size_value: Vector2, transient_kind: String,
-	z_value: int, depth: float = 0.55, single_face: bool = true,
+	z_value: int,
 ) -> Control:
 	var card := CardMotionEntity.new()
 	card.name = transient_kind
@@ -18,9 +18,6 @@ func _create_paper_card_token(
 	card.texture = texture
 	card.set_meta("battle_transient_visual", true)
 	card.set_meta("battle_transient_kind", transient_kind)
-	card.set_meta("paper_card_token", true)
-	card.set_meta("paper_card_single_face", single_face)
-	card.set_meta("table_depth", depth)
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.size = size_value
 	card.custom_minimum_size = size_value
@@ -93,7 +90,6 @@ func _spawn_flying_card(
 			flying_size,
 			"CardMotionEntity",
 			100 + index,
-			table.motion_geometry._motion_depth_for_point((start + finish) * 0.5),
 		)
 	flying.set_meta("card_motion_entity", true)
 	for stale_pose in ["physical_start_pose", "physical_flip_progress"]:
@@ -105,6 +101,8 @@ func _spawn_flying_card(
 			flying.set_meta("physical_start_pose", retained_pose)
 			(flying as CardMotionEntity).world_pose = retained_pose
 			(flying as CardMotionEntity).has_world_pose = true
+	flying.set_meta("motion_kind", event_type)
+	flying.set_meta("motion_ordinal", index)
 	flying.set_meta("motion_start", motion_start)
 	flying.set_meta("motion_finish", finish)
 	flying.set_meta("motion_start_size", flying_size)
@@ -150,11 +148,10 @@ func _spawn_flying_card(
 	# before their first motion update created a fan of intersecting card backs.
 	if existing_flyer == null:
 		flying.visible = false
-	var spin := (
-		16.0 + float(index) * 2.0
-		if event_type in ["cards_discarded", "pokemon_ko"]
-		else -7.0 + float(index) * 3.0
-	)
+	var landing_seconds := MotionPolicy.landing_duration(event_type, duration)
+	flying.set_meta("motion_landing_seconds", landing_seconds)
+	flying.set_meta("motion_total_seconds", duration)
+	flying.set_meta("motion_contact_fraction", (duration - landing_seconds) / maxf(0.001, duration))
 	var tween := create_tween()
 	if delay > 0.0:
 		tween.tween_interval(delay)
@@ -164,7 +161,6 @@ func _spawn_flying_card(
 			flying,
 			motion_start,
 			finish,
-			spin,
 			flying_size,
 			landing_size,
 			start_rotation,
@@ -172,35 +168,11 @@ func _spawn_flying_card(
 		),
 		0.0,
 		1.0,
-		duration,
+		maxf(0.02, duration - landing_seconds),
 	)
-	if event_type in ["cards_drawn", "prize_taken"]:
-		# A dealt card should clear the pile before the next launch. The old cubic
-		# ease-in kept several flights hovering over the same top face.
-		flight.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	else:
-		flight.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	flight.set_trans(Tween.TRANS_LINEAR)
 	tween.tween_callback(_finish_flyer.bind(flying, finish, event_type))
-	if landing_view != null:
-		var landing_wait := (
-			MotionPolicy.duration("draw_landing")
-			if event_type in ["cards_drawn", "prize_taken"]
-			else 0.22
-		)
-		var landing_feedback: Dictionary = table.presentation_runtime.landing_feedbacks.get(
-			motion_event_id,
-			{},
-		)
-		landing_wait = maxf(
-			landing_wait,
-			float(landing_feedback.get("camera_duration", 0.0)),
-		)
-		if bool(flying.get_meta("opponent_hand_staged_landing", false)):
-			landing_wait = maxf(
-				landing_wait,
-				MotionPolicy.duration("hand_reflow"),
-			)
-		tween.tween_interval(landing_wait)
+	tween.tween_method(_sample_landing_settle.bind(flying), 0.0, 1.0, landing_seconds)
 	table.card_motion_layer._register_event_motion(flying, motion_event_id, tween)
 	return flying
 
@@ -209,7 +181,6 @@ func _update_flyer(
 	flying_value: Variant,
 	start: Vector2,
 	finish: Vector2,
-	spin: float,
 	start_size: Vector2,
 	finish_size: Vector2,
 	start_rotation: float,
@@ -225,13 +196,14 @@ func _update_flyer(
 		return
 	flying.visible = progress > 0.0001
 	_update_physical_flyer(progress, flying, start, finish,
-		start_size, finish_size, start_rotation, finish_rotation, spin)
+		start_size, finish_size, start_rotation, finish_rotation)
+	table.presentation_runtime.sample_card_motion_feedback(flying, progress * float(flying.get_meta("motion_contact_fraction", 1.0)))
 
 
 func _update_physical_flyer(
 	progress: float, flying: CardMotionEntity, start: Vector2, finish: Vector2,
 	start_size: Vector2, finish_size: Vector2, start_rotation: float,
-	finish_rotation: float, spin: float,
+	finish_rotation: float,
 ) -> void:
 	var projection := table.render3d.world.projection
 	var to_table := table.get_global_transform_with_canvas().affine_inverse() * table.effects.get_global_transform_with_canvas()
@@ -252,16 +224,16 @@ func _update_physical_flyer(
 		if flying.current_pose() is Transform3D:
 			start_pose = flying.current_pose()
 		flying.set_meta("physical_start_pose", start_pose)
-	var pose := start_pose.interpolate_with(end_pose, progress)
+	var kind := str(flying.get_meta("motion_kind", ""))
+	var pose := BattleCardPath3D.travel(start_pose, end_pose, progress, kind, int(flying.get_meta("motion_ordinal", 0)))
 	flying.source_pose = start_pose
 	flying.target_pose = end_pose
-	var arc := clampf(start_pose.origin.distance_to(end_pose.origin) * 0.18, 0.4, 1.4)
-	pose.origin.y += sin(progress * PI) * arc
-	pose.basis = BattleProjection3D.rotate_card_basis(pose.basis, Basis(Vector3.FORWARD, sin(progress * PI) * deg_to_rad(spin) * 0.45))
 	if flying.has_meta("reveal_transferred"):
 		pose = BattleCardPath3D.transfer(projection, start_pose, end_pose, progress)
 	elif not attachment_type.is_empty() or flying.has_meta("physical_attachment_source"):
 		pose = BattleCardPath3D.attachment(start_pose, end_pose, progress, flying.has_meta("physical_attachment_source"), not attachment_type.is_empty())
+	flying.set_meta("paper_glint", sin(progress * PI) * 0.30)
+	flying.set_meta("paper_sweep", progress)
 	flying.world_pose = pose
 	flying.has_world_pose = true
 	var screen_center := projection.world_to_screen(pose.origin)
@@ -273,14 +245,14 @@ func _update_physical_flyer(
 	flying.modulate.a = 1.0
 	_update_flyer_flip(flying, progress)
 	if flying.has_meta("motion_flip_texture"):
-		var phase := clampf((progress - 0.32) / 0.34, 0.0, 1.0)
+		var phase := BattleCardPath3D.flip_progress(str(flying.get_meta("motion_kind", "")), progress)
 		flying.set_meta("physical_flip_progress", phase)
 
 
 func _update_flyer_flip(flying: CardMotionEntity, progress: float) -> void:
 	if flying == null or not flying.has_meta("motion_flip_texture"):
 		return
-	var phase := clampf((progress - 0.32) / 0.34, 0.0, 1.0)
+	var phase := BattleCardPath3D.flip_progress(str(flying.get_meta("motion_kind", "")), progress)
 	if phase >= 0.5 and not bool(flying.get_meta("motion_flip_swapped", false)):
 		flying.texture = flying.get_meta("motion_flip_texture") as Texture2D
 		flying.set_meta("motion_flip_swapped", true)
@@ -321,13 +293,7 @@ func _finish_flyer(
 				and (landing_view as CardView).owner_player == table.view_player
 			)
 			handed_off_to_local_hand = handed_off_to_local_hand or landing_view.has_meta("snapshot_opponent_hand_index")
-			var reveal_duration := (
-				0.0
-				if handed_off_to_local_hand
-				else MotionPolicy.duration("draw_landing")
-				if event_type in ["cards_drawn", "prize_taken"]
-				else 0.14
-			)
+			var reveal_duration := 0.0 if handed_off_to_local_hand else float(flying.get_meta("motion_landing_seconds", 0.06)) * 0.65
 			var reveal_handle := table.presentation_runtime._reveal_presentation_node(
 				landing_view,
 				false,
@@ -342,19 +308,56 @@ func _finish_flyer(
 				table.hand_presentation._hand_transition_sequences[event_id] = row
 			_remove_revealed_node_from_events(landing_view)
 	if not table.presentation_runtime._play_card_landing_feedback(flying, finish):
-		table.presentation_runtime._burst_world_at_motion_point(
-			finish,
+		table.presentation_runtime.play_surface_accent(
+			flying,
 			table.card_motion_layer._motion_landing_color(event_type),
-			"card_land",
+			"prize" if event_type == "prize_taken" else "card_land",
+			float(flying.get_meta("motion_landing_seconds", 0.06)) * 0.65,
 		)
+	_begin_landing_settle(flying)
 	table.hand_presentation._adopt_opponent_hand_landing_flyer(flying)
 	var physical_attachment := table.render3d != null and not str(flying.get_meta("motion_landing_attachment_type", "")).is_empty()
-	if (handed_off_to_local_hand or physical_attachment) and is_instance_valid(flying):
+	var landed_on_card := flying.has_meta("motion_landing_view") and flying.get_meta("motion_landing_view") is CardView
+	if (handed_off_to_local_hand or physical_attachment or landed_on_card) and is_instance_valid(flying):
 		# The hand or attachment stack now owns this card. Keeping the flyer for
 		# the feedback hold duplicates it and leaves a stale pose during reflow.
 		flying.visible = false
 		flying.modulate.a = 0.0
 		flying.set_meta("motion_visual_handed_off", true)
+
+func _begin_landing_settle(flying: Control) -> void:
+	var target := table.presentation_runtime._valid_control(flying.get_meta("motion_landing_view")) if flying.has_meta("motion_landing_view") else null
+	if target is CardView and not (target as CardView).slot.is_empty():
+		target = table.presentation_runtime._feedback_card({"player": (target as CardView).owner_player, "slot": (target as CardView).slot})
+	if target == null or target is ZoneView:
+		target = flying
+	var handle := flying.get_meta("motion_handle", null) as MotionHandle
+	var owner_id := handle.get_instance_id() if handle != null else flying.get_instance_id()
+	target.set_meta("physical_settle_owner", owner_id)
+	target.set_meta("physical_settle", 0.0)
+	flying.set_meta("landing_settle_target", weakref(target))
+	flying.set_meta("landing_settle_owner", owner_id)
+	if handle != null:
+		handle.completed.connect(_end_landing_settle.bind(weakref(target), owner_id), CONNECT_ONE_SHOT)
+
+
+func _sample_landing_settle(progress: float, flying_value: Variant) -> void:
+	if not is_instance_valid(flying_value): return
+	var flying := flying_value as Control
+	var target_ref := flying.get_meta("landing_settle_target", null) as WeakRef
+	var target := target_ref.get_ref() as Control if target_ref != null else null
+	if target != null and int(target.get_meta("physical_settle_owner", -1)) == int(flying.get_meta("landing_settle_owner", -2)):
+		target.set_meta("physical_settle", progress)
+	var contact := float(flying.get_meta("motion_contact_fraction", 1.0))
+	table.presentation_runtime.sample_card_motion_feedback(flying, lerpf(contact, 1.0, progress))
+
+
+func _end_landing_settle(_handle: MotionHandle, target_ref: WeakRef, owner_id: int) -> void:
+	var target := target_ref.get_ref() as Control
+	if target == null or int(target.get_meta("physical_settle_owner", -1)) != owner_id: return
+	target.remove_meta("physical_settle")
+	target.remove_meta("physical_settle_owner")
+
 
 func _remove_revealed_node_from_events(node: Control) -> void:
 	for event_id_value in table.presentation_runtime.reveals.keys():
@@ -467,10 +470,6 @@ func _clear_effect_child_controls(prefixes: Array = []) -> void:
 		if flyer_tween and flyer_tween.is_valid():
 			flyer_tween.kill()
 		table.card_motion_layer.tweens.erase(instance_id)
-		var cover_tween := table.presentation_runtime.cover_tweens.get(instance_id) as Tween
-		if cover_tween and cover_tween.is_valid():
-			cover_tween.kill()
-		table.presentation_runtime.cover_tweens.erase(instance_id)
 		table.card_motion_layer.entities.erase(control)
 		control.visible = false
 		control.modulate.a = 0.0

@@ -11,6 +11,7 @@ func _ready() -> void:
 	var dim := _dimmer.material_override as ShaderMaterial
 	dim.set_shader_parameter("fill", Color(DesignTokens.SCRIM, 0.48))
 	dim.set_shader_parameter("radius", 0.0)
+	dim.set_shader_parameter("showcase", false)
 	visible = false
 
 func _surface() -> MeshInstance3D:

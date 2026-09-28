@@ -89,6 +89,9 @@ func _ready() -> void:
 	world.name = "BattleWorld3D"
 	viewport.add_child(world)
 	table.camera_rig.configure(world)
+	world.feedback.impact_reached.connect(table.presentation_runtime._on_feedback_impact)
+	world.feedback.sampled.connect(table.presentation_runtime._on_feedback_sampled)
+	world.feedback.released.connect(table.presentation_runtime._on_feedback_released)
 	modulate.a = 0.0
 	visibility_changed.connect(_on_visibility_changed)
 	RenderingServer.frame_pre_draw.connect(_sync_render_frame)
@@ -112,10 +115,14 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED:
 		_paused = true
 		set_process(false)
+		if world != null:
+			world.process_mode = Node.PROCESS_MODE_DISABLED
 		if viewport != null:
 			viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	elif what == NOTIFICATION_APPLICATION_RESUMED:
 		_paused = false
+		if world != null:
+			world.process_mode = Node.PROCESS_MODE_INHERIT
 		_on_visibility_changed()
 		var settings := get_node_or_null("/root/AppSettings")
 		if settings != null:
@@ -329,7 +336,14 @@ func _warmup_rendering() -> void:
 		return
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	if _warmup_frames == 3:
-		world.feedback.burst(Vector3.ZERO, Color.WHITE, "impact", _quality)
+		var cue := BattleFeedbackCue.new()
+		cue.kind = "impact"
+		cue.color = Color.WHITE
+		cue.quality = _quality
+		cue.width = 1.35
+		cue.duration = MotionPolicy.duration("landing")
+		cue.spatial = not MotionPolicy.reduced()
+		world.feedback.play(cue)
 		world.reveal_stage.apply(world.projection, {"panel_rect": Rect2(size * 0.4, size * 0.2), "alpha": 0.01})
 		world.coin.visible = true
 		world.coin.position = Vector3(0, 1, 0)
@@ -348,9 +362,6 @@ func _suppress_art(anchor: Control) -> void:
 		for art in [card.image, card.frame, card.empty_label, card.shadow, card.depth_edge, card.top_gloss, card.selection_ring, card.target_glow, card.actionable_marker]:
 			if art != null:
 				art.self_modulate.a = 0.0
-		for overlay in card._flash_overlays:
-			if is_instance_valid(overlay):
-				overlay.self_modulate.a = 0.0
 	elif anchor is ZoneView:
 		var zone := anchor as ZoneView
 		zone.self_modulate.a = 0.0
@@ -358,11 +369,6 @@ func _suppress_art(anchor: Control) -> void:
 			zone.set_meta("physical_caption_style", true)
 			zone.title_label.add_theme_stylebox_override("normal", DesignTokens.panel_style(DesignTokens.PANEL, 4, DesignTokens.BORDER_SOFT, 1, 2))
 		for art in [zone.frame, zone.image, zone.fallback_back_panel, zone.fallback_back_label]:
-			if art != null:
-				art.self_modulate.a = 0.0
-	else:
-		for label in ["PaperImage", "PaperShadow", "PaperFace", "PaperEdge", "PaperGloss", "Image", "Shadow", "OutcomeOutline"]:
-			var art := anchor.get_node_or_null(label) as CanvasItem
 			if art != null:
 				art.self_modulate.a = 0.0
 
@@ -400,8 +406,9 @@ func _sync_card(card: CardView) -> void:
 		raised += float(maxi(card.hand_index, card.get_index())) * 0.025
 	if card.pokemon != null and not hand:
 		raised += mini(card.pokemon.energy_card_ids.size() + card.pokemon.evolution_stack_ids.size() + (0 if card.pokemon.attached_tool_id.is_empty() else 1), 6) * 0.03
-	if card.selected or card._hovered:
-		raised += 0.60 if hand else 0.10
+	var attention := clampf(-card.interaction_root.position.y / maxf(1.0, card.selected_lift), 0.0, 1.0) if card.interaction_root != null else 0.0
+	if not hand:
+		raised += 0.10 * attention
 	entity.set_packet_layers(1.0)
 	if hand:
 		entity.transform = _hand_pose(card, root, raised)
@@ -409,6 +416,16 @@ func _sync_card(card: CardView) -> void:
 		entity.transform = layout.field_pose(card, root, raised)
 	if card.has_meta("physical_pose"):
 		entity.transform = card.get_meta("physical_pose") as Transform3D
+	if card.has_meta("physical_settle"):
+		entity.transform = BattleCardPath3D.settle(entity.transform, float(card.get_meta("physical_settle")))
+	var card_width := entity.transform.basis.x.length()
+	if not card.battle_fx_offset.is_zero_approx():
+		var center := world.projection.world_to_screen(entity.position)
+		var projected_width := world.projection.project_bounds(entity).size.x
+		entity.position = world.projection.screen_to_world(center + card.battle_fx_offset * projected_width, entity.position.y)
+	entity.position.y += card_width * card.battle_fx_lift
+	if card.battle_fx_tilt != 0.0:
+		entity.transform.basis = BattleProjection3D.rotate_card_basis(entity.transform.basis, Basis(Vector3.RIGHT, card.battle_fx_tilt))
 	if card.pokemon != null and card.battle_overlay != null and card.content_root != null:
 		var to_content := card.content_root.get_global_transform_with_canvas().affine_inverse() * table.get_global_transform_with_canvas()
 		card.battle_overlay.set_physical_rect(to_content * world.projection.project_bounds(entity))
@@ -425,13 +442,7 @@ func _sync_card(card: CardView) -> void:
 	if not hand and not card.empty and thinking != null and thinking.active and card.owner_player == thinking.ai_player:
 		thinking_tint = thinking.card_highlight_color()
 	entity.set_highlight(card.selected, card.targetable, card._hovered, card.empty and not card.is_hidden_card, thinking_tint, card.actionable and not card.is_hidden_card, _quality != "low" and not MotionPolicy.reduced(), card._target_accent)
-	var flash_color := Color.BLACK
-	var flash_strength := 0.0
-	for overlay in card._flash_overlays:
-		if is_instance_valid(overlay) and overlay.color.a > flash_strength:
-			flash_strength = overlay.color.a
-			flash_color = overlay.color
-	entity.set_feedback(flash_color, flash_strength)
+	entity.set_feedback(card.battle_fx_color, card.battle_fx_strength, card.battle_fx_desaturation, card.battle_fx_sweep)
 	if hand and card.get_parent() == table.opponent_hand_surface:
 		_clip_far_hand_below_task(entity)
 	else:
@@ -560,6 +571,7 @@ func _sync_token(anchor: Control) -> void:
 	var hidden := texture == CardEntity3D.BACK
 	entity.set_surface(texture, hidden)
 	entity.set_highlight(false, false, false)
+	entity.set_feedback(Color("efd8ae"), float(anchor.get_meta("paper_glint", 0.0)), 0.0, float(anchor.get_meta("paper_sweep", -1.0)))
 	if anchor is CardMotionEntity and (anchor as CardMotionEntity).has_world_pose:
 		entity.transform = (anchor as CardMotionEntity).world_pose
 		if anchor.has_meta("snapshot_world_pose") and not anchor.has_meta("motion_event_id") and not anchor.has_meta("physical_reflow"):
@@ -582,6 +594,8 @@ func _sync_token(anchor: Control) -> void:
 		if reveal:
 			var to_table := table.get_global_transform_with_canvas().affine_inverse() * anchor.get_global_transform_with_canvas()
 			entity.transform = world.projection.camera_plane_pose(to_table * (anchor.size * 0.5), anchor.size.x * to_table.x.length(), 18.0, to_table.get_rotation())
+	if anchor.has_meta("physical_settle"):
+		entity.transform = BattleCardPath3D.settle(entity.transform, float(anchor.get_meta("physical_settle")))
 	if surface != null:
 		surface.resolved_world_pose = entity.transform
 		surface.has_resolved_world_pose = true
@@ -618,26 +632,11 @@ func _sync_coin() -> void:
 	if not is_projection_ready():
 		return
 	var showcase := table.coin_showcase
-	world.coin.visible = showcase != null and showcase.is_visible_in_tree() and not showcase.results.is_empty()
-	if not world.coin.visible:
+	if showcase == null:
+		world.coin.visible = false
 		return
-	showcase.set_physical_rendering(true)
-	var index := clampi(showcase._current_index, 0, showcase.results.size() - 1)
-	var result_heads: bool = showcase.results[index]
-	var start_heads: bool = showcase.results[index - 1] if index > 0 else not result_heads
-	var local_center := Vector2(showcase.size.x * 0.5, minf(118.0, showcase.size.y * 0.43))
 	var to_table := table.get_global_transform_with_canvas().affine_inverse() * showcase.get_global_transform_with_canvas()
-	world.coin.pose_for_toss(world.projection, to_table * local_center, CoinShowcase.COIN_SIZE * 1.12,
-		showcase._toss_progress, result_heads, start_heads, MotionPolicy.reduced())
-
-
-func burst_from(layer: Control, point: Vector2, color: Color, kind: String) -> MotionHandle:
-	if not is_projection_ready():
-		var finished := MotionHandle.new()
-		finished.finish()
-		return finished
-	var to_table := table.get_global_transform_with_canvas().affine_inverse() * layer.get_global_transform_with_canvas()
-	return world.feedback.burst(world.projection.screen_to_world(to_table * point, 0.08), color, kind, _quality)
+	showcase.render_coin(world.coin, world.projection, to_table)
 
 
 func _shown(anchor: CanvasItem) -> bool:
@@ -787,7 +786,27 @@ func _hand_pose(card: CardView, root: Control, height: float) -> Transform3D:
 	var ordinal := card.hand_index if own else card.get_index()
 	var count := maxi(1, cards.filter(func(view: CardView) -> bool: return view.visible).size())
 	var width := card.size.x
-	return _hand_surface_pose(root, width, ordinal, count, height, own, card.selected or card._hovered)
+	var rest := _hand_surface_pose(root, width, ordinal, count, height, own, false)
+	if not own or card.interaction_root == null:
+		return rest
+	# Neighbours make a little room using the same hover tween as the raised card.
+	# This only offsets the rendered fan; identities and scroll anchors stay stable.
+	var nudge := 0.0
+	for neighbour in cards:
+		var gap := ordinal - neighbour.hand_index
+		if gap == 0 or absi(gap) > 2 or neighbour.interaction_root == null:
+			continue
+		var weight := clampf(-neighbour.interaction_root.position.y / maxf(1.0, neighbour.selected_lift), 0.0, 1.0)
+		nudge += signf(float(gap)) * width * 0.055 * weight / absi(gap)
+	if not is_zero_approx(nudge):
+		var center := world.projection.world_to_screen(rest.origin)
+		rest.origin = world.projection.screen_to_world(center + Vector2(nudge, 0), rest.origin.y)
+	var attention := clampf(-card.interaction_root.position.y / maxf(1.0, card.selected_lift), 0.0, 1.0)
+	if attention <= 0.0:
+		return rest
+	var lifted := _hand_surface_pose(root, width, ordinal, count, height + 0.60, own, true)
+	lifted.basis = BattleProjection3D.rotate_card_basis(lifted.basis, Basis(Vector3.RIGHT, -0.035))
+	return rest.interpolate_with(lifted, attention)
 
 
 func _hand_surface_pose(root: Control, width: float, ordinal: int, count: int, height: float, own: bool, highlighted: bool) -> Transform3D:

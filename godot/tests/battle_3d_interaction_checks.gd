@@ -5,6 +5,12 @@ static func run(table: BattleTable, expect: Callable) -> void:
 	var presenter := table.render3d
 	var projection := presenter.world.projection
 	var active := table.own_active
+	active.set_selected(true)
+	expect.call(active._active_state_animation == "RESET", "Physical selection starts a hidden 2D animation")
+	active.set_selected(false)
+	active.set_targetable(true)
+	expect.call(active._active_state_animation == "RESET", "Physical target starts a hidden 2D animation")
+	active.set_targetable(false)
 	var center := active.global_center()
 	active.set_presentation_hidden(true)
 	presenter.sync_surfaces()
@@ -86,9 +92,9 @@ static func _check_zone_motion(table: BattleTable, expect: Callable) -> void:
 			"start_size": deck.get_stack_face_size(), "finish_size": prizes.get_stack_face_size(),
 			"landing_view": prizes,
 		}, "", "") as CardMotionEntity
-		table.motion_entities._update_physical_flyer(0.0, flyer, start, finish, flyer.size, flyer.size, 0.0, 0.0, 0.0)
+		table.motion_entities._update_physical_flyer(0.0, flyer, start, finish, flyer.size, flyer.size, 0.0, 0.0)
 		expect.call(flyer.source_pose.is_equal_approx(deck_entity.transform), "Draw starts at a different pose from its visible pile")
-		table.motion_entities._update_physical_flyer(1.0, flyer, start, finish, flyer.size, flyer.size, 0.0, 0.0, 0.0)
+		table.motion_entities._update_physical_flyer(1.0, flyer, start, finish, flyer.size, flyer.size, 0.0, 0.0)
 		expect.call(flyer.world_pose.is_equal_approx(target.transform), "Prize flight snaps at contact with its physical destination")
 		for previous in finishes:
 			expect.call(previous.distance_to(flyer.world_pose.origin) > 0.01, "Incoming prize cards collapse into the same landing slot")
@@ -130,7 +136,7 @@ static func check_layouts(table: BattleTable, expect: Callable) -> void:
 				var bounds := table.get_global_transform_with_canvas() * presenter.world.projection.project_bounds(entity)
 				for bench in table.slot_views.values():
 					if (bench as CardView).slot.begins_with("bench"):
-						expect.call(not bounds.intersects((bench as CardView).visual_global_bounds()), "Attachment geometry covers a bench card at %s" % resolution)
+						expect.call(not bounds.intersects((bench as CardView).visual_global_bounds()), "Attachment geometry covers a bench card at %s: player=%d, attachment=%s, bounds=%s, bench=%s, bench_bounds=%s, hovered=%s" % [resolution, card.owner_player, entity.visual_id, bounds, bench.slot, (bench as CardView).visual_global_bounds(), card._hovered])
 			expect.call(attachment_count <= 6 and tool_visible, "Dense attachments omitted the tool or exceeded their budget")
 		var allowed := table.get_global_transform_with_canvas() * Rect2(Vector2.ZERO, table.size)
 		for zone in table.zones.values():

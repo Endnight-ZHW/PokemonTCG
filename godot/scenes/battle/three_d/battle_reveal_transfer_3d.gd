@@ -40,9 +40,8 @@ static func start(cards: Array[Control], duration: float, table: BattleTable, ev
 		card.texture = card.get_meta("face_texture") as Texture2D
 		for key in ["face_texture", "physical_flip_progress", "physical_flip_source", "motion_flip_texture"]:
 			if card.has_meta(key): card.remove_meta(key)
-		for label in ["OutcomeBadge", "OutcomeOutline"]:
-			var overlay := card.get_node_or_null(label) as CanvasItem
-			if overlay != null: overlay.visible = false
+		var badge := card.get_node_or_null("OutcomeBadge") as CanvasItem
+		if badge != null: badge.visible = false
 		card.set_meta("reveal_transferred", true)
 		var hidden := table.motion_geometry._endpoint_hidden_from_view(destination)
 		var finish := table.resolve_endpoint_center(destination)
