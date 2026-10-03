@@ -142,32 +142,24 @@ func check_choices() -> void:
 		await settle()
 		check_scroll_tree(main.modal_scroll)
 		capture("choice")
-		if not panel._compact_choice_layout:
-			continue
-		panel._choice_scroll_container().scroll_vertical = 100
-		await settle()
-		var saved_scroll := panel._choice_scroll_container().scroll_vertical
-		panel.preview_toggle_button.pressed.emit()
-		await settle()
-		check_scroll_tree(main.modal_scroll)
-		check(panel.preview_text.size.y + 2 >= panel.preview_text.get_content_height(),
-			"Compact card explanation is clipped")
-		var return_rect := panel.preview_return_button.get_global_rect()
+		check(not panel.content_row.vertical and panel.preview_panel.visible
+			and (panel.get_node("%OptionsScroll") as Control).visible,
+			"Choice options and explanation must stay side by side")
+		check(not panel.preview_toggle_button.visible and not panel.preview_return_button.visible,
+			"Choice must not introduce a separate preview page")
 		var preview_scroll := panel.get_node("%PreviewScroll") as ScrollContainer
+		var options_scroll := panel._choice_scroll_container()
+		options_scroll.scroll_vertical = 100
+		await settle()
+		var saved_scroll := options_scroll.scroll_vertical
 		preview_scroll.scroll_vertical = int(preview_scroll.get_v_scroll_bar().max_value)
 		await settle()
-		check(panel.preview_return_button.get_global_rect().is_equal_approx(return_rect),
-			"Reading the card explanation moved the return control")
-		check(not main.modal_scroll.get_v_scroll_bar().visible,
-			"Choice reading page gained an extra outer scrollbar")
-		capture("choice-reading")
+		check(options_scroll.scroll_vertical == saved_scroll,
+			"Reading card text changed the option-list position")
+		check(main.selected_choice_ids == ["card:0"], "Reading a choice changed its selection")
 		panel._preview_card("svg2-tort" if panel.previewed_card_id() != "svg2-tort" else "svi-jete")
 		await settle()
-		check(preview_scroll.scroll_vertical == 0, "A different preview card opened at the previous card's scroll position")
-		panel.preview_return_button.pressed.emit()
-		await settle()
-		check(abs(panel._choice_scroll_container().scroll_vertical - saved_scroll) <= 2,
-			"Closing card explanation lost the choice-list position")
-		check(main.selected_choice_ids == ["card:0"], "Reading a choice changed its selection")
+		check(preview_scroll.scroll_vertical == 0, "A new card retained the previous reading position")
+
 	main.modal_host_controller.close()
 	await settle()

@@ -16,8 +16,8 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   首页只保留本地对战、挑战 AI、联机对战三个主入口，LAN/Relay 在网络大厅中选择。
 - 前台导航仅支持鼠标与触控，交互目标仍遵循至少 48px 的触控尺寸；网络文本框可在点击或
   轻触后输入，Android 系统返回按钮/手势继续用于返回与打开对局菜单。
-- 标题页按 Wide、Compact landscape、Dense 三档响应式布局，三张展示卡会从可用宝可梦
-  卡图中定时轮换；低画质、减少动画或 Dense 布局下停止轮换、漂浮和视差。
+- 全游戏统一沿用 1600×900 桌面布局；电脑和平板横屏保持相同的分区与操作流程，
+  仅调整尺寸、间距和内容滚动。低画质、减少动画时停止展示卡的装饰动效。
 - LAN 与 Relay 均允许双方选择同一牌组，牌库和隐藏信息仍按玩家隔离。
 
 ## 打开工程
@@ -73,12 +73,11 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   完成对战字段审核；内容 `lint` 会拒绝缺卡、缺图、哈希覆盖不完整或残留 `G/M/D/[C]`
   等内部能量符号的作者数据。卡牌详情统一由 `CardPresentation` 生成，战斗预览、选择弹窗
   与完整检查器不会再各自维护一套卡文格式。
-- 标题页按安全区尺寸选择布局：Wide 要求宽度至少 1180、高度至少 650 且纵横比至少 1.5；
-  Compact landscape 要求宽度至少 900、高度至少 600 且纵横比至少 1.15；其余使用 Dense 并隐藏展示卡扇。
-  标题内容最大宽度为 1440。Wide/Compact 中的三张展示卡通过 `CardCatalog.shared()` 只选择
-  带有效卡图的宝可梦，并经 `CardTextureCache` 按需加载、约每 5.5–8 秒逐张轮换；首次画面和
-  reduced/low 预览保持确定。Workbench 可快速检查各档布局，但全屏背景、安全区和真实弹窗
-  仍应从 `F5` 主流程验证。
+- `UILayoutPolicy` 是画布、留白、弹窗尺寸和牌桌阅读空间的共享策略。设计尺寸为 1600×900，
+  原生布局下限为 1024×720；1024×768、16:9、16:10 和超宽屏共用桌面布局。
+  更小窗口与竖屏窗口缩放同一横向布局，移动端保持横屏。主要支持尺寸内按钮至少 48×48，
+  标题内容最大宽度仍为 1440。桌面跨显示器窗口不把显示器边缘当作移动端安全区。
+  Workbench 的弹窗预览复用共享间距策略；完整安全区、缩放和弹窗仍从 `F5` 主流程验证。
 - 详细学习路线见
   [`../docs/GODOT_DEVELOPMENT_GUIDE.md`](../docs/GODOT_DEVELOPMENT_GUIDE.md)。
 
@@ -90,7 +89,8 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   标题页发出的默认模式分别为 `local`、`challenge` 和 `lan`。
 - `DeckSelectPage`：使用 `selected_deck_key(player_idx)`、`select_deck(player_idx, key)` 和
   `deck_count()`；挑战模式固定为 `challenge`，先后攻由开局硬币胜者选择。
-  点击卡册仅浏览，点击“分配给玩家”后才更新对应槽位；紧凑布局返回卡册会恢复滚动位置。
+  左侧双列卡册和右侧详情始终并排；点击卡册仅浏览，点击“分配给玩家”后才更新对应槽位。
+  两个区域独立滚动，调整窗口不进入另一页或重置牌组分配。
   `start_requested(mode, deck1, deck2, forced_first, apply_type_matchups)` 中 `forced_first` 传 `-1`，
   最后一个参数来自默认关闭的项目规则开关。
   两个槽位允许选择同一牌组。
@@ -98,8 +98,8 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 - `NetworkLobbyPage`：使用 `ConnectionState` 的 `IDLE`、`VALIDATING`、`CONNECTING`、
   `WAITING`、`CONNECTED`、`ERROR`，通过 `NetworkKindOption` 选择 LAN / Relay，并通过
   `set_connection_state(state, message, room_code)` 更新固定状态区；`kind_changed(kind)` 只在
-  `IDLE` / `ERROR` 可触发。wide 左栏会同步展示方式图标、连接特性、身份徽章与角色提示，
-  compact 下隐藏；`connect_requested(...)` 最后一个参数为房主设置的
+  `IDLE` / `ERROR` 可触发。左栏始终展示方式图标、连接特性、身份徽章与角色提示，
+  右栏使用可滚动的完整表单；`connect_requested(...)` 最后一个参数为房主设置的
   `apply_type_matchups`。地址、端口和房间码只有在
   点击或轻触文本框后才接收文字输入，页面不提供 Tab、方向键或手柄焦点导航。房主还会在
   开局前锁定弱点/抗性选项，挑战者只读确认。
@@ -141,11 +141,12 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 .\tools\smoke_godot_build.ps1
 ```
 
-`test_godot.ps1` 包含标题页横竖屏布局、前台多分辨率、四边安全区、鼠标/触控专用输入契约、
+`test_godot.ps1` 按 25 个功能入口运行；音频归入动画、通知文案归入卡牌呈现、手牌布局归入三维契约，
+原有回归用例继续覆盖。它包含统一桌面布局、较小窗口缩放、前台多分辨率、四边安全区、鼠标/触控专用输入契约、
 弹窗历史、Android 系统返回、Theme 隔离、原生会话/搜索和交互 contract。本地、Challenge、
 LAN 与 Relay 另有完整实战回归；研究模型不参与产品门禁。
 截图输出到 `build/ui-preview/`，其中 `title.png`、`title-1280x720.png`、
-`title-compact.png`、`title-portrait.png` 覆盖实体卡牌俱乐部的横屏与竖屏布局，
+`title-compact.png`、`title-portrait.png` 覆盖统一桌面布局在较小窗口与竖屏窗口中的缩放，
 `title-hover.png` 检查鼠标悬停，`title-rotated.png` 检查三维展示卡替换，
 `title-low-reduced.png` 检查静态降级；目录还包含 LAN/Relay 概览、网络状态、设置滚动、加载和
 Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
@@ -160,6 +161,11 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 `-SkipPerformance`。它覆盖五种尺寸、同一页面连续缩放、弹窗遮挡三维展示、八次进出页面，
 并在真实图形下采集首页三档帧时间。截图与 JSON 位于 `build/frontend-club/`；
 当前设计与验证方法见 [`../docs/GODOT_DEVELOPMENT_GUIDE.md`](../docs/GODOT_DEVELOPMENT_GUIDE.md)。
+
+其中 `desktop_layout_contract.gd` 额外覆盖 1024×768、1280×720、1280×800、1600×900、
+1920×1080、2560×1600 与 2000×900，以及平板四边 48px 安全区和小窗口保底。
+对战选卡始终自动打开左侧说明，关闭说明不改变牌位与状态栏位置；选择弹窗中的选项与卡文始终并排。
+传入 `-- --capture` 可生成 `build/layout-unification/after/` 的截图与几何报告。
 
 首页使用 `FrontendCardShowcase3D.set_cards(card_ids)` / `set_active(active)`，最多展示三张公开卡。
 该组件复用实体卡网格与纹理缓存，拥有独立 SubViewport；低画质、减少动画时静态渲染，

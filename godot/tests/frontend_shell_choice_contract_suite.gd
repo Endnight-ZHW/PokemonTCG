@@ -22,7 +22,7 @@ func _check_main_shell_contract() -> void:
 	)
 	context._check(
 		main.modal_host_controller._resolved_size(fill_spec, Vector2(1000, 700))
-		== Vector2(976, 676),
+		== Vector2(1000, 700) - UILayoutPolicy.modal_inset(Vector2(1000, 700)),
 		"FILL_SAFE modal must fill the available safe area",
 	)
 	var fit_spec := ModalSpec.battle(
@@ -76,13 +76,13 @@ func _check_main_shell_contract() -> void:
 	)
 	context._check(
 		main.shell_view.responsive_content_scale_size(Vector2i(640, 360))
-		== Vector2i(900, 540)
+		== Vector2i(1024, 720)
 		and main.shell_view.responsive_content_scale_size(Vector2i(720, 1280))
-		== Vector2i(720, 1280)
+		== Vector2i(1024, 720)
 		and main.shell_view.responsive_content_scale_size(Vector2i(900, 540))
-		== Vector2i(900, 540)
+		== Vector2i(1024, 720)
 		and main.shell_view.responsive_content_scale_size(Vector2i(1024, 600))
-		== Vector2i(1024, 600)
+		== Vector2i(1024, 720)
 		and main.shell_view.responsive_content_scale_size(Vector2i(1280, 720))
 		== Vector2i(1280, 720)
 		and main.shell_view.responsive_content_scale_size(Vector2i(1600, 900))

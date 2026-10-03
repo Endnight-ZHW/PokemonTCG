@@ -1178,13 +1178,6 @@ func _set_presentation_alpha(alpha: float) -> void:
 	_sync_detached_selection_ring()
 
 
-func _apply_content_visibility() -> void:
-	_resolve_scene_nodes()
-	if content_root:
-		content_root.visible = _content_is_visible()
-	_sync_detached_selection_ring()
-
-
 func _content_is_visible() -> bool:
 	return not _presentation_hidden
 

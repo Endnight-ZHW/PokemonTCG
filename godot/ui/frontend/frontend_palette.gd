@@ -7,7 +7,6 @@ const RAISED := DesignTokens.PANEL_RAISED
 const INSET := DesignTokens.PANEL_INSET
 const TEXT := DesignTokens.TEXT
 const MUTED := DesignTokens.TEXT_MUTED
-const DISABLED := DesignTokens.TEXT_DISABLED
 const GOLD := DesignTokens.GOLD
 const BORDER := DesignTokens.BORDER
 const SUCCESS := DesignTokens.STATE_SUCCESS

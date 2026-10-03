@@ -15,7 +15,6 @@ const REVEALED_CARD_SIZE := Vector2(78, 110)
 const ENERGY_TARGET_TILE_SIZE := Vector2(272, 196)
 const CARD_GRID_GAP := 10.0
 const NARROW_PREVIEW_MIN_WIDTH := 120.0
-const NARROW_PREVIEW_MAX_WIDTH := 176.0
 
 @onready var prompt_label: Label = %PromptLabel
 @onready var metadata_label: Label = %MetadataLabel
@@ -1235,84 +1234,31 @@ func _apply_responsive_layout() -> void:
 	if available_width <= 1.0:
 		return
 	var has_preview := not _previewed_card_id.is_empty()
-	var compact_preview := available_width < 820.0 or (outer_scroll != null and outer_scroll.size.y < 350.0)
-	_compact_choice_layout = compact_preview
-	# On a short viewport the actual choices take precedence over a duplicate
-	# source-card image and its full-width details toggle.
-	choice_column.move_child(preview_toggle_button, choice_column.get_child_count() - 1)
-	energy_grid.visible = not compact_preview or energy_distribution._energy_distribution_mode
-	if compact_preview and not energy_distribution._energy_distribution_mode and not energy_distribution._energy_preview_cards.is_empty():
-		var source_names: Array[String] = []
-		for card in energy_distribution._energy_preview_cards:
-			if card != null:
-				source_names.append(_card_name(card.card_id))
-		energy_preview_label.text = "来源：%s" % "、".join(source_names)
-		energy_preview_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_compact_choice_layout = false
+	_compact_preview_expanded = false
+	energy_grid.visible = true
 	if browse_mode_label:
-		browse_mode_label.visible = available_width >= 480.0
-	if browse_valid_button and browse_all_button:
-		var browse_button_width := 0.0 if available_width < 480.0 else 118.0
-		browse_valid_button.custom_minimum_size = Vector2(
-			browse_button_width, 48.0)
-		browse_all_button.custom_minimum_size = Vector2(
-			browse_button_width, 48.0)
-	if prompt_label:
-		prompt_label.visible = (
-			not prompt_label.text.is_empty()
-			and not (compact_preview and energy_distribution._energy_distribution_mode)
-		)
-	if energy_preview_label:
-		energy_preview_label.visible = not (
-			compact_preview and energy_distribution._energy_distribution_mode
-		)
-	var show_preview := has_preview and (
-		not compact_preview or _compact_preview_expanded
-	)
-	# PreviewScroll owns image and text scrolling; the selection progress and
-	# return control remain outside it, including on the compact reading page.
-	%OptionsScroll.visible = not (compact_preview and _compact_preview_expanded and has_preview)
-	preview_return_button.visible = compact_preview and _compact_preview_expanded and has_preview
-	if content_row:
-		content_row.vertical = compact_preview
-	if preview_toggle_button:
-		preview_toggle_button.visible = (
-			has_preview
-			and compact_preview
-			and not energy_distribution._energy_distribution_mode
-		)
-		preview_toggle_button.text = (
-			"收起卡牌说明" if _compact_preview_expanded else "查看卡牌说明"
-		)
-		preview_toggle_button.tooltip_text = (
-			"收起当前卡牌的图片与规则说明"
-			if _compact_preview_expanded
-			else "展开当前卡牌的图片与规则说明"
-		)
-		preview_toggle_button.accessibility_name = preview_toggle_button.text
-	var preview_width := 0.0
-	var image_size := Vector2.ZERO
-	if available_width >= 840.0:
-		preview_width = 270.0
-		image_size = Vector2(206, 288)
-	elif available_width >= 640.0:
-		preview_width = 220.0
-		image_size = Vector2(166, 232)
-	elif available_width >= 500.0:
-		preview_width = available_width if compact_preview else 176.0
-		image_size = Vector2(132, 184)
-	else:
-		preview_width = available_width
-		var narrow_image_width := clampf(available_width * 0.42, 96.0, 150.0)
-		image_size = Vector2(narrow_image_width, narrow_image_width * 1.4)
-	if compact_preview:
-		preview_width = available_width
+		browse_mode_label.visible = true
+	for button in [browse_valid_button, browse_all_button]:
+		if button:
+			button.custom_minimum_size = Vector2(118, UILayoutPolicy.TOUCH_MIN)
+	prompt_label.visible = not prompt_label.text.is_empty()
+	energy_preview_label.visible = true
+	var show_preview := has_preview
+	%OptionsScroll.visible = true
+	preview_return_button.visible = false
+	preview_toggle_button.visible = false
+	content_row.vertical = false
+	var preview_width := clampf(available_width * 0.30, 176.0, 270.0)
+	var image_width := clampf(preview_width - 54.0, 122.0, 206.0)
+	var image_size := Vector2(image_width, image_width * 1.4)
 	energy_distribution._update_energy_action_buttons(_last_selected_ids.size())
 	if preview_panel:
 		# Keep the horizontal minimum compact. BoxContainer allocates the desired
 		# preview share through stretch ratios, so a former wide layout cannot stop
 		# its modal/scroll viewport from shrinking later.
 		preview_panel.custom_minimum_size = Vector2(
-			0.0 if compact_preview else NARROW_PREVIEW_MIN_WIDTH,
+			NARROW_PREVIEW_MIN_WIDTH,
 			0.0,
 		)
 		preview_panel.visible = show_preview
@@ -1324,7 +1270,7 @@ func _apply_responsive_layout() -> void:
 		else 14.0
 	)
 	var choice_width := available_width
-	if show_preview and not compact_preview:
+	if show_preview:
 		choice_width -= preview_width + row_gap
 	var tile_width := (
 		ENERGY_TARGET_TILE_SIZE.x

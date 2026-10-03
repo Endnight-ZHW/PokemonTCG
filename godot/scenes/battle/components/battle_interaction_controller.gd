@@ -87,28 +87,6 @@ func action_groups_for_source(source_key: String) -> Array[Dictionary]:
 	return result
 
 
-func is_target_legal(source_key: String, target_key: String) -> bool:
-	return not matching_actions(source_key, target_key).is_empty()
-
-
-func matching_rows(source_key: String, target_key: String) -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	for row in rows_for_source(source_key):
-		var action: GameAction = row.get("action") as GameAction
-		if action and target_key in target_keys_for_action(action, row):
-			result.append(row)
-	return result
-
-
-func matching_actions(source_key: String, target_key: String) -> Array[GameAction]:
-	var result: Array[GameAction] = []
-	for row in matching_rows(source_key, target_key):
-		var action: GameAction = row.get("action") as GameAction
-		if action:
-			result.append(action)
-	return result
-
-
 func unreachable_rows() -> Array[Dictionary]:
 	return _unreachable_rows.duplicate()
 

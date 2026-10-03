@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import random
 from pathlib import Path
 
 
@@ -35,13 +34,3 @@ BASIC_ENERGY_IDS = {
 
 def expand_deck(deck_spec: list[tuple[str, int]]) -> list[str]:
     return [card_id for card_id, count in deck_spec for _ in range(count)]
-
-
-def verify_deck_size(deck: list[str]) -> bool:
-    return len(deck) == 60
-
-
-def shuffle_deck(deck: list[str]) -> list[str]:
-    result = list(deck)
-    random.shuffle(result)
-    return result

@@ -361,7 +361,7 @@ func run(ui: Control) -> void:
 	await harness._settle_frontend()
 	if not harness._assert_physical_touch_targets([
 		ui.current_network_page.back_button,
-		ui.current_network_page.compact_next_button,
+		ui.current_network_page.connect_button,
 		ui.current_network_page.kind_option,
 		ui.current_network_page.role_option,
 	], "network compact"):
@@ -370,7 +370,6 @@ func run(ui: Control) -> void:
 	if not harness._capture("network-compact.png"):
 		harness._finish(1)
 		return
-	ui.current_network_page.call("_set_compact_step", 1)
 	ui.current_network_page.show_locked_rules_options({"apply_type_matchups": true})
 	await harness._settle_frontend(3)
 	var compact_rule_toggle := ui.current_network_page.matchup_toggle as CheckButton

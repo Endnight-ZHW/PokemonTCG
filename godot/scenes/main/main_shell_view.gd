@@ -15,11 +15,8 @@ const MODE_LOCAL := "local"
 const MODE_CHALLENGE := "challenge"
 const MODE_NETWORK := "network"
 const SCREEN_GAME := "game"
-const DESIGN_CANVAS_SIZE := Vector2i(1600, 900)
-const MIN_RESPONSIVE_LANDSCAPE_SIZE := Vector2i(900, 540)
-const MIN_RESPONSIVE_PORTRAIT_SIZE := Vector2i(640, 960)
-const MIN_DESKTOP_WINDOW_SIZE := Vector2i(640, 540)
-const SYNTHETIC_WINDOW_FLOOR := Vector2i(320, 240)
+const DESIGN_CANVAS_SIZE := UILayoutPolicy.DESIGN_SIZE
+const MIN_DESKTOP_WINDOW_SIZE := UILayoutPolicy.WINDOW_MINIMUM
 
 @onready var safe_area: MarginContainer = %SafeArea
 @onready var screen_host: Control = %ScreenHost
@@ -283,51 +280,15 @@ func responsive_content_scale_size(
 	window_size: Vector2i,
 	design_size: Vector2i = DESIGN_CANVAS_SIZE,
 ) -> Vector2i:
-	if (
-		window_size.x <= 0
-		or window_size.y <= 0
-		or design_size.x <= 0
-		or design_size.y <= 0
-	):
-		return design_size
-	# Below the native compact layouts, render the smallest validated canvas and
-	# let stretch scaling preserve the complete UI instead of reflowing cards and
-	# controls on top of one another. Desktop windows are clamped to the landscape
-	# minimum; this fallback primarily protects embedded/mobile edge cases.
-	var minimum_size := (
-		MIN_RESPONSIVE_PORTRAIT_SIZE
-		if window_size.y > window_size.x
-		else MIN_RESPONSIVE_LANDSCAPE_SIZE
-	)
-	# Script-only headless contracts use a synthetic 64×64 root. It is not a
-	# display shape, so keep the design canvas rather than selecting a portrait
-	# layout from that placeholder aspect ratio.
-	if (
-		window_size.x < SYNTHETIC_WINDOW_FLOOR.x
-		or window_size.y < SYNTHETIC_WINDOW_FLOOR.y
-	):
-		return design_size
-	if (
-		window_size.x < minimum_size.x
-		or window_size.y < minimum_size.y
-	):
-		return minimum_size
-	var fit_scale := minf(
-		float(window_size.x) / float(design_size.x),
-		float(window_size.y) / float(design_size.y),
-	)
-	# canvas_items is retained for ultrawide/large displays, but it must never
-	# downsample the UI below 1 physical pixel per logical pixel. Besides keeping
-	# 48 px targets touchable, this lets compact pages observe their real space.
-	return window_size if fit_scale < 1.0 else design_size
+	return UILayoutPolicy.canvas_size(window_size, design_size)
 
 func apply_safe_area() -> void:
 	if safe_area == null:
 		return
-	var left := 18
-	var top := 14
-	var right := 18
-	var bottom := 14
+	var left := UILayoutPolicy.SAFE_MARGIN.x
+	var top := UILayoutPolicy.SAFE_MARGIN.y
+	var right := left
+	var bottom := top
 	var window := get_window()
 	if window == null:
 		safe_area.add_theme_constant_override("margin_left", left)
@@ -339,7 +300,9 @@ func apply_safe_area() -> void:
 	var logical_size: Vector2 = main.size
 	if logical_size.x <= 0.0 or logical_size.y <= 0.0:
 		logical_size = main.get_viewport_rect().size
-	var safe_rect := DisplayServer.get_display_safe_area()
+	# Desktop windows may cross monitors or exceed the current monitor while
+	# resizing. Monitor bounds are not a notch and must not crop their canvas.
+	var safe_rect := DisplayServer.get_display_safe_area() if OS.has_feature("mobile") else Rect2i()
 	var safe_insets := safe_insets_to_canvas(
 		window.position,
 		window_size,

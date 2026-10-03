@@ -55,7 +55,7 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 	var role_badge := page.get_node("%RoleBadgeLabel") as Label
 	_check_network_wide_first_screen(page, "LAN idle")
 	context._check(
-		intro_panel.visible and not bool(page.get("_compact")),
+		intro_panel.visible,
 		"1600x900 network lobby must expose the wide connection overview",
 	)
 	context._check(
@@ -164,7 +164,7 @@ func _check_network_scrollbar_width_contract(catalog: CardCatalog) -> void:
 		context._unmount(mounted)
 		return
 	page.configure(catalog, "lan", "wss://relay.example.test")
-	page._set_compact_step(1)
+
 	page.set_connection_state(
 		NetworkLobbyPage.ConnectionState.ERROR,
 		"连接失败：请确认房主地址、端口、防火墙和局域网连接状态后重新尝试。",
@@ -346,7 +346,7 @@ func _check_same_instance_resize(catalog: CardCatalog) -> void:
 	host.size = Vector2(1024, 768)
 	await context._settle_layout(4)
 	context._check(
-		bool(deck.get("_compact"))
+		deck.gallery_panel.visible and deck.detail_panel.visible
 		and deck.selected_deck_key(0) == deck_selection[0]
 		and deck.selected_deck_key(1) == deck_selection[1]
 		and context.tree.root.gui_get_focus_owner() == null,
@@ -366,7 +366,7 @@ func _check_same_instance_resize(catalog: CardCatalog) -> void:
 	host.size = Vector2(1024, 768)
 	await context._settle_layout(4)
 	context._check(
-		bool(network.get("_compact"))
+		network.intro_panel.visible
 		and network.kind_option.is_visible_in_tree()
 		and context.tree.root.gui_get_focus_owner() == null,
 		"Network same-instance wide→compact resize changed step or created focus",
@@ -468,7 +468,7 @@ func _check_compact_battle_detail_layout() -> void:
 		return
 	var host := Control.new()
 	host.name = "CompactBattleHost"
-	host.size = Vector2(900, 540)
+	host.size = Vector2(1024, 768)
 	context.tree.root.add_child(host)
 	var battle := battle_scene.instantiate() as BattleTable
 	host.add_child(battle)
@@ -490,8 +490,8 @@ func _check_compact_battle_detail_layout() -> void:
 	battle.show_card_detail(pokemon.card_id, pokemon)
 	await context._settle_layout(4)
 	var detail := battle.detail_panel as BattleDetailPanel
-	context._check(detail != null and not detail.visible,
-		"Compact selection must leave the board readable until details are requested")
+	context._check(detail != null and detail.visible,
+		"Tablet selection must automatically show the desktop detail panel")
 	var action_rect := battle.action_popover.panel_global_rect()
 	var rail := battle.hud.get_node("PhasePanel") as Control
 	context._check(battle.action_popover.visible
@@ -545,8 +545,8 @@ func _check_title(viewport_size: Vector2i) -> void:
 	context._check_named_non_overlapping(page, [
 		"LocalTwoPlayerButton", "AIButton", "NetworkButton", "SettingsButton", "HelpButton",
 	], label)
-	context._check(page.body_grid.columns == (1 if page.size.x < page.size.y * 1.05 else 2),
-		"Title must place the real showcase above mode entries in portrait")
+	context._check(page.body_grid.columns == 2,
+		"Title must preserve its desktop columns at every aspect ratio")
 	for node_name in ["LocalTwoPlayerButton", "AIButton", "NetworkButton"]:
 		var button := page.find_child(node_name, true, false) as TitleModeButton
 		context._check(button.size.y >= 56 and button.focus_mode == Control.FOCUS_NONE,
@@ -613,42 +613,17 @@ func _check_decks(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 
 
 func _check_deck_compact_pointer_flow(page: Control) -> void:
-	var gallery_grid := page.get_node("%GalleryGrid") as GridContainer
-	context._check(gallery_grid.get_child_count() > 0, "Deck compact pointer test requires a tile")
-	if gallery_grid.get_child_count() == 0:
-		return
-	var tile := gallery_grid.get_child(0) as Button
+	var deck := page as DeckSelectPage
+	var assigned := deck.selected_deck_key(0)
+	var tile := deck.gallery_grid.get_child(0) as Button
 	tile.pressed.emit()
 	await context._settle_layout()
-	var back_button := page.get_node("%BackToGalleryButton") as Button
-	context._check(
-		back_button.visible and back_button.size.y + context.EPSILON >= context.MIN_TARGET_SIZE,
-		"Deck compact detail must expose a 48px return target",
-	)
-	context._check(
-		page.get_viewport().gui_get_focus_owner() == null,
-		"Deck compact detail must not create GUI focus",
-	)
-	back_button.pressed.emit()
-	await context._settle_layout()
-	context._check(
-		tile.is_visible_in_tree()
-		and tile.is_pressed()
+	context._check(deck.gallery_panel.visible and deck.detail_panel.visible
+		and not deck.back_to_gallery_button.visible and not deck.handle_back(),
+		"Tablet browsing must keep both desktop panes on the same page")
+	context._check(deck.selected_deck_key(0) == assigned and tile.is_pressed()
 		and page.get_viewport().gui_get_focus_owner() == null,
-		"Deck compact gallery return must restore selection without focus",
-	)
-	tile.pressed.emit()
-	await context._settle_layout()
-	context._check(
-		bool(page.call("handle_back")),
-		"Deck compact system back must consume the detail-to-gallery transition",
-	)
-	await context._settle_layout()
-	context._check(
-		tile.is_visible_in_tree()
-		and page.get_viewport().gui_get_focus_owner() == null,
-		"Deck compact system back must restore the gallery without focus",
-	)
+		"Tablet browsing must preserve assignment and pointer-only input")
 
 
 func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
@@ -865,10 +840,10 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 	var label := context._case_label("network-%s" % kind, viewport_size)
 	context._check_full_page(page, mounted.safe_host, label)
 	context._check_named_inside(page, context._simulated_safe_rect(mounted.safe_host), [
-		"Page", "TopBar", "Body", "FormPanel", "StatusPanel", "NetworkConnectButton",
+		"Page", "TopBar", "BodyScroll", "StatusPanel", "NetworkConnectButton",
 	], label)
 	context._check_named_non_overlapping(page, [
-		"TopBar", "Steps", "Body", "StatusPanel", "NetworkConnectButton",
+		"TopBar", "Steps", "BodyScroll", "StatusPanel", "NetworkConnectButton",
 	], label)
 	context._check_pointer_only_controls(page, label, context._simulated_safe_rect(mounted.safe_host))
 	context._check_no_horizontal_scroll(page, label)
@@ -877,8 +852,6 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 
 
 func _check_network_compact_pointer_flow(page: Control) -> void:
-	var step_bar := page.get_node("%CompactStepBar") as HBoxContainer
-	var next_button := page.get_node("%CompactNextButton") as Button
 	var kind_option := page.get_node("%NetworkKindOption") as OptionButton
 	var role_option := page.get_node("%NetworkRoleOption") as OptionButton
 	var address_input := page.get_node("%NetworkAddressInput") as LineEdit
@@ -888,17 +861,15 @@ func _check_network_compact_pointer_flow(page: Control) -> void:
 	var rule_status_badge := page.get_node("%RuleStatusBadge") as Label
 	var copy_button := page.get_node("%CopyRoomButton") as Button
 	context._check(
-		step_bar.visible
-		and kind_option.visible
+		kind_option.visible
 		and role_option.visible
-		and not rule_row.visible,
-		"Network compact flow must start at network kind and identity",
+		and rule_row.visible,
+		"Network must show its complete desktop form on a tablet",
 	)
 	context._check(deck_option.is_visible_in_tree(), "First lobby step must include deck selection")
-	next_button.pressed.emit()
 	await context._settle_layout()
 	context._check(address_input.is_visible_in_tree() and rule_row.is_visible_in_tree()
-		and not deck_option.is_visible_in_tree() and address_input.focus_mode == Control.FOCUS_CLICK
+		and deck_option.is_visible_in_tree() and address_input.focus_mode == Control.FOCUS_CLICK
 		and page.get_viewport().gui_get_focus_owner() == null,
 		"Second lobby step must combine click-only connection fields with room rules")
 	page.call("show_locked_rules_options", {"apply_type_matchups": true})
@@ -918,8 +889,8 @@ func _check_network_compact_pointer_flow(page: Control) -> void:
 	page.call("set_connection_state", 0)
 	await context._settle_layout()
 	context._check(
-		bool(page.call("handle_back")),
-		"Network compact system back must return to the previous setup step",
+		not bool(page.call("handle_back")),
+		"Network must not consume back for a nonexistent setup step",
 	)
 	await context._settle_layout()
 	context._check(

@@ -37,9 +37,6 @@ const SHUFFLE_CARD_LIMITS := {
 	"medium": 6,
 	"low": 4,
 }
-const REVEAL_CARD_MAX_SIZE := Vector2(100, 140)
-const REVEAL_CARD_GAP := 14.0
-const REVEAL_MIN_READ_HOLD := 0.90
 const HAND_CARD_MAX_Z := 78
 const SELECTED_HAND_CARD_Z := 80
 const PRESENTATION_INSPECTION_MOUSE_MARGIN := 16.0
@@ -171,7 +168,6 @@ var _pending_detail_card_id := ""
 var _pending_detail_pokemon: PokemonState
 var _detail_passthrough_key := ""
 var _read_only_detail_key := ""
-var _board_origin := Vector2.ZERO
 var _initialized := false
 var _modal_input_blocked := false
 var _blank_press_position := Vector2.ZERO
@@ -259,8 +255,8 @@ func close_log_drawer() -> void:
 
 
 func is_compact_layout() -> bool:
-	var available := board_canvas.size if board_canvas else size
-	return available.x < 1450.0 or available.y < 650.0
+	# Kept for scene consumers: every screen now uses the desktop composition.
+	return false
 
 
 func cancel_pointer_gestures() -> void:
@@ -913,9 +909,6 @@ func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
 	_read_only_detail_key = ""
 	# Wide layouts reserve a left corridor for card text, so the source remains
 	# readable while choosing its placement, evolution or attachment target.
-	if is_compact_layout():
-		hide_card_detail()
-		return
 	_show_card_detail_content(card_id, pokemon)
 
 

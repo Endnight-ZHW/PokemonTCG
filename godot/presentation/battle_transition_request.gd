@@ -7,7 +7,6 @@ const CAUSE_AI_ACTION := "ai_action"
 const CAUSE_CHOICE := "choice"
 const CAUSE_NETWORK := "network"
 const CAUSE_REFRESH := "refresh"
-const CAUSE_RESYNC := "resync"
 
 var target_view: BattleViewModel
 var events: Array[Dictionary] = []

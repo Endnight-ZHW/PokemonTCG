@@ -58,9 +58,18 @@ The ordinary research smoke also runs the deterministic simulation calibration.
 ## Maintenance and regression
 
 The supported learned model uses `encoder_v3`, the V8 information-set encoder,
-and the v3 actor/learner/replay contract. The unreferenced older action-state
-encoder and its effect-alias adapter have been removed. The Python engine/DTO
-adapter remains necessary for the current teacher and replay workflows.
+and the v3 actor/learner/replay contract. The Python engine/DTO adapter remains
+necessary for the current teacher and replay workflows. Research reads generated
+product catalogs and uses the shared native rules through the active game adapter.
+Content compilation and VM descriptors belong to `godot/authoring` and
+`NativeContentCompiler`; there is no second Python command compiler or formula
+evaluator to maintain.
+
+Unreachable observation sampling, effect metadata and standalone session/journal
+adapters have been removed. The retired Godot ONNX fixture exporter is also gone;
+Torch/ONNX numerical parity remains covered by the research smoke suite. Preserve
+current research entry points, snapshot/DTO compatibility and all active Arena
+and smoke tests when removing unused code.
 
 Keep the active frozen champion and 0.8.0 anchor specifications. Superseded
 experiment specifications and evaluation reports are removed. All evaluation

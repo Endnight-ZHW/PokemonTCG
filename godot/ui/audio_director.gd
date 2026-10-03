@@ -103,13 +103,6 @@ func play_music(track: String) -> void:
 	music_player.play()
 
 
-func stop_music() -> void:
-	_initialize_runtime()
-	_current_music = ""
-	if music_player and music_player.is_inside_tree():
-		music_player.stop()
-
-
 func apply_settings() -> void:
 	_initialize_runtime()
 	# Resolve at runtime, including SceneTree contract scripts parsed before autoloads.

@@ -2,8 +2,6 @@ class_name VMContract
 extends RefCounted
 
 const IR_VERSION := 3
-const MAX_VM_STEPS := 4096
-const MAX_FRAME_DEPTH := 64
 const COMMAND_KEYS := ["op", "args", "branches"]
 const DESCRIPTOR_PATH := "res://data/vm_command_descriptors.json"
 const DESCRIPTOR_SCHEMA_VERSION := 1
@@ -44,25 +42,6 @@ static func native_command_descriptors() -> Dictionary:
 static func descriptor_load_error() -> String:
 	_load_descriptor_payload()
 	return _descriptor_load_error
-
-
-static func command_replaces_base_damage(op: String, args: Dictionary = {}) -> bool:
-	var descriptor := _native_descriptor(op)
-	if descriptor.is_empty():
-		return false
-	var replacement: Variant = descriptor.get(
-		"replaces_base_damage", false)
-	if replacement is bool:
-		return bool(replacement)
-	return str(replacement) == "when_formula_ast" and args.has("formula_ast")
-
-
-static func _native_descriptor(op: String) -> Dictionary:
-	var payload := _load_descriptor_payload()
-	var descriptors: Variant = payload.get("descriptors", {})
-	if not descriptors is Dictionary or not Dictionary(descriptors).has(op):
-		return {}
-	return Dictionary(Dictionary(descriptors)[op])
 
 
 static func _load_descriptor_payload() -> Dictionary:

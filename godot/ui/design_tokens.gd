@@ -3,19 +3,12 @@ extends RefCounted
 
 ## Shared cream surfaces. Keep card art, energy types and physical lighting neutral.
 const BG_DEEP := Color("#f3eadb")
-const BG_SURFACE := Color("#eee0cc")
 const PANEL := Color("#fff9f0")
 const PANEL_RAISED := Color("#fffcf7")
 const PANEL_INSET := Color("#eadcc9")
 const PANEL_HOVER := Color("#f3e5d2")
 const PANEL_PRESSED := Color("#e8d5ba")
-const PANEL_HOVER_PRESSED := Color("#e1ccb0")
 const PANEL_DISABLED := Color("#e6ddcf")
-const PANEL_GLASS := Color(1.0, 0.976471, 0.941176, 0.98)
-const SURFACE_BASE := BG_SURFACE
-const SURFACE_PANEL := PANEL
-const SURFACE_ELEVATED := PANEL_RAISED
-const SURFACE_OVERLAY := PANEL_GLASS
 const BORDER := Color("#a18a73")
 const BORDER_SOFT := Color("#cebba6")
 const TEXT := Color("#45372f")
@@ -29,12 +22,9 @@ const ACCENT_PRESSED := Color("#804b29")
 const BLUE := Color("#466d86")
 const CYAN := Color("#49786b")
 const RED := Color("#ad5147")
-const DANGER_HOVER := Color("#99453d")
-const DANGER_PRESSED := Color("#833b34")
 const GREEN := Color("#4f7153")
 const PURPLE := Color("#805c91")
 const SUCCESS_SURFACE := Color("#e5ecdf")
-const DANGER_SURFACE := Color("#f3dfd8")
 const SHADOW := Color(0.270588, 0.215686, 0.184314, 0.12)
 const SCRIM := Color("#45372f")
 const TABLE_WOOD := Color("#c9a77e")
@@ -45,13 +35,6 @@ const STATE_TARGET := CYAN
 const STATE_INFO := BLUE
 const STATE_SUCCESS := GREEN
 const STATE_DANGER := RED
-
-const SPACE_XS := 4
-const SPACE_SM := 8
-const SPACE_MD := 12
-const SPACE_LG := 16
-const SPACE_XL := 24
-const SPACE_XXL := 32
 
 const TYPE_COLORS := {
 	"Grass": Color("#55b96a"),
@@ -78,7 +61,6 @@ const STATUS_COLORS := {
 
 const RADIUS_SMALL := 8
 const RADIUS_MEDIUM := 14
-const RADIUS_LARGE := 20
 const TOUCH_MIN := 48
 
 

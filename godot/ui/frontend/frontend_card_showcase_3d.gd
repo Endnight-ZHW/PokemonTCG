@@ -187,7 +187,10 @@ func _prepare_frame() -> void:
 		return
 	_dirty = false
 	var aspect := size.x / maxf(1.0, size.y)
-	var distance := maxf(6.7, 11.4 / maxf(0.65, aspect))
+	# The desktop columns also survive tall fallback windows. Fit the complete
+	# tray to their actual aspect ratio instead of clipping its outer cards.
+	var distance := maxf(6.7, 11.4 / maxf(0.1, aspect))
+	camera.far = maxf(40.0, distance + 10.0)
 	camera.position = Vector3(0, 0.87, 0.49).normalized() * distance
 	camera.look_at(Vector3(0, 0, 0.1))
 	for index in range(cards.size()):

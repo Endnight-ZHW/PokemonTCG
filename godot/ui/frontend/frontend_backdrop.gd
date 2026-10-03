@@ -2,7 +2,6 @@
 class_name FrontendBackdrop
 extends Control
 
-const VARIANT_TITLE := "title"
 const VARIANT_NEUTRAL := "neutral"
 const VARIANT_VICTORY := "victory"
 @export_enum("title", "neutral", "victory") var variant := VARIANT_NEUTRAL:

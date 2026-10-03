@@ -8,9 +8,6 @@ const FONT_WEIGHT_TAG := 0x77676874
 const SAFE_INSET := 48
 const MIN_TARGET_SIZE := 48.0
 const EPSILON := 1.5
-const TITLE_TIER_WIDE := 0
-const TITLE_TIER_COMPACT_LANDSCAPE := 1
-const TITLE_TIER_DENSE := 2
 const TITLE_ENERGY_TYPES: Array[String] = [
 	"Grass", "Fire", "Water", "Lightning",
 	"Psychic", "Fighting", "Darkness", "Metal",
@@ -27,6 +24,9 @@ const VIEWPORT_CASES: Array[Vector2i] = [
 	Vector2i(1600, 900),
 	Vector2i(1024, 768),
 	Vector2i(1024, 600),
+	Vector2i(1280, 800),
+	Vector2i(1920, 1080),
+	Vector2i(2560, 1600),
 	Vector2i(2000, 900),
 ]
 const TITLE_PORTRAIT_CASES: Array[Vector2i] = [
@@ -61,6 +61,7 @@ func _mount(
 	with_scroll: bool = false,
 ) -> Dictionary:
 	tree.root.size = viewport_size
+	tree.root.content_scale_size = UILayoutPolicy.canvas_size(viewport_size)
 	var safe_host := MarginContainer.new()
 	safe_host.name = "SafeInsetHost"
 	safe_host.clip_contents = true

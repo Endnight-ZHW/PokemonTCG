@@ -86,14 +86,14 @@ func run() -> void:
 				page._assign_preview()
 				check(page.selected_deck_key(0) == "water", "Explicit deck assignment failed")
 			elif page_kind == "network":
-				page._set_compact_step(1)
+
 				page.set_connection_state(NetworkLobbyPage.ConnectionState.WAITING, "等待另一位玩家加入", "CLUB24")
 				await capture("network-waiting")
 				inside(page.copy_room_button, "network/copy")
 				inside(page.connect_button, "network/connect")
 				check(page.matchup_toggle.disabled, "Waiting room failed to lock rules")
 				page.set_connection_state(NetworkLobbyPage.ConnectionState.IDLE)
-				page._set_compact_step(0)
+
 			else:
 				inside(page.winner_label, "end/result")
 				inside(page.rematch_button, "end/rematch")

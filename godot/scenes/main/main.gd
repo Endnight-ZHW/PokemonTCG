@@ -29,9 +29,6 @@ const MODAL_SHADE_ALPHA := 0.72
 const MODAL_SHADE_OPAQUE_ALPHA := 1.0
 const TOAST_Z_INDEX := 350
 const DESIGN_CANVAS_SIZE := Vector2i(1600, 900)
-const MIN_RESPONSIVE_LANDSCAPE_SIZE := Vector2i(900, 540)
-const MIN_RESPONSIVE_PORTRAIT_SIZE := Vector2i(640, 960)
-const SYNTHETIC_WINDOW_FLOOR := Vector2i(320, 240)
 const MAX_AI_PUBLIC_HISTORY := 4096
 
 var catalog: CardCatalog = CardDatabase.catalog

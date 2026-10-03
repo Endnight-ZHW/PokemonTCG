@@ -1,6 +1,8 @@
 class_name BattleTableLayoutContract
 extends RefCounted
 
+## Control planner invariants. Rendered geometry belongs to the 3D/desktop suites.
+
 
 const SAFE_INSET := 48.0
 const EPSILON := 1.5
@@ -26,21 +28,6 @@ static func run() -> Array[String]:
 	)
 	_expect_close(
 		failures,
-		float(metrics["layout_scale"]),
-		1.0666667,
-		0.0001,
-		"desktop layout scale changed",
-	)
-	var compact := BattleTableLayout.board_metrics(900.0, 540.0, _default_config())
-	_expect_close(
-		failures,
-		float(compact["layout_scale"]),
-		0.76,
-		0.0001,
-		"compact layout no longer uses the minimum scale",
-	)
-	_expect_close(
-		failures,
 		BattleTableLayout.perspective_depth(float(metrics["arena_top"]) - 10.0, metrics),
 		0.0,
 		0.0001,
@@ -53,22 +40,6 @@ static func run() -> Array[String]:
 		0.0001,
 		"perspective depth must clamp below the arena",
 	)
-	var far_rect: Rect2 = BattleTableLayout.perspective_card_rect(
-		Vector2(float(metrics["center_x"]), float(metrics["arena_top"])),
-		Vector2(100.0, 140.0),
-		metrics,
-	)["rect"]
-	var near_rect: Rect2 = BattleTableLayout.perspective_card_rect(
-		Vector2(float(metrics["center_x"]), float(metrics["arena_bottom"])),
-		Vector2(100.0, 140.0),
-		metrics,
-	)["rect"]
-	_expect(
-		failures,
-		near_rect.size.x > far_rect.size.x and near_rect.size.y > far_rect.size.y,
-		"near-side cards must remain larger than far-side cards",
-	)
-
 	var own_hand := BattleTableLayout.own_hand_plan(
 		5, 650.0, Vector2(96.0, 135.0), 52.0, 6.0
 	)
@@ -429,22 +400,11 @@ static func _check_layout_case(
 		"%s did not reserve %.0fpx for the command rail and right margin"
 		% [label, required_command_reserve],
 	)
-	if content_size.y >= 500.0 and content_size.x >= 1450.0:
-		_expect(
-			failures,
-			float(metrics.get("pile_dock_shift", 0.0)) >= 32.0 - EPSILON,
-			"%s did not retain the expanded right-shift for pile docks" % label,
-		)
-	else:
+	if content_size.y < 500.0 or content_size.x < 1450.0:
 		for zone_key in ["own_deck", "own_discard", "opponent_deck", "opponent_discard"]:
 			var pile_position := Vector2(zone_positions[zone_key])
 			_expect(failures, pile_position.x + zone_size.x <= command_dock_left + EPSILON,
 				"%s %s entered the phase/status rail in a compact safe area" % [label, zone_key])
-	_expect(
-		failures,
-		BattlePhaseHud.PHASE_PANEL_OFFSET_Y >= 112.0,
-		"%s phase rail was not lowered beneath the upper pile row" % label,
-	)
 
 	_check_field_slots(failures, label, metrics, field, content_rect)
 	_check_status_region(

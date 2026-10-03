@@ -12,7 +12,7 @@ func _initialize() -> void:
 
 
 func _watchdog() -> void:
-	await create_timer(90.0).timeout
+	await create_timer(110.0).timeout
 	if not _done:
 		push_error("Animation contract timed out")
 		quit(1)
@@ -24,6 +24,7 @@ func _check(condition: bool, message: String) -> void:
 
 
 func _run() -> void:
+	await _check_audio()
 	root.size = Vector2i(1600, 900)
 	var settings := root.get_node("AppSettings")
 	var previous_mode := str(settings.animation_mode)
@@ -366,3 +367,45 @@ func _check_ko_finish(table: BattleTable) -> void:
 	_check(observed.held and observed.departed and handle.is_completed(), "KO finish did not carry into a completed departure")
 	table.cancel_presentations("ko_finish_reset", fixture.before_view)
 	_check(not table.opponent_active.has_meta("ko_desaturation"), "KO finish contaminated the replacement card")
+
+
+func _check_audio() -> void:
+	var audio := AudioDirector.new()
+	root.add_child(audio)
+	await process_frame
+	_check(audio._sfx_voices.size() == 8, "SFX pool is not bounded to eight voices")
+	audio.play_cue("card_draw")
+	audio.play_cue("attack_hit_fire")
+	_check(audio._sfx_voices[0].playing and audio._sfx_voices[1].playing, "A hit interrupted the card sound")
+	for i in range(6): audio.play_cue("card_place")
+	audio.play_cue("card_move")
+	_check(audio._sfx_voices[1].stream == audio._cues.attack_hit_fire, "Low-priority sound stole a hit")
+	_check(audio._sfx_voices[0].stream == audio._cues.card_move, "Full pool failed to reclaim its oldest ordinary voice")
+	audio.stop_sfx()
+	for i in range(8): audio.play_cue("attack_hit_fire")
+	var serial := audio._sfx_serial
+	audio.play_cue("card_draw")
+	_check(audio._sfx_serial == serial, "Full critical pool admitted a lower priority voice")
+	audio.play_cue("pokemon_ko")
+	_check(audio._sfx_voices[0].stream == audio._cues.pokemon_ko, "KO could not reclaim the oldest critical voice")
+	var table := TABLE.instantiate() as BattleTable
+	root.add_child(table)
+	table.audio_cancel_requested.connect(audio.stop_sfx)
+	table.cancel_presentations("audio_resync")
+	for voice in audio._sfx_voices:
+		_check(not voice.playing and voice.stream == null, "Resync left an orphan sound")
+	for element in BattleFeedbackCue.ELEMENTS:
+		_check(audio._cues.has("attack_hit_" + str(element).to_lower()), "Missing attribute sound: " + str(element))
+	_check(audio._cues.attack_hit_fire.data != audio._cues.attack_hit_water.data, "Attributes share identical impact audio")
+	var a := audio._textured_cue(140, 48, 0.24, 0.7, 0.2)
+	var b := audio._textured_cue(140, 48, 0.24, 0.7, 0.2)
+	_check(a.data == b.data, "Synthesis is not reproducible")
+	audio.play_cue("evolution")
+	audio.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	for voice in audio._sfx_voices: _check(not voice.playing, "App pause left a sound playing")
+	table.queue_free()
+	audio.queue_free()
+	await process_frame
+	# The audio mixer releases stopped playbacks on its next mixing buffer.
+	await create_timer(0.15).timeout
+	if failures.is_empty(): print("BATTLE_AUDIO_CONTRACT_OK")

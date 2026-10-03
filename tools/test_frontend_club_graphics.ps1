@@ -8,6 +8,7 @@ $frontendGodot = (Initialize-GodotTestEnvironment -RepoRoot $frontendRepoRoot).C
 $frontendOutput = Join-Path $frontendRepoRoot 'build/frontend-club'
 New-Item -ItemType Directory -Force -Path $frontendOutput | Out-Null
 $frontendContracts = @(
+    @{ Script = 'desktop_layout_contract'; Marker = 'DESKTOP_LAYOUT_CONTRACT_OK'; Log = 'desktop-layout.log' },
     @{ Script = 'frontend_club_visual_contract'; Marker = 'FRONTEND_CLUB_VISUAL_OK'; Log = 'club-visual.log' },
     @{ Script = 'battle_touch_resume_contract'; Marker = 'BATTLE_TOUCH_RESUME_CONTRACT_OK'; Log = 'battle-return.log' }
 )
@@ -16,6 +17,9 @@ foreach ($frontendContract in $frontendContracts) {
         '--script', "res://tests/$($frontendContract.Script).gd")
     if ($SkipPerformance -and $frontendContract.Script -eq 'frontend_club_visual_contract') {
         $frontendArguments += @('--', '--skip-performance')
+    }
+    if ($frontendContract.Script -eq 'desktop_layout_contract') {
+        $frontendArguments += @('--', '--capture')
     }
     $frontendCapture = Invoke-GodotCapture -Executable $frontendGodot -ArgumentList $frontendArguments
     $frontendExitCode = $LASTEXITCODE

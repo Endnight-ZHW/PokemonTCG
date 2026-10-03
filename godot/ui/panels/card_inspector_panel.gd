@@ -103,15 +103,12 @@ func _apply_responsive_layout() -> void:
 			available_width = (ancestor as ScrollContainer).size.x - 14.0
 			break
 		ancestor = ancestor.get_parent()
-	var compact_layout := available_width < 560.0
-	var short_landscape := tree.root.size.y < 650 and not compact_layout
-	_content_grid.columns = 1 if compact_layout else 2
+	_content_grid.columns = 2
+	var image_width := clampf(available_width * 0.34, 120.0, 260.0)
 	if _image_button:
-		_image_button.custom_minimum_size = (
-			Vector2(148, 207) if short_landscape else Vector2(216, 302) if compact_layout else Vector2(260, 363)
-		)
+		_image_button.custom_minimum_size = Vector2(image_width, image_width * 1.4)
 	if _detail_text:
-		_detail_text.add_theme_font_size_override("normal_font_size", 16 if short_landscape else 18)
+		_detail_text.add_theme_font_size_override("normal_font_size", 18)
 
 
 func _add_card_grid_section(

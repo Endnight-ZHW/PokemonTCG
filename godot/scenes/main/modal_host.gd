@@ -274,13 +274,13 @@ func reset_surface() -> void:
 
 func _apply_layout(spec: ModalSpec, available_size: Vector2) -> void:
 	var margin := modal_panel.get_node("Margin") as MarginContainer
-	var compact_battle := available_size.y < 650.0
+	var vertical_margin := UILayoutPolicy.fit_int(available_size, 16, 24)
 	for button in [modal_confirm, modal_cancel]:
 		button.custom_minimum_size.y = 56
 	for side in ["left", "right"]:
-		margin.add_theme_constant_override("margin_" + side, 16 if available_size.x < 700 else 24)
-	margin.add_theme_constant_override("margin_top", 16 if compact_battle else 24)
-	margin.add_theme_constant_override("margin_bottom", 16 if compact_battle else 24)
+		margin.add_theme_constant_override("margin_" + side, UILayoutPolicy.fit_int(available_size, 16, 24))
+	margin.add_theme_constant_override("margin_top", vertical_margin)
+	margin.add_theme_constant_override("margin_bottom", vertical_margin)
 	var panel_size := _resolved_size(spec, available_size)
 	# Reset the previous viewport's scroll floor before changing the panel. A
 	# stale 420 px floor can otherwise become the panel's effective minimum and
@@ -324,8 +324,7 @@ func _fixed_vertical_extent() -> float:
 
 
 func _resolved_size(spec: ModalSpec, available: Vector2) -> Vector2:
-	var compact := available.x / maxf(available.y, 1.0) < 1.5 or available.x < 1360.0
-	var inset := Vector2(24, 24) if compact else Vector2(96, 72)
+	var inset := UILayoutPolicy.modal_inset(available)
 	var cap := Vector2(
 		maxf(1.0, available.x - inset.x),
 		maxf(1.0, available.y - inset.y),
@@ -366,11 +365,7 @@ func choice_size(has_preview: bool, compact_empty: bool = false) -> Vector2:
 		if compact_empty
 		else Vector2(980, 660) if has_preview else Vector2(720, 620)
 	)
-	var compact: bool = (
-		viewport_size.x / maxf(viewport_size.y, 1.0) < 1.5
-		or viewport_size.x < 1360.0
-	)
-	var inset := Vector2(24, 24) if compact else Vector2(96, 72)
+	var inset := UILayoutPolicy.modal_inset(viewport_size)
 	var available := Vector2(
 		maxf(1.0, viewport_size.x - inset.x),
 		maxf(1.0, viewport_size.y - inset.y),

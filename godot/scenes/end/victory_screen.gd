@@ -6,8 +6,6 @@ const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
 signal rematch_requested
 signal title_requested
 
-const WIDE_MIN_WIDTH := 760.0
-const WIDE_MIN_ASPECT := 1.4
 const MAX_PANEL_WIDTH := 1120.0
 
 var winner := 0
@@ -205,15 +203,12 @@ func _stringify_deck(value: Variant) -> String:
 func _apply_responsive_layout() -> void:
 	if size.x <= 0.0 or size.y <= 0.0:
 		return
-	var aspect := size.x / maxf(1.0, size.y)
-	var wide := size.x >= WIDE_MIN_WIDTH and aspect >= WIDE_MIN_ASPECT
-	var short := size.y < 680.0
-	var base_margin := 24 if wide else 14
+	var base_margin := UILayoutPolicy.fit_int(size, 14, 24)
 	var horizontal_margin := maxi(
 		base_margin,
 		int(ceil(maxf(0.0, size.x - MAX_PANEL_WIDTH) * 0.5)),
 	)
-	var vertical_margin := 24 if wide else 6
+	var vertical_margin := UILayoutPolicy.fit_int(size, 8, 24)
 	safe_content.add_theme_constant_override("margin_left", horizontal_margin)
 	safe_content.add_theme_constant_override("margin_right", horizontal_margin)
 	safe_content.add_theme_constant_override("margin_top", vertical_margin)
@@ -221,25 +216,27 @@ func _apply_responsive_layout() -> void:
 
 	var available_width := maxf(0.0, size.x - horizontal_margin * 2.0)
 	victory_panel.custom_minimum_size.x = minf(MAX_PANEL_WIDTH, available_width)
-	result_grid.columns = 2 if wide else 1
-	result_grid.add_theme_constant_override("h_separation", 22 if wide else 12)
-	result_grid.add_theme_constant_override("v_separation", 22 if wide else 10)
-	panel_margin.add_theme_constant_override("margin_left", 34 if wide else 18)
-	panel_margin.add_theme_constant_override("margin_right", 34 if wide else 18)
-	panel_margin.add_theme_constant_override("margin_top", 12 if short else 28)
-	panel_margin.add_theme_constant_override("margin_bottom", 12 if short else 28)
-	content.add_theme_constant_override("separation", 8 if short else 12)
-	winner_label.add_theme_font_size_override("font_size", 32 if short else 46 if wide else 34)
-	content.get_node("CelebrationHeader").visible = not short
-	result_subtitle.visible = not short
-	summary_label.visible = not short
-	footer_hint.visible = not short
-	card_stage.custom_minimum_size = Vector2(260, 260) if wide else Vector2(0, 244)
-	card_frame.custom_minimum_size = Vector2(160, 224) if wide else Vector2(150, 210)
+	result_grid.columns = 2
+	result_grid.add_theme_constant_override("h_separation", UILayoutPolicy.fit_int(size, 12, 22))
+	result_grid.add_theme_constant_override("v_separation", UILayoutPolicy.fit_int(size, 10, 22))
+	panel_margin.add_theme_constant_override("margin_left", UILayoutPolicy.fit_int(size, 18, 34))
+	panel_margin.add_theme_constant_override("margin_right", UILayoutPolicy.fit_int(size, 18, 34))
+	panel_margin.add_theme_constant_override("margin_top", UILayoutPolicy.fit_int(size, 12, 28))
+	panel_margin.add_theme_constant_override("margin_bottom", UILayoutPolicy.fit_int(size, 12, 28))
+	content.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 8, 12))
+	winner_label.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 32, 46))
+	content.get_node("CelebrationHeader").visible = true
+	result_subtitle.visible = true
+	summary_label.visible = true
+	footer_hint.visible = true
+	var stage_size := UILayoutPolicy.fit(size, 180, 260)
+	card_stage.custom_minimum_size = Vector2(stage_size, stage_size)
+	var card_width := UILayoutPolicy.fit(size, 128, 160)
+	card_frame.custom_minimum_size = Vector2(card_width, card_width * 1.4)
 	for row: HBoxContainer in [mode_row, deck_row, turn_row]:
-		row.custom_minimum_size.y = 44 if wide else 36
-	rematch_button.custom_minimum_size = Vector2(248 if wide else 214, 56)
-	title_button.custom_minimum_size = Vector2(218 if wide else 194, 56)
+		row.custom_minimum_size.y = UILayoutPolicy.fit(size, 36, 44)
+	rematch_button.custom_minimum_size = Vector2(UILayoutPolicy.fit(size, 214, 248), 56)
+	title_button.custom_minimum_size = Vector2(UILayoutPolicy.fit(size, 194, 218), 56)
 	call_deferred("_center_panel_pivot")
 
 

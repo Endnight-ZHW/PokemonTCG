@@ -221,7 +221,7 @@ func _layout_dock() -> void:
 	# Keep the log drawer vertically centered while placing the compact turn
 	# controls slightly below the visual midpoint. This leaves the upper-right
 	# deck/discard row unobstructed and makes the primary action easier to reach.
-	var status_reservation := 144.0 if size.x < 1450.0 or size.y < 650.0 else 0.0
+	var status_reservation := 0.0
 	var maximum_phase_y := maxf(
 		DOCK_EDGE_MARGIN,
 		usable_height - RAIL_HEIGHT - DOCK_EDGE_MARGIN - status_reservation,

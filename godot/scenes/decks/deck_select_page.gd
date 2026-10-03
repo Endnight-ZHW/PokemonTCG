@@ -14,8 +14,6 @@ signal start_requested(
 const DECK_TILE_SCENE := preload("res://ui/frontend/deck_gallery_tile.tscn")
 const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
 const MAX_CONTENT_WIDTH := 1480.0
-const WIDE_MIN_WIDTH := 1360.0
-const WIDE_MIN_ASPECT := 1.5
 const MODE_LOCAL := "local"
 const MODE_CHALLENGE := "challenge"
 
@@ -59,9 +57,6 @@ var _selected_keys: Array[String] = ["", ""]
 var _tiles: Dictionary = {}
 var _active_player_idx := 0
 var _preview_deck_key := ""
-var _compact := false
-var _compact_detail_visible := false
-var _gallery_scroll_position := 0.0
 var _configured := false
 
 
@@ -78,7 +73,6 @@ func configure(p_catalog: CardCatalog, p_mode: String) -> void:
 	mode = p_mode if p_mode in [MODE_LOCAL, MODE_CHALLENGE] else MODE_CHALLENGE
 	_deck_keys = DeckVisualCatalog.ordered_deck_keys(catalog)
 	_active_player_idx = 0
-	_compact_detail_visible = false
 	matchup_toggle.set_pressed_no_signal(false)
 	_refresh_matchup_toggle_presentation()
 	_refresh_mode_copy()
@@ -143,8 +137,6 @@ func _ensure_connections() -> void:
 	var player_two_callable := _set_active_player.bind(1)
 	if not player_two_slot_button.pressed.is_connected(player_two_callable):
 		player_two_slot_button.pressed.connect(player_two_callable)
-	if not back_to_gallery_button.pressed.is_connected(_show_compact_gallery):
-		back_to_gallery_button.pressed.connect(_show_compact_gallery)
 	if not details_button.pressed.is_connected(_emit_active_deck_details):
 		details_button.pressed.connect(_emit_active_deck_details)
 	if not start_button.pressed.is_connected(_emit_start_requested):
@@ -228,9 +220,6 @@ func deck_count() -> int:
 
 
 func handle_back() -> bool:
-	if _compact and _compact_detail_visible:
-		_show_compact_gallery()
-		return true
 	return false
 
 
@@ -273,15 +262,10 @@ func _on_deck_tile_pressed(deck_key: String) -> void:
 	_preview_deck_key = deck_key
 	_refresh_tiles()
 	_refresh_detail()
-	if _compact:
-		_gallery_scroll_position = gallery_scroll.scroll_vertical
-		_compact_detail_visible = true
-		_apply_master_detail_visibility()
 
 
 func _assign_preview() -> void:
-	if select_deck(_active_player_idx, _preview_deck_key) and _compact:
-		_show_compact_gallery()
+	select_deck(_active_player_idx, _preview_deck_key)
 
 
 func _set_active_player(player_idx: int) -> void:
@@ -368,7 +352,7 @@ func _refresh_detail() -> void:
 func _add_detail_card(card_id: String) -> void:
 	var card := catalog.get_card(card_id)
 	var frame := PanelContainer.new()
-	frame.custom_minimum_size = Vector2(112, 156)
+	frame.custom_minimum_size = Vector2(48, 67)
 	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	frame.theme_type_variation = &"FrontCardFrame"
 	frame.tooltip_text = ""
@@ -447,97 +431,72 @@ func _emit_start_requested() -> void:
 func _apply_responsive_layout() -> void:
 	if size.x <= 0.0 or size.y <= 0.0:
 		return
-	var was_compact := _compact
-	var aspect := size.x / maxf(1.0, size.y)
-	_compact = not (size.x >= WIDE_MIN_WIDTH and aspect >= WIDE_MIN_ASPECT)
-	var short_landscape := size.y < 840.0
-	if _compact and not was_compact:
-		_compact_detail_visible = false
-	var horizontal_margin := (
-		maxf(24.0, (size.x - MAX_CONTENT_WIDTH) * 0.5)
-		if not _compact
-		else 18.0
-	)
-	content_margin.add_theme_constant_override("margin_left", int(horizontal_margin))
-	content_margin.add_theme_constant_override("margin_right", int(horizontal_margin))
-	content_margin.add_theme_constant_override(
-		"margin_top", 10 if short_landscape else 16 if _compact else 22
-	)
-	content_margin.add_theme_constant_override(
-		"margin_bottom", 10 if short_landscape else 14 if _compact else 20
-	)
-	page_content.add_theme_constant_override("separation", 8 if short_landscape else 12)
-	top_bar.custom_minimum_size.y = 50 if short_landscape else 54
+	var margin := UILayoutPolicy.content_margin(size, MAX_CONTENT_WIDTH, 10, 24)
+	for edge in ["left", "right"]:
+		content_margin.add_theme_constant_override("margin_" + edge, margin)
+	content_margin.add_theme_constant_override("margin_top", UILayoutPolicy.fit_int(size, 8, 22))
+	content_margin.add_theme_constant_override("margin_bottom", UILayoutPolicy.fit_int(size, 8, 20))
+	page_content.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 8, 12))
+	top_bar.custom_minimum_size.y = UILayoutPolicy.fit(size, 48, 54)
 	for slot_button in [player_one_slot_button, player_two_slot_button]:
-		slot_button.custom_minimum_size.y = 54 if short_landscape else 58
-	for side in ["top", "bottom"]:
-		slot_margin.add_theme_constant_override(
-			"margin_" + side, 6 if short_landscape else 10
-		)
-		action_margin.add_theme_constant_override(
-			"margin_" + side, 4 if short_landscape else 10
-		)
-	start_button.custom_minimum_size = Vector2(208, 56)
-	var dense_action_layout := _compact and size.x < 680.0
-	action_content.vertical = dense_action_layout
-	slot_hint.visible = size.x >= 800.0
-	for slot_button in [player_one_slot_button, player_two_slot_button]:
+		slot_button.custom_minimum_size = Vector2(0, UILayoutPolicy.fit(size, 54, 58))
 		slot_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		slot_button.custom_minimum_size.x = 0
-	heading.add_theme_font_size_override("font_size", 26 if _compact else 32)
-	mode_description.max_lines_visible = 2 if _compact else -1
-	mode_description.visible = size.y >= 650.0
+	for edge in ["top", "bottom"]:
+		slot_margin.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 4, 10))
+		action_margin.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 4, 10))
+	start_button.custom_minimum_size = Vector2(UILayoutPolicy.fit(size, 176, 208), 56)
+	action_content.vertical = false
+	slot_hint.visible = true
+	heading.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 26, 32))
+	mode_description.max_lines_visible = 2
+	mode_description.visible = true
 	action_summary.visible = true
-	master_detail.add_theme_constant_override("separation", 24 if not _compact else 0)
-	var gallery_width := maxf(300.0, size.x - horizontal_margin * 2.0 - 44.0)
-	gallery_grid.columns = (
-		2
-		if not _compact
-		else clampi(int(floor(gallery_width / 280.0)), 1, 3)
-	)
+	master_detail.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 12, 24))
+	gallery_grid.columns = 2
+	for tile in _tiles.values():
+		tile.custom_minimum_size = Vector2(180, UILayoutPolicy.fit(size, 298, 320))
+		tile.artwork_frame.custom_minimum_size.y = UILayoutPolicy.fit(size, 152, 184)
+		(tile.card_count_label as Label).custom_minimum_size.x = 54
+	for panel in [gallery_panel, detail_panel]:
+		var inset := panel.get_child(0) as MarginContainer
+		for edge in ["left", "right"]:
+			inset.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 10, 22 if panel == detail_panel else 16))
 	_apply_master_detail_visibility()
 	_refresh_detail_columns()
 
 
 func _apply_master_detail_visibility() -> void:
-	gallery_panel.visible = not _compact or not _compact_detail_visible
-	detail_panel.visible = not _compact or _compact_detail_visible
-	back_to_gallery_button.visible = _compact
-	gallery_heading.text = (
-		"牌组卡册 · 点击浏览"
-		if not _compact
-		else "牌组卡册 · 轻触浏览"
-	)
-
-
-func _show_compact_gallery() -> void:
-	_compact_detail_visible = false
-	_apply_master_detail_visibility()
-	call_deferred("_restore_gallery_scroll")
-
-
-func _restore_gallery_scroll() -> void:
-	gallery_scroll.scroll_vertical = int(_gallery_scroll_position)
+	gallery_panel.visible = true
+	detail_panel.visible = true
+	back_to_gallery_button.visible = false
 
 
 func _refresh_detail_columns() -> void:
-	var available := detail_panel.size.x
-	if available <= 0.0:
-		available = size.x * (0.42 if not _compact else 1.0)
-	%DetailActions.vertical = available < 500.0
-	var short := _compact and size.y < 650.0
+	var margin := UILayoutPolicy.content_margin(size, MAX_CONTENT_WIDTH, 10, 24)
+	var available := (size.x - margin * 2.0 - UILayoutPolicy.fit(size, 12, 24)) * 0.4
+	%DetailActions.vertical = false
+	for button in [assign_deck_button, details_button]:
+		button.custom_minimum_size = Vector2(0, 56)
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 16, 18))
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var preview_body := detail_card_grid.get_parent() as BoxContainer
-	preview_body.vertical = not short
-	preview_body.get_node("DetailInfo/CoreLabel").visible = not short
-	preview_body.move_child(detail_card_grid, 0 if short else 1)
-	detail_card_grid.columns = 1 if short else clampi(int(floor((available - 52.0) / 122.0)), 1, 4)
-	for index in range(detail_card_grid.get_child_count()):
-		var frame := detail_card_grid.get_child(index) as Control
-		frame.visible = not short or index == 0
-		frame.custom_minimum_size = Vector2(86, 120) if short else Vector2(112, 156)
-		frame.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if short else Control.SIZE_EXPAND_FILL
-	detail_panel.get_node("DetailMargin").add_theme_constant_override("margin_top", 10 if short else 18)
-	detail_panel.get_node("DetailMargin").add_theme_constant_override("margin_bottom", 10 if short else 18)
+	preview_body.vertical = true
+	preview_body.get_node("DetailInfo/CoreLabel").visible = true
+	preview_body.move_child(detail_card_grid, 1)
+	detail_card_grid.columns = 4
+	var card_width := clampf((available - 76.0) / 4.0, 48.0, 112.0)
+	for frame: Control in detail_card_grid.get_children():
+		frame.visible = true
+		frame.custom_minimum_size = Vector2(card_width, card_width * 1.4)
+		frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		frame.reset_size()
+	# GridContainer can retain its previous allocation when all four columns
+	# stay present. Release that width before the scrolling body is fitted again.
+	detail_card_grid.reset_size()
+	preview_body.reset_size()
+	for edge in ["top", "bottom"]:
+		detail_panel.get_node("DetailMargin").add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 10, 18))
 
 
 func _play_enter_animation() -> void:

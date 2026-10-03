@@ -79,10 +79,6 @@ func _refresh_field_info(display_state: GameState) -> void:
 	table.own_info.accessibility_name = "%s，%s" % [own.name, table.own_info.text]
 	table.own_info.tooltip_text = table.own_info.text
 	table.own_info.set_meta("full_caption", table.own_info.text)
-	var compact_caption := "手牌 %d · 牌库 %d\n奖励卡 %d" % [own.hand.size(), own.deck.size(), own.prizes.size()]
-	table.own_info.set_meta("compact_caption", compact_caption)
-	if table.is_compact_layout() or table.board_canvas.size.x < 1450.0:
-		table.own_info.text = compact_caption
 	table.opponent_info.accessibility_name = "%s，%s" % [opponent.name, table.opponent_info.text]
 	table.opponent_info.tooltip_text = table.opponent_info.text
 	table.opponent_info.set_meta("full_caption", table.opponent_info.text)
@@ -342,8 +338,6 @@ func _layout_board() -> void:
 		table._pending_detail_card_id = ""
 		table._pending_detail_pokemon = null
 		table.show_card_detail(pending_card, pending_pokemon)
-	if table.is_compact_layout() and table._read_only_detail_key.is_empty():
-		table.hide_card_detail()
 	_layout_coin_showcase()
 	table._refresh_ai_thinking_indicator()
 	if table.effects:
@@ -691,8 +685,23 @@ func _on_log_drawer_toggled(is_open: bool) -> void:
 
 
 func _layout_detail_panel() -> void:
-	if table.detail_panel == null or table.board_panel == null:
+	var component := table.detail_panel as BattleDetailPanel
+	if component == null:
 		return
+	var rect := _detail_layout_rect()
+	if not rect.has_area():
+		return
+	component.fit_available_size(rect.size)
+	component.position = rect.position
+	component.scale = Vector2.ONE
+	component.pivot_offset = Vector2.ZERO
+
+
+func _detail_layout_rect() -> Rect2:
+	# Reserve this corridor even when the preview is closed, so selection and
+	# dismissal cannot move the field, counters or legal targets.
+	if table.board_panel == null:
+		return Rect2()
 	var inverse := table.get_global_transform_with_canvas().affine_inverse()
 	var board_global_rect := table.board_panel.get_global_rect()
 	var board_start := inverse * board_global_rect.position
@@ -704,7 +713,7 @@ func _layout_detail_panel() -> void:
 		board_rect.size - Vector2(inset * 2.0, inset * 2.0),
 	)
 	if safe_rect.size.x <= 1.0 or safe_rect.size.y <= 1.0:
-		return
+		return Rect2()
 
 	# The detail surface owns the fixed left corridor between both six-card prize
 	# rows. Capacity bounds keep this position stable as prizes are taken. The
@@ -764,86 +773,11 @@ func _layout_detail_panel() -> void:
 				table.render3d.layout.field_rect(bench).position.x - 8.0 - detail_halo)
 		available_width = maxf(1.0, maximum_detail_right - minimum_fixed_x)
 	var available_height := maxf(1.0, corridor_bottom - corridor_top)
-	var component := table.detail_panel as BattleDetailPanel
-	var compact_content := (
-		available_width < BattleDetailPanel.NORMAL_PANEL_SIZE.x
-		or available_height < BattleDetailPanel.NORMAL_PANEL_SIZE.y
-	)
-	var use_bottom_layout := table.is_compact_layout()
-	if not use_bottom_layout and available_height < BattleDetailPanel.COMPACT_PANEL_SIZE.y:
-		# Keep an 8px clearance when the shifted Prize rows leave a short lane.
-		# The default 26px margins would force even the compact panel over a pile.
-		corridor_top = maxf(safe_rect.position.y + detail_halo, corridor_top - 18.0)
-		corridor_bottom = minf(safe_rect.end.y - detail_halo, corridor_bottom + 18.0)
-		available_height = maxf(1.0, corridor_bottom - corridor_top)
-	if component:
-		component.set_compact_layout(use_bottom_layout or compact_content)
-	var base_panel_size := (
-		component.layout_size()
-		if component
-		else table.detail_panel.get_combined_minimum_size()
-	)
-	if base_panel_size.x <= 1.0 or base_panel_size.y <= 1.0:
-		base_panel_size = BattleDetailPanel.NORMAL_PANEL_SIZE
-	if not use_bottom_layout:
-		base_panel_size.x = minf(base_panel_size.x, maxf(300.0, available_width))
-		table.detail_panel.custom_minimum_size.x = base_panel_size.x
-		if component:
-			base_panel_size.y = component.fit_available_height(minf(available_height, 480.0), true)
-	table.detail_panel.pivot_offset = Vector2.ZERO
-	table.detail_panel.scale = Vector2.ONE
-	if use_bottom_layout:
-		# A narrow prize corridor must not make text and touch targets microscopic.
-		# Dock the preview at the bottom of the safe board instead; DetailText owns
-		# its vertical scrolling while the table.header and 48 px close action stay fixed.
-		var bottom_size := Vector2(
-			minf(base_panel_size.x, safe_rect.size.x - detail_halo * 2.0),
-			minf(base_panel_size.y, safe_rect.size.y - detail_halo * 2.0),
-		)
-		bottom_size.x = maxf(1.0, bottom_size.x)
-		bottom_size.y = maxf(1.0, bottom_size.y)
-		var bottom_position := Vector2(
-			roundf(safe_rect.position.x + (safe_rect.size.x - bottom_size.x) * 0.5),
-			roundf(safe_rect.end.y - bottom_size.y - detail_halo),
-		)
-		if table.action_popover and table.action_popover.visible:
-			var popover_global := table.action_popover.panel_global_rect()
-			var popover_start := inverse * popover_global.position
-			var popover_end := inverse * popover_global.end
-			var popover_rect := Rect2(popover_start, popover_end - popover_start)
-			var candidate_rect := Rect2(bottom_position, bottom_size)
-			if candidate_rect.intersects(popover_rect.grow(8.0)):
-				var right_x := popover_rect.end.x + 12.0
-				var left_x := popover_rect.position.x - bottom_size.x - 12.0
-				if right_x + bottom_size.x <= safe_rect.end.x - detail_halo:
-					bottom_position.x = right_x
-				elif left_x >= safe_rect.position.x + detail_halo:
-					bottom_position.x = left_x
-		table.detail_panel.position = bottom_position
-		table.detail_panel.size = bottom_size
-		return
-	var panel_size := base_panel_size
+	var panel_width := minf(UILayoutPolicy.battle_detail_width(board_rect.size), available_width)
+	var panel_height := minf(480.0, available_height)
+	var panel_y := corridor_top + (available_height - panel_height) * 0.5
+	return Rect2(Vector2(minimum_fixed_x, panel_y), Vector2(panel_width, panel_height))
 
-	var maximum_fixed_x := maximum_detail_right - panel_size.x
-	var fixed_x := clampf(
-		minimum_fixed_x,
-		minimum_fixed_x,
-		maxf(minimum_fixed_x, maximum_fixed_x),
-	)
-	var corridor_height := maxf(0.0, corridor_bottom - corridor_top)
-	var fixed_y := roundf(
-		corridor_top + (corridor_height - panel_size.y) * 0.5
-	)
-	if compact_content:
-		fixed_y = corridor_top
-	fixed_y = clampf(
-		fixed_y,
-		corridor_top,
-		maxf(corridor_top, corridor_bottom - panel_size.y),
-	)
-	table.detail_panel.position = Vector2(fixed_x, fixed_y)
-	table.detail_panel.size = base_panel_size
-	_layout_current_status()
 
 
 func _new_card_view() -> CardView:
@@ -1018,9 +952,6 @@ func _allowance_chip_style(used: bool) -> StyleBoxFlat:
 func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 	if table.own_info == null or table.own_allowance_row == null:
 		return
-	if table.is_compact_layout() or table.board_canvas.size.x < 1450.0:
-		_layout_compact_status()
-		return
 	table.own_allowance_row.columns = 4
 	table.own_info.autowrap_mode = TextServer.AUTOWRAP_OFF
 	table.own_info.text = str(table.own_info.get_meta("full_caption", table.own_info.text))
@@ -1054,8 +985,8 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 			allowance_rect.position.x = status_left
 			info_rect.size.x = status_width
 			allowance_rect.size.x = status_width
-	if table.detail_panel and table.detail_panel.visible and not table.is_compact_layout():
-		var detail_rect := _visual_rect_in_control(table.detail_panel, Rect2(Vector2.ZERO, table.detail_panel.size), table.board_canvas)
+	if table.detail_panel:
+		var detail_rect := _detail_layout_rect()
 		if detail_rect.intersects(info_rect) or detail_rect.intersects(allowance_rect):
 			var left := detail_rect.end.x + 10.0
 			var available := info_rect.end.x - left
@@ -1073,7 +1004,9 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 				if below_y + status_height <= bottom:
 					var row_gap := allowance_rect.position.y - info_rect.position.y
 					info_rect.position = Vector2(detail_rect.position.x, below_y)
+					info_rect.size.x = detail_rect.size.x
 					allowance_rect.position = Vector2(detail_rect.position.x, below_y + row_gap)
+					allowance_rect.size.x = detail_rect.size.x
 				elif available >= 140.0:
 					info_rect.position.x = left
 					info_rect.size.x = available
@@ -1422,7 +1355,7 @@ func _present_popover_rows(
 		var source_card := source_control as CardView
 		if not source_card.card_id.is_empty():
 			title = str(table.catalog.get_card(source_card.card_id).get("name", title))
-	table.action_popover.set_compact_preferred(table.is_compact_layout())
+	table.action_popover.set_compact_preferred(false)
 	table.action_popover.show_for_control(
 		display_rows,
 		source_control,
@@ -1540,9 +1473,7 @@ func _reposition_action_popover() -> void:
 	if source_control == null:
 		table.action_popover.dismiss(false)
 		return
-	table.action_popover.set_compact_preferred(
-		table.is_compact_layout()
-	)
+	table.action_popover.set_compact_preferred(false)
 	var avoidance_rows := table.interaction_router.rows_for_source(table._popover_source_key)
 	if table._forced_popover_source_key == table._popover_source_key:
 		avoidance_rows = table._forced_popover_rows
@@ -1585,8 +1516,6 @@ func _on_popover_action_chosen(action: GameAction) -> void:
 		table.set_task_hint("操作已更新，请重新选择卡牌按钮")
 		return
 	if bool(group.get("requires_target", false)):
-		if table.is_compact_layout():
-			table.hide_card_detail()
 		table._selected_action_group_key = str(group.get("key", ""))
 		table._popover_source_key = ""
 		_refresh_target_hints()
@@ -1811,27 +1740,3 @@ func return_to_action_menu() -> void:
 	_refresh_action_popover()
 	_refresh_target_hints()
 	_refresh_header()
-
-
-func _layout_compact_status() -> void:
-	var rail := table.hud.get_node("PhasePanel") as Control
-	var to_board := table.board_canvas.get_global_transform_with_canvas().affine_inverse()
-	var rect := to_board * rail.get_global_rect()
-	var top := minf(rect.end.y + 8.0, table.board_canvas.size.y - 144.0)
-	table.own_info.position = Vector2(rect.position.x, top)
-	table.own_info.size = Vector2(rect.size.x, 48)
-	table.own_info.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
-	table.own_info.add_theme_stylebox_override("normal", DesignTokens.panel_style(DesignTokens.PANEL, 7, DesignTokens.BORDER_SOFT, 1, 2))
-	table.own_info.add_theme_font_size_override("font_size", 11)
-	table.own_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	table.own_info.text = str(table.own_info.get_meta("compact_caption", table.own_info.text))
-	var row := table.own_allowance_row
-	row.columns = 2
-	row.position = Vector2(rect.position.x, top + 52.0)
-	row.add_theme_constant_override("h_separation", 4)
-	row.add_theme_constant_override("v_separation", 4)
-	for label in table.own_allowance_labels.values():
-		label.custom_minimum_size = Vector2((rect.size.x - 4.0) * 0.5, 32)
-		label.add_theme_font_size_override("font_size", 11)
-		label.add_theme_stylebox_override("normal", DesignTokens.panel_style(DesignTokens.PANEL, 7, DesignTokens.BORDER_SOFT, 1, 2))
-	row.size = Vector2(rect.size.x, maxf(68.0, row.get_combined_minimum_size().y))

@@ -9,18 +9,15 @@ import math
 import os
 import tempfile
 import time
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from .actor_v3 import ActorConfigV3, GameTaskV3, NativeActorServiceV3
 from .evaluation import arena_promotion_passed
 from .evaluation_protocol import REPORT_SCHEMA
 
-from .evaluation_fairness import (
-    canonical_hash,
-    unordered_matchups,
-)
+from .evaluation_fairness import unordered_matchups
 from .learner_v3 import DeepLearnerV3, LearnerConfigV3
 from .model_v3 import create_model
 from .replay_v3 import ReplayStoreV3, SOURCE_SELF_PLAY, SOURCE_TEACHER
@@ -53,27 +50,6 @@ def _atomic_json(path: Path, payload: Any) -> None:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
             handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(temporary)
-
-
-def _atomic_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(
-        prefix=path.name + ".",
-        suffix=".tmp",
-        dir=path.parent,
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            for row in rows:
-                handle.write(json.dumps(
-                    row, ensure_ascii=False, sort_keys=True
-                ) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)

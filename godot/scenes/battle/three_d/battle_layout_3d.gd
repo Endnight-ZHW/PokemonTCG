@@ -115,6 +115,8 @@ func zone_base(zone: ZoneView) -> Transform3D:
 		width = reference.get_stack_face_size().x
 	var to_table := table.get_global_transform_with_canvas().affine_inverse() * reference.get_global_transform_with_canvas()
 	width *= to_table.x.length()
+	if key.ends_with("prizes"):
+		width = UILayoutPolicy.battle_prize_width(presenter.size, width)
 	var projection := presenter.world.projection
 	var portrait := presenter.size.y > presenter.size.x
 	if portrait and key.ends_with("prizes"):

@@ -1121,11 +1121,9 @@ func _centered_panel(min_size: Vector2) -> Container:
 	var panel := PanelContainer.new()
 	var available := preview_host.size
 	if available.x <= 0.0 or available.y <= 0.0:
-		available = Vector2(1280, 720)
-	panel.custom_minimum_size = Vector2(
-		minf(min_size.x, maxf(320.0, available.x - 32.0)),
-		minf(min_size.y, maxf(320.0, available.y - 32.0)),
-	)
+		available = Vector2(UILayoutPolicy.MINIMUM_SIZE)
+	var inset := UILayoutPolicy.modal_inset(available)
+	panel.custom_minimum_size = min_size.min((available - inset).max(Vector2(320, 320)))
 	panel.theme = FRONTEND_THEME
 	center.add_child(panel)
 	var scroll := ScrollContainer.new()
@@ -1136,7 +1134,7 @@ func _centered_panel(min_size: Vector2) -> Container:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var padding := MarginContainer.new()
 	for side in ["left", "top", "right", "bottom"]:
-		padding.add_theme_constant_override("margin_" + side, 18)
+		padding.add_theme_constant_override("margin_" + side, UILayoutPolicy.fit_int(available, 12, 18))
 	panel.add_child(padding)
 	padding.add_child(scroll)
 	FrontendPalette.style_scrollbar(scroll.get_v_scroll_bar())

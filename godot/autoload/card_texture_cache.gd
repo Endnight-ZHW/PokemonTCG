@@ -48,11 +48,6 @@ func stats() -> Dictionary:
 	}
 
 
-func reset_stats() -> void:
-	_hits = 0
-	_misses = 0
-
-
 func get_cached_or_request(path: String) -> Texture2D:
 	if path.is_empty():
 		return null

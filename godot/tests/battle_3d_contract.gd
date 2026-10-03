@@ -2,14 +2,18 @@ extends SceneTree
 
 var _failures: Array[String] = []
 const TABLE: PackedScene = preload("res://scenes/battle/components/battle_table.tscn")
+const SYMMETRY = preload("res://tests/battle_3d_symmetry_checks.gd")
+var _done := false
 
 
 func _initialize() -> void:
 	preload("res://tests/graphics_test_driver.gd").attach(self)
 	call_deferred("_run")
+	call_deferred("_watchdog")
 
 
 func _run() -> void:
+	await _check_hand_distribution()
 	var settings := root.get_node("AppSettings")
 	settings.animation_mode = "standard"
 	root.size = Vector2i(1600, 900)
@@ -91,7 +95,7 @@ func _run() -> void:
 		_expect(presenter.world.coin.result_heads == heads, "Coin changed an authoritative result")
 		var normal := presenter.world.coin.transform.basis.y.normalized()
 		_expect((normal.y > 0.0) == heads, "Coin's visible physical face disagrees with the result")
-	await preload("res://tests/battle_3d_lifecycle_review_checks.gd").run(table, _expect)
+	await _check_lifecycle(table, _expect)
 	_test_auto_quality(settings)
 	table.queue_free()
 	await process_frame
@@ -228,8 +232,133 @@ func _expect(condition: bool, message: String) -> void:
 
 
 func _finish() -> void:
+	_done = true
 	for message in _failures:
 		push_error(message)
 	if _failures.is_empty():
 		print("BATTLE_3D_CONTRACT_OK")
 	quit(0 if _failures.is_empty() else 1)
+
+
+func _watchdog() -> void:
+	await create_timer(180.0).timeout
+	if not _done:
+		push_error("3D and hand layout contract timed out")
+		quit(1)
+
+
+func _check_hand_distribution() -> void:
+	var previous_size := root.size
+	var previous_scale := root.content_scale_size
+	var previous_fps := Engine.max_fps
+	var settings := root.get_node("AppSettings")
+	var previous_mode := str(settings.animation_mode)
+	var previous_failures := _failures.size()
+	var rows: Array[Dictionary] = []
+	Engine.max_fps = 60
+	root.get_node("AppSettings").animation_mode = "standard"
+	var table := TABLE.instantiate() as BattleTable
+	root.add_child(table)
+	Input.warp_mouse(Vector2(2, 2))
+	var output := ProjectSettings.globalize_path("res://../build/hand-layout/validated")
+	DirAccess.make_dir_recursive_absolute(output)
+	for dimensions in [Vector2i(1600, 900), Vector2i(1280, 720), Vector2i(900, 540), Vector2i(640, 960), Vector2i(2000, 900), Vector2i(2560, 1392)]:
+		root.size = dimensions
+		# The high-DPI case uses the game's normal logical canvas.
+		root.content_scale_size = Vector2i(1600, 900) if dimensions.x == 2560 else dimensions
+		for count in [1, 5, 7, 10, 20, 40]:
+			var state := UIPreviewStateFactory.battle_state()
+			state.players[0].hand.clear()
+			state.players[1].hand.clear()
+			for index in range(count):
+				state.players[0].hand.append(["sv1-ener-1", "svi-chim", "sv1-151", "sv1-189", "svf-potion", "sv1-180", "sv1-171"][index % 7])
+				state.players[1].hand.append("sv1-151")
+			table.update_view(state, 0, [], "", false, "local")
+			for frame in range(6): await process_frame
+			var maximum := maxi(0, roundi(table.hand_surface.custom_minimum_size.x - table.hand_scroll.size.x))
+			var worst_ratio := 1.0
+			var bounds := Rect2()
+			for scroll in [0, maximum, maximum / 2]:
+				table.hand_scroll.scroll_horizontal = scroll
+				table.render3d.sync_surfaces()
+				var centers: Array[float] = []
+				bounds = Rect2()
+				for card in table.hand_views:
+					if not card.visible: continue
+					var pose := table.render3d.card_pose(card)
+					var rect := table.render3d.world.projection.project_pose_bounds(pose)
+					bounds = rect if centers.is_empty() else bounds.merge(rect)
+					centers.append(table.render3d.world.projection.world_to_screen(pose.origin).x)
+				var gaps: Array[float] = []
+				for index in range(1, centers.size()): gaps.append(centers[index] - centers[index - 1])
+				if not gaps.is_empty():
+					_expect(gaps.min() > 0.0, "Hand cards collapse or reverse while browsing: %s count=%d" % [dimensions, count])
+					var ratio: float = gaps.max() / maxf(0.01, gaps.min())
+					worst_ratio = maxf(worst_ratio, ratio)
+					_expect(ratio < 1.065, "Hand spacing becomes uneven while browsing: %s count=%d ratio=%.4f" % [dimensions, count, ratio])
+				_expect(bounds.position.x >= 12.0 and bounds.end.x <= table.size.x - 12.0, "Expanded hand leaves the horizontal viewport: %s count=%d" % [dimensions, count])
+				_expect(absf(bounds.get_center().x - table.size.x * 0.5) < 2.0, "Expanded hand is not centered: %s count=%d" % [dimensions, count])
+				for index in [0, count / 2, count - 1]:
+					SYMMETRY.check_visible_hand(table, table.hand_views[index], _expect)
+			if count >= 20:
+				var available := table.render3d.layout.hand_area(true).size.x
+				_expect(bounds.size.x >= available * 0.97, "Dense hand leaves usable side space empty: %s count=%d" % [dimensions, count])
+				if dimensions.y > dimensions.x:
+					_expect(bounds.size.x >= table.size.x * 0.90, "Portrait hand stays squeezed into the center")
+			rows.append({"window": str(dimensions), "count": count, "span_px": bounds.size.x, "worst_gap_ratio": worst_ratio})
+			if DisplayServer.get_name() != "headless" and count in [5, 10, 20]:
+				await RenderingServer.frame_post_draw
+				root.get_texture().get_image().save_png(output.path_join("hand-%dx%d-%02d.png" % [dimensions.x, dimensions.y, count]))
+	var file := FileAccess.open(output.path_join("metrics.json"), FileAccess.WRITE)
+	file.store_string(JSON.stringify(rows, "\t"))
+	table.queue_free()
+	await process_frame
+	root.size = previous_size
+	root.content_scale_size = previous_scale
+	Engine.max_fps = previous_fps
+	settings.animation_mode = previous_mode
+	await process_frame
+	if _failures.size() == previous_failures:
+		print("BATTLE_HAND_DISTRIBUTION_OK layouts=36 browsing_positions=108")
+
+
+static func _check_lifecycle(table: BattleTable, check: Callable) -> void:
+	var tree := table.get_tree()
+	var settings := tree.root.get_node("AppSettings")
+	settings.quality_profile = "auto"
+	settings.begin_battle_quality(table.render3d.get_instance_id())
+	settings.set("_battle_auto_profile", "low")
+	table.hide()
+	await tree.process_frame
+	check.call(table.render3d.viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED,
+		"A hidden table continues updating its 3D viewport")
+	table.show()
+	await tree.process_frame
+	check.call(settings.resolved_quality_profile() == "low",
+		"Hiding and restoring the same battle resets its automatic quality downgrade")
+	check.call(settings.quality_profile == "auto", "Visibility changes overwrite the saved quality preference")
+
+	# An empty view makes asset prefetch synchronous, exposing cancellation that
+	# happens inside transition_started rather than during an awaited animation.
+	var state := GameState.new()
+	state.revision = 10
+	table.update_view(state, 0, [], "", false, "local")
+	var next_state := state.clone_state()
+	next_state.revision = 11
+	var view := BattleViewModel.capture(next_state, 0, [], "", false, "local")
+	var coordinator := table.presentation_coordinator
+	coordinator.transition_started.connect(func(_handle: PresentationHandle) -> void:
+		coordinator.cancel_all("cancel_in_started_signal"), CONNECT_ONE_SHOT)
+	var handle := coordinator.submit(BattleTransitionRequest.create(view))
+	for frame in range(3):
+		await tree.process_frame
+	check.call(handle.is_completed() and handle.completion_reason == "cancel_in_started_signal",
+		"Cancellation during transition_started did not resolve its completion handle")
+	check.call(table.state_ref.revision == 10,
+		"A cancelled transition still overwrites the rendered battle state")
+	check.call(not coordinator.is_busy(), "Cancellation during transition_started leaves the queue blocked")
+	var next_handle := coordinator.submit(BattleTransitionRequest.create(view))
+	for frame in range(3):
+		await tree.process_frame
+	check.call(next_handle.status == PresentationHandle.COMPLETED and table.state_ref.revision == 11,
+		"The queue cannot accept a new transition after cancellation during transition_started")

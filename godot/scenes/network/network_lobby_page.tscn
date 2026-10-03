@@ -131,38 +131,6 @@ layout_mode = 2
 theme_type_variation = &"FrontSectionLabel"
 text = "03  规则与牌组"
 
-[node name="CompactStepBar" type="HBoxContainer" parent="PageMargin/Page"]
-unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(0, 52)
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="CompactPreviousButton" type="Button" parent="PageMargin/Page/CompactStepBar"]
-focus_mode = 0
-unique_name_in_owner = true
-custom_minimum_size = Vector2(112, 48)
-layout_mode = 2
-theme_type_variation = &"FrontGhostButton"
-text = "←  上一步"
-
-[node name="CompactStepLabel" type="Label" parent="PageMargin/Page/CompactStepBar"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"FrontSectionLabel"
-text = "第 1 步 · 方式与牌组"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="CompactNextButton" type="Button" parent="PageMargin/Page/CompactStepBar"]
-focus_mode = 0
-unique_name_in_owner = true
-custom_minimum_size = Vector2(112, 48)
-layout_mode = 2
-theme_type_variation = &"FrontSecondaryButton"
-text = "下一步  →"
-
 [node name="BodyScroll" type="ScrollContainer" parent="PageMargin/Page"]
 unique_name_in_owner = true
 layout_mode = 2

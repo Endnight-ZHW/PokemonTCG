@@ -80,8 +80,7 @@ func resize(viewport: SubViewport, size_value: Vector2) -> void:
 		return
 	projection.configure(camera, viewport, size_value)
 	framing_offset = Vector2(0.0, -clampf(size_value.y * 0.035, 14.0, 36.0))
-	var compact := size_value.x < 1180.0 or size_value.y < 650.0
-	var angle := deg_to_rad(65.0 if compact else 55.0)
+	var angle := deg_to_rad(55.0)
 	# A longer lens keeps the tabletop framing while reducing the side-card
 	# shear and near/far scale changes that worked against a balanced layout.
 	var distance := 24.0 * tan(deg_to_rad(35.0 * 0.5)) / tan(deg_to_rad(camera.fov * 0.5))

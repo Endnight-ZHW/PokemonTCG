@@ -3,9 +3,6 @@ extends PanelContainer
 
 signal close_requested
 
-const NORMAL_PANEL_SIZE := Vector2(420.0, 336.0)
-const COMPACT_PANEL_SIZE := Vector2(440.0, 220.0)
-
 @onready var detail_image: TextureRect = %DetailImage
 @onready var detail_title: Label = %DetailTitle
 @onready var detail_meta: Label = %DetailMeta
@@ -18,7 +15,6 @@ const COMPACT_PANEL_SIZE := Vector2(440.0, 220.0)
 var current_card_id := ""
 var current_context: Dictionary = {}
 var _catalog: CardCatalog
-var _compact_layout := false
 var _visibility_tween: Tween
 
 
@@ -60,6 +56,7 @@ func show_card(
 		clear()
 		return
 
+	var changed_card := current_card_id != card_id
 	current_card_id = card_id
 	current_context = normalized_context.duplicate(true)
 	var tree := Engine.get_main_loop() as SceneTree
@@ -86,7 +83,8 @@ func show_card(
 		_catalog,
 		pokemon,
 	)
-	detail_text.scroll_to_line(0)
+	if changed_card:
+		detail_text.scroll_to_line(0)
 	state_panel.visible = pokemon != null
 	state_text.text = CardPresentation.battle_state_bbcode(
 		pokemon,
@@ -162,77 +160,22 @@ func _kill_visibility_tween() -> void:
 	_visibility_tween = null
 
 
-func set_compact_layout(value: bool) -> void:
+func fit_available_size(available: Vector2) -> void:
 	_resolve_nodes()
-	_compact_layout = value
-	var target_size := COMPACT_PANEL_SIZE if value else NORMAL_PANEL_SIZE
-	custom_minimum_size = target_size
-	size = target_size
-
-	var header := get_node_or_null("Content/Header") as Control
-	var content := get_node_or_null("Content") as VBoxContainer
-	var body := get_node_or_null("Content/Body") as HBoxContainer
-	var image_column := get_node_or_null("Content/Body/ImageColumn") as Control
-	var image_frame := get_node_or_null(
-		"Content/Body/ImageColumn/ImageFrame"
-	) as Control
-	var state_surface := get_node_or_null(
-		"Content/Body/DetailColumn/StatePanel"
-	) as Control
-	if header:
-		header.custom_minimum_size.y = 48.0
-	if content:
-		content.add_theme_constant_override("separation", 4 if value else 8)
-	if body:
-		body.add_theme_constant_override("separation", 8 if value else 12)
-	if image_column:
-		image_column.custom_minimum_size.x = 84.0 if value else 112.0
-	if image_frame:
-		image_frame.custom_minimum_size = (
-			Vector2(84.0, 117.0) if value else Vector2(112.0, 157.0)
-		)
-	if detail_text:
-		detail_text.custom_minimum_size.x = 0.0
-		detail_text.add_theme_font_size_override(
-			"normal_font_size",
-			13 if value else 14,
-		)
-	if state_surface:
-		state_surface.custom_minimum_size.y = 56.0 if value else 68.0
-	if state_text:
-		state_text.add_theme_font_size_override(
-			"normal_font_size",
-			11 if value else 12,
-		)
-	if detail_title:
-		detail_title.add_theme_font_size_override("font_size", 17)
-	if detail_meta:
-		detail_meta.add_theme_font_size_override("font_size", 12)
-	if context_label:
-		context_label.add_theme_font_size_override("font_size", 12)
-	if close_button:
-		close_button.custom_minimum_size = Vector2(48.0, 48.0)
-
-
-func is_compact_layout() -> bool:
-	return _compact_layout
-
-func fit_available_height(available_height: float, fill_space: bool = false) -> float:
-	var target := available_height if fill_space else minf(layout_size().y, available_height)
-	if _compact_layout:
-		var image_frame := get_node("Content/Body/ImageColumn/ImageFrame") as Control
-		var content := get_node("Content") as Control
-		var fixed_height := content.get_combined_minimum_size().y + get_theme_stylebox("panel").get_minimum_size().y - image_frame.custom_minimum_size.y
-		# Preserve the 48px close control and text sizes; only the card thumbnail
-		# contracts when the left corridor is shorter than the usual preview.
-		image_frame.custom_minimum_size.y = clampf(target - fixed_height, 88.0, 117.0)
-		target = maxf(target, fixed_height + image_frame.custom_minimum_size.y)
-	custom_minimum_size.y = target
-	return target
-
-
-func layout_size() -> Vector2:
-	return COMPACT_PANEL_SIZE if _compact_layout else NORMAL_PANEL_SIZE
+	var image_width := clampf(available.x * 0.267, 56.0, 112.0)
+	get_node("Content/Body/ImageColumn").custom_minimum_size.x = image_width
+	get_node("Content/Body/ImageColumn/ImageFrame").custom_minimum_size = Vector2(
+		image_width, minf(image_width * 1.4, maxf(72.0, available.y - 100.0)))
+	get_node("Content/Body").add_theme_constant_override("separation", 8 if available.x < 340 else 12)
+	get_node("Content").add_theme_constant_override("separation", 4 if available.y < 220.0 else 6)
+	detail_text.add_theme_font_size_override("normal_font_size", 14)
+	state_text.add_theme_font_size_override("normal_font_size", 12)
+	state_panel.custom_minimum_size.y = clampf(available.y - 152.0, 48.0, 68.0)
+	state_text.scroll_active = true
+	state_text.mouse_filter = Control.MOUSE_FILTER_STOP
+	close_button.custom_minimum_size = Vector2(UILayoutPolicy.TOUCH_MIN, UILayoutPolicy.TOUCH_MIN)
+	custom_minimum_size = available
+	size = available
 
 
 func _on_close_pressed() -> void:

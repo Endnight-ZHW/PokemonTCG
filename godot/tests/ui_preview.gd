@@ -5,7 +5,7 @@ const PreviewHarness = preload("res://tests/ui_preview_harness.gd")
 const FrontendScenario = preload("res://tests/ui_preview_frontend_scenario.gd")
 const BattleScenario = preload("res://tests/ui_preview_battle_scenario.gd")
 const SemanticChoiceScenario = preload("res://tests/ui_preview_semantic_choice_scenario.gd")
-const BattleDetailScenario = preload("res://tests/ui_preview_battle_detail_scenario.gd")
+const UsabilityScenario = preload("res://tests/ui_preview_usability_scenario.gd")
 
 
 func _initialize() -> void:
@@ -41,7 +41,7 @@ func _render_previews() -> void:
 	await harness._settle_frontend(8)
 	var user_args := OS.get_cmdline_user_args()
 	if "--battle-usability-only" in user_args:
-		var usability_scenario := preload("res://tests/ui_preview_usability_scenario.gd").new()
+		var usability_scenario := UsabilityScenario.new()
 		usability_scenario.configure(harness)
 		await usability_scenario.run(ui)
 		return
@@ -51,9 +51,9 @@ func _render_previews() -> void:
 		await semantic_scenario.run(ui)
 		return
 	if "--battle-detail-only" in user_args:
-		var detail_scenario := BattleDetailScenario.new()
+		var detail_scenario := UsabilityScenario.new()
 		detail_scenario.configure(harness)
-		await detail_scenario.run(ui)
+		await detail_scenario.run_detail(ui)
 		return
 	var frontend_scenario := FrontendScenario.new()
 	frontend_scenario.configure(harness)

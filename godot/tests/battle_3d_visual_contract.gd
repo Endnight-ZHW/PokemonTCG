@@ -3,6 +3,8 @@ extends SceneTree
 var failures: Array[String] = []
 var report := {"gray_samples": [], "shuffle_frames": 0, "max_packet_layers": 0.0}
 const SYMMETRY = preload("res://tests/battle_3d_symmetry_checks.gd")
+const REVEALS = preload("res://tests/battle_3d_reveal_checks.gd")
+const MOTIONS = preload("res://tests/battle_3d_motion_checks.gd")
 
 func _initialize() -> void:
 	preload("res://tests/graphics_test_driver.gd").attach(self)
@@ -127,14 +129,14 @@ func _check_startup_and_alignment() -> void:
 		if resolution == Vector2i(1600, 900):
 			report["hand_fans"] = await SYMMETRY.check_fans(self, table, check)
 			report["reconciled_hand"] = await SYMMETRY.check_reconciled_hand(self, table, check)
-			report["render_lifecycle"] = await preload("res://tests/battle_3d_render_lifecycle_checks.gd").run(self, table, check)
-			report["opening_draw"] = await preload("res://tests/battle_3d_draw_visual_checks.gd").run(self, table, check)
-			report["opponent_draw"] = await preload("res://tests/battle_3d_draw_visual_checks.gd").run(self, table, check, 1)
-			report["mulligan"] = await preload("res://tests/battle_3d_mulligan_checks.gd").run(self, table, check)
-			report["mulligan_readability"] = await preload("res://tests/battle_3d_mulligan_readability_checks.gd").run(self, table, check)
-			report["search_reveal"] = await preload("res://tests/battle_3d_reveal_checks.gd").run(self, table, check)
-			report["card_transfers"] = await preload("res://tests/battle_3d_transfer_checks.gd").run(self, table, check)
-			report["shuffle_and_actions"] = await preload("res://tests/battle_3d_shuffle_action_checks.gd").run(self, table, check)
+			report["render_lifecycle"] = await _check_render_lifecycle(self, table, check)
+			report["opening_draw"] = await REVEALS.check_draw(self, table, check)
+			report["opponent_draw"] = await REVEALS.check_draw(self, table, check, 1)
+			report["mulligan"] = await REVEALS.check_mulligan(self, table, check)
+			report["mulligan_readability"] = await REVEALS.check_mulligan_readability(self, table, check)
+			report["search_reveal"] = await REVEALS.check_search_reveal(self, table, check)
+			report["card_transfers"] = await MOTIONS.check_transfers(self, table, check)
+			report["shuffle_and_actions"] = await MOTIONS.check_shuffle_actions(self, table, check)
 		var handle := table.play_startup_shuffle([1, 0])
 		var frame_index := 0
 		var saw_rotation := false
@@ -164,3 +166,64 @@ func _check_startup_and_alignment() -> void:
 		await process_frame
 	if "--layout-only" not in OS.get_cmdline_user_args():
 		check(report.max_packet_layers > 1.0, "Full decks still have single-card thickness")
+
+
+## Check actual raster output. CPU transforms can be correct while deferred
+## VisualInstance notifications leave a pooled mesh at the origin for one draw.
+static func _check_render_lifecycle(tree: SceneTree, table: BattleTable, check_result: Callable) -> Dictionary:
+	var lifecycle_report := {"rendered_frames": 0, "origin_pixels": 0, "marker_frames": 0}
+	table.clear_presentation_for_resync()
+	var state := GameState.new()
+	for index in range(7): state.players[0].hand.append("sv1-151")
+	table.update_view(state, 0, [], "", false, "local")
+	for frame in range(5): await tree.process_frame
+	var pixels := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	pixels.fill(Color.MAGENTA)
+	var marker := ImageTexture.create_from_image(pixels)
+	var settings := tree.root.get_node("AppSettings")
+	for mode in ["cinematic", "standard", "fast", "reduced"]:
+		settings.animation_mode = mode
+		for index in [0, 6]:
+			var source := table.hand_views[index]
+			check_result.call(source._get_drag_data(Vector2.ZERO) == null and not tree.root.gui_is_dragging(), "Hand movement still starts a card drag")
+			var start := table._effects_local(source.global_center())
+			var flyer := table.motion_entities._spawn_flying_card(marker, start, table.size * Vector2(0.76, 0.76),
+				0.35, 0, "pokemon_played", 0, source.size, source.size) as CardMotionEntity
+			for frame in range(24): await _sample_lifecycle_frame(tree, table, lifecycle_report, check_result)
+			if is_instance_valid(flyer): table.motion_entities._dispose_flyer(flyer)
+			check_result.call(not source.is_presentation_hidden(), "Button action motion hid its hand source indefinitely")
+	settings.animation_mode = "standard"
+	# Allocate hidden flights first, then show them after a delay. Repeat with the
+	# same object pool; check_result startup, every moving frame, disposal and cancellation.
+	for cycle in range(4):
+		var flyer := table.motion_entities._spawn_flying_card(marker, table.size * Vector2(0.77, 0.82), table.size * Vector2(0.26, 0.82),
+			0.36, 0.08, "cards_drawn", 0) as CardMotionEntity
+		for frame in range(36):
+			if cycle == 3 and frame == 12: table.clear_presentation_for_resync()
+			await _sample_lifecycle_frame(tree, table, lifecycle_report, check_result)
+		if is_instance_valid(flyer): table.motion_entities._dispose_flyer(flyer)
+		await _sample_lifecycle_frame(tree, table, lifecycle_report, check_result)
+	check_result.call(lifecycle_report.marker_frames > 50, "Raster lifecycle check did not exercise visible motion cards")
+	check_result.call(table.card_motion_layer.active_motion_count() == 0, "Raster lifecycle check leaves motion entities behind")
+	table.clear_presentation_for_resync()
+	return lifecycle_report
+
+static func _sample_lifecycle_frame(tree: SceneTree, table: BattleTable, lifecycle_report: Dictionary, check_result: Callable) -> void:
+	await tree.process_frame
+	await RenderingServer.frame_post_draw
+	var pixels := table.render3d.viewport.get_texture().get_image()
+	var origin := table.render3d.world.projection.world_to_screen(Vector3.ZERO) * Vector2(pixels.get_size()) / table.size
+	var marked := 0
+	var center_marked := 0
+	for y in range(0, pixels.get_height(), 4):
+		for x in range(0, pixels.get_width(), 4):
+			var color := pixels.get_pixel(x, y)
+			if color.r > 0.45 and color.b > 0.4 and color.g < 0.25:
+				marked += 1
+				if absf(x - origin.x) < 70 and absf(y - origin.y) < 70: center_marked += 1
+	if center_marked > 0 and lifecycle_report.origin_pixels == 0:
+		pixels.save_png("res://../build/battle3d-render-lifecycle-failure.png")
+	check_result.call(center_marked == 0, "A motion card flashes at the world origin in a rendered frame")
+	lifecycle_report.rendered_frames += 1
+	lifecycle_report.origin_pixels += center_marked
+	if marked > 25: lifecycle_report.marker_frames += 1

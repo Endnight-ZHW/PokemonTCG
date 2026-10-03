@@ -26,8 +26,6 @@ enum ConnectionState {
 	ERROR,
 }
 
-const COMPACT_ASPECT := 1.5
-const COMPACT_WIDTH := 1360.0
 const FRONT_ERROR := FrontendPalette.DANGER
 const LAN_ACCENT := FrontendPalette.GOLD
 const RELAY_ACCENT := FrontendPalette.MUTED
@@ -35,9 +33,6 @@ const RELAY_ACCENT := FrontendPalette.MUTED
 var kind := "lan"
 var connection_state := ConnectionState.IDLE
 var _current_room_code := ""
-var _compact := false
-var _dense_wide := false
-var _compact_step := 0
 var _address_drafts: Dictionary = {
 	"lan": "127.0.0.1",
 	"relay": "",
@@ -51,10 +46,6 @@ var _received_locked_rules_options := false
 @onready var intro_panel: PanelContainer = %IntroPanel
 @onready var form_panel: PanelContainer = %FormPanel
 @onready var steps: HBoxContainer = %Steps
-@onready var compact_step_bar: HBoxContainer = %CompactStepBar
-@onready var compact_step_label: Label = %CompactStepLabel
-@onready var compact_previous_button: Button = %CompactPreviousButton
-@onready var compact_next_button: Button = %CompactNextButton
 @onready var heading: Label = %Heading
 @onready var subtitle: Label = %Subtitle
 @onready var kind_label: Label = %KindLabel
@@ -151,10 +142,6 @@ func _resolve_nodes() -> void:
 	back_button = page.get_node("TopBar/BackButton") as Button
 	intro_panel = get_node("%IntroPanel") as PanelContainer
 	steps = page.get_node("Steps") as HBoxContainer
-	compact_step_bar = page.get_node("CompactStepBar") as HBoxContainer
-	compact_step_label = compact_step_bar.get_node("CompactStepLabel") as Label
-	compact_previous_button = compact_step_bar.get_node("CompactPreviousButton") as Button
-	compact_next_button = compact_step_bar.get_node("CompactNextButton") as Button
 	heading = page.get_node("TopBar/TitleGroup/Heading") as Label
 	subtitle = page.get_node("TopBar/TitleGroup/Subtitle") as Label
 	kind_label = get_node("%KindLabel") as Label
@@ -229,10 +216,6 @@ func _ensure_connections() -> void:
 		address_input.text_changed.connect(_on_address_text_changed)
 	if not copy_room_button.pressed.is_connected(_copy_room_code):
 		copy_room_button.pressed.connect(_copy_room_code)
-	if not compact_previous_button.pressed.is_connected(_show_previous_compact_step):
-		compact_previous_button.pressed.connect(_show_previous_compact_step)
-	if not compact_next_button.pressed.is_connected(_show_next_compact_step):
-		compact_next_button.pressed.connect(_show_next_compact_step)
 
 
 func _populate_kind_options() -> void:
@@ -345,7 +328,7 @@ func refresh_fields(_selected: int) -> void:
 	_refresh_matchup_toggle_presentation()
 	_refresh_intro_role_copy()
 	_clear_validation()
-	_apply_compact_step_visibility()
+	_apply_form_visibility()
 
 
 func _refresh_intro_role_copy() -> void:
@@ -502,8 +485,6 @@ func set_connection_state(
 	matchup_toggle.disabled = locked or selected_role() != "host"
 	_refresh_matchup_toggle_presentation()
 	connect_button.disabled = locked
-	compact_previous_button.disabled = locked
-	compact_next_button.disabled = locked
 	var default_message: String = str({
 		ConnectionState.IDLE: "确认身份、连接信息和牌组后即可开始。",
 		ConnectionState.VALIDATING: "正在检查连接信息……",
@@ -607,14 +588,6 @@ func _validate_form() -> bool:
 	if deck_option.item_count == 0:
 		if first_invalid == null:
 			first_invalid = deck_option
-	if first_invalid:
-		if _compact:
-			if first_invalid == role_option:
-				_set_compact_step(0)
-			elif first_invalid == deck_option:
-				_set_compact_step(0)
-			else:
-				_set_compact_step(1)
 	return first_invalid == null
 
 
@@ -637,85 +610,42 @@ func _copy_room_code() -> void:
 func _apply_responsive_layout() -> void:
 	if not is_node_ready() or page == null:
 		return
-	_compact = size.x < 1180.0 or size.y < 700.0 or size.x < size.y * 1.4
-	_dense_wide = not _compact and size.y < 900.0
-	intro_panel.visible = not _compact
+	intro_panel.visible = true
 	steps.visible = false
-	compact_step_bar.visible = _compact
 	form_panel.custom_minimum_size.y = 0
 	page.custom_minimum_size.x = 0
-	var margin := maxi(20, int((size.x - 1200.0) * 0.5))
+	intro_panel.custom_minimum_size.x = UILayoutPolicy.fit(size, 256, 350)
+	var margin := UILayoutPolicy.content_margin(size, 1200, 16, 20)
 	var page_margin := get_node("PageMargin") as MarginContainer
-	for side in ["left", "right"]:
-		page_margin.add_theme_constant_override("margin_" + side, margin)
-	for side in ["top", "bottom"]:
-		page_margin.add_theme_constant_override("margin_" + side, 16 if size.y < 650 else 28)
-	page.add_theme_constant_override("separation", 10 if _compact else 18)
+	for edge in ["left", "right"]:
+		page_margin.add_theme_constant_override("margin_" + edge, margin)
+	for edge in ["top", "bottom"]:
+		page_margin.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 12, 28))
+	page.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 10, 18))
 	status_panel.custom_minimum_size.y = 56
 	connect_button.custom_minimum_size.y = 56
-	heading.add_theme_font_size_override("font_size", 26 if _compact else 34)
-	subtitle.visible = size.y >= 650
+	heading.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 26, 34))
+	subtitle.visible = true
 	var form_margin := form_panel.get_node("FormMargin") as MarginContainer
-	for side in ["top", "bottom"]:
-		form_margin.add_theme_constant_override("margin_" + side, 10 if _compact else 18)
-	form_margin.get_node("Form").add_theme_constant_override("separation", 8 if _compact else 10)
+	for edge in ["top", "bottom", "left", "right"]:
+		form_margin.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 10, 18))
+	form_margin.get_node("Form").add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 8, 10))
 	for field in [kind_option, role_option, address_input, port_input, room_input, deck_option]:
-		field.custom_minimum_size.y = 48
-	_apply_compact_step_visibility()
+		field.custom_minimum_size.y = UILayoutPolicy.TOUCH_MIN
+	_apply_form_visibility()
 
 
 func handle_back() -> bool:
-	if (
-		_compact
-		and _compact_step > 0
-		and connection_state in [ConnectionState.IDLE, ConnectionState.ERROR]
-	):
-		_show_previous_compact_step()
-		return true
 	return false
 
 
-func _show_previous_compact_step() -> void:
-	_set_compact_step(_compact_step - 1)
-
-
-func _show_next_compact_step() -> void:
-	_set_compact_step(_compact_step + 1)
-
-
-func _set_compact_step(value: int) -> void:
-	_compact_step = clampi(value, 0, 1)
-	_apply_compact_step_visibility()
-	page_scroll.scroll_vertical = 0
-
-
-func _apply_compact_step_visibility() -> void:
+func _apply_form_visibility() -> void:
 	if role_label == null:
 		return
-	kind_control_label.visible = not _compact or _compact_step == 0
-	kind_option.visible = not _compact or _compact_step == 0
-	role_label.visible = not _compact or _compact_step == 0
-	role_option.visible = not _compact or _compact_step == 0
-	address_input.get_parent().visible = not _compact or _compact_step == 1
-	port_row.visible = (not _compact or _compact_step == 1) and kind == "lan"
-	room_row.visible = (
-		(not _compact or _compact_step == 1)
-		and kind == "relay"
-		and selected_role() == "client"
-	)
-	deck_label.visible = not _compact or _compact_step == 0
-	deck_option.visible = not _compact or _compact_step == 0
-	rules_label.visible = not _compact or _compact_step == 1
-	rule_row.visible = not _compact or _compact_step == 1
-	connect_button.visible = not _compact or _compact_step == 1
-	if not _compact:
-		return
-	compact_step_label.text = [
-		"第 1 步 · 方式与牌组",
-		"第 2 步 · 连接与规则",
-	][_compact_step]
-	compact_previous_button.visible = _compact_step > 0
-	compact_next_button.visible = _compact_step < 1
+	for control in [kind_control_label, kind_option, role_label, role_option, address_input.get_parent(), deck_label, deck_option, rules_label, rule_row, connect_button]:
+		control.visible = true
+	port_row.visible = kind == "lan"
+	room_row.visible = kind == "relay" and selected_role() == "client"
 
 
 func _play_enter_motion() -> void:
