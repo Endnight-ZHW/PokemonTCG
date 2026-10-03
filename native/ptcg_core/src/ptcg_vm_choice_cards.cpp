@@ -282,12 +282,18 @@ bool resume_vm_cards(
                         "energy_attachment_source_missing"
                     );
                 }
+                append_energy_attachment_event(result, actor, energy->string_or(),
+                    Object{
+                        {"zone", Value(from_zone)},
+                        {"index", Value(static_cast<std::int64_t>(
+                            std::distance(source_cards.begin(), energy)))},
+                    }, selected_target_slot, static_cast<std::int64_t>(
+                        required(*target, "energy_card_ids").as_array().size()));
                 required(
                     *target,
                     "energy_card_ids"
                 ).as_array().push_back(std::move(*energy));
                 source_cards.erase(energy);
-                result.event_types.emplace_back("energy_attached");
             }
             if (from_zone == "deck") {
                 shuffle_array(source_cards, rng);
@@ -413,12 +419,18 @@ bool resume_vm_cards(
                         "energy_attachment_source_missing"
                     );
                 }
+                append_energy_attachment_event(result, actor, source->string_or(),
+                    Object{
+                        {"zone", Value("discard")},
+                        {"index", Value(static_cast<std::int64_t>(
+                            std::distance(discard.begin(), source)))},
+                    }, slot, static_cast<std::int64_t>(
+                        required(*target, "energy_card_ids").as_array().size()));
                 required(
                     *target,
                     "energy_card_ids"
                 ).as_array().push_back(std::move(*source));
                 discard.erase(source);
-                result.event_types.emplace_back("energy_attached");
             }
         } else if (op == "deal_bench_damage") {
             const bool targets_self = string_arg(

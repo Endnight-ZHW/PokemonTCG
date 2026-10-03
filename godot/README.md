@@ -43,8 +43,10 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   并保存关键帧至 `build/animation-preview/`。对局时长、运动幅度与属性配色统一在
   `res://presentation/default_battle_animation.tres` 中调整；攻击数值／HP 在命中帧同步，
   附能和进化的光效随飞牌推进，卡面与标记在落地帧更新。
-- `tools/test_battle3d_graphics.ps1` 同时录制完整动作到 `build/animation-review/`；
-  从仓库根目录运行 `python tools/build_animation_review.py` 可生成 GIF 和本地逐项播放器，便于检查起手到落地的全过程。
+- `tools/test_battle3d_graphics.ps1` 同时录制完整动作和十属性重击到 `build/animation-review/`；
+  从仓库根目录运行 `./tools/build_animation_review.ps1` 可生成支持修改前后对照、慢放和时间轴的本地播放器
+  `build/battle-animation-upgrade/review.html`。基线放在 `build/battle-animation-upgrade/before/animation-review/`，没有基线时仍可回放当前版本。
+  实验台提供普通命中、重击和「击倒 → 离场 → 奖励」连续演出，支持实时音效试听。
 - 主要页面和组件现在都包含完整可编辑场景树；动态手牌和动作按钮仍由实时数据生成。
 - 前台 Theme 位于 `res://ui/frontend/front_end_theme.tres`，只挂到标题、牌组、网络、
   设置、帮助、详情和胜利等前台 surface；战斗与兼容 Theme 仍为 `res://ui/game_theme.tres`。

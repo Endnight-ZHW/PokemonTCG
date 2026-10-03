@@ -32,7 +32,7 @@ void fragment() {
 	CLEARCOAT = 0.02;
 	float rim = pow(clamp(max(abs(UV.x - 0.5), abs(UV.y - 0.5)) * 2.0, 0.0, 1.0), 8.0);
 	float sweep = feedback_sweep < 0.0 ? 0.0 : exp(-pow((UV.y + UV.x * 0.25 - feedback_sweep * 1.6 + 0.15) * 14.0, 2.0));
-	EMISSION = feedback_color * feedback_strength * (rim * 0.42 + sweep * 0.25 + 0.04);
+	EMISSION = feedback_color * feedback_strength * (rim * 0.55 + sweep * 0.60 + 0.035);
 }
 
 void light() {

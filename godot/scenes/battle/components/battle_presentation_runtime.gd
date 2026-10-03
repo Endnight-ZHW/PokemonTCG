@@ -33,6 +33,8 @@ var feedback_motion_sources: Dictionary = {}
 var accent_sources: Dictionary = {}
 var contact_commits: Dictionary = {}
 var landing_barriers: Dictionary = {}
+var heavy_camera_played := false
+var ko_camera_played := false
 
 
 func configure(p_table: BattleTable) -> void:
@@ -40,8 +42,14 @@ func configure(p_table: BattleTable) -> void:
 
 
 func clear() -> void:
+	reset_camera_budget()
 	for registry in _registries():
 		registry.clear()
+
+
+func reset_camera_budget() -> void:
+	heavy_camera_played = false
+	ko_camera_played = false
 
 
 func _registries() -> Array[Dictionary]:
@@ -75,6 +83,11 @@ func play_feedback(event: Dictionary, duration: float, moving_card: Control = nu
 	if source_card != null and not source_card.is_hidden_card:
 		source_id = source_card.card_id
 	var cue := BattleFeedbackCue.from_event(event, source_id, table.catalog, duration)
+	var target_card := _feedback_card(cue.target_endpoint)
+	if cue.lunge and target_card != null and not target_card.is_hidden_card and target_card.pokemon != null:
+		cue.set_damage_weight(int(event.get("amount", 0)), target_card.pokemon.max_hp(table.catalog))
+		if not cue.element.is_empty():
+			cue.audio = "attack_hit_" + cue.element.to_lower()
 	if moving_card != null:
 		cue.motion_driven = true
 		cue.impact_fraction = contact_fraction
@@ -201,12 +214,30 @@ func _on_feedback_impact(event_id: String) -> void:
 				text_size = int(clampf(target.visual_global_bounds().size.x / maxf(0.01, layer.get_global_transform_with_canvas().x.length()) * 0.20, 24.0, 64.0))
 				target_rect = layer.get_global_transform_with_canvas().affine_inverse() * target.visual_global_bounds()
 			layer.floating_text(cue.text, _world_feedback_point(table.resolve_endpoint_center(cue.target_endpoint)),
-				cue.text_color, cue.spatial, maxf(0.0, cue.duration * (1.0 - cue.impact_fraction) - 0.04), text_size, target_rect)
+				cue.text_color, cue.spatial, maxf(0.0, cue.duration * (1.0 - cue.sample_progress) - 0.04), text_size, target_rect)
 	if not cue.audio.is_empty():
 		table.audio_requested.emit(cue.audio)
-	if cue.kind == "ko" and cue.spatial and table.camera_rig != null:
-		table.camera_rig.impulse(MotionPolicy.PROFILE.ko_camera_pixels / 7.0,
-			minf(MotionPolicy.PROFILE.ko_camera_seconds, cue.duration * 0.5), false)
+	if cue.spatial and table.camera_rig != null:
+		var pixels := 0.0
+		if cue.kind == "ko" and not ko_camera_played:
+			ko_camera_played = true
+			pixels = cue.profile.ko_camera_pixels
+		elif cue.lunge and cue.heavy and not heavy_camera_played:
+			heavy_camera_played = true
+			pixels = cue.profile.heavy_camera_pixels
+		if pixels > 0.0 and cue.sample_progress < 1.0:
+			# The parent cue's remaining lifetime contains this entire impulse.
+			table.camera_rig.impulse(pixels / 7.0,
+				minf(cue.profile.ko_camera_seconds, cue.duration * (1.0 - cue.sample_progress)), false)
+
+
+func _on_feedback_geometry_requested(cue: BattleFeedbackCue) -> void:
+	var reference := accent_sources.get(cue.get_instance_id()) as WeakRef
+	if reference != null:
+		var pose: Variant = _feedback_surface_pose(reference.get_ref() as Control)
+		if pose is Transform3D: cue.bind_surface(pose)
+	elif not cue.event_id.is_empty() and feedback_cues.has(cue.event_id):
+		_refresh_feedback_geometry(cue)
 
 
 func _on_feedback_sampled(cue: BattleFeedbackCue, progress: float) -> void:
@@ -216,7 +247,6 @@ func _on_feedback_sampled(cue: BattleFeedbackCue, progress: float) -> void:
 		if pose is Transform3D: cue.bind_surface(pose)
 	if cue.event_id.is_empty() or not feedback_cues.has(cue.event_id):
 		return
-	_refresh_feedback_geometry(cue)
 	var source := _feedback_card(cue.source_endpoint)
 	var target := _feedback_card(cue.target_endpoint)
 	var views: Array = []
@@ -225,12 +255,17 @@ func _on_feedback_sampled(cue: BattleFeedbackCue, progress: float) -> void:
 			view.reset_battle_feedback()
 			views.append(view)
 	feedback_views[cue.event_id] = views
-	var p := clampf((progress - cue.impact_fraction) / maxf(0.01, 1.0 - cue.impact_fraction), 0.0, 1.0)
+	_refresh_feedback_geometry(cue)
+	var p := cue.contact_progress(progress)
 	var pulse := sin(p * PI) * (1.0 - p)
+	var focus := 0.0
+	if cue.spatial and cue.kind in ["charge", "attack", "evolution", "ko", "victory"]:
+		focus = sin(progress * PI) * cue.profile.focus_strength
+	table.render3d.world.set_feedback_focus(cue.event_id, cue.source, cue.target, cue.width, focus)
 	var direction := (table.render3d.world.projection.world_to_screen(cue.target) - table.render3d.world.projection.world_to_screen(cue.source)).normalized()
 	if source != null and cue.lunge:
-		var lunge := smoothstep(0.0, cue.impact_fraction, progress) if progress < cue.impact_fraction else pow(1.0 - p, 2.0)
-		source.battle_fx_offset = direction * MotionPolicy.PROFILE.attack_lunge * lunge
+		var lunge := pow(clampf(progress / maxf(0.01, cue.impact_fraction), 0.0, 1.0), 1.65) if progress < cue.impact_fraction else pow(1.0 - p, 3.0)
+		source.battle_fx_offset = direction * cue.profile.attack_lunge * lunge
 		source.battle_fx_lift = MotionPolicy.PROFILE.charge_lift * sin(progress * PI)
 		source.battle_fx_tilt = -0.035 * sin(progress * PI)
 	if target != null:
@@ -241,27 +276,43 @@ func _on_feedback_sampled(cue: BattleFeedbackCue, progress: float) -> void:
 				target.battle_fx_lift = sin(progress * PI) * 0.012
 			"charge":
 				target.battle_fx_lift = MotionPolicy.PROFILE.charge_lift * sin(progress * PI)
-				target.battle_fx_strength = sin(progress * PI) * 0.65
+				target.battle_fx_tilt = sin(progress * PI) * 0.065
+				target.battle_fx_strength = sin(progress * PI) * 1.05
 			"attack", "recoil", "status_damage":
 				if direction.is_zero_approx():
 					direction = Vector2(0, 1)
-				target.battle_fx_offset = direction * MotionPolicy.PROFILE.hit_recoil * sin(p * PI * 2.0) * (1.0 - p)
-				target.battle_fx_tilt = pulse * 0.045
+				var contact := 1.0 if progress >= cue.impact_fraction else 0.0
+				var recoil := cos(p * PI * 2.5) * pow(1.0 - p, 3.0) * contact
+				target.battle_fx_offset = direction * cue.profile.hit_recoil * recoil * cue.intensity
+				target.battle_fx_tilt = recoil * 0.075
+				target.battle_fx_lift = absf(recoil) * 0.065
+				target.battle_fx_strength = (1.0 - smoothstep(0.0, 0.45, p)) * contact * 1.15
 			"ko":
 				target.battle_fx_desaturation = smoothstep(0.0, 0.65, progress) * 0.85
+				target.battle_fx_lift = sin(progress * PI) * 0.055
+				target.battle_fx_tilt = sin(progress * PI) * -0.06
 			"evolution", "energy", "trainer", "stadium", "tool":
 				target.battle_fx_sweep = progress
-				target.battle_fx_strength = sin(progress * PI) * 0.7
+				target.battle_fx_strength = sin(progress * PI) * 1.05
 				if cue.kind == "evolution":
 					target.battle_fx_lift = sin(progress * PI) * 0.025
+	# Bind glyphs to this sample's displaced face, not last frame's resting pose.
+	# Otherwise the contact flash can render underneath the lifted hit card.
+	_refresh_feedback_geometry(cue)
 
 
 func _on_feedback_released(cue: BattleFeedbackCue) -> void:
+	if table.render3d != null and table.render3d.world != null:
+		table.render3d.world.clear_feedback_focus(cue.event_id)
 	accent_sources.erase(cue.get_instance_id())
 	for value in feedback_views.get(cue.event_id, []):
 		var view := _valid_card_view(value)
 		if view != null:
 			view.reset_battle_feedback()
+			# A deferred KO keeps this exact stack visible through trigger choices.
+			# Carry its finish into departure instead of flashing back to full ink.
+			if cue.kind == "ko" and cue.sample_progress >= 1.0 and view in slot_covers.values():
+				view.set_meta("ko_desaturation", 0.85)
 	feedback_views.erase(cue.event_id)
 	feedback_cues.erase(cue.event_id)
 	feedback_events.erase(cue.event_id)

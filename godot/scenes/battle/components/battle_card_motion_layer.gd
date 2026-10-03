@@ -526,6 +526,7 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			),
 			"landing_view": landing_view,
 			"source_zone": geometry._zone_view_for_endpoint(source),
+			"departing_hand": str(source.get("zone", "")) == "hand",
 			"existing_flyer": existing_flyer,
 			"landing_attachment_type": landing_attachment_type,
 			"landing_attachment_card_id": (
@@ -672,6 +673,8 @@ func _spawn_card_motion_spec(
 	)
 	if flying != null:
 		flying.set_meta("motion_kind", str(spec.get("path_kind", spec.get("event_type", ""))))
+		flying.set_meta("departing_hand", bool(spec.get("departing_hand", false)))
+		flying.set_meta("paper_desaturation", 0.85 if str(flying.get_meta("motion_kind")) == "ko_leave_play" else 0.0)
 		var source_zone := spec.get("source_zone") as ZoneView
 		if source_zone != null and existing_flyer == null and table.render3d != null and table.render3d.is_projection_ready():
 			var to_table := table.get_global_transform_with_canvas().affine_inverse() * table.effects.get_global_transform_with_canvas()
@@ -1246,7 +1249,8 @@ func _update_slot_composite_motion(
 		var projection := table.render3d.world.projection
 		var units := projection.screen_to_world(Vector2(bend, 0)).x - projection.screen_to_world(Vector2.ZERO).x
 		pose.origin.x += sin(progress * PI) * units * 0.65
-		pose.origin.y += sin(progress * PI) * source.basis.x.length() * 0.14
+		var lane_height := 0.24 if str(mover.get_meta("slot_composite_to", "")) == "active" else 0.10
+		pose.origin.y += sin(progress * PI) * source.basis.x.length() * lane_height
 		pose.basis = BattleProjection3D.rotate_card_basis(pose.basis,
 			Basis(Vector3.FORWARD, sin(progress * PI) * signf(bend) * 0.08))
 		mover.set_meta("physical_pose", pose)

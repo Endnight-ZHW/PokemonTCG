@@ -48,6 +48,7 @@ Array card_id_values(const std::vector<std::string> &card_ids);
 Array card_id_values(const std::vector<Value> &cards);
 Array selected_card_id_values(const Value &selected_options);
 void append_card_zone_event( VmExecutionResult &result, const std::string &event_type, std::int32_t owner, Array card_ids, const std::string &source_zone, const std::string &target_zone, const std::string &visibility );
+void append_energy_attachment_event( VmExecutionResult &result, std::int32_t owner, const std::string &card_id, Object source, const std::string &target_slot, std::int64_t target_index );
 void append_cards_drawn_event( VmExecutionResult &result, std::int32_t owner, const std::vector<std::string> &drawn, const std::string &purpose = "effect" );
 void append_damage_feedback_event( VmExecutionResult &result, const std::string &event_type, std::int32_t actor, std::int32_t target_player, const std::string &target_slot, std::int64_t amount );
 void append_healed_event( VmExecutionResult &result, std::int32_t actor, std::int32_t target_player, const std::string &target_slot, std::int64_t healed_counters );

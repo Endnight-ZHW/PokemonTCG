@@ -69,6 +69,9 @@ func update_phase(
 		label = "结束回合"
 		enabled = true
 		tooltip = "结束当前玩家的回合"
+	elif game_mode == "preview":
+		label = "预览完成"
+		tooltip = "使用实验台选择下一段动画"
 
 	phase_advance_button.text = label
 	phase_advance_button.disabled = not enabled

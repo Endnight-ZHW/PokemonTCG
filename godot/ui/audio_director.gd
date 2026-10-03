@@ -8,6 +8,11 @@ var _cues: Dictionary = {}
 var _music_streams: Dictionary = {}
 var _current_music := ""
 var _initialized := false
+const SFX_VOICES := 8
+var _sfx_voices: Array[AudioStreamPlayer] = []
+var _sfx_orders: Array[int] = []
+var _sfx_priorities: Array[int] = []
+var _sfx_serial := 0
 
 
 func _ready() -> void:
@@ -15,12 +20,16 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	stop_sfx()
 	for player in [ui_player, sfx_player, music_player]:
 		if player:
 			player.stop()
 			player.stream = null
 	_cues.clear()
 	_music_streams.clear()
+	_sfx_voices.clear()
+	_sfx_orders.clear()
+	_sfx_priorities.clear()
 
 
 func _initialize_runtime() -> void:
@@ -30,6 +39,11 @@ func _initialize_runtime() -> void:
 	_ensure_buses()
 	ui_player = _player("UI")
 	sfx_player = _player("SFX")
+	_sfx_voices.append(sfx_player)
+	for index in range(SFX_VOICES):
+		if index > 0: _sfx_voices.append(_player("SFX"))
+		_sfx_orders.append(0)
+		_sfx_priorities.append(0)
 	music_player = _player("Music")
 	music_player.finished.connect(_on_music_finished)
 	_build_cues()
@@ -44,7 +58,33 @@ func play_ui(cue: String = "click") -> void:
 
 func play_cue(cue: String) -> void:
 	_initialize_runtime()
-	_play(sfx_player, _cues.get(cue))
+	var stream: AudioStreamWAV = _cues.get(cue)
+	if stream == null: return
+	var priority := 3 if cue.begins_with("attack_hit") or cue in ["evolution", "pokemon_ko", "victory", "coin_land"] else 1
+	var chosen := -1
+	for index in range(_sfx_voices.size()):
+		if not _sfx_voices[index].playing:
+			chosen = index
+			break
+		if chosen < 0 or _sfx_priorities[index] < _sfx_priorities[chosen] or (_sfx_priorities[index] == _sfx_priorities[chosen] and _sfx_orders[index] < _sfx_orders[chosen]):
+			chosen = index
+	if chosen < 0 or (_sfx_voices[chosen].playing and _sfx_priorities[chosen] > priority): return
+	_sfx_serial += 1
+	_sfx_orders[chosen] = _sfx_serial
+	_sfx_priorities[chosen] = priority
+	_play(_sfx_voices[chosen], stream)
+
+
+func stop_sfx() -> void:
+	for voice in _sfx_voices:
+		if is_instance_valid(voice):
+			voice.stop()
+			voice.stream = null
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED:
+		stop_sfx()
 
 
 func play_music(track: String) -> void:
@@ -72,10 +112,14 @@ func stop_music() -> void:
 
 func apply_settings() -> void:
 	_initialize_runtime()
-	_set_bus_volume("Master", AppSettings.master_volume, AppSettings.muted)
-	_set_bus_volume("Music", AppSettings.music_volume, AppSettings.muted)
-	_set_bus_volume("SFX", AppSettings.sfx_volume, AppSettings.muted)
-	_set_bus_volume("UI", AppSettings.sfx_volume, AppSettings.muted)
+	# Resolve at runtime, including SceneTree contract scripts parsed before autoloads.
+	var loop := Engine.get_main_loop() as SceneTree
+	var settings := loop.root.get_node_or_null("AppSettings") if loop != null else null
+	if settings == null: return
+	_set_bus_volume("Master", float(settings.get("master_volume")), bool(settings.get("muted")))
+	_set_bus_volume("Music", float(settings.get("music_volume")), bool(settings.get("muted")))
+	_set_bus_volume("SFX", float(settings.get("sfx_volume")), bool(settings.get("muted")))
+	_set_bus_volume("UI", float(settings.get("sfx_volume")), bool(settings.get("muted")))
 
 
 func _ensure_buses() -> void:
@@ -118,6 +162,54 @@ func _build_cues() -> void:
 		"turn_change": _tone([440.0, 620.0, 820.0], 0.3, 0.11),
 		"victory": _tone([520.0, 680.0, 860.0, 1100.0], 0.52, 0.16),
 	}
+	# Deterministic synthesis is cached once; no samples or randomness enter rules.
+	var paper_sounds := {
+		"card_draw": [680.0, 1080.0, 0.12, 0.80], "card_move": [340.0, 780.0, 0.14, 0.68],
+		"card_discard": [900.0, 180.0, 0.18, 0.82], "shuffle": [460.0, 300.0, 0.28, 0.90],
+	}
+	for name_value: String in paper_sounds:
+		var values: Array = paper_sounds[name_value]
+		_cues[name_value] = _textured_cue(values[0], values[1], values[2], values[3], 0.18)
+	_cues.card_place = _textured_cue(210.0, 65.0, 0.13, 0.48, 0.25)
+	_cues.attack_charge = _textured_cue(110.0, 680.0, 0.22, 0.24, 0.20, true)
+	_cues.attack_hit = _textured_cue(160.0, 48.0, 0.24, 0.62, 0.32)
+	_cues.energy_attach = _textured_cue(780.0, 1380.0, 0.24, 0.12, 0.17)
+	_cues.evolution = _textured_cue(480.0, 1480.0, 0.38, 0.20, 0.22)
+	_cues.pokemon_ko = _textured_cue(330.0, 44.0, 0.42, 0.44, 0.27)
+	_cues.coin_land = _textured_cue(1850.0, 1420.0, 0.16, 0.28, 0.16)
+	var attributes := {
+		"grass": [650.0, 180.0, 0.82], "fire": [140.0, 48.0, 0.78],
+		"water": [460.0, 90.0, 0.68], "lightning": [2100.0, 130.0, 0.56],
+		"psychic": [580.0, 220.0, 0.18], "fighting": [100.0, 38.0, 0.48],
+		"darkness": [190.0, 54.0, 0.30], "metal": [1700.0, 580.0, 0.26],
+		"dragon": [380.0, 72.0, 0.44], "colorless": [320.0, 65.0, 0.84],
+	}
+	for element: String in attributes:
+		var values: Array = attributes[element]
+		_cues["attack_hit_" + element] = _textured_cue(values[0], values[1], 0.26, values[2], 0.28)
+
+
+func _textured_cue(start_hz: float, end_hz: float, seconds: float, noise_mix: float, volume: float, rising: bool = false) -> AudioStreamWAV:
+	var rate := 22050
+	var samples := int(seconds * rate)
+	var bytes := PackedByteArray()
+	bytes.resize(samples * 2)
+	var phase := 0.0
+	var filtered := 0.0
+	var seed_value := 73101
+	for index in range(samples):
+		var t := float(index) / maxi(1, samples - 1)
+		seed_value = (seed_value * 1103515245 + 12345) & 0x7fffffff
+		var noise := float(seed_value) / 1073741824.0 - 1.0
+		filtered = lerpf(filtered, noise, 0.34)
+		phase += TAU * lerpf(start_hz, end_hz, t) / rate
+		var body := sin(phase) * 0.68 + sin(phase * 2.73) * 0.20 + sin(phase * 0.5) * 0.12
+		var envelope := smoothstep(0.0, 0.025, t) * exp(-t * 5.0) * (1.0 - smoothstep(0.8, 1.0, t))
+		if rising: envelope = sin(t * PI * 0.85) * (1.0 - smoothstep(0.82, 1.0, t))
+		var transient := noise * exp(-t * 45.0) * 0.18
+		var wave := (lerpf(body, filtered * 2.0, noise_mix) + transient) * envelope * volume
+		bytes.encode_s16(index * 2, int(clampf(wave, -1.0, 1.0) * 32767.0))
+	return _wav(bytes, rate, false)
 
 
 func _build_music() -> void:

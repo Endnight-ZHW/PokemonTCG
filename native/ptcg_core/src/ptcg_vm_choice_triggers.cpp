@@ -372,11 +372,26 @@ bool resume_vm_triggers(
                 for (std::size_t index = 0; index < moved.size(); ++index) {
                     Value *target = targets[
                         same_target ? 0 : index];
+                    // Each presentation event retires one source before the
+                    // next starts. Keep its index in that evolving stack,
+                    // including nonascending multi-energy selections.
+                    auto source_index = static_cast<std::int64_t>(indices[index]);
+                    for (std::size_t prior = 0; prior < index; ++prior) {
+                        if (indices[prior] < indices[index]) --source_index;
+                    }
+                    append_energy_attachment_event(result, actor,
+                        moved[index].string_or(), Object{
+                            {"slot", Value(source_slot)},
+                            {"attachment_type", Value("energy")},
+                            {"index", Value(source_index)},
+                        }, string_arg(selected_options.as_array()[
+                            same_target ? 0 : index], "slot"),
+                        static_cast<std::int64_t>(required(
+                            *target, "energy_card_ids").as_array().size()));
                     required(
                         *target,
                         "energy_card_ids"
                     ).as_array().push_back(std::move(moved[index]));
-                    result.event_types.emplace_back("energy_attached");
                 }
             }
         } else if (op == "search_any_and_switch") {

@@ -112,9 +112,9 @@ func pose_for_toss(projection: BattleProjection3D, screen_center: Vector2, pixel
 	var angular := 1.0 - pow(1.0 - airborne, 1.5)
 	var flip := lerpf(start_angle, end_angle, angular)
 	var settle := clampf((t - contact) / (1.0 - contact), 0.0, 1.0)
-	var rock := sin(settle * TAU * 1.5) * pow(1.0 - settle, 2.0) * 0.11
+	var rock := sin(settle * TAU * 1.75) * pow(1.0 - settle, 2.5) * 0.15
 	var rise := sin(airborne * PI) * MotionPolicy.PROFILE.coin_lift
-	rise += sin(settle * PI) * (1.0 - settle) * 0.07
+	rise += sin(pow(settle, 0.65) * PI) * pow(1.0 - settle, 2.0) * 0.10
 	var drift := Vector2(sin(t * PI) * 7.0, -sin(t * PI) * 10.0)
 	var pose := projection.pose_for_screen(screen_center + drift, pixel_width, sin(t * PI) * 0.08, 0.8, 0.18)
 	var resting_origin := pose.origin

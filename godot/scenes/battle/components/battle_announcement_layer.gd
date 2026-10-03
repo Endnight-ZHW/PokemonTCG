@@ -143,6 +143,7 @@ func _play_next() -> void:
 		exit_duration,
 	)
 	if not reduced_motion:
+		_active_tween.parallel().tween_property(motion_root, "position", Vector2(12.0, 0.0), exit_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		_active_tween.parallel().tween_method(_set_rule_progress, (enter_duration + hold_duration) / total, 1.0, exit_duration)
 	handle.completed.connect(
 		_on_active_completed.bind(run_generation),

@@ -3,6 +3,15 @@ render_mode diffuse_burley;
 
 uniform vec4 base_color : source_color = vec4(0.851, 0.788, 0.678, 1.0);
 uniform bool wood = false;
+uniform float focus_strength = 0.0;
+uniform float focus_radius = 1.4;
+uniform vec3 focus_source = vec3(0.0);
+uniform vec3 focus_target = vec3(0.0);
+varying vec3 world_position;
+
+void vertex() {
+	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void fragment() {
@@ -23,6 +32,8 @@ void fragment() {
 		float seam = (1.0 - smoothstep(0.0005, 0.002, abs(emblem.y))) * step(length(emblem), 0.13);
 		ALBEDO *= 1.0 - 0.035 * max(ring, seam);
 		ROUGHNESS = 0.95;
+		float distance_to_action = min(length(world_position.xz - focus_source.xz), length(world_position.xz - focus_target.xz));
+		ALBEDO *= 1.0 - focus_strength * smoothstep(focus_radius * 0.5, focus_radius * 2.0, distance_to_action);
 	}
 	SPECULAR = wood ? 0.26 : 0.10;
 }

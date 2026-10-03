@@ -30,6 +30,7 @@ var _checkpoint_generation := 0
 var animation_element := "Fire"
 var animation_viewer := 0
 var animation_action := "attack"
+var preview_audio: AudioDirector
 
 @onready var preview_host: Control = %PreviewHost
 @onready var preview_caption: Label = %PreviewCaption
@@ -37,6 +38,9 @@ var animation_action := "attack"
 
 
 func _ready() -> void:
+	preview_audio = AudioDirector.new()
+	preview_audio.name = "PreviewAudio"
+	add_child(preview_audio)
 	_resolve_nodes()
 	_bind_toolbar()
 	show_preview("battle")
@@ -727,6 +731,9 @@ func _show_battle() -> void:
 	sample_state = UIPreviewStateFactory.battle_state()
 	current_battle = BATTLE_SCENE.instantiate() as BattleTable
 	preview_host.add_child(current_battle)
+	if preview_audio != null:
+		current_battle.audio_requested.connect(preview_audio.play_cue)
+		current_battle.audio_cancel_requested.connect(preview_audio.stop_sfx)
 	current_battle.initialize_ui()
 	current_battle.update_view(
 		sample_state,
@@ -1141,6 +1148,7 @@ func _centered_panel(min_size: Vector2) -> Container:
 
 
 func _clear_preview() -> void:
+	if preview_audio != null: preview_audio.stop_sfx()
 	_checkpoint_generation += 1
 	if current_battle != null and is_instance_valid(current_battle):
 		current_battle.process_mode = Node.PROCESS_MODE_INHERIT

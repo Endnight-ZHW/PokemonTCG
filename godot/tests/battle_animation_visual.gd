@@ -38,12 +38,20 @@ func _run() -> void:
 	root.add_child(table)
 	for element in BattleFeedbackCue.ELEMENTS:
 		await _capture("damage_dealt", element, 0.26, element.to_lower() + "-travel")
+		await _capture("damage_dealt", element, 0.44, element.to_lower() + "-contact")
 		await _capture("damage_dealt", element, 0.68, element.to_lower() + "-impact")
 	for action in ["energy_attached", "pokemon_evolved", "healed", "damage_prevented", "status_POISONED", "status_BURNED", "status_ASLEEP", "status_PARALYZED", "status_CONFUSED", "pokemon_ko", "game_over"]:
 		await _capture(action, "Fire", 0.60, action)
 	await _capture("energy_attached", "Fire", 0.92, "energy-contact")
 	await _capture("pokemon_evolved", "Fire", 0.92, "evolution-contact")
 	await _capture("damage_dealt", "Lightning", 0.65, "opponent-view", 1)
+	await _capture("heavy_hit", "Lightning", 0.44, "heavy-lightning-contact")
+	for mode in ["cinematic", "fast"]:
+		settings.animation_mode = mode
+		await _capture("damage_dealt", "Fire", 0.44, mode + "-contact")
+	settings.animation_mode = "standard"
+	settings.quality_profile = "medium"
+	await _capture("damage_dealt", "Water", 0.44, "medium-contact")
 	for resolution in [Vector2i(1280, 720), Vector2i(900, 540), Vector2i(2000, 900), Vector2i(640, 960)]:
 		root.size = resolution
 		root.content_scale_size = resolution

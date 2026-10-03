@@ -91,6 +91,7 @@ func _ready() -> void:
 	table.camera_rig.configure(world)
 	world.feedback.impact_reached.connect(table.presentation_runtime._on_feedback_impact)
 	world.feedback.sampled.connect(table.presentation_runtime._on_feedback_sampled)
+	world.feedback.geometry_requested.connect(table.presentation_runtime._on_feedback_geometry_requested)
 	world.feedback.released.connect(table.presentation_runtime._on_feedback_released)
 	modulate.a = 0.0
 	visibility_changed.connect(_on_visibility_changed)
@@ -113,6 +114,8 @@ func _exit_tree() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED:
+		if table != null and table.camera_rig != null:
+			table.camera_rig.cancel()
 		_paused = true
 		set_process(false)
 		if world != null:
@@ -143,6 +146,9 @@ func _on_visibility_changed() -> void:
 			# quality until _exit_tree(), while discarding inactive frame samples.
 			settings.reset_battle_frame_samples()
 	if not active and world != null:
+		if table != null:
+			if table.camera_rig != null: table.camera_rig.cancel()
+			table.audio_cancel_requested.emit()
 		mulligan.clear()
 		world.clear_entities()
 
@@ -255,10 +261,62 @@ func sync_surfaces() -> void:
 			_sync_zone(anchor as ZoneView)
 		else:
 			_sync_token(anchor)
+	_resolve_motion_clearance()
+	world.feedback.refresh_geometry()
 	for hud in [table.own_info, table.own_allowance_row, table.opponent_info, table.opponent_hand_count_badge]:
 		if hud != null:
 			_mask_hud(hud, showcase)
 	_layout_opponent_info()
+
+
+func _resolve_motion_clearance() -> void:
+	var movers: Array[Control] = []
+	var moving_ids: Dictionary = {}
+	for token: Control in table.card_motion_layer.entities:
+		if not token.visible or bool(token.get_meta("motion_completed", false)): continue
+		if token is CardMotionEntity:
+			if not token.has_world_pose or not token.has_meta("motion_kind") or str(token.get_meta("motion_kind")) == "deck_shuffled": continue
+		elif not (token is CardView and token.has_meta("slot_composite_motion")):
+			continue
+		var entity := world.entities.get(_key(token)) as CardEntity3D
+		if entity == null or not entity.visible: continue
+		movers.append(token)
+		for key in Dictionary(_anchors.get(token.get_instance_id(), {})).get("keys", []):
+			var child := world.entities.get(key) as CardEntity3D
+			if child != null: moving_ids[child.get_instance_id()] = true
+	var obstacles: Array[CardEntity3D] = []
+	for entity: CardEntity3D in world.entities.values():
+		if entity.visible and entity.body.visible and not moving_ids.has(entity.get_instance_id()): obstacles.append(entity)
+	# Older flights own their lane; newer ones clear the resolved volumes.
+	for token in movers:
+		var entity := world.entities[_key(token)] as CardEntity3D
+		var pose := entity.transform
+		var before := pose.origin.y
+		pose.origin.y += maxf(0.0, 0.012 - BattleCardClearance3D.lowest_y(pose))
+		for pass_index in range(4):
+			var lifted := false
+			for obstacle in obstacles:
+				var lift := BattleCardClearance3D.separation(pose, entity.half_height(), obstacle.transform, obstacle.half_height())
+				if lift > 0.0:
+					pose.origin.y += lift
+					lifted = true
+			if not lifted: break
+		var correction := pose.origin.y - before
+		token.set_meta("clearance_lift", correction)
+		if correction > 0.0:
+			entity.transform = pose
+			if token is CardMotionEntity:
+				token.world_pose.origin.y += correction
+				token.resolved_world_pose.origin.y += correction
+			else:
+				var base: Transform3D = token.get_meta("physical_pose", pose)
+				base.origin.y += correction
+				token.set_meta("physical_pose", base)
+				_sync_card(token as CardView)
+			entity.update_contact_shadow()
+		for key in Dictionary(_anchors.get(token.get_instance_id(), {})).get("keys", []):
+			var child := world.entities.get(key) as CardEntity3D
+			if child != null and child.visible and child.body.visible: obstacles.append(child)
 
 
 func _layout_opponent_info() -> void:
@@ -442,7 +500,7 @@ func _sync_card(card: CardView) -> void:
 	if not hand and not card.empty and thinking != null and thinking.active and card.owner_player == thinking.ai_player:
 		thinking_tint = thinking.card_highlight_color()
 	entity.set_highlight(card.selected, card.targetable, card._hovered, card.empty and not card.is_hidden_card, thinking_tint, card.actionable and not card.is_hidden_card, _quality != "low" and not MotionPolicy.reduced(), card._target_accent)
-	entity.set_feedback(card.battle_fx_color, card.battle_fx_strength, card.battle_fx_desaturation, card.battle_fx_sweep)
+	entity.set_feedback(card.battle_fx_color, card.battle_fx_strength, maxf(card.battle_fx_desaturation, float(card.get_meta("ko_desaturation", 0.0))), card.battle_fx_sweep)
 	if hand and card.get_parent() == table.opponent_hand_surface:
 		_clip_far_hand_below_task(entity)
 	else:
@@ -571,7 +629,7 @@ func _sync_token(anchor: Control) -> void:
 	var hidden := texture == CardEntity3D.BACK
 	entity.set_surface(texture, hidden)
 	entity.set_highlight(false, false, false)
-	entity.set_feedback(Color("efd8ae"), float(anchor.get_meta("paper_glint", 0.0)), 0.0, float(anchor.get_meta("paper_sweep", -1.0)))
+	entity.set_feedback(Color("efd8ae"), float(anchor.get_meta("paper_glint", 0.0)), float(anchor.get_meta("paper_desaturation", 0.0)), float(anchor.get_meta("paper_sweep", -1.0)))
 	if anchor is CardMotionEntity and (anchor as CardMotionEntity).has_world_pose:
 		entity.transform = (anchor as CardMotionEntity).world_pose
 		if anchor.has_meta("snapshot_world_pose") and not anchor.has_meta("motion_event_id") and not anchor.has_meta("physical_reflow"):

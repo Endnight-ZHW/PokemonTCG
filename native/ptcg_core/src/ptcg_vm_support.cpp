@@ -709,6 +709,41 @@ void append_card_zone_event(
     });
 }
 
+void append_energy_attachment_event(
+    VmExecutionResult &result,
+    std::int32_t owner,
+    const std::string &card_id,
+    Object source,
+    const std::string &target_slot,
+    std::int64_t target_index
+) {
+    source["player"] = Value(owner);
+    Object data{
+        {"player", Value(owner)}, {"card_id", Value(card_id)},
+        {"card_ids", Value(Array{Value(card_id)})}, {"count", Value(1)},
+        {"source_player", Value(owner)}, {"target_player", Value(owner)},
+        {"target_slot", Value(target_slot)}, {"slot", Value(target_slot)},
+        {"target_index", Value(target_index)}, {"visibility", Value("public")},
+    };
+    for (const char *key : {"zone", "slot", "index"}) {
+        const auto found = source.find(key);
+        if (found != source.end()) {
+            data[std::string("source_") + key] = found->second;
+        }
+    }
+    result.event_types.emplace_back("energy_attached");
+    result.events.emplace_back(Object{
+        {"event_type", Value("energy_attached")},
+        {"actor", Value(owner)}, {"card_id", Value(card_id)}, {"amount", Value(1)},
+        {"source", Value(std::move(source))},
+        {"target", Value(Object{
+            {"player", Value(owner)}, {"slot", Value(target_slot)},
+            {"attachment_type", Value("energy")}, {"index", Value(target_index)},
+        })},
+        {"data", Value(std::move(data))},
+    });
+}
+
 void append_cards_drawn_event(
     VmExecutionResult &result,
     std::int32_t owner,

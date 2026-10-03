@@ -29,7 +29,7 @@ func _run() -> void:
 	coin.size = Vector2(600, 286)
 	root.add_child(coin)
 	coin.play([true, false], true, "硬币结果")
-	_report["scenarios"] = ["dense_hands", "attribute_hits", "evolution", "card_flights", "modal_coin"]
+	_report["scenarios"] = ["dense_hands", "attribute_hits", "evolution", "card_flights", "modal_coin", "live_heavy_hit"]
 	var state := UIPreviewStateFactory.battle_state()
 	for player in state.players:
 		for i in range(5):
@@ -66,6 +66,15 @@ func _run() -> void:
 					cue.impact_fraction = 0.42 if cue.kind == "attack" else 0.0
 					cue.quality = quality
 					table.render3d.world.feedback.play(cue)
+				# Also exercise the real cue consumer: lifted faces, live endpoint
+				# rebinding, readable numbers, focus uniforms and bounded camera work.
+				# This rendering fixture has no slot transactions or authoritative writes.
+				table.presentation_runtime.reset_camera_budget()
+				table.presentation_runtime.play_feedback(PresentationEvent.normalize({
+					"event_id": "perf:%s:%d" % [quality, i], "event_type": "damage_dealt", "actor": 0,
+					"source": {"player": 0, "slot": "active"}, "target": {"player": 1, "slot": "active"},
+					"amount": 120, "data": {"damage_kind": "attack_damage", "amount": 120},
+				}, 19000 + i, 0), MotionPolicy.duration("attack_impact"))
 				for n in range(4):
 					table.motion_entities._spawn_flying_card(table.hand_views[0].image.texture,
 						Vector2(1200, 180 + n * 15), Vector2(650 + n * 50, 800), 0.45,

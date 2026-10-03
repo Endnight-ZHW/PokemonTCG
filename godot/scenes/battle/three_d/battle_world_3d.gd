@@ -18,6 +18,7 @@ var framing_offset := Vector2.ZERO
 var coin: CoinEntity3D
 var feedback: BattleFeedback3D
 var reveal_stage: BattleRevealStage3D
+var _feedback_focus: Dictionary = {}
 
 
 func _ready() -> void:
@@ -129,6 +130,8 @@ func release_entity(key: String) -> void:
 
 
 func clear_entities() -> void:
+	_feedback_focus.clear()
+	_update_feedback_focus()
 	for key in entities.keys():
 		release_entity(str(key))
 	if feedback != null:
@@ -149,7 +152,44 @@ func camera_offset(offset: Vector2) -> void:
 	if camera == null:
 		return
 	camera.transform = _base_camera_transform
-	camera.position += camera.basis.x * offset.x * 0.002 + camera.basis.y * offset.y * 0.002
+	camera.h_offset = 0.0
+	camera.v_offset = 0.0
+	if offset.is_zero_approx() or not camera.is_inside_tree() or projection.viewport == null: return
+	# Convert logical viewport pixels at the table plane, independent of quality.
+	var center := projection.screen_size * 0.5
+	var plane := projection.camera_plane_point(center, camera.global_position.length())
+	var displaced := projection.camera_plane_point(center + offset, camera.global_position.length())
+	# Lens offsets leave the calibrated layout transform/cache unchanged, so
+	# reflow does not cancel the shake by moving cards to compensate for it.
+	camera.h_offset = (displaced - plane).dot(camera.global_basis.x)
+	camera.v_offset = (displaced - plane).dot(camera.global_basis.y)
+
+
+func set_feedback_focus(id: String, source: Vector3, target: Vector3, width: float, strength: float) -> void:
+	if id.is_empty(): return
+	if strength <= 0.001:
+		_feedback_focus.erase(id)
+	else:
+		_feedback_focus[id] = {"source": source, "target": target, "width": width, "strength": strength}
+	_update_feedback_focus()
+
+
+func clear_feedback_focus(id: String) -> void:
+	_feedback_focus.erase(id)
+	_update_feedback_focus()
+
+
+func _update_feedback_focus() -> void:
+	if _mat == null: return
+	var material := _mat.material_override as ShaderMaterial
+	var strongest: Dictionary = {}
+	for row: Dictionary in _feedback_focus.values():
+		if float(row.strength) > float(strongest.get("strength", 0.0)): strongest = row
+	material.set_shader_parameter("focus_strength", float(strongest.get("strength", 0.0)))
+	if not strongest.is_empty():
+		material.set_shader_parameter("focus_source", strongest.source)
+		material.set_shader_parameter("focus_target", strongest.target)
+		material.set_shader_parameter("focus_radius", float(strongest.width) * 1.4)
 
 
 func stats() -> Dictionary:

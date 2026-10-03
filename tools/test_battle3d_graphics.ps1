@@ -43,6 +43,8 @@ Invoke-BattleGraphicsCheck -Script 'res://tests/battle_animation_motion_review.g
     -Marker 'BATTLE_ANIMATION_MOTION_OK' -LogName 'battle-animation-motion.log'
 Invoke-BattleGraphicsCheck -Script 'res://tests/battle_card_effect_hand_contract.gd' `
     -Marker 'BATTLE_CARD_EFFECT_HAND_OK' -LogName 'battle3d-card-effect-hand.log'
+Invoke-BattleGraphicsCheck -Script 'res://tests/battle_action_identity_contract.gd' `
+    -Marker 'BATTLE_ACTION_IDENTITY_OK' -LogName 'battle-action-identity-graphics.log'
 Invoke-BattleGraphicsCheck -Script 'res://tests/double_knockout_flow_contract.gd' `
     -Marker 'DOUBLE_KNOCKOUT_FLOW_OK' -LogName 'battle3d-double-knockout-flow.log'
 Invoke-BattleGraphicsCheck -Script 'res://tests/ui_preview.gd' `

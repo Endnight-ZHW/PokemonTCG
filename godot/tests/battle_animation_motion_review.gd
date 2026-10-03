@@ -17,7 +17,7 @@ func _initialize() -> void:
 
 
 func _watchdog() -> void:
-	await create_timer(240.0).timeout
+	await create_timer(360.0).timeout
 	if not done:
 		push_error("Full-motion animation review timed out")
 		quit(1)
@@ -35,6 +35,10 @@ func _run() -> void:
 	settings.animation_mode = "standard"
 	settings.quality_profile = "high"
 	output = ProjectSettings.globalize_path("res://../build/animation-review")
+	var actions: Array = []
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--output="): output = ProjectSettings.globalize_path(arg.trim_prefix("--output="))
+		if arg.begins_with("--actions="): actions = Array(arg.trim_prefix("--actions=").split(",", false))
 	DirAccess.make_dir_recursive_absolute(output)
 	table = TABLE.instantiate() as BattleTable
 	root.add_child(table)
@@ -46,11 +50,16 @@ func _run() -> void:
 	caption.add_theme_font_size_override("font_size", 20)
 	caption.add_theme_color_override("font_color", DesignTokens.TEXT)
 	root.add_child(caption)
-	for kind in BattleAnimationPreview.ACTIONS:
+	var selected: Array = BattleAnimationPreview.ACTIONS.keys() if actions.is_empty() else actions
+	for kind in selected:
 		await _record(str(kind), 0)
-	await _record("cards_drawn", 1)
-	await _record("switched", 1)
-	await _record("energy_attached", 1)
+		if not actions.is_empty(): await _record(str(kind), 1)
+	if actions.is_empty():
+		await _record("cards_drawn", 1)
+		await _record("switched", 1)
+		await _record("energy_attached", 1)
+		for element in BattleFeedbackCue.ELEMENTS:
+			await _record("heavy_attack", 0, element, element.to_lower())
 	var file := FileAccess.open(output.path_join("motion-review.json"), FileAccess.WRITE)
 	file.store_string(JSON.stringify({"godot": Engine.get_version_info().string, "fps": 20, "mode": "standard", "records": records}, "\t"))
 	file.close()
@@ -63,13 +72,13 @@ func _run() -> void:
 	quit(0 if failures.is_empty() else 1)
 
 
-func _record(kind: String, viewer: int) -> void:
-	var key := kind + ("-opponent" if viewer == 1 else "")
+func _record(kind: String, viewer: int, element: String = "Fire", variant: String = "") -> void:
+	var key := kind + ("-opponent" if viewer == 1 else "") + ("-" + variant if not variant.is_empty() else "")
 	var folder := output.path_join(key)
 	DirAccess.make_dir_recursive_absolute(folder)
-	var fixture := BattleAnimationPreview.build(kind, "Fire", viewer, 14000 + records.size(), table.catalog)
+	var fixture := BattleAnimationPreview.build(kind, element, viewer, 14000 + records.size(), table.catalog)
 	table.cancel_presentations("motion_review", fixture.before_view)
-	caption.text = "%s · %s · 标准模式 / 完整动作" % [str(BattleAnimationPreview.ACTIONS.get(kind, kind)), "对手视角" if viewer == 1 else "己方视角"]
+	caption.text = "%s · %s · %s · 标准模式" % [str(BattleAnimationPreview.ACTIONS.get(kind, kind)), EnergyIconCatalog.type_display_name_for(element), "对手视角" if viewer == 1 else "己方视角"]
 	for frame in range(8):
 		await process_frame
 		await RenderingServer.frame_post_draw
@@ -107,4 +116,4 @@ func _record(kind: String, viewer: int) -> void:
 			failures.append(key + " left a hand card in its landing pose")
 	for index in range(images.size()):
 		images[index].save_png(folder.path_join("%04d.png" % index))
-	records.append({"kind": kind, "key": key, "label": str(BattleAnimationPreview.ACTIONS.get(kind, kind)), "viewer": viewer, "captures": images.size(), "timestamps_ms": timestamps, "rendered_frames": frames, "moving_entities": live_movers, "styles": styles.keys()})
+	records.append({"kind": kind, "key": key, "label": str(BattleAnimationPreview.ACTIONS.get(kind, kind)), "element": element, "viewer": viewer, "captures": images.size(), "timestamps_ms": timestamps, "rendered_frames": frames, "moving_entities": live_movers, "styles": styles.keys()})

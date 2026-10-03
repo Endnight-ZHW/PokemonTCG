@@ -91,8 +91,9 @@
 - 飞牌落地、来源遮挡和三维姿态在 `frame_pre_draw` 对齐。伤害反馈在接触帧发生；不得为了少一次更新破坏 Tweens 与实体同步。
 - 对局动画配置集中在 `res://presentation/default_battle_animation.tres`。在 Inspector 中可调整
   `BattleAnimationProfile` 的标准模式总时长、模式倍率、运动幅度、属性配色和粒子预算；
-  `MotionPolicy` 是唯一计时入口。抽牌 360ms、附能 400ms、进化 620ms、攻击蓄力 180ms／
-  命中 320ms；飞牌与落地收尾共享总时长。公开展示和重新起手保留单独的阅读下限。
+  `MotionPolicy` 是唯一计时入口。标准档抽牌 360ms、附能 400ms、进化 780ms、攻击蓄力 220ms／
+  命中 440ms、击倒 620ms、获胜 800ms；非攻击扣血仍为 320ms。飞牌与落地收尾共享总时长。
+  公开展示和重新起手保留单独的阅读下限。
 - `PresentationDirector.feedback_requested(event, duration)` 交给 `BattlePresentationRuntime`
   从玩家可见事件与当前展示态生成 `BattleFeedbackCue`。`BattleFeedback3D.play(cue)` 返回
   `MotionHandle`，在 `impact_reached(event_id)` 更新展示态 HP／状态、数值和音效；
@@ -101,6 +102,13 @@
   电弧、念力环、冲击碎屑、暗色弧刃、金属切光、龙形旋流和空气环拥有不同形状与轨迹。
   属性按公开来源卡首个 `energy_types` 解析，未知身份保持中性；仅 `attack_damage` 产生
   攻击前冲，反伤、异常状态扣血及伤害指示物使用独立反馈。
+- `BattleFeedbackGeometry` 根据进度采样属性主体、轨迹、接触核心与余波，`BattleFeedback3D` 只管理时间、池和生命周期。
+  `BattleFeedbackCue.contact_progress()` 将标准档 30ms／50ms 的普通／重击顿挫计入原时长，不改变引擎 time scale。
+  公开目标最大 HP 的 50% 为重击阈值；同一序列至多一次重击微震和一次击倒微震，分别限于 2px／3px。
+  镜头按逻辑屏幕像素换算，桌面材质局部压暗最多 12%，HUD 不参与压暗。掉帧越过接触点时仍只提交一次，剩余反馈受实际剩余时间约束。
+  高／中／低档默认装饰粒子预算为 36／22／10，共用接触时序；减少动画不使用空间运动或聚焦。
+- `AudioDirector.play_cue(String)` 使用最多八个 SFX 声部，低优先级声音不能挤掉命中、进化、击倒和硬币落地。
+  纸牌瞬态和十属性命中使用确定性的程序化音色，资源只在初始化生成；重同步、退出对局和应用暂停清理 SFX。
 - 卡牌反馈通过独立姿态偏移叠加到布局，附件及 HUD 跟随投影。减少动画模式直接提交接触结果，
   保留静态数值与状态；高／中／低画质使用相同时间轴，仅削减装饰数量。回收或取消效果必须
   先清理姿态再完成句柄，池满时仍需完成语义接触回调。
@@ -147,6 +155,7 @@ Challenge 默认使用 `strategic_intent_v3`；`turn_beam_v2` 仍承担比较与
 - fast 验证产品边界、源码清单、VM 完整性、原生核心、Relay、内容和 Godot ABI。
 - standard 检查生成数据、UI／交互合同与 LAN／Relay 整局；新增动画还要跑实际图形验证。
 - Workbench 侧栏的「属性动画实验台」提供全部动作、十种属性、双方视角、四档动画及三档画质；
+  「同名手牌 · 放置左侧／右侧」与「喷射能量 · 附能后换位」使用真实原生动作生成事件，便于核对副本身份和触发顺序。
   现有 0／50／100% 按钮用于暂停关键帧，「保存当前关键帧」写入 `build/animation-preview/`。
   `battle_animation_contract.gd` 验证命中前后展示态、单次提交、取消、池满以及所有动作完成；
   图形脚本 `battle_animation_visual.gd` 输出属性飞行／命中、异常状态、进化及多尺寸降级截图。
@@ -165,13 +174,26 @@ Challenge 默认使用 `strategic_intent_v3`；`turn_beam_v2` 仍承担比较与
   验证均匀间距、边界、居中、密集展开及实体点击，截图输出到 `build/hand-layout/validated/`。
   `battle_animation_motion_review.gd` 录制全部实验台动作的实际渲染过程（含起手、落地接管和双方视角），
   PNG 在动作结束后编码，避免录制阻塞主线程改变动画节奏。输出位于 `build/animation-review/`。
-  运行 `python tools/build_animation_review.py`（需要 Pillow）可按实际采样时间生成 GIF、关键帧和本地 `index.html` 播放器。
+  运行 `./tools/build_animation_review.ps1` 可按实际采样时间生成本地对照播放器 `build/battle-animation-upgrade/review.html`，
+  支持暂停、拖动和 0.5×／1×／2× 播放；可通过 `-BeforeDirectory`、`-AfterDirectory`、`-OutputDirectory` 指定目录。
+  默认基线目录为 `build/battle-animation-upgrade/before/animation-review/`。录像不含音轨，Workbench 可试听同步音效。
+  `battle_audio_contract.gd` 覆盖声部上限、优先级、属性音色、重同步与应用暂停清理。
   `test_battle3d_graphics.ps1` 包含这些图形检查，性能探针同时播放属性命中、进化和密集飞牌。
   图形测试专用驱动在窗口最小化时继续离屏绘制，避免等待 `frame_post_draw` 阻塞，无需恢复或抢占前台窗口。
 - 抽牌、奖励卡、出牌、进化和弃牌在 `BattleCardPath3D.travel()` 中分别编排；到达和落地回弹使用同一个 Tween。
+  飞牌先沿手牌平面抽离或从牌堆抬起，再翻面越过牌桌，最后沿目标牌面法线归位。
+  `BattleCardClearance3D` 对翻面后的真实三维纸片体积进行分离轴检查；渲染前统一避让桌面、牌堆、手牌及较早的飞牌，
+  换位复合牌堆也参与避让。不能用关闭深度测试或仅抬高卡牌中心替代牌角／厚度检查。
+  落地光效在避让后重新绑定真实实体，但不重复触发接触或推进时间；附能与进化分别保留总时长的 36%／40% 用于收束。
+  进化使用贯穿接触帧的双螺旋与光柱，附能随飞牌汇聚后收拢至能量标记。击倒的失色延续到离场，接近弃牌堆时再恢复。
+  `battle_motion_clearance_contract.gd` 覆盖双方视角、横竖屏、连续发牌和 40 张原有手牌的实体体积穿插检查。
+  `battle_action_identity_contract.gd` 通过真实规则与玩家视图检查同名手牌选择、能量附件转移，以及喷射能量接触后再换位；
+  动作事件必须在实际移牌时记录源索引和当时的目标位置，不能用最终状态的同名卡数量差替代实体身份。
   进化／附能的光效由飞牌时间轴推进，空中开始演出，在实际落地帧提交展示态，避免特效先跑完而卡牌仍未到达。
   洗牌分组共用边界修正，保持薄组在对手牌库和紧凑屏中平行、不穿插；硬币采用减速翻转和落定回摆。
   数值提示在牌面外侧避让连续结果；减少动画只展示静态轮廓和可读数值。
+  动作录像可用 `-- --actions=cards_drawn,opening_draw,pokemon_evolved --output=E:/PokemonTCG/build/my-review`
+  单独录制指定动作的双方视角；省略参数仍录制完整清单。
 - `test_godot.ps1` 中的 `touch_scroll_contract` 使用完整输入分发覆盖触摸、模拟鼠标去重、
   惯性停止、按钮/滑块/选牌/能量分配、日志及按钮出牌、滑动不出牌；同一脚本去掉 `--headless` 可在
   实际图形渲染下运行。桌面注入测试不能替代 Android 手机和平板真机手感验收。

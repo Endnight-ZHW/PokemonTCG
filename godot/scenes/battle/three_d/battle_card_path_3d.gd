@@ -3,10 +3,12 @@ extends RefCounted
 
 ## Every purpose has its own anticipation, travel and approach. Progress is
 ## wall-clock normalized; applying a second Tween ease would distort contacts.
-static func travel(start: Transform3D, finish: Transform3D, progress: float, kind: String, ordinal: int = 0) -> Transform3D:
+static func travel(start: Transform3D, finish: Transform3D, progress: float, kind: String, ordinal: int = 0, from_hand: bool = false) -> Transform3D:
 	var t := clampf(progress, 0.0, 1.0)
 	if t <= 0.0: return start
 	if t >= 1.0: return finish
+	if kind in ["cards_drawn", "prize_taken"] or from_hand:
+		return _clear_flight(start, finish, t, kind, ordinal, from_hand)
 	var profile := MotionPolicy.PROFILE
 	var width := lerpf(start.basis.x.length(), finish.basis.x.length(), t)
 	var u := float(Tween.interpolate_value(0.0, 1.0, t, 1.0, profile.flight_transition as Tween.TransitionType, Tween.EASE_IN_OUT))
@@ -14,22 +16,10 @@ static func travel(start: Transform3D, finish: Transform3D, progress: float, kin
 	var bank := 0.0
 	var pitch := 0.0
 	match kind:
-		"cards_drawn":
-			# Slide the top edge clear, then deal the card into the fan.
-			u = lerpf(0.0, 0.14, smoothstep(0.0, 0.20, t)) if t < 0.20 else lerpf(0.14, 1.0, 1.0 - pow(1.0 - (t - 0.20) / 0.80, 2.0))
-			lift = sin(t * PI) * profile.draw_peel
-			pitch = -sin(t * PI) * 0.12
-			bank = sin(t * PI) * -0.06
-		"prize_taken":
-			# A clear vertical pickup distinguishes a prize from an ordinary draw.
-			u = 0.04 * smoothstep(0.0, 0.24, t) if t < 0.24 else lerpf(0.04, 1.0, smoothstep(0.24, 1.0, t))
-			lift = sin(pow(t, 0.70) * PI) * profile.prize_lift
-			pitch = sin(t * PI) * -0.16
-			bank = sin(t * PI) * 0.11
 		"pokemon_evolved":
-			u = smoothstep(0.0, 0.62, t)
-			lift = smoothstep(0.0, 0.18, t) * (1.0 - smoothstep(0.78, 1.0, t)) * 0.20
-			pitch = sin(t * PI) * -0.08
+			u = smoothstep(0.0, 0.72, t)
+			lift = smoothstep(0.0, 0.18, t) * (1.0 - smoothstep(0.78, 1.0, t)) * 0.26
+			pitch = sin(t * PI) * -0.10
 		"pokemon_played", "trainer_played", "stadium_changed", "tool_attached":
 			u = smoothstep(0.08, 0.92, t)
 			lift = sin(t * PI) * profile.play_lift
@@ -50,9 +40,32 @@ static func travel(start: Transform3D, finish: Transform3D, progress: float, kin
 	return pose
 
 
+static func _clear_flight(start: Transform3D, finish: Transform3D, t: float, kind: String, ordinal: int, from_hand: bool) -> Transform3D:
+	var width := maxf(start.basis.x.length(), finish.basis.x.length())
+	var departure := start
+	var takeoff_end := 0.20
+	if from_hand:
+		# Slide parallel to the fan first: lifting a buried hand card immediately
+		# would cut through every higher paper layer, even with a tall flight arc.
+		var side := signf((finish.origin - start.origin).dot(start.basis.z))
+		departure.origin += start.basis.z * (side if side != 0.0 else -1.0) * CardEntity3D.ASPECT * 1.04
+	else:
+		departure.origin += start.basis.y.normalized() * width * (MotionPolicy.PROFILE.prize_lift if kind == "prize_taken" else MotionPolicy.PROFILE.draw_peel + 0.10)
+	if t < takeoff_end:
+		return start.interpolate_with(departure, smoothstep(0.0, takeoff_end, t))
+	var approach := finish
+	approach.origin += finish.basis.y.normalized() * width * 0.30
+	if t >= 0.80:
+		return approach.interpolate_with(finish, smoothstep(0.80, 1.0, t))
+	var u := smoothstep(takeoff_end, 0.80, t)
+	var pose := departure.interpolate_with(approach, u)
+	pose.origin.y += sin(u * PI) * width * (MotionPolicy.PROFILE.flight_clearance + float(ordinal % 3) * 0.12)
+	return pose
+
+
 static func settle(pose: Transform3D, progress: float) -> Transform3D:
 	var p := clampf(progress, 0.0, 1.0)
-	var rebound := sin(p * PI) * (1.0 - p)
+	var rebound := sin(pow(p, 0.68) * PI) * pow(1.0 - p, 1.5)
 	pose.origin.y += pose.basis.x.length() * rebound * MotionPolicy.PROFILE.landing_rebound
 	pose.basis = BattleProjection3D.rotate_card_basis(pose.basis,
 		Basis(Vector3.RIGHT, -rebound * MotionPolicy.PROFILE.landing_rock))
@@ -60,8 +73,8 @@ static func settle(pose: Transform3D, progress: float) -> Transform3D:
 
 
 static func flip_progress(kind: String, progress: float) -> float:
-	var begin := 0.20 if kind == "prize_taken" else 0.30
-	var end := 0.70 if kind == "prize_taken" else 0.65
+	var begin := 0.26
+	var end := 0.68
 	return smoothstep(begin, end, progress)
 
 ## Smooth projected travel and size between the close-up display and the table.
@@ -94,18 +107,18 @@ static func attachment(start: Transform3D, finish: Transform3D, progress: float,
 	var exit_pose := start
 	var entry := finish
 	if departing:
-		exit_pose.origin += start.basis.x * 0.72 + Vector3.UP * start.basis.x.length() * 0.07
+		exit_pose.origin += start.basis.x * 1.08
 	if arriving:
-		entry.origin += finish.basis.x * 0.72 + Vector3.UP * finish.basis.x.length() * 0.16
+		# Align outside the Pokemon's edge, then slide between parallel paper
+		# layers. Descending or banking while already overlapping cuts through it.
+		entry.origin += finish.basis.x * 1.08
 	var departure_end := 0.22 if departing else 0.0
 	var entry_start := 0.70 if arriving else 1.0
 	if departing and progress < departure_end:
 		return start.interpolate_with(exit_pose, smoothstep(0.0, 1.0, progress / departure_end))
 	if arriving and progress >= entry_start:
 		var docking := smoothstep(0.0, 1.0, (progress - entry_start) / (1.0 - entry_start))
-		var dock_pose := entry.interpolate_with(finish, docking)
-		dock_pose.basis = BattleProjection3D.rotate_card_basis(dock_pose.basis, Basis(Vector3.FORWARD, sin(docking * PI) * -0.06))
-		return dock_pose
+		return entry.interpolate_with(finish, docking)
 	var t := clampf((progress - departure_end) / maxf(0.01, entry_start - departure_end), 0, 1)
 	t = smoothstep(0.0, 1.0, t)
 	var pose := exit_pose.interpolate_with(entry, t)

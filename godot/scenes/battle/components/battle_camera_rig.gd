@@ -25,7 +25,7 @@ func _sample_impulse(progress: float, strength: float) -> void:
 	if not is_instance_valid(physical_world):
 		return
 	var envelope := pow(1.0 - progress, 2.0) * strength * 7.0
-	physical_world.camera_offset(Vector2(sin(progress * TAU * 2.0), sin(progress * TAU * 3.0) * 0.3) * envelope)
+	physical_world.camera_offset(Vector2(sin(progress * TAU * 2.0), sin(progress * TAU * 3.0) * 0.3).limit_length(1.0) * envelope)
 
 func _on_completed(_completed: MotionHandle, expected: MotionHandle) -> void:
 	if _impulse_handle != expected:

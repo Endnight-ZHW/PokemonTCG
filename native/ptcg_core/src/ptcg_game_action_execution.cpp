@@ -18,6 +18,57 @@ namespace ptcg::ai {
 
 using namespace game_detail;
 
+namespace {
+
+// Capture physical addresses at the operation, before triggers can move the
+// target again. A final-state multiset diff cannot distinguish duplicate hand
+// cards or recover the Bench landing that precedes Jet Energy's switch.
+void append_hand_movement(
+    GameExecutionResult &result,
+    const std::string &event_type,
+    std::int32_t actor,
+    const std::string &card_id,
+    std::size_t hand_index,
+    Object target
+) {
+    const auto index = static_cast<std::int64_t>(hand_index);
+    target["player"] = Value(actor);
+    Object data{
+        {"player", Value(actor)},
+        {"card_id", Value(card_id)},
+        {"card_ids", Value(Array{Value(card_id)})},
+        {"count", Value(1)},
+        {"source_player", Value(actor)},
+        {"source_zone", Value("hand")},
+        {"source_index", Value(index)},
+        {"target_player", Value(actor)},
+    };
+    for (const char *key : {"zone", "slot", "index"}) {
+        const auto found = target.find(key);
+        if (found != target.end()) {
+            data[std::string("target_") + key] = found->second;
+        }
+    }
+    if (target.find("slot") != target.end()) {
+        data["slot"] = target.at("slot");
+    }
+    result.event_types.push_back(event_type);
+    result.events.emplace_back(Object{
+        {"event_type", Value(event_type)},
+        {"actor", Value(actor)},
+        {"card_id", Value(card_id)},
+        {"amount", Value(1)},
+        {"source", Value(Object{
+            {"player", Value(actor)}, {"zone", Value("hand")},
+            {"index", Value(index)},
+        })},
+        {"target", Value(std::move(target))},
+        {"data", Value(std::move(data))},
+    });
+}
+
+} // namespace
+
 GameExecutionResult NativeGameKernel::apply_action(
     Value state,
     const Value &action,
@@ -84,7 +135,8 @@ GameExecutionResult NativeGameKernel::apply_action(
                 required(self, "bench").as_array().at(bench_index) =
                     make_pokemon(id, true);
             }
-            result.event_types.emplace_back("pokemon_played");
+            append_hand_movement(result, "pokemon_played", actor, id,
+                hand_index, Object{{"slot", Value(target)}});
         } else if (kind == "EVOLVE") {
             Array &hand = required(self, "hand").as_array();
             const std::size_t hand_index = static_cast<std::size_t>(
@@ -114,7 +166,9 @@ GameExecutionResult NativeGameKernel::apply_action(
             hand.erase(
                 hand.begin() + static_cast<std::ptrdiff_t>(hand_index)
             );
-            result.event_types.emplace_back("pokemon_evolved");
+            append_hand_movement(result, "pokemon_evolved", actor, next_id,
+                hand_index, Object{{"slot", Value(string_arg(
+                    action_params, "slot", "active"))}});
             settle_ability_effect_knockouts(result, cards_, actor);
         } else if (kind == "ATTACH_ENERGY") {
             Array &hand = required(self, "hand").as_array();
@@ -142,7 +196,13 @@ GameExecutionResult NativeGameKernel::apply_action(
                 hand.begin() + static_cast<std::ptrdiff_t>(hand_index)
             );
             self["energy_attached_this_turn"] = Value(true);
-            result.event_types.emplace_back("energy_attached");
+            append_hand_movement(result, "energy_attached", actor, energy_id,
+                hand_index, Object{
+                    {"slot", Value(target_slot)},
+                    {"attachment_type", Value("energy")},
+                    {"index", Value(static_cast<std::int64_t>(
+                        required(*target, "energy_card_ids").as_array().size() - 1))},
+                });
             if (energy_switches_with_active_on_attach(
                 cards_,
                 energy_id,
@@ -408,9 +468,15 @@ GameExecutionResult NativeGameKernel::apply_action(
                     actor,
                     target_slot
                 );
-                result.event_types.emplace_back("tool_attached");
+                append_hand_movement(result, "tool_attached", actor, id,
+                    hand_index, Object{
+                        {"slot", Value(target_slot)},
+                        {"attachment_type", Value("tool")}, {"index", Value(0)},
+                    });
             } else {
-                result.event_types.emplace_back("trainer_played");
+                append_hand_movement(result, "trainer_played", actor, id,
+                    hand_index, Object{{"zone", Value(
+                        trainer_type == "Stadium" ? "stadium" : "discard")}});
                 const Value *effects = definition->find(
                     "compiled_trainer_effects"
                 );

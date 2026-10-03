@@ -66,7 +66,7 @@ static func _packet_pose(base: Transform3D, cards: int, index: int, count: int, 
 	pose.origin += rig.x * side * MotionPolicy.PROFILE.shuffle_spread * spread
 	pose.origin += rig.z * side * 0.09 * spread
 	pose.origin += rig.y.normalized() * width * 0.008 * index * opening
-	var square := sin(smoothstep(0.78, 1.0, t) * PI) * 0.012
+	var square := sin(pow(smoothstep(0.78, 1.0, t), 0.7) * PI) * 0.020
 	pose.origin += Vector3.UP * width * (MotionPolicy.PROFILE.shuffle_lift * opening + square)
 	pose.basis = BattleProjection3D.rotate_card_basis(rig, Basis(Vector3.UP, deg_to_rad(side * 3.0 * spread)))
 	return pose

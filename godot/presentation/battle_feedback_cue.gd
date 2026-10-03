@@ -32,6 +32,28 @@ var lunge := false
 ## Physical arrivals sample this clock from their own flight/settle tween.
 ## This keeps the visible contact exact even during frame stalls or resize.
 var motion_driven := false
+var profile: BattleAnimationProfile = MotionPolicy.PROFILE
+var heavy := false
+var intensity := 1.0
+var sample_progress := 0.0
+
+
+func set_damage_weight(amount: int, maximum_hp: int) -> void:
+	if not lunge or maximum_hp <= 0:
+		return
+	var ratio := float(amount) / maximum_hp
+	heavy = ratio >= profile.heavy_damage_ratio
+	intensity = lerpf(0.85, 1.35, clampf(ratio, 0.0, 1.0))
+
+
+func contact_progress(progress: float) -> float:
+	var p := clampf((progress - impact_fraction) / maxf(0.01, 1.0 - impact_fraction), 0.0, 1.0)
+	if kind != "attack":
+		return p
+	# A local plateau freezes the hit silhouette, never the semantic clock.
+	# Normalize against standard timing so fast/cinematic scale the hold too.
+	var hold := (profile.heavy_impact_hold if heavy else profile.impact_hold) / maxf(0.01, float(profile.durations.get("attack_impact", 0.44)) * (1.0 - impact_fraction))
+	return clampf((p - hold) / maxf(0.01, 1.0 - hold), 0.0, 1.0)
 
 
 func bind_surface(pose: Transform3D) -> void:
@@ -137,6 +159,7 @@ static func from_event(event: Dictionary, source_card_id: String, catalog: CardC
 			cue.audio = "card_place"
 		"tool_attached":
 			cue.kind = "tool"
+			cue.color = Color("86a5af")
 			cue.audio = "card_place"
 		"trainer_played", "pokemon_played":
 			cue.kind = "trainer" if type == "trainer_played" else "land"

@@ -192,7 +192,7 @@ func _draw() -> void:
 		var text_size := int(row.get("font_size", 28))
 		var total := float(row.get("motion_total", 0.0))
 		var p := 1.0 - float(row.get("motion_remaining", 0.0)) / total if total > 0 else 1.0
-		var display_size := int(round(text_size * (1.0 + sin(p * PI) * 0.10)))
+		var display_size := int(round(text_size * (1.0 + sin(pow(p, 0.6) * PI) * 0.18)))
 		var width := FLOATING_TEXT_FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, display_size).x
 		var origin := position_value - Vector2(width * 0.5, 0)
 		var link: Vector2 = row.get("link", Vector2.INF)

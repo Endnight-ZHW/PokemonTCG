@@ -18,6 +18,7 @@ signal transition_started(handle: PresentationHandle)
 signal transition_finished(handle: PresentationHandle)
 signal presentation_busy_changed(busy: bool)
 signal audio_requested(cue: String)
+signal audio_cancel_requested
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 const CARD_BACK_TEXTURE: Texture2D = preload("res://assets/cards/card_back.webp")
@@ -888,6 +889,7 @@ func clear_presentation_for_resync() -> void:
 
 
 func clear_presentation_visuals_for_resync() -> void:
+	audio_cancel_requested.emit()
 	if _resync_tween != null and _resync_tween.is_valid():
 		_resync_tween.kill()
 	_resync_tween = null
@@ -1445,6 +1447,7 @@ func _bind_scene_nodes() -> void:
 			board_view._on_attachment_popover_dismissed,
 		)
 	director.sequence_started.connect(func(_count: int) -> void:
+		presentation_runtime.reset_camera_budget()
 		_director_input_blocked = not _settings_reduced_motion()
 		_sync_input_blocker()
 	)

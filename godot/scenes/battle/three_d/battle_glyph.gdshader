@@ -3,6 +3,8 @@ render_mode unshaded, cull_disabled, depth_draw_never, fog_disabled;
 
 // Analytic paper-light glyphs: no textures, bloom or per-card viewports.
 varying float glyph;
+varying float phase;
+varying float brightness;
 
 float segment(vec2 p, vec2 a, vec2 b) {
 	vec2 d = b - a;
@@ -11,6 +13,8 @@ float segment(vec2 p, vec2 a, vec2 b) {
 
 void vertex() {
 	glyph = INSTANCE_CUSTOM.x;
+	phase = INSTANCE_CUSTOM.y;
+	brightness = INSTANCE_CUSTOM.z;
 }
 
 void fragment() {
@@ -67,21 +71,42 @@ void fragment() {
 		if (shape == 19) d = max(d, max(0.46 - abs(p.x), 0.60 - abs(p.y)));
 	} else if (shape == 18) { // soft tapered ribbon segment
 		d = abs(p.y) - 0.40 * (1.0 - p.x * p.x);
+	} else if (shape == 20) { // asymmetric eight-point contact flash
+		float a = atan(p.y, p.x);
+		d = r - (0.35 + 0.44 * pow(abs(cos(a * 4.0 + 0.3)), 7.0));
+	} else if (shape == 21) { // flowing, tapered energy ribbon
+		float wave = sin(p.x * 9.0 - phase * 24.0) * 0.10;
+		d = abs(p.y - wave) - 0.43 * max(0.0, 1.0 - p.x * p.x);
+	} else if (shape == 22) { // soft luminous nucleus
+		d = r - 0.35;
+	} else if (shape == 23) { // open orbit, visibly directional rather than a full ring
+		d = max(abs(r - 0.70) - 0.05, p.x * 0.65 - p.y - 0.35);
+	} else if (shape == 24) { // broad translucent column with a tapered upper end
+		d = abs(p.x) - (0.25 + (p.y + 1.0) * 0.22);
+		d = max(d, abs(p.y) - 0.95);
 	}
 	float aa = max(fwidth(d), 0.015);
 	float ink = 1.0 - smoothstep(-aa, aa, d);
 	float interior = smoothstep(0.0, 0.24, -d);
-	float halo = exp(-max(d, 0.0) * 24.0) * (1.0 - ink) * 0.20;
+	float halo = exp(-max(d, 0.0) * 13.0) * (1.0 - ink) * 0.36;
+	if (shape == 22) {
+		ink = exp(-r * r * 7.0);
+		halo = exp(-r * r * 3.8) * 0.25;
+	}
+	if (shape == 24) {
+		ink *= (1.0 - smoothstep(0.15, 0.95, abs(p.x))) * smoothstep(-1.0, -0.25, p.y) * (1.0 - smoothstep(0.65, 1.0, p.y));
+		halo *= 0.35;
+	}
 	float light = clamp(0.65 - p.y * 0.3, 0.0, 1.0);
 	vec3 tint = mix(COLOR.rgb * 0.76, COLOR.rgb, light);
 	// A warm luminous core and translucent falloff replace opaque flat stickers.
-	tint = mix(tint, vec3(1.0, 0.98, 0.86), interior * 0.40);
+	tint = mix(tint, vec3(1.0, 0.98, 0.86), interior * 0.62);
 	if (shape == 2 || shape == 13) {
 		float highlight = 1.0 - smoothstep(0.05, 0.20, length(p - vec2(-0.18, -0.24)));
 		tint = mix(tint, vec3(0.92, 0.99, 1.0), highlight * 0.80);
 	}
 	if (shape == 4 || shape == 6 || shape == 7) halo *= 0.35;
 	ALBEDO = tint;
-	EMISSION = mix(COLOR.rgb, vec3(1.0, 0.97, 0.84), interior * 0.45) * ink * 0.22;
-	ALPHA = (ink * 0.78 + halo) * COLOR.a;
+	EMISSION = mix(COLOR.rgb, vec3(1.0, 0.97, 0.84), interior * 0.65) * ink * 0.30 * brightness;
+	ALPHA = clamp(ink * 0.94 + halo, 0.0, 1.0) * COLOR.a;
 }

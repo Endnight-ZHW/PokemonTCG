@@ -623,6 +623,7 @@ func build_game_screen() -> void:
 	main.battle_screen.set_local_hand_privacy_hidden(main.game_mode == MODE_LOCAL)
 	if main.audio_director:
 		main.battle_screen.audio_requested.connect(main.audio_director.play_cue)
+		main.battle_screen.audio_cancel_requested.connect(main.audio_director.stop_sfx)
 	if main.audio_director:
 		main.audio_director.play_music("battle")
 	main._refresh_game()

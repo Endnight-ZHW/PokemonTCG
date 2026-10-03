@@ -30,15 +30,21 @@ func _run() -> void:
 	var table := TABLE.instantiate() as BattleTable
 	root.add_child(table)
 	_check_cue_semantics(table.catalog)
+	_check_impact_staging(table.catalog)
 	for mode in ["cinematic", "standard", "fast"]:
 		settings.animation_mode = mode
 		await _check_contact(table, "damage_dealt")
+		await _check_contact(table, "heavy_hit")
 		await _check_contact(table, "healed")
 		await _check_contact(table, "status_POISONED")
 		await _check_contact(table, "damage_counters_placed")
 		await _check_arrival_contact(table, "energy_attached")
 		await _check_arrival_contact(table, "pokemon_evolved")
 	settings.animation_mode = "standard"
+	await _check_ko_finish(table)
+	_check_effect_tails(table.render3d.world.feedback)
+	await _check_camera_pixels(table)
+	await _check_stalled_contact(table)
 	await _check_cancel(table)
 	await _check_cancel(table, true)
 	_check_pool(table.render3d.world.feedback)
@@ -117,8 +123,23 @@ func _check_contact(table: BattleTable, kind: String) -> void:
 			_check(cover.damage_counters == before.damage_counters and cover.status_conditions == before.status_conditions, kind + " committed before contact")
 			_check(table.world_feedback.floating_texts.is_empty(), kind + " showed its number before contact")
 			renderer._sample(row, cue.impact_fraction)
+			var contact_pose := table.render3d.card_pose(runtime._feedback_card(cue.target_endpoint))
+			_check(cue.target.distance_to(contact_pose.origin + contact_pose.basis.y * CardEntity3D.THICKNESS * 0.5) < 0.001, kind + " impact was bound to the previous card pose")
 			_check(cover.damage_counters == after.damage_counters and cover.status_conditions == after.status_conditions, kind + " did not commit on contact")
 			_check(table.world_feedback.floating_texts.size() == 1, kind + " did not produce one readable result")
+			if kind == "heavy_hit":
+				_check(cue.heavy and table.camera_rig._impulse_handle != null, "Heavy contact did not produce a bounded camera impulse")
+				var impulse := table.camera_rig._impulse_handle
+				# A second target in the same sequence gets its own hit, no second shake.
+				var other := BattleFeedbackCue.from_event(fixture.request.events[0], "svi-chim", table.catalog, cue.duration)
+				other.event_id = id + ":other-target"
+				other.text = ""
+				other.audio = ""
+				other.set_damage_weight(60, 100)
+				runtime.feedback_cues[other.event_id] = other
+				runtime._on_feedback_impact(other.event_id)
+				_check(table.camera_rig._impulse_handle == impulse, "A multi-target attack restarted the camera")
+				runtime._on_feedback_released(other)
 			renderer._sample(row, cue.impact_fraction + 0.01)
 			_check(cover.damage_counters == after.damage_counters and table.world_feedback.floating_texts.size() == 1, kind + " committed twice")
 			if kind == "damage_dealt" and MotionPolicy.mode() == "standard":
@@ -160,6 +181,8 @@ func _check_cancel(table: BattleTable, after_contact: bool = false) -> void:
 	_check(renderer._bursts.is_empty() and table.presentation_runtime.feedback_cues.is_empty(), "Resync retained a feedback timeline")
 	_check(table.opponent_active.pokemon.damage_counters == (4 if after_contact else 1), "Cancelled impact changed the replacement view")
 	_check(table.own_active.battle_fx_offset.is_zero_approx(), "Cancelled attack left its source displaced")
+	_check(table.render3d.world._feedback_focus.is_empty(), "Cancelled attack left the table dimmed")
+	_check(table.camera_rig._impulse_handle == null, "Cancelled attack retained a camera impulse")
 
 
 func _check_arrival_contact(table: BattleTable, kind: String) -> void:
@@ -241,3 +264,105 @@ func _check_fixture(table: BattleTable, kind: String, viewer: int) -> void:
 		_check(not table.world_feedback.static_outlines.is_empty(), "Reduced feedback lost its static target outline")
 	for view in table.hand_views + table.opponent_hand_views + [table.own_active, table.opponent_active]:
 		_check(not view.has_meta("physical_settle"), "Landing pose survived its batch: " + kind)
+
+
+func _check_impact_staging(catalog: CardCatalog) -> void:
+	var event := {"event_type": "damage_dealt", "source": {"player": 0, "slot": "active"},
+		"target": {"player": 1, "slot": "active"}, "amount": 50, "data": {"damage_kind": "attack_damage"}}
+	var cue := BattleFeedbackCue.from_event(event, "svi-chim", catalog, 0.44)
+	cue.set_damage_weight(49, 100)
+	_check(not cue.heavy, "Below-half damage incorrectly became a heavy hit")
+	cue.set_damage_weight(50, 100)
+	_check(cue.heavy, "Half-HP damage did not select heavy staging")
+	var contact := cue.impact_fraction
+	_check(is_zero_approx(cue.contact_progress(contact + 0.049 / 0.44)), "Heavy pose did not hold for 50ms")
+	_check(cue.contact_progress(contact + 0.070 / 0.44) > 0.0, "Heavy pose failed to recover after its hold")
+	_check(is_equal_approx(cue.contact_progress(1.0), 1.0), "Hit hold lengthened the completion barrier")
+	cue.set_damage_weight(30, 100)
+	_check(is_zero_approx(cue.contact_progress(contact + 0.029 / 0.44)), "Normal pose did not hold for 30ms")
+	_check(cue.contact_progress(contact + 0.04 / 0.44) > 0.0, "Normal pose remained held too long")
+	var recoil := BattleFeedbackCue.from_event({"event_type": "damage_dealt", "data": {"damage_kind": "special_condition"}}, "", catalog, 0.32)
+	recoil.set_damage_weight(100, 100)
+	_check(not recoil.heavy and not recoil.lunge, "Status damage acquired attack staging")
+	_check(is_equal_approx(MotionPolicy.event_duration(event, "standard"), 0.44), "Attack timing did not use the shared impact duration")
+
+
+func _check_stalled_contact(table: BattleTable) -> void:
+	var fixture := _fixture(table, "heavy_hit")
+	await process_frame
+	var renderer := table.render3d.world.feedback
+	var freezer := _freeze_first_sample.bind(renderer)
+	renderer.sampled.connect(freezer)
+	var handle := table.submit_transition(fixture.request)
+	for frame in range(120):
+		if not table.presentation_runtime.feedback_cues.is_empty(): break
+		await process_frame
+	renderer._process(2.0)
+	_check(table.camera_rig._impulse_handle == null, "Skipped contact started a camera tween after its parent finished")
+	for row in table.world_feedback.floating_texts:
+		_check(is_zero_approx(float(row.motion_remaining)), "Skipped contact left a moving number after input unlocked")
+	_check(table.render3d.world._feedback_focus.is_empty(), "Skipped contact left the table dimmed")
+	renderer.sampled.disconnect(freezer)
+	for frame in range(120):
+		if handle.is_completed(): break
+		await process_frame
+	_check(handle.is_completed(), "Skipped contact stranded its presentation barrier")
+	_check(table.opponent_active.pokemon.damage_counters == 7, "Skipped contact lost its authoritative damage result")
+
+
+func _check_camera_pixels(table: BattleTable) -> void:
+	_fixture(table, "heavy_hit")
+	await process_frame
+	await process_frame
+	var world := table.render3d.world
+	var pose := table.render3d.card_pose(table.own_active)
+	var baseline := world.projection.world_to_screen(pose.origin)
+	var peak := 0.0
+	for index in range(25):
+		table.camera_rig._sample_impulse(float(index) / 24.0, 2.0 / 7.0)
+		table.render3d.sync_surfaces()
+		var current := table.render3d.card_pose(table.own_active)
+		_check(current.origin.distance_to(pose.origin) < 0.0001, "Layout counteracted the camera by displacing the card")
+		peak = maxf(peak, baseline.distance_to(world.projection.world_to_screen(current.origin)))
+	_check(peak > 0.5 and peak <= 2.0, "Heavy camera impulse is imperceptible or exceeds two pixels")
+	table.camera_rig.cancel()
+	_check(world.projection.world_to_screen(pose.origin).distance_to(baseline) < 0.001, "Camera did not return to its calibrated projection")
+
+
+func _check_effect_tails(renderer: BattleFeedback3D) -> void:
+	for kind in ["energy", "evolution", "charge", "heal", "shield", "ko", "victory", "attack"]:
+		var cue := BattleFeedbackCue.new()
+		cue.kind = kind
+		cue.duration = 1.0
+		cue.impact_fraction = 0.60 if kind in ["energy", "evolution"] else 0.42
+		cue.bind_surface(Transform3D.IDENTITY)
+		var handle := renderer.play(cue)
+		var row: Dictionary = renderer._bursts[-1]
+		renderer._sample(row, 0.999)
+		var node := row.node as MultiMeshInstance3D
+		_check(node.multimesh.visible_instance_count == 0, kind + " still has visible geometry when its effect is recycled")
+		renderer._process(1.0)
+		_check(handle.is_finished(), kind + " tail never released its barrier")
+
+
+func _check_ko_finish(table: BattleTable) -> void:
+	var fixture := _fixture(table, "pokemon_ko")
+	await process_frame
+	var observed := {"held": false, "departed": false}
+	var finished := func(event: Dictionary) -> void:
+		if str(event.get("event_type", "")) == "pokemon_ko":
+			var cover := table.presentation_runtime._feedback_card(event.source)
+			observed.held = cover != null and float(cover.get_meta("ko_desaturation", 0.0)) > 0.8
+	table.director.event_finished.connect(finished)
+	var handle := table.submit_transition(fixture.request)
+	for frame in range(240):
+		await process_frame
+		for token in table.card_motion_layer.entities:
+			if str(token.get_meta("motion_kind", "")) == "ko_leave_play" and token.visible and float(token.get_meta("motion_progress", 0.0)) < 0.25:
+				observed.departed = true
+				_check(float(token.get_meta("paper_desaturation", 0.0)) > 0.8, "KO departure flashed back to full color")
+		if handle.is_completed(): break
+	table.director.event_finished.disconnect(finished)
+	_check(observed.held and observed.departed and handle.is_completed(), "KO finish did not carry into a completed departure")
+	table.cancel_presentations("ko_finish_reset", fixture.before_view)
+	_check(not table.opponent_active.has_meta("ko_desaturation"), "KO finish contaminated the replacement card")

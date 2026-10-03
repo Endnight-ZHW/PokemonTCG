@@ -25,6 +25,8 @@ static func event_duration(event: Dictionary, speed_mode: String = "", queue_siz
 		var timing := announcement_timings(resolved)
 		return timing.x + timing.y + timing.z
 	var result := duration(kind, resolved)
+	if kind == "damage_dealt" and str(Dictionary(event.get("data", {})).get("damage_kind", "")) == "attack_damage":
+		result = duration("attack_impact", resolved)
 	if queue_size > 8 and kind not in ["pokemon_evolved", "attack_declared", "pokemon_ko"]:
 		result *= 0.55
 	return result
@@ -39,7 +41,8 @@ static func announcement_timings(speed_mode: String = "") -> Vector3:
 
 
 static func landing_duration(event_type: String, total: float) -> float:
-	return maxf(0.0, total) * (0.28 if event_type == "pokemon_evolved" else 0.22)
+	var fraction := 0.40 if event_type == "pokemon_evolved" else 0.36 if event_type == "energy_attached" else 0.22
+	return maxf(0.0, total) * fraction
 
 
 static func reduced() -> bool:

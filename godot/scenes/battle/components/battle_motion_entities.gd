@@ -213,7 +213,10 @@ func _update_physical_flyer(
 	var landing := flying.get_meta("motion_landing_view") as Control if flying.has_meta("motion_landing_view") else null
 	var attachment_type := str(flying.get_meta("motion_landing_attachment_type", ""))
 	if landing is CardView:
-		end_pose = table.render3d.card_pose(landing as CardView) if attachment_type.is_empty() else table.render3d.attachment_pose(landing as CardView, attachment_type, int(flying.get_meta("motion_landing_attachment_index", -1)))
+		var physical_landing := landing as CardView
+		if not physical_landing.slot.is_empty():
+			physical_landing = table.presentation_runtime._feedback_card({"player": physical_landing.owner_player, "slot": physical_landing.slot})
+		end_pose = table.render3d.card_pose(physical_landing) if attachment_type.is_empty() else table.render3d.attachment_pose(physical_landing, attachment_type, int(flying.get_meta("motion_landing_attachment_index", -1)))
 	elif landing is CardMotionEntity and (landing as CardMotionEntity).has_world_pose:
 		end_pose = (landing as CardMotionEntity).world_pose
 	elif landing is ZoneView:
@@ -225,7 +228,8 @@ func _update_physical_flyer(
 			start_pose = flying.current_pose()
 		flying.set_meta("physical_start_pose", start_pose)
 	var kind := str(flying.get_meta("motion_kind", ""))
-	var pose := BattleCardPath3D.travel(start_pose, end_pose, progress, kind, int(flying.get_meta("motion_ordinal", 0)))
+	var from_hand := bool(flying.get_meta("departing_hand", false))
+	var pose := BattleCardPath3D.travel(start_pose, end_pose, progress, kind, int(flying.get_meta("motion_ordinal", 0)), from_hand)
 	flying.source_pose = start_pose
 	flying.target_pose = end_pose
 	if flying.has_meta("reveal_transferred"):
@@ -234,6 +238,8 @@ func _update_physical_flyer(
 		pose = BattleCardPath3D.attachment(start_pose, end_pose, progress, flying.has_meta("physical_attachment_source"), not attachment_type.is_empty())
 	flying.set_meta("paper_glint", sin(progress * PI) * 0.30)
 	flying.set_meta("paper_sweep", progress)
+	flying.set_meta("paper_desaturation", 0.85 * (1.0 - smoothstep(0.65, 1.0, progress)) if kind == "ko_leave_play" else 0.0)
+	flying.set_meta("motion_progress", progress)
 	flying.world_pose = pose
 	flying.has_world_pose = true
 	var screen_center := projection.world_to_screen(pose.origin)
