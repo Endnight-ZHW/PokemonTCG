@@ -2,8 +2,8 @@ class_name NetworkLobbyPage
 extends Control
 
 const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
-const LAN_OVERVIEW_ICON := preload("res://assets/ui/icons/lan.svg")
-const RELAY_OVERVIEW_ICON := preload("res://assets/ui/icons/globe.svg")
+const LAN_OVERVIEW_ICON := preload("res://assets/ui/frontend/lan.svg")
+const RELAY_OVERVIEW_ICON := preload("res://assets/ui/frontend/globe.svg")
 
 signal back_requested
 signal kind_changed(kind: String)
@@ -114,9 +114,9 @@ func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> voi
 	}
 	_populate_kind_options()
 	role_option.clear()
-	role_option.add_item("创建房间（房主）")
+	role_option.add_item("创建房间")
 	role_option.set_item_metadata(0, "host")
-	role_option.add_item("加入房间（挑战者）")
+	role_option.add_item("加入房间")
 	role_option.set_item_metadata(1, "client")
 	deck_option.clear()
 	var deck_keys: Array = p_catalog.decks.keys()
@@ -168,7 +168,7 @@ func _resolve_nodes() -> void:
 	address_input = form.get_node("AddressRow/NetworkAddressInput") as LineEdit
 	address_error = form.get_node("AddressRow/AddressError") as Label
 	kind_control_label = form.get_node("NetworkKindLabel") as Label
-	kind_option = form.get_node("NetworkKindOption") as OptionButton
+	kind_option = %NetworkKindOption
 	port_row = form.get_node("PortRow") as VBoxContainer
 	port_input = port_row.get_node("NetworkPortInput") as LineEdit
 	port_error = port_row.get_node("PortError") as Label
@@ -214,6 +214,8 @@ func _ensure_connections() -> void:
 		matchup_toggle.toggled.connect(_on_matchup_toggled)
 	if not address_input.text_changed.is_connected(_on_address_text_changed):
 		address_input.text_changed.connect(_on_address_text_changed)
+	if not deck_option.item_selected.is_connected(_refresh_connection_summary):
+		deck_option.item_selected.connect(_refresh_connection_summary)
 	if not copy_room_button.pressed.is_connected(_copy_room_code):
 		copy_room_button.pressed.connect(_copy_room_code)
 
@@ -257,14 +259,6 @@ func _apply_kind_presentation() -> void:
 	intro_icon.modulate = accent
 	kind_code.add_theme_color_override("font_color", accent)
 	role_badge_label.add_theme_color_override("font_color", accent)
-	var feature_copy := (
-		PackedStringArray(["支持跨网络连接", "使用房间码快速加入", "Windows 与 Android 互联"])
-		if relay
-		else PackedStringArray(["同一 Wi-Fi / 有线网络", "低延迟设备直连", "支持跨设备对战"])
-	)
-	for index in range(intro_feature_labels.size()):
-		intro_feature_labels[index].text = feature_copy[index]
-		intro_feature_icons[index].modulate = accent
 	address_label.text = "服务器地址" if relay else "主机地址"
 	address_input.accessibility_name = "服务器地址" if relay else "主机地址"
 	address_input.placeholder_text = (
@@ -368,6 +362,7 @@ func selected_type_matchups() -> bool:
 
 func _on_matchup_toggled(_enabled: bool) -> void:
 	_refresh_matchup_toggle_presentation()
+	_refresh_connection_summary()
 
 
 func _refresh_matchup_toggle_presentation() -> void:
@@ -443,6 +438,7 @@ func show_locked_rules_options(options: Dictionary) -> void:
 	matchup_toggle.set_pressed_no_signal(enabled)
 	matchup_toggle.disabled = true
 	_refresh_matchup_toggle_presentation()
+	_refresh_connection_summary()
 
 
 func set_connection_state(
@@ -527,6 +523,8 @@ func set_connection_state(
 		}.get(state, "处理中…"))
 	elif not locked:
 		connect_button.text = "创建房间" if selected_role() == "host" else "加入房间"
+
+	_sync_segments()
 
 
 func _clear_room_code() -> void:
@@ -644,6 +642,8 @@ func _apply_form_visibility() -> void:
 		return
 	for control in [kind_control_label, kind_option, role_label, role_option, address_input.get_parent(), deck_label, deck_option, rules_label, rule_row, connect_button]:
 		control.visible = true
+	kind_control_label.visible = false
+	_sync_segments()
 	port_row.visible = kind == "lan"
 	room_row.visible = kind == "relay" and selected_role() == "client"
 
@@ -652,3 +652,29 @@ func _play_enter_motion() -> void:
 	if page == null:
 		return
 	FRONTEND_MOTION.play_enter(page, 0.22, 0.985)
+
+
+func _sync_segments() -> void:
+	_refresh_connection_summary()
+	for option in [kind_option, role_option]:
+		if option is FrontendSegmentedOption:
+			option.refresh_segments()
+
+
+func _refresh_connection_summary(_index: int = -1) -> void:
+	if intro_feature_labels.size() < 3 or deck_option == null:
+		return
+	intro_feature_labels[0].text = "牌组  /  " + (deck_option.get_item_text(deck_option.selected) if deck_option.selected >= 0 else "尚未选择")
+	intro_feature_labels[1].text = "弱点与抗性  /  " + ("已开启" if matchup_toggle.button_pressed else "已关闭")
+	if selected_role() != "host" and not _received_locked_rules_options:
+		intro_feature_labels[1].text = "对局规则  /  等待房主同步"
+	intro_feature_labels[2].text = str({
+		ConnectionState.IDLE: "等待创建或加入",
+		ConnectionState.VALIDATING: "检查连接信息",
+		ConnectionState.CONNECTING: "正在连接",
+		ConnectionState.WAITING: "等待对手",
+		ConnectionState.CONNECTED: "对手已连接",
+		ConnectionState.ERROR: "连接失败",
+	}.get(connection_state, ""))
+	for icon in intro_feature_icons:
+		icon.modulate = FrontendPalette.MUTED

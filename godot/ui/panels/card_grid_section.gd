@@ -19,14 +19,14 @@ func configure(
 	title_text = p_title
 	_clear_children()
 	add_theme_constant_override("separation", 8)
-	add_child(DesignTokens.label(title_text, 20, FrontendPalette.GOLD))
+	add_child(DesignTokens.label(title_text, 20, SurfacePalette.for_control(self).GOLD))
 	var grid := HFlowContainer.new()
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_theme_constant_override("h_separation", 8)
 	grid.add_theme_constant_override("v_separation", 8)
 	add_child(grid)
 	if card_ids.is_empty():
-		grid.add_child(DesignTokens.label("无", 16, FrontendPalette.MUTED))
+		grid.add_child(DesignTokens.label("无", 16, SurfacePalette.for_control(self).MUTED))
 		return
 	for value in card_ids:
 		var card_id := str(value)

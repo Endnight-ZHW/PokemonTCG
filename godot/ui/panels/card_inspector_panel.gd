@@ -13,6 +13,7 @@ var _detail_text: RichTextLabel
 
 
 func _ready() -> void:
+	SurfacePalette.apply(self)
 	resized.connect(_apply_responsive_layout)
 	var window := get_window()
 	if window and not window.size_changed.is_connected(_apply_responsive_layout):
@@ -25,12 +26,12 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 	add_theme_constant_override("separation", 12)
 	var card_id := str(context.get("card_id", ""))
 	if card_id.is_empty():
-		add_child(DesignTokens.label("没有可查看的卡牌。", 16, FrontendPalette.MUTED))
+		add_child(DesignTokens.label("没有可查看的卡牌。", 16, SurfacePalette.for_control(self).MUTED))
 		return
 	var card := catalog.get_card(card_id)
 	var location := str(context.get("location", ""))
 	if not location.is_empty():
-		add_child(DesignTokens.label(location, 16, FrontendPalette.MUTED))
+		add_child(DesignTokens.label(location, 16, SurfacePalette.for_control(self).MUTED))
 	_content_grid = GridContainer.new()
 	_content_grid.columns = 2
 	_content_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -50,14 +51,16 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 	_image_button.accessibility_name = "放大查看%s卡图" % str(card.get("name", card_id))
 	_image_button.add_theme_stylebox_override(
 		"normal",
-		DesignTokens.panel_style(FrontendPalette.INSET, 6, FrontendPalette.BORDER, 1, 0),
+		DesignTokens.panel_style(SurfacePalette.for_control(self).INSET, 6, SurfacePalette.for_control(self).BORDER, 1, 0),
 	)
 	_image_button.add_theme_stylebox_override(
 		"hover",
-		DesignTokens.panel_style(FrontendPalette.RAISED, 6, FrontendPalette.GOLD, 2, 0),
+		DesignTokens.panel_style(SurfacePalette.for_control(self).RAISED, 6, SurfacePalette.for_control(self).GOLD, 2, 0),
 	)
 	_image_button.pressed.connect(art_requested.emit)
 	_content_grid.add_child(_image_button)
+	if SurfacePalette.is_frontend(self):
+		_style_frontend_art_button()
 	var detail := RichTextLabel.new()
 	_detail_text = detail
 	detail.custom_minimum_size = Vector2.ZERO
@@ -72,6 +75,7 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 		CardPresentation.meta_text(card),
 		_card_detail_bbcode(card_id, context.get("pokemon") as PokemonState),
 	]
+	detail.text = SurfacePalette.format_card_text(self, detail.text)
 	detail.tooltip_text = ""
 	detail.accessibility_description = CardPresentation.accessibility_text(
 		card,
@@ -106,9 +110,43 @@ func _apply_responsive_layout() -> void:
 	_content_grid.columns = 2
 	var image_width := clampf(available_width * 0.34, 120.0, 260.0)
 	if _image_button:
-		_image_button.custom_minimum_size = Vector2(image_width, image_width * 1.4)
+		_image_button.custom_minimum_size = Vector2(image_width, image_width * 1.4 + (36 if SurfacePalette.is_frontend(self) else 0))
 	if _detail_text:
 		_detail_text.add_theme_font_size_override("normal_font_size", 18)
+
+
+func _style_frontend_art_button() -> void:
+	_image_button.flat = false
+	_image_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	for state in [&"normal", &"hover", &"pressed", &"hover_pressed"]:
+		var normal: bool = state == &"normal"
+		var fill := Color.WHITE if normal else Color("f9ece8")
+		var style := FrontendPalette.panel(fill, 8, FrontendPalette.CONTROL_BORDER if normal else FrontendPalette.GOLD, 2, 6)
+		style.content_margin_bottom = 36
+		_image_button.add_theme_stylebox_override(state, style)
+	var footer := HBoxContainer.new()
+	footer.name = "ArtZoomHint"
+	footer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	footer.alignment = BoxContainer.ALIGNMENT_CENTER
+	footer.add_theme_constant_override("separation", 6)
+	_image_button.add_child(footer)
+	footer.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	footer.offset_top = -32
+	footer.offset_bottom = -4
+	var icon := TextureRect.new()
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.custom_minimum_size = Vector2(18, 18)
+	icon.texture = preload("res://assets/ui/frontend/magnify.svg")
+	icon.self_modulate = FrontendPalette.TEXT
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	footer.add_child(icon)
+	var caption := Label.new()
+	caption.text = "放大卡图"
+	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	caption.add_theme_font_size_override("font_size", 16)
+	caption.add_theme_color_override("font_color", FrontendPalette.TEXT)
+	footer.add_child(caption)
 
 
 func _add_card_grid_section(
@@ -117,9 +155,9 @@ func _add_card_grid_section(
 	is_hidden: bool,
 ) -> void:
 	var section := CARD_GRID_SECTION.instantiate() as CardGridSection
+	add_child(section)
 	section.configure(catalog, title_text, card_ids, is_hidden)
 	section.card_requested.connect(card_requested.emit)
-	add_child(section)
 
 
 func _pokemon_evolution_cards(pokemon: PokemonState) -> Array[String]:

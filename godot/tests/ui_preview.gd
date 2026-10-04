@@ -40,6 +40,35 @@ func _render_previews() -> void:
 	Input.warp_mouse(Vector2(4, 4))
 	await harness._settle_frontend(8)
 	var user_args := OS.get_cmdline_user_args()
+	if "--home-review-only" in user_args:
+		var title: Variant = ui.screen_host.get_child(0)
+		title.showcase_timer.stop()
+		for deck_key in ["water", "fire", "grass"]:
+			title._deck_index = title._deck_keys.find(deck_key)
+			title._refresh_featured_deck()
+			await harness._settle_frontend(10)
+			if not harness._capture("title-" + deck_key + ".png"):
+				harness._finish(1)
+				return
+			title.card_stage._camera_yaw = -12.0
+			title.card_stage._request_frame()
+			await harness._settle_frontend(4)
+			if not harness._capture("title-" + deck_key + "-angled.png"):
+				harness._finish(1)
+				return
+			title.card_stage._camera_yaw = 0.0
+		for dimensions in [Vector2i(1024, 768), Vector2i(1280, 720)]:
+			harness.tree.root.size = dimensions
+			await harness._settle_frontend(10)
+			if not harness._capture("title-%dx%d.png" % [dimensions.x, dimensions.y]):
+				harness._finish(1)
+				return
+		harness._finish(0)
+		return
+	if "--title-only" in user_args:
+		var captured := harness._capture("title.png")
+		harness._finish(0 if captured else 1)
+		return
 	if "--battle-usability-only" in user_args:
 		var usability_scenario := UsabilityScenario.new()
 		usability_scenario.configure(harness)
@@ -59,6 +88,9 @@ func _render_previews() -> void:
 	frontend_scenario.configure(harness)
 	await frontend_scenario.run(ui)
 	if harness.finished:
+		return
+	if "--frontend-only" in user_args:
+		harness._finish(0)
 		return
 	var battle_scenario := BattleScenario.new()
 	battle_scenario.configure(harness)

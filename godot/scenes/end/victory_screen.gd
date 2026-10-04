@@ -89,7 +89,7 @@ func _connect_actions() -> void:
 func _refresh() -> void:
 	var network := str(context.get("mode", "")) in ["network", "lan", "relay"]
 	rematch_button.text = "返回联机大厅" if network else "重新选牌"
-	footer_hint.text = "选择下一场对战，或返回首页。"
+	footer_hint.text = ""
 	if _is_draw():
 		winner_label.text = "本局平局"
 		result_subtitle.text = "本局没有胜者"

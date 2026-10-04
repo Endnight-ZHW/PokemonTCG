@@ -158,7 +158,7 @@ func _add_energy_target_tile(model: Dictionary) -> void:
 	title.accessibility_name = title.text
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title.add_theme_font_size_override("font_size", 16)
-	title.add_theme_color_override("font_color", FrontendPalette.TEXT)
+	title.add_theme_color_override("font_color", BattleModalPalette.TEXT)
 	summary.add_child(title)
 
 	var location := Label.new()
@@ -166,14 +166,14 @@ func _add_energy_target_tile(model: Dictionary) -> void:
 	location.text = str(model.get("location", "目标"))
 	location.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	location.add_theme_font_size_override("font_size", 16)
-	location.add_theme_color_override("font_color", FrontendPalette.GOLD)
+	location.add_theme_color_override("font_color", BattleModalPalette.GOLD)
 	summary.add_child(location)
 
 	var hp_label := Label.new()
 	hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hp_label.text = _pokemon_hp_text(pokemon)
 	hp_label.add_theme_font_size_override("font_size", 16)
-	hp_label.add_theme_color_override("font_color", FrontendPalette.MUTED)
+	hp_label.add_theme_color_override("font_color", BattleModalPalette.MUTED)
 	summary.add_child(hp_label)
 
 	var existing_row := HFlowContainer.new()
@@ -295,7 +295,7 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 				status.text = "不可选择 · %s" % PlayerFacingText.message(blocked_reason, true)
 				status.tooltip_text = ""
 				status.accessibility_description = blocked_reason
-				status.add_theme_color_override("font_color", FrontendPalette.DANGER)
+				status.add_theme_color_override("font_color", BattleModalPalette.DANGER)
 			elif current_index >= panel._selection_max:
 				status.text = (
 					"✓ 本次分配 +%d 张" % assigned_count
@@ -306,7 +306,7 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 				status.accessibility_description = status.text
 				status.add_theme_color_override(
 					"font_color",
-					FrontendPalette.GOLD if assigned_count > 0 else FrontendPalette.MUTED,
+					BattleModalPalette.GOLD if assigned_count > 0 else BattleModalPalette.MUTED,
 				)
 			else:
 				status.text = "%s点击分配第 %d 张" % [
@@ -315,7 +315,7 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 				]
 				status.tooltip_text = ""
 				status.accessibility_description = status.text
-				status.add_theme_color_override("font_color", FrontendPalette.GOLD)
+				status.add_theme_color_override("font_color", BattleModalPalette.GOLD)
 		var status_description := blocked_reason if not blocked_reason.is_empty() else str(
 			status.text if status else model.get("label", "分配目标")
 		)
@@ -343,7 +343,7 @@ func _populate_energy_summary(
 	prefix_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	prefix_label.text = prefix
 	prefix_label.add_theme_font_size_override("font_size", 16)
-	prefix_label.add_theme_color_override("font_color", FrontendPalette.MUTED)
+	prefix_label.add_theme_color_override("font_color", BattleModalPalette.MUTED)
 	row.add_child(prefix_label)
 	var grouped: Array = panel.ATTACHMENT_VISUALS.grouped_energy(card_ids, panel.catalog)
 	if grouped.is_empty():
@@ -351,7 +351,7 @@ func _populate_energy_summary(
 		empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		empty.text = "无"
 		empty.add_theme_font_size_override("font_size", 16)
-		empty.add_theme_color_override("font_color", FrontendPalette.MUTED)
+		empty.add_theme_color_override("font_color", BattleModalPalette.MUTED)
 		row.add_child(empty)
 		return
 	for descriptor_value in grouped:
@@ -372,14 +372,14 @@ func _energy_summary_chip(
 	var chip := PanelContainer.new()
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var border_color := (
-		FrontendPalette.GOLD
+		BattleModalPalette.GOLD
 		if highlighted
 		else DesignTokens.type_color(descriptor.energy_type)
 	)
 	chip.add_theme_stylebox_override(
 		"panel",
 		DesignTokens.panel_style(
-			FrontendPalette.INSET,
+			BattleModalPalette.INSET,
 			8,
 			Color(border_color, 0.86),
 			1,
@@ -417,7 +417,7 @@ func _energy_summary_chip(
 	)
 	count.add_theme_font_size_override("font_size", 16)
 	count.add_theme_color_override(
-		"font_color", FrontendPalette.GOLD if highlighted else FrontendPalette.TEXT)
+		"font_color", BattleModalPalette.GOLD if highlighted else BattleModalPalette.TEXT)
 	content.add_child(count)
 	chip.tooltip_text = ""
 	chip.accessibility_name = "%s：附着 %d 张，提供 %d 个能量%s" % [
@@ -483,20 +483,20 @@ func _apply_energy_target_style(
 	hovered: bool,
 	blocked: bool,
 ) -> void:
-	var background := FrontendPalette.PANEL
-	var border := FrontendPalette.BORDER
+	var background := BattleModalPalette.PANEL
+	var border := BattleModalPalette.BORDER
 	var width := 1
 	if selected:
-		background = FrontendPalette.PANEL
-		border = FrontendPalette.GOLD
+		background = BattleModalPalette.PANEL
+		border = BattleModalPalette.GOLD
 		width = 2
 	elif blocked:
-		background = FrontendPalette.INSET
-		border = Color(FrontendPalette.DANGER, 0.62 if hovered else 0.38)
+		background = BattleModalPalette.INSET
+		border = Color(BattleModalPalette.DANGER, 0.62 if hovered else 0.38)
 		width = 2 if hovered else 1
 	elif hovered:
 		background = DesignTokens.PANEL_HOVER
-		border = FrontendPalette.GOLD
+		border = BattleModalPalette.GOLD
 		width = 2
 	var style := DesignTokens.panel_style(
 		background, DesignTokens.RADIUS_MEDIUM, border, width, 8)
@@ -527,21 +527,21 @@ func _refresh_energy_assignment_labels(selected_ids: Array[String]) -> void:
 			label.text = "第 %d 张 → %s" % [index + 1, target_label]
 			label.tooltip_text = "第 %d 张能量已分配给%s" % [index + 1, target_label]
 			label.accessibility_name = label.tooltip_text
-			label.add_theme_color_override("font_color", FrontendPalette.GOLD)
+			label.add_theme_color_override("font_color", BattleModalPalette.GOLD)
 			if card:
 				card.set_selected(true)
 		elif index == selected_ids.size():
 			label.text = "第 %d 张 · 待分配" % (index + 1)
 			label.tooltip_text = "现在为第 %d 张能量选择目标" % (index + 1)
 			label.accessibility_name = label.tooltip_text
-			label.add_theme_color_override("font_color", FrontendPalette.GOLD)
+			label.add_theme_color_override("font_color", BattleModalPalette.GOLD)
 			if card:
 				card.set_selected(true)
 		else:
 			label.text = "第 %d 张 · 等待" % (index + 1)
 			label.tooltip_text = "第 %d 张能量尚未分配" % (index + 1)
 			label.accessibility_name = label.tooltip_text
-			label.add_theme_color_override("font_color", FrontendPalette.MUTED)
+			label.add_theme_color_override("font_color", BattleModalPalette.MUTED)
 			if card:
 				card.set_selected(false)
 	var preview_index := mini(selected_ids.size(), _energy_source_card_ids.size() - 1)

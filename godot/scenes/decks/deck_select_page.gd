@@ -329,7 +329,7 @@ func _refresh_detail() -> void:
 	assign_deck_button.text = ("✓ 已分配给 %s" if assigned else "分配给 %s") % slot_name
 	assign_deck_button.disabled = assigned
 	detail_title.text = str(deck.get("name", deck_key))
-	detail_tagline.text = DeckVisualCatalog.tagline(deck_key)
+	detail_tagline.text = ""
 	var energy_type := str(deck.get("energy_type", "Colorless"))
 	detail_accent.color = DesignTokens.type_color(energy_type)
 	detail_meta.text = "%s · %d 张" % [
@@ -449,13 +449,13 @@ func _apply_responsive_layout() -> void:
 	slot_hint.visible = true
 	heading.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 26, 32))
 	mode_description.max_lines_visible = 2
-	mode_description.visible = true
+	mode_description.visible = false
 	action_summary.visible = true
 	master_detail.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 12, 24))
 	gallery_grid.columns = 2
 	for tile in _tiles.values():
-		tile.custom_minimum_size = Vector2(180, UILayoutPolicy.fit(size, 298, 320))
-		tile.artwork_frame.custom_minimum_size.y = UILayoutPolicy.fit(size, 152, 184)
+		tile.custom_minimum_size = Vector2(180, UILayoutPolicy.fit(size, 274, 290))
+		tile.artwork_frame.custom_minimum_size.y = UILayoutPolicy.fit(size, 154, 178)
 		(tile.card_count_label as Label).custom_minimum_size.x = 54
 	for panel in [gallery_panel, detail_panel]:
 		var inset := panel.get_child(0) as MarginContainer

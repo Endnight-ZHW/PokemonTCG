@@ -1,21 +1,28 @@
 class_name FrontendPalette
 extends RefCounted
 
-const BACKGROUND := DesignTokens.BG_DEEP
-const PANEL := DesignTokens.PANEL
-const RAISED := DesignTokens.PANEL_RAISED
-const INSET := DesignTokens.PANEL_INSET
-const TEXT := DesignTokens.TEXT
-const MUTED := DesignTokens.TEXT_MUTED
-const GOLD := DesignTokens.GOLD
-const BORDER := DesignTokens.BORDER
-const SUCCESS := DesignTokens.STATE_SUCCESS
-const DANGER := DesignTokens.STATE_DANGER
-const INK := DesignTokens.TEXT_ON_ACCENT
-const WOOD := DesignTokens.TABLE_WOOD
+## Front-end-only colors. The battle table keeps DesignTokens.
+const BACKGROUND := Color("f7f5ef")
+const PANEL := Color.WHITE
+const RAISED := Color.WHITE
+const INSET := Color("eceef2")
+const TEXT := Color("202e49")
+const MUTED := Color("596579")
+const GOLD := Color("c83b35") # Existing semantic accent API.
+const BORDER := Color("8490a1")
+const BORDER_SOFT := Color("d7dce3")
+const CONTROL_BORDER := Color("697991")
+const CARD_PAPER := Color("f5f2e9")
+const SUCCESS := Color("35654c")
+const DANGER := Color("b63038")
+const INK := Color.WHITE
+const HOVER := Color("ebeef3")
+const PRESSED := Color("dde3ec")
+const DISABLED := Color("e5e7eb")
+const SHADOW := Color(0.125, 0.18, 0.286, 0.12)
 
 
-static func panel(fill: Color = PANEL, radius: int = 14, border: Color = BORDER, width: int = 1, padding: int = 16) -> StyleBoxFlat:
+static func panel(fill: Color = PANEL, radius: int = 8, border: Color = BORDER, width: int = 1, padding: int = 16) -> StyleBoxFlat:
 	return DesignTokens.panel_style(fill, radius, border, width, padding)
 
 

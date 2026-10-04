@@ -12,6 +12,7 @@ var report := {"schema": "ptcg.frontend_club/1", "profiles": [], "lifecycle": []
 
 
 func _initialize() -> void:
+	preload("res://tests/graphics_test_driver.gd").attach(self)
 	call_deferred("run")
 
 

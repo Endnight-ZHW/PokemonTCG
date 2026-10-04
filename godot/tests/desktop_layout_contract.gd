@@ -63,7 +63,7 @@ func run() -> void:
 			check(page.get_instance_id() == instance, "Resize replaced " + kind)
 			match kind:
 				"title":
-					check(page.body_grid.columns == 2, "Title changed column layout")
+					check(page.body_grid is HBoxContainer and page.modes_panel.get_index() < page.hero_panel.get_index(), "Title changed column layout")
 					inside(page.hero_panel, "Showcase")
 					inside(page.modes_panel, "Modes")
 				"decks":

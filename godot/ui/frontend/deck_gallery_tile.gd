@@ -30,7 +30,7 @@ func configure(
 	var energy_type := str(deck.get("energy_type", "Colorless"))
 	_configure_energy_badge(energy_type)
 	card_count_label.text = "· %d 张" % int(deck.get("card_count", 0))
-	tagline_label.text = DeckVisualCatalog.tagline(deck_key)
+	tagline_label.text = ""
 	_apply_energy_style(DesignTokens.type_color(energy_type))
 	var tree := Engine.get_main_loop() as SceneTree
 	var texture_cache := (
@@ -44,7 +44,7 @@ func configure(
 		else null
 	)
 	artwork.tooltip_text = ""
-	tooltip_text = "%s\n%s" % [deck_name_label.text, tagline_label.text]
+	tooltip_text = deck_name_label.text
 	accessibility_name = "牌组：%s，%s，%s" % [
 		deck_name_label.text,
 		energy_label.text,
@@ -95,14 +95,15 @@ func _configure_energy_badge(energy_type: String) -> void:
 
 
 func _apply_energy_style(type_color: Color) -> void:
+	(artwork_frame as DeckBoxCover).energy_color = type_color
 	energy_label.add_theme_color_override("font_color", FrontendPalette.TEXT)
 	energy_badge.add_theme_stylebox_override(
 		"panel",
-		_badge_style(type_color, 0.13, 0.62, 8.0, Vector4(7, 3, 7, 3)),
+		_badge_style(type_color, 0.08, 0.0, 4.0, Vector4(7, 3, 7, 3)),
 	)
 	assignment_badge.add_theme_stylebox_override(
 		"panel",
-		_badge_style(FrontendPalette.SUCCESS, 0.08, 0.65, 8.0, Vector4(8, 4, 8, 4)),
+		_badge_style(FrontendPalette.SUCCESS, 0.08, 0.0, 4.0, Vector4(8, 4, 8, 4)),
 	)
 	assignment_label.add_theme_color_override("font_color", FrontendPalette.SUCCESS)
 

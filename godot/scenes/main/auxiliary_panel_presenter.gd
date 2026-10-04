@@ -36,7 +36,7 @@ func _show_help(
 		"关闭",
 		"",
 		in_battle,
-		ModalSpec.frontend(Vector2(900, 700)),
+		ModalSpec.battle(Vector2(900, 700), true) if in_battle else ModalSpec.frontend(Vector2(1040, 700)),
 	)
 	var panel := HELP_PANEL_SCENE.instantiate() as HelpPanel
 	host.modal_body.add_child(panel)
@@ -251,7 +251,7 @@ func _show_settings(resume_choice_context: Dictionary = {}) -> void:
 		"保存设置",
 		"取消",
 		in_battle,
-		ModalSpec.frontend(Vector2(900, 760)),
+		ModalSpec.battle(Vector2(900, 760), true) if in_battle else ModalSpec.frontend(Vector2(1040, 700)),
 	)
 	var panel := SETTINGS_PANEL_SCENE.instantiate() as SettingsPanel
 	host.modal_body.add_child(panel)

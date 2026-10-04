@@ -11,11 +11,16 @@ func run(context: FrontendContractContext) -> void:
 	context._check(int(settings.values().card_cache_size) == 32,
 		"Opening settings must preserve an existing non-preset cache size")
 	context._check(not settings.advanced_options.visible, "Advanced cache settings must start collapsed")
-	settings.advanced_button.button_pressed = true
-	context._check(settings.advanced_options.visible, "Advanced cache options did not expand")
+	(settings.get_node("%AdvancedCategory") as Button).pressed.emit()
+	context._check(settings.advanced_options.visible, "Advanced category did not open")
 	var before := context._capture_settings()
 	settings.master_volume_slider.value = 0.35
 	settings.animation_mode_option.select(3)
+	(settings.get_node("%PictureCategory") as Button).pressed.emit()
+	(settings.get_node("%AudioCategory") as Button).pressed.emit()
+	context._check(is_equal_approx(settings.values().master_volume, 0.35)
+		and settings.values().animation_mode == "reduced",
+		"Switching settings categories discarded the unsaved form")
 	var submitted: Array[Dictionary] = []
 	settings.save_requested.connect(func(values: Dictionary) -> void: submitted.append(values))
 	settings.request_save()
@@ -51,9 +56,18 @@ func run(context: FrontendContractContext) -> void:
 				"Lobby changed the connection payload for %s role %d" % [kind, role_index])
 			context._check(page.connection_state == NetworkLobbyPage.ConnectionState.VALIDATING,
 				"Valid lobby submission did not enter its locked validation state")
+			var kind_segments := page.kind_option as FrontendSegmentedOption
+			var role_segments := page.role_option as FrontendSegmentedOption
+			kind_segments._choose(1 if kind == "lan" else 0)
+			role_segments._choose(1 - role_index)
+			context._check(page.kind == kind and page.role_option.selected == role_index,
+				"Locked connection segments changed the in-flight room request")
 			page.set_connection_state(NetworkLobbyPage.ConnectionState.ERROR, "连接失败，请重试。")
 			context._check(not page.role_option.disabled and page.port_input.text == "50751",
 				"Connection failure lost the form draft or kept it locked")
+			kind_segments._choose(1 if kind == "lan" else 0)
+			context._check(page.kind == ("relay" if kind == "lan" else "lan"),
+				"Connection error did not unlock the visible mode segments")
 			page.free()
 	var invalid := load("res://scenes/network/network_lobby_page.tscn").instantiate() as NetworkLobbyPage
 	context.tree.root.add_child(invalid)

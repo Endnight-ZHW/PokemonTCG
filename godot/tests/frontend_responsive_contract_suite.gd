@@ -58,6 +58,8 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 		intro_panel.visible,
 		"1600x900 network lobby must expose the wide connection overview",
 	)
+	context._check((page.get_node("%FeatureList") as Control).is_visible_in_tree(),
+		"The current deck, room rules and connection status must remain visible")
 	context._check(
 		context._rect_inside(intro_panel.get_global_rect(), body.get_global_rect())
 		and context._rect_inside(form_panel.get_global_rect(), body.get_global_rect()),
@@ -110,7 +112,7 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 		kind_label.text == "远程中继"
 		and kind_code.text.contains("房间码")
 		and intro_icon.texture.resource_path.ends_with("globe.svg")
-		and (page.get_node("%FeatureOne") as Label).text.contains("跨网络")
+		and (page.get_node("%FeatureOne") as Label).text.contains(page.deck_option.get_item_text(page.deck_option.selected))
 		and tip.text.contains("房间码"),
 		"Relay overview did not update its icon, facts, or role hint",
 	)
@@ -539,13 +541,13 @@ func _check_title(viewport_size: Vector2i) -> void:
 	var label := context._case_label("title", viewport_size)
 	context._check_full_page(page, mounted.safe_host, label)
 	context._check_named_inside(page, context._simulated_safe_rect(mounted.safe_host), [
-		"PageFrame", "HeaderPanel", "TypeOrbs", "CardStage", "LocalTwoPlayerButton",
+		"PageFrame", "HeaderPanel", "ClubMark", "CardStage", "LocalTwoPlayerButton",
 		"AIButton", "NetworkButton", "FooterRow", "SettingsButton", "HelpButton",
 	], label)
 	context._check_named_non_overlapping(page, [
 		"LocalTwoPlayerButton", "AIButton", "NetworkButton", "SettingsButton", "HelpButton",
 	], label)
-	context._check(page.body_grid.columns == 2,
+	context._check(page.body_grid is HBoxContainer and page.modes_panel.get_index() < page.hero_panel.get_index(),
 		"Title must preserve its desktop columns at every aspect ratio")
 	for node_name in ["LocalTwoPlayerButton", "AIButton", "NetworkButton"]:
 		var button := page.find_child(node_name, true, false) as TitleModeButton
@@ -554,17 +556,21 @@ func _check_title(viewport_size: Vector2i) -> void:
 		context._check(context._contrast_ratio(button.foreground_color, button.fill_color) >= 4.5
 			and context._contrast_ratio(button.subtitle_color, button.fill_color.lightened(0.065)) >= 4.5,
 			"Title mode text must keep 4.5:1 contrast in normal and hover states")
-	context._check(page.type_orbs.get_child_count() == 8, "Title must retain eight existing energy icons")
-	for index in range(context.TITLE_ENERGY_TYPES.size()):
-		var icon := page.type_orbs.get_child(index) as TextureRect
-		context._check(icon.texture.resource_path == context.ENERGY_ICON_CATALOG.path_for(context.TITLE_ENERGY_TYPES[index])
-			and icon.mouse_filter == Control.MOUSE_FILTER_IGNORE, "Title energy icons changed identity or intercept input")
+	var first_mode := page.find_child("LocalTwoPlayerButton", true, false) as TitleModeButton
+	for mode_name in ["AIButton", "NetworkButton"]:
+		var equal_mode := page.find_child(mode_name, true, false) as TitleModeButton
+		context._check(equal_mode.size.is_equal_approx(first_mode.size)
+			and equal_mode.fill_color == first_mode.fill_color,
+			"All three homepage modes must have equal visual weight")
+	context._check(page.find_child("TypeOrbs", true, false) == null,
+		"Homepage must not restore the decorative energy strip")
 	var stage := page.card_stage
 	context._check(stage.viewport.own_world_3d and stage.cards.size() == 3
-		and stage.card_ids.size() == 3 and stage.viewport.gui_disable_input,
+		and stage.card_ids == [DeckVisualCatalog.representative_card(CardCatalog.shared(), page.featured_deck_key())] and stage._backs.size() == 2 and stage.viewport.gui_disable_input,
 		"Title must own one independent public 3D showcase capped at three entities")
-	for card in stage.cards:
-		context._check(card is CardEntity3D and card.visible, "Title showcase must use physical card entities")
+	for index in range(stage.cards.size()):
+		context._check(stage.cards[index] is CardEntity3D and stage.cards[index].visible == (index == 0),
+			"Homepage must display one public hero card")
 	page.set_background_active(false)
 	await context._settle_layout(2)
 	context._check(not stage.is_processing() and stage.viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED,

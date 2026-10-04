@@ -18,7 +18,7 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 		add_child(DesignTokens.label(
 			"这是隐藏区域。这里只显示数量，不显示具体卡牌身份。",
 			16,
-			FrontendPalette.MUTED,
+			SurfacePalette.for_control(self).MUTED,
 		))
 		_add_card_grid_section("隐藏卡牌（%d）" % count, _hidden_card_rows(count), true)
 		return
@@ -28,7 +28,7 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 		if not card_id.is_empty():
 			card_ids.append(card_id)
 	if card_ids.is_empty():
-		add_child(DesignTokens.label("这里没有公开卡牌。", 16, FrontendPalette.MUTED))
+		add_child(DesignTokens.label("这里没有公开卡牌。", 16, SurfacePalette.for_control(self).MUTED))
 	else:
 		_add_card_grid_section("公开卡牌（%d）" % card_ids.size(), card_ids, false)
 
@@ -39,9 +39,9 @@ func _add_card_grid_section(
 	is_hidden: bool,
 ) -> void:
 	var section := CARD_GRID_SECTION.instantiate() as CardGridSection
+	add_child(section)
 	section.configure(catalog, title_text, card_ids, is_hidden)
 	section.card_requested.connect(card_requested.emit)
-	add_child(section)
 
 
 func _hidden_card_rows(count: int) -> Array[String]:
@@ -55,3 +55,7 @@ func _clear_children() -> void:
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
+
+
+func _ready() -> void:
+	SurfacePalette.apply(self)

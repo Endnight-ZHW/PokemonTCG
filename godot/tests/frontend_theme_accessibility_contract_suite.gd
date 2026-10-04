@@ -134,8 +134,8 @@ func _check_theme_contract() -> void:
 	)
 	context._check(
 		theme.has_font(&"font", &"Button")
-		and _font_weight(theme.get_font(&"font", &"Button")) >= 700.0,
-		"Frontend controls must use Noto Bold 700",
+		and _font_weight(theme.get_font(&"font", &"Button")) >= 600.0,
+		"Frontend controls must use Noto Semibold 600",
 	)
 	for heading_type in [&"FrontHeadingLabel", &"FrontSectionLabel", &"TitleLogoLabel"]:
 		context._check(
@@ -144,6 +144,7 @@ func _check_theme_contract() -> void:
 			"Frontend heading weight must remain Bold 700: %s" % heading_type,
 		)
 	_check_frontend_contrast(theme)
+	_check_interactive_hierarchy(theme)
 	var battle_theme := load(context.GAME_THEME_PATH) as Theme
 	context._check(battle_theme != null, "Battle theme must load for semantic button checks")
 	if battle_theme:
@@ -164,6 +165,7 @@ func _check_theme_contract() -> void:
 func _check_warm_theme_semantics(frontend: Theme, battle: Theme) -> void:
 	for row in [
 		[frontend, &"FrontPrimaryButton"], [frontend, &"FrontSecondaryButton"],
+		[frontend, &"FrontCategoryButton"], [frontend, &"FrontGhostButton"],
 		[frontend, &"FrontDangerButton"], [battle, &"BattlePrimaryButton"],
 		[battle, &"BattleSecondaryButton"], [battle, &"BattleDangerButton"],
 		[battle, &"BattleCompactButton"],
@@ -187,10 +189,10 @@ func _check_warm_theme_semantics(frontend: Theme, battle: Theme) -> void:
 		button.free()
 	for theme in [frontend, battle]:
 		var panel := theme.get_stylebox(&"panel", &"PanelContainer") as StyleBoxFlat
-		context._check(panel != null and panel.bg_color.is_equal_approx(DesignTokens.PANEL),
-			"Editor theme panel drifted from the shared cream palette")
-		context._check(theme.get_color(&"font_color", &"Label").is_equal_approx(DesignTokens.TEXT),
-			"Editor theme text drifted from the shared palette")
+		context._check(panel != null and panel.bg_color.is_equal_approx(FrontendPalette.PANEL if theme == frontend else DesignTokens.PANEL),
+			"Editor theme panel drifted from its surface palette")
+		context._check(theme.get_color(&"font_color", &"Label").is_equal_approx(FrontendPalette.TEXT if theme == frontend else DesignTokens.TEXT),
+			"Editor theme text drifted from its surface palette")
 	for accent in [DesignTokens.STATE_SELECTED, DesignTokens.STATE_TARGET]:
 		context._check(context._contrast_ratio(accent, DesignTokens.TABLE_CLOTH) >= 3.0,
 			"Card selection/target outlines blend into the linen table")
@@ -205,6 +207,23 @@ func _check_warm_theme_semantics(frontend: Theme, battle: Theme) -> void:
 	var card_text := CardPresentation.detail_bbcode(catalog.get_card("svi-ente"), catalog)
 	context._check(not card_text.contains("{text}") and not card_text.contains("{muted}"),
 		"Card text exposed an unresolved palette placeholder")
+
+
+func _check_interactive_hierarchy(theme: Theme) -> void:
+	for variation in [&"FrontGhostButton", &"FrontCategoryButton", &"FrontSecondaryButton", &"OptionButton"]:
+		var normal := theme.get_stylebox(&"normal", variation) as StyleBoxFlat
+		context._check(normal != null and normal.bg_color.a >= 0.95,
+			"Interactive control looks like unframed text: " + str(variation))
+		if normal == null:
+			continue
+		context._check(normal.get_border_width(SIDE_LEFT) >= 2
+			and context._contrast_ratio(normal.border_color, normal.bg_color) >= 3.0,
+			"Interactive boundary lacks contrast: " + str(variation))
+	var selected := theme.get_stylebox(&"pressed", &"FrontCategoryButton") as StyleBoxFlat
+	var disabled := theme.get_stylebox(&"disabled", &"FrontCategoryButton") as StyleBoxFlat
+	context._check(selected != null and disabled != null
+		and context._contrast_ratio(selected.bg_color, disabled.bg_color) >= 3.0,
+		"Selected category looks like a disabled control")
 
 
 func _check_light_surface_icon(texture: Texture2D, description: String) -> void:
@@ -310,7 +329,7 @@ func _check_frontend_contrast(theme: Theme) -> void:
 		],
 	)
 	var status_background := context._composite_color(status.bg_color, raised.bg_color)
-	var error_text := DesignTokens.STATE_DANGER
+	var error_text := FrontendPalette.DANGER
 	context._check(
 		context._contrast_ratio(error_text, status_background) >= 4.5,
 		"Frontend error text contrast must be at least 4.5:1 (actual %.2f:1)" % [
@@ -424,3 +443,32 @@ func _check_battle_theme_isolation() -> void:
 		var battle := battle_scene.instantiate() as Control
 		context._check(battle.theme == null, "BattleTable context.tree.root must continue inheriting the game theme")
 		battle.free()
+
+	var battle_host := Control.new()
+	battle_host.set_meta("ui_surface", ModalSpec.Surface.BATTLE)
+	context.tree.root.add_child(battle_host)
+	var settings: Variant = load("res://ui/dialogs/settings_panel.tscn").instantiate()
+	battle_host.add_child(settings)
+	settings.configure()
+	context._check(settings.theme == SurfacePalette.BATTLE_THEME
+		and not (settings.get_node("%CategoryLayout") as Control).visible
+		and (settings.get_node("%PictureSection") as Control).visible,
+		"Battle settings inherited the frontend palette or category layout")
+	var inspector: Variant = load("res://ui/panels/card_inspector_panel.tscn").instantiate()
+	battle_host.add_child(inspector)
+	inspector.configure(CardCatalog.shared(), {"card_id": "svl-pikaex"})
+	context._check(inspector.theme == SurfacePalette.BATTLE_THEME
+		and (inspector._image_button.get_theme_stylebox("normal") as StyleBoxFlat).bg_color == DesignTokens.PANEL_INSET,
+		"Shared card inspector leaked frontend colors into battle")
+	inspector._add_card_grid_section("进化链", [], false)
+	var section: CardGridSection = inspector.get_child(inspector.get_child_count() - 1)
+	context._check((section.get_child(0) as Label).get_theme_color("font_color") == DesignTokens.GOLD
+		and (section.get_child(1).get_child(0) as Label).get_theme_color("font_color") == DesignTokens.TEXT_MUTED,
+		"Nested battle card section resolved its palette before mounting")
+	var zone: Variant = load("res://ui/panels/zone_inspector_panel.tscn").instantiate()
+	battle_host.add_child(zone)
+	zone.catalog = CardCatalog.shared()
+	zone._add_card_grid_section("公开卡牌", [], false)
+	context._check((zone.get_child(0).get_child(0) as Label).get_theme_color("font_color") == DesignTokens.GOLD,
+		"Battle zone card section inherited the frontend accent")
+	battle_host.free()

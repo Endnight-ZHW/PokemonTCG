@@ -141,6 +141,7 @@ mouse_filter = 2
 color = Color(0.952941, 0.917647, 0.858824, 1)
 
 [node name="TitleFullBleedBackdrop" parent="." instance=ExtResource("11_title_backdrop")]
+variant = "title"
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
@@ -344,7 +345,7 @@ autowrap_mode = 2
 [node name="Hint" type="Label" parent="LoadingLayer/Center/Panel/Margin/Content"]
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-text = "正在准备离线模型与对局资源，请稍候。"
+text = "正在准备对局资源，请稍候。"
 horizontal_alignment = 1
 autowrap_mode = 2
 

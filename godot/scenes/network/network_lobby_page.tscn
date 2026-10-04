@@ -1,24 +1,29 @@
 
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://scenes/network/network_lobby_page.gd" id="1_page"]
 [ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2_theme"]
 [ext_resource type="PackedScene" path="res://ui/frontend/frontend_backdrop.tscn" id="3_backdrop"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/lan.svg" id="4_lan"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/check.svg" id="5_check"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/info.svg" id="6_info"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/lan.svg" id="4_lan"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/check.svg" id="5_check"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/info.svg" id="6_info"]
+
+[ext_resource type="Script" path="res://ui/frontend/segmented_option.gd" id="7_segments"]
+
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/deck.svg" id="8_deck"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/network.svg" id="9_link"]
 
 [sub_resource type="StyleBoxFlat" id="Style_rule_badge"]
-bg_color = Color(1.000000, 0.976471, 0.941176, 1)
+bg_color = Color(1.000000, 1.000000, 1.000000, 1.000000)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.631373, 0.541176, 0.450980, 1)
-corner_radius_top_left = 999
-corner_radius_top_right = 999
-corner_radius_bottom_right = 999
-corner_radius_bottom_left = 999
+border_color = Color(0.517647, 0.564706, 0.631373, 1.000000)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
 content_margin_left = 12.0
 content_margin_top = 6.0
 content_margin_right = 12.0
@@ -99,6 +104,15 @@ autowrap_mode = 2
 custom_minimum_size = Vector2(0, 0)
 layout_mode = 2
 
+[node name="NetworkKindOption" type="OptionButton" parent="PageMargin/Page/TopBar"]
+focus_mode = 0
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+tooltip_text = "选择局域网直连或互联网服务器"
+
+script = ExtResource("7_segments")
+
 [node name="Steps" type="HBoxContainer" parent="PageMargin/Page"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 36)
@@ -164,7 +178,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 4)
 layout_mode = 2
 mouse_filter = 2
-color = Color(0.639216, 0.372549, 0.196078, 1)
+color = Color(0.784314, 0.231373, 0.207843, 1.000000)
 
 [node name="IntroHeader" type="HBoxContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro"]
 unique_name_in_owner = true
@@ -197,7 +211,7 @@ theme_override_constants/separation = 1
 [node name="IntroEyebrow" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroHeader/HeaderCopy"]
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
+theme_override_colors/font_color = Color(0.349020, 0.396078, 0.474510, 1.000000)
 theme_override_font_sizes/font_size = 16
 text = "连接方式"
 
@@ -205,7 +219,7 @@ text = "连接方式"
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontHeadingLabel"
-theme_override_colors/font_color = Color(0.270588, 0.215686, 0.184314, 1)
+theme_override_colors/font_color = Color(0.125490, 0.180392, 0.286275, 1.000000)
 theme_override_font_sizes/font_size = 28
 text = "局域网直连"
 
@@ -213,7 +227,7 @@ text = "局域网直连"
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
+theme_override_colors/font_color = Color(0.349020, 0.396078, 0.474510, 1.000000)
 theme_override_font_sizes/font_size = 16
 text = "同一网络内连接"
 
@@ -222,7 +236,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 68)
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
+theme_override_colors/font_color = Color(0.349020, 0.396078, 0.474510, 1.000000)
 theme_override_font_sizes/font_size = 16
 text = "两台设备处于同一网络时，直接建立低延迟对局。对局判定始终由房主负责。"
 vertical_alignment = 1
@@ -244,7 +258,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"FrontSectionLabel"
 theme_override_font_sizes/font_size = 18
-text = "连接概览"
+text = "本次对战"
 vertical_alignment = 1
 
 [node name="RoleBadge" type="PanelContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/OverviewHeader"]
@@ -255,7 +269,7 @@ theme_type_variation = &"FrontQuietPanel"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(92, 26)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
+theme_override_colors/font_color = Color(0.349020, 0.396078, 0.474510, 1.000000)
 theme_override_font_sizes/font_size = 16
 text = "房主 · 创建"
 horizontal_alignment = 1
@@ -276,7 +290,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(20, 20)
 layout_mode = 2
 mouse_filter = 2
-texture = ExtResource("5_check")
+texture = ExtResource("8_deck")
 expand_mode = 1
 stretch_mode = 5
 
@@ -298,7 +312,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(20, 20)
 layout_mode = 2
 mouse_filter = 2
-texture = ExtResource("5_check")
+texture = ExtResource("6_info")
 expand_mode = 1
 stretch_mode = 5
 
@@ -320,7 +334,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(20, 20)
 layout_mode = 2
 mouse_filter = 2
-texture = ExtResource("5_check")
+texture = ExtResource("9_link")
 expand_mode = 1
 stretch_mode = 5
 
@@ -348,7 +362,7 @@ layout_mode = 2
 theme_override_constants/separation = 10
 
 [node name="TipIcon" type="TextureRect" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroTipPanel/TipContent"]
-self_modulate = Color(0.474510, 0.403922, 0.341176, 1)
+self_modulate = Color(0.349020, 0.396078, 0.474510, 1.000000)
 custom_minimum_size = Vector2(22, 22)
 layout_mode = 2
 mouse_filter = 2
@@ -361,7 +375,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.270588, 0.215686, 0.184314, 1)
+theme_override_colors/font_color = Color(0.125490, 0.180392, 0.286275, 1.000000)
 theme_override_font_sizes/font_size = 16
 text = "房主创建后，将本机局域网地址与端口告诉挑战者。"
 vertical_alignment = 1
@@ -389,16 +403,10 @@ theme_override_constants/separation = 10
 
 [node name="NetworkKindLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 theme_type_variation = &"FrontSectionLabel"
 text = "联机方式"
-
-[node name="NetworkKindOption" type="OptionButton" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
-focus_mode = 0
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 54)
-layout_mode = 2
-tooltip_text = "选择局域网直连或互联网服务器"
 
 [node name="RoleLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
 unique_name_in_owner = true
@@ -411,6 +419,8 @@ focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
+
+script = ExtResource("7_segments")
 
 [node name="AddressRow" type="VBoxContainer" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
 layout_mode = 2
@@ -435,7 +445,7 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.678431, 0.317647, 0.278431, 1)
+theme_override_colors/font_color = Color(0.713725, 0.188235, 0.219608, 1.000000)
 text = "请输入有效地址。"
 
 [node name="PortRow" type="VBoxContainer" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
@@ -461,7 +471,7 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.678431, 0.317647, 0.278431, 1)
+theme_override_colors/font_color = Color(0.713725, 0.188235, 0.219608, 1.000000)
 text = "端口必须在 1–65535 之间。"
 
 [node name="RoomCodeRow" type="VBoxContainer" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
@@ -487,7 +497,7 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.678431, 0.317647, 0.278431, 1)
+theme_override_colors/font_color = Color(0.713725, 0.188235, 0.219608, 1.000000)
 text = "加入 互联网房间时必须填写房间码。"
 
 [node name="RulesLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]

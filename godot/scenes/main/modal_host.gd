@@ -2,6 +2,7 @@ class_name ModalHost
 extends Control
 
 const FRONTEND_THEME := preload("res://ui/frontend/front_end_theme.tres")
+const BATTLE_MODAL_THEME := preload("res://ui/frontend/battle_modal_theme.tres")
 const SCREEN_GAME := "game"
 const MODE_CHALLENGE := "challenge"
 const MODAL_SHADE_ALPHA := 0.48
@@ -239,14 +240,18 @@ func _free_children_immediate(parent: Node) -> void:
 
 func begin(spec: ModalSpec, available_size: Vector2) -> void:
 	active_spec = spec
+	set_meta("ui_surface", spec.surface)
+	if modal_shade:
+		var alpha := modal_shade.color.a
+		modal_shade.color = Color(FrontendPalette.TEXT if spec.surface == ModalSpec.Surface.FRONTEND else DesignTokens.TEXT, alpha)
 	if modal_panel:
-		modal_panel.theme = FRONTEND_THEME
+		modal_panel.theme = FRONTEND_THEME if spec.surface == ModalSpec.Surface.FRONTEND else BATTLE_MODAL_THEME
 		modal_panel.theme_type_variation = &"FrontModalPanel"
 		modal_panel.remove_theme_stylebox_override("panel")
 		_apply_layout(spec, available_size)
 	if modal_scroll:
-		FrontendPalette.style_scrollbar(modal_scroll.get_v_scroll_bar())
-		FrontendPalette.style_scrollbar(modal_scroll.get_h_scroll_bar())
+		SurfacePalette.for_control(self).style_scrollbar(modal_scroll.get_v_scroll_bar())
+		SurfacePalette.for_control(self).style_scrollbar(modal_scroll.get_h_scroll_bar())
 
 
 func update_available_size(available_size: Vector2) -> void:

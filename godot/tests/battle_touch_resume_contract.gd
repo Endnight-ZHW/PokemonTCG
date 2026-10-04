@@ -249,11 +249,15 @@ func check_showcase_image(stage: FrontendCardShowcase3D, label: String) -> void:
 	check(pixels != null and not pixels.is_empty(), "Homepage viewport is empty: " + label)
 	if pixels == null or pixels.is_empty():
 		return
-	# Sample the clear cloth corners, away from the card fan. A transparent or
-	# blank frozen viewport must not pass just because its mesh nodes exist.
-	for x in [-2.2, 2.2]:
-		var point := stage.camera.unproject_position(stage._mat.global_position + Vector3(x, 0.025, 1.3))
+	# Sample the actual deck box and hero card after viewport recreation. Mesh
+	# existence alone cannot detect a transparent frozen render target.
+	var samples: Array[Vector3] = [
+		stage._case_root.to_global(Vector3(0.1, 1.2, 0.53)),
+		stage.cards[0].global_position,
+	]
+	for position in samples:
+		var point := stage.camera.unproject_position(position)
 		var pixel := Vector2i(point)
-		check(Rect2i(Vector2i.ZERO, pixels.get_size()).has_point(pixel), "Cloth sample is outside the viewport")
+		check(Rect2i(Vector2i.ZERO, pixels.get_size()).has_point(pixel), "Showcase sample is outside the viewport")
 		if Rect2i(Vector2i.ZERO, pixels.get_size()).has_point(pixel):
-			check(pixels.get_pixelv(pixel).a > 0.9, "Homepage cloth disappeared: " + label)
+			check(pixels.get_pixelv(pixel).a > 0.9, "Homepage deck box or card disappeared: " + label)

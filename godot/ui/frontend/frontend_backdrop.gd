@@ -2,6 +2,12 @@
 class_name FrontendBackdrop
 extends Control
 
+var accent_tint := Color("91a89f")
+
+func set_accent(color: Color) -> void:
+	accent_tint = color
+	queue_redraw()
+
 const VARIANT_NEUTRAL := "neutral"
 const VARIANT_VICTORY := "victory"
 @export_enum("title", "neutral", "victory") var variant := VARIANT_NEUTRAL:
@@ -21,22 +27,30 @@ func _draw() -> void:
 	if size.x <= 0.0 or size.y <= 0.0:
 		return
 	draw_rect(Rect2(Vector2.ZERO, size), FrontendPalette.BACKGROUND)
-	var cloth := FrontendPalette.PANEL
-	for band in range(32):
-		var t := float(band) / 31.0
-		var ink := cloth.lerp(FrontendPalette.BACKGROUND, t * 0.75)
-		draw_rect(Rect2(0, size.y * t, size.x, size.y / 31.0 + 1.0), ink)
-	for y in range(24, int(size.y) - 20, 6):
-		draw_line(Vector2(18, y), Vector2(size.x - 18, y), Color(DesignTokens.TEXT, 0.012))
-	var wood := FrontendPalette.WOOD
-	for y in [0.0, size.y - 14.0]:
-		draw_rect(Rect2(0, y, size.x, 14), wood)
-		for grain in range(4):
-			var points := PackedVector2Array()
-			for x in range(0, int(size.x) + 20, 20):
-				points.append(Vector2(x, y + 2.0 + grain * 3.0 + sin(x * 0.015 + grain) * 0.8))
-			draw_polyline(points, Color(DesignTokens.TEXT, 0.045), 1.0)
-	draw_rect(Rect2(Vector2(16, 18), size - Vector2(32, 36)), Color(FrontendPalette.GOLD, 0.12), false, 1.0)
-	if variant == VARIANT_VICTORY:
-		for radius in [90.0, 104.0]:
-			draw_arc(Vector2(size.x * 0.5, size.y * 0.3), radius, PI * 0.12, PI * 0.88, 48, Color(FrontendPalette.GOLD, 0.10), 1.0, true)
+	if variant == "title":
+		var right_tint := Color("e7edeb").lerp(accent_tint, 0.055)
+		for band in range(80):
+			var t := float(band) / 79.0
+			var blend := smoothstep(0.20, 0.80, t)
+			draw_rect(Rect2(size.x * t, 0, size.x / 79.0 + 1, size.y), FrontendPalette.BACKGROUND.lerp(right_tint, blend))
+		var center := Vector2(size.x * 0.79, size.y * 0.38)
+		var radius := size.y * 0.37
+		for ring in range(30, 0, -1):
+			draw_circle(center, radius * float(ring) / 20.0, Color(Color.WHITE, 0.018), true, -1, true)
+		for r in [radius, radius * 1.22]:
+			draw_arc(center, r, PI * 1.12, TAU * 1.03, 96, Color(accent_tint.darkened(0.25), 0.13), 1.0, true)
+		var horizon := size.y * 0.70
+		draw_line(Vector2(size.x * 0.48, horizon), Vector2(size.x, horizon), Color(FrontendPalette.TEXT, 0.065), 1, true)
+		for offset in range(4):
+			var y := horizon + pow(float(offset + 1) / 4, 1.6) * (size.y - horizon)
+			draw_line(Vector2(size.x * 0.48, y), Vector2(size.x, y), Color(FrontendPalette.TEXT, 0.025), 1, true)
+		for x in range(8):
+			for y in range(4):
+				draw_circle(Vector2(size.x - 42 - x * 16, 38 + y * 16), 1.2, Color(FrontendPalette.TEXT, 0.10), true, -1, true)
+
+	else:
+		draw_line(Vector2.ZERO, Vector2(size.x, 0), FrontendPalette.TEXT, 6)
+		draw_line(Vector2.ZERO, Vector2(size.x * 0.10, 0), FrontendPalette.GOLD, 6)
+		if variant == VARIANT_VICTORY:
+			draw_arc(Vector2(size.x * 0.82, size.y * 0.4), size.y * 0.42,
+				0, TAU, 96, Color("e8e6df"), 34, true)

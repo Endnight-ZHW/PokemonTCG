@@ -570,8 +570,8 @@ func _show_network() -> void:
 
 
 func _show_settings() -> void:
-	preview_caption.text = "设置面板 · 前台主题、分区表单与实时数值"
-	var panel := _centered_panel(Vector2(700, 650))
+	preview_caption.text = "设置面板 · 声音／画面／高级分类与草稿"
+	var panel := _centered_panel(Vector2(1040, 650))
 	var settings := SETTINGS_SCENE.instantiate() as SettingsPanel
 	panel.add_child(settings)
 	settings.configure()
@@ -579,7 +579,7 @@ func _show_settings() -> void:
 
 func _show_choice() -> void:
 	preview_caption.text = "选择卡牌 · 固定选择进度与独立滚动列表"
-	var content := _centered_panel(Vector2(820, 600))
+	var content := _centered_panel(Vector2(820, 600), ModalSpec.Surface.BATTLE)
 	var panel := CHOICE_SCENE.instantiate() as ChoicePanel
 	content.add_child(panel)
 	panel.configure("选择 1～2 张卡牌", true, catalog,
@@ -599,7 +599,7 @@ func _show_choice() -> void:
 
 func _show_energy_choice() -> void:
 	preview_caption.text = "能量分配选择 · 逐张目标、已有能量与分配后预览"
-	var center := _centered_panel(Vector2(980, 660))
+	var center := _centered_panel(Vector2(980, 660), ModalSpec.Surface.BATTLE)
 	var panel := CHOICE_SCENE.instantiate() as ChoicePanel
 	center.add_child(panel)
 	panel.configure(
@@ -683,8 +683,8 @@ func _show_help() -> void:
 
 
 func _show_inspector() -> void:
-	preview_caption.text = "卡牌检查器 · 大图、完整卡文和附属卡"
-	var panel := _centered_panel(Vector2(860, 650))
+	preview_caption.text = "战斗卡牌检查器 · 大图、完整卡文和附属卡"
+	var panel := _centered_panel(Vector2(860, 650), ModalSpec.Surface.BATTLE)
 	var content := CARD_INSPECTOR_PANEL_SCENE.instantiate() as CardInspectorPanel
 	content.art_requested.connect(_show_card_art_preview)
 	panel.add_child(content)
@@ -700,7 +700,7 @@ func _show_inspector() -> void:
 func _show_card_art_preview() -> void:
 	_clear_preview()
 	preview_caption.text = "卡牌原图 · 统一弹窗内容"
-	var content := _centered_panel(Vector2(720, 700))
+	var content := _centered_panel(Vector2(720, 700), ModalSpec.Surface.BATTLE)
 	var art := CardArtPanel.new()
 	art.texture = CardTextureCache.get_texture(str(catalog.get_card("svi-hrot").get("image_path", "")))
 	content.add_child(art)
@@ -708,7 +708,7 @@ func _show_card_art_preview() -> void:
 
 func _show_zone() -> void:
 	preview_caption.text = "区域查看 · 公开弃牌与隐藏牌库/奖励卡"
-	var panel := _centered_panel(Vector2(820, 620))
+	var panel := _centered_panel(Vector2(820, 620), ModalSpec.Surface.BATTLE)
 	var content := ZONE_INSPECTOR_PANEL_SCENE.instantiate() as ZoneInspectorPanel
 	panel.add_child(content)
 	content.configure(catalog, {
@@ -1114,7 +1114,7 @@ func _set_checkpoint_status(text_value: String) -> void:
 		checkpoint_status.text = text_value
 
 
-func _centered_panel(min_size: Vector2) -> Container:
+func _centered_panel(min_size: Vector2, surface: ModalSpec.Surface = ModalSpec.Surface.FRONTEND) -> Container:
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	preview_host.add_child(center)
@@ -1124,7 +1124,8 @@ func _centered_panel(min_size: Vector2) -> Container:
 		available = Vector2(UILayoutPolicy.MINIMUM_SIZE)
 	var inset := UILayoutPolicy.modal_inset(available)
 	panel.custom_minimum_size = min_size.min((available - inset).max(Vector2(320, 320)))
-	panel.theme = FRONTEND_THEME
+	panel.theme = FRONTEND_THEME if surface == ModalSpec.Surface.FRONTEND else SurfacePalette.BATTLE_THEME
+	panel.set_meta("ui_surface", surface)
 	center.add_child(panel)
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1137,7 +1138,7 @@ func _centered_panel(min_size: Vector2) -> Container:
 		padding.add_theme_constant_override("margin_" + side, UILayoutPolicy.fit_int(available, 12, 18))
 	panel.add_child(padding)
 	padding.add_child(scroll)
-	FrontendPalette.style_scrollbar(scroll.get_v_scroll_bar())
+	SurfacePalette.for_control(panel).style_scrollbar(scroll.get_v_scroll_bar())
 	var content := VBoxContainer.new()
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override("separation", 12)

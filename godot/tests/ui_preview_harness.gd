@@ -42,13 +42,19 @@ func _click_control(control: Control) -> void:
 func _move_pointer_to_control(control: Control) -> void:
 	if control == null:
 		return
+	# Real pointer-state captures require a focused window. Drain the platform's
+	# asynchronous warp motion before pressing; its zero button mask can otherwise
+	# arrive after the synthetic press and cancel the native Button's pressed state.
+	if not tree.root.has_focus():
+		tree.root.grab_focus()
+		await _settle_frontend(3)
 	var pointer_position := _physical_control_rect(control).get_center()
 	Input.warp_mouse(pointer_position)
 	var motion := InputEventMouseMotion.new()
 	motion.position = pointer_position
 	motion.global_position = pointer_position
 	Input.parse_input_event(motion)
-	await tree.process_frame
+	await _settle_frontend(3)
 	await RenderingServer.frame_post_draw
 
 func _begin_mouse_press(control: Control) -> bool:
@@ -64,6 +70,11 @@ func _begin_mouse_press(control: Control) -> bool:
 	Input.parse_input_event(press)
 	await tree.process_frame
 	await RenderingServer.frame_post_draw
+	if not _is_pressed_draw_mode(control):
+		print("PREVIEW_POINTER_DIAGNOSTIC target=", control.get_path(),
+			" rect=", _physical_control_rect(control), " pointer=", tree.root.get_mouse_position(),
+			" hovered=", tree.root.gui_get_hovered_control(), " mode=", (control as BaseButton).get_draw_mode(),
+			" focused=", tree.root.has_focus())
 	return _is_pressed_draw_mode(control)
 
 func _cancel_mouse_press(guard_button: BaseButton = null) -> void:

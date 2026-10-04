@@ -1,14 +1,16 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 [ext_resource type="Script" path="res://scenes/title/title_page.gd" id="1"]
 [ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2"]
 [ext_resource type="PackedScene" path="res://ui/frontend/frontend_backdrop.tscn" id="3"]
 [ext_resource type="Script" path="res://ui/frontend/title_mode_button.gd" id="4"]
 [ext_resource type="Script" path="res://ui/frontend/frontend_card_showcase_3d.gd" id="5"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/users.svg" id="6"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/robot.svg" id="7"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/network.svg" id="8"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/settings.svg" id="9"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/help.svg" id="10"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/users.svg" id="6"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/robot.svg" id="7"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/network.svg" id="8"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/settings.svg" id="9"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/help.svg" id="10"]
+
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/club_mark.svg" id="11"]
 
 [node name="TitlePage" type="Control"]
 layout_mode = 3
@@ -38,55 +40,11 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 24
 
-[node name="HeaderPanel" type="VBoxContainer" parent="SafeContent/PageFrame"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="TitleLabel" type="Label" parent="SafeContent/PageFrame/HeaderPanel"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"TitleLogoLabel"
-text = "宝可梦卡牌对战"
-
-[node name="BrandSubtitle" type="Label" parent="SafeContent/PageFrame/HeaderPanel"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-text = "挑选牌组，准备下一场对战。"
-
-[node name="BodyGrid" type="GridContainer" parent="SafeContent/PageFrame"]
+[node name="BodyGrid" type="HBoxContainer" parent="SafeContent/PageFrame"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-columns = 2
-
-[node name="HeroPanel" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/separation = 14
-
-[node name="CardStage" type="Control" parent="SafeContent/PageFrame/BodyGrid/HeroPanel"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-mouse_filter = 2
-script = ExtResource("5")
-
-[node name="HeroCaption" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-text = "熟悉的卡牌，真实的桌面对战"
-horizontal_alignment = 1
-
-[node name="TypeOrbs" type="HBoxContainer" parent="SafeContent/PageFrame/BodyGrid/HeroPanel"]
-unique_name_in_owner = true
-layout_mode = 2
-alignment = 1
+theme_override_constants/separation = 48
 
 [node name="ModesPanel" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid"]
 unique_name_in_owner = true
@@ -95,12 +53,27 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 16
 alignment = 1
+size_flags_stretch_ratio = 0.8
 
-[node name="ModeHeading" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
+[node name="ClubMark" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
+layout_mode = 2
+custom_minimum_size = Vector2(48, 48)
+size_flags_horizontal = 0
+mouse_filter = 2
+texture = ExtResource("11")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="HeaderPanel" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-text = "选择对战方式"
+theme_override_constants/separation = 8
+
+[node name="TitleLabel" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/HeaderPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"TitleLogoLabel"
+text = "宝可梦\n卡牌对战"
 
 [node name="ModeStack" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
 unique_name_in_owner = true
@@ -113,7 +86,7 @@ custom_minimum_size = Vector2(0, 112)
 layout_mode = 2
 script = ExtResource("4")
 title_text = "本地对战"
-subtitle_text = "与身边的朋友一起对战"
+subtitle_text = "同一设备，双人对战"
 mode_icon = ExtResource("6")
 
 [node name="AIButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeStack"]
@@ -131,8 +104,24 @@ custom_minimum_size = Vector2(0, 112)
 layout_mode = 2
 script = ExtResource("4")
 title_text = "联机对战"
-subtitle_text = "通过局域网或房间码连接"
+subtitle_text = "局域网或互联网对战"
 mode_icon = ExtResource("8")
+
+[node name="HeroPanel" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+size_flags_stretch_ratio = 1.2
+theme_override_constants/separation = 14
+
+[node name="CardStage" type="Control" parent="SafeContent/PageFrame/BodyGrid/HeroPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 0
+script = ExtResource("5")
 
 [node name="FooterRow" type="HBoxContainer" parent="SafeContent/PageFrame"]
 unique_name_in_owner = true
@@ -144,7 +133,7 @@ focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 52)
 layout_mode = 2
-theme_type_variation = &"TitleUtilityButton"
+theme_type_variation = &"FrontSecondaryButton"
 text = "设置"
 icon = ExtResource("9")
 
@@ -153,7 +142,7 @@ focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 52)
 layout_mode = 2
-theme_type_variation = &"TitleUtilityButton"
+theme_type_variation = &"FrontSecondaryButton"
 text = "玩法帮助"
 icon = ExtResource("10")
 
@@ -167,3 +156,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"TitleFooterLabel"
 text = "v0.8.0"
+
+[node name="ShowcaseTimer" type="Timer" parent="."]
+unique_name_in_owner = true
+wait_time = 8.0

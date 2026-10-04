@@ -35,7 +35,7 @@ func run(ui: Control) -> void:
 	Input.parse_input_event(reset_hover_event)
 	var title_page := ui.find_child("TitlePage", true, false)
 	if title_page != null:
-		(title_page as TitlePage).card_stage.set_cards(["svi-ente", "sv2-grex", "svg2-tort"])
+		(title_page as TitlePage).card_stage._drag_view(Vector2(120, 0))
 	await harness._settle_frontend(2)
 	if not harness._capture("title-rotated.png"):
 		harness._finish(1)
@@ -101,6 +101,17 @@ func run(ui: Control) -> void:
 		harness._finish(1)
 		return
 	if not harness._capture("network-lan.png"):
+		harness._finish(1)
+		return
+	var mode_segments := ui.current_network_page.kind_option as FrontendSegmentedOption
+	await harness._click_control(mode_segments._buttons[1])
+	if ui.current_network_page.kind != "relay":
+		push_error("Pointer click on the internet segment did not switch the lobby")
+		harness._finish(1)
+		return
+	await harness._click_control(mode_segments._buttons[0])
+	if ui.current_network_page.kind != "lan":
+		push_error("Pointer click on the LAN segment did not restore the lobby")
 		harness._finish(1)
 		return
 	var network_rule_toggle := (
@@ -241,6 +252,19 @@ func run(ui: Control) -> void:
 	await harness._cancel_touch_press()
 	if not harness._captures_differ("settings.png", "settings-ghost-touch-pressed.png"):
 		push_error("Settings Ghost touch fixture is visually identical to normal")
+		harness._finish(1)
+		return
+	var settings_panel: Variant = ui.modal_body.get_child(0)
+	# Capture each category deterministically after the cancelled touch fixture.
+	# Signal wiring and draft preservation are covered by the frontend flow suite.
+	settings_panel.show_category(1)
+	await harness._settle_frontend()
+	if not harness._capture("settings-picture.png"):
+		harness._finish(1)
+		return
+	settings_panel.show_category(2)
+	await harness._settle_frontend()
+	if not harness._capture("settings-advanced.png"):
 		harness._finish(1)
 		return
 	ui.modal_scroll.scroll_vertical = int(ui.modal_scroll.get_v_scroll_bar().max_value)

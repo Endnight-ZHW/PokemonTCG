@@ -27,7 +27,53 @@ custom_minimum_size = Vector2(138, 48)
 theme_type_variation = &"FrontGhostButton"
 text = "恢复默认"
 
+[node name="CategoryLayout" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 28
+
+[node name="Categories" type="VBoxContainer" parent="CategoryLayout"]
+layout_mode = 2
+custom_minimum_size = Vector2(132, 0)
+theme_override_constants/separation = 8
+
+[node name="AudioCategory" type="Button" parent="CategoryLayout/Categories"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(132, 52)
+focus_mode = 0
+toggle_mode = true
+theme_type_variation = &"FrontCategoryButton"
+text = "声音"
+
+[node name="PictureCategory" type="Button" parent="CategoryLayout/Categories"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(132, 52)
+focus_mode = 0
+toggle_mode = true
+theme_type_variation = &"FrontCategoryButton"
+text = "画面"
+
+[node name="AdvancedCategory" type="Button" parent="CategoryLayout/Categories"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(132, 52)
+focus_mode = 0
+toggle_mode = true
+theme_type_variation = &"FrontCategoryButton"
+text = "高级"
+
+[node name="CategoryContent" type="VBoxContainer" parent="CategoryLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 280)
+
 [node name="AudioSection" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 10
 
@@ -135,6 +181,7 @@ layout_mode = 2
 
 
 [node name="PictureSection" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 12
 
@@ -180,7 +227,7 @@ size_flags_horizontal = 3
 [node name="Hint" type="Label" parent="PictureSection"]
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
-text = "减少动画会保留必要的结果提示，并暂停首页卡牌的循环运动。"
+text = "减少动画保留必要的结果提示，并省略页面与对战的装饰动效。"
 autowrap_mode = 2
 
 [node name="AdvancedButton" type="Button" parent="PictureSection"]
@@ -198,6 +245,13 @@ unique_name_in_owner = true
 layout_mode = 2
 visible = false
 theme_override_constants/separation = 8
+
+[node name="AdvancedHeading" type="Label" parent="PictureSection/AdvancedOptions"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+text = "高级"
 
 [node name="CardCacheRow" type="HBoxContainer" parent="PictureSection/AdvancedOptions"]
 layout_mode = 2

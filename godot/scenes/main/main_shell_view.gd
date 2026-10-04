@@ -32,6 +32,7 @@ var _responsive_canvas_window: Window
 var _original_content_scale_size := Vector2i.ZERO
 var _original_window_min_size := Vector2i.ZERO
 var _last_responsive_content_scale_size := Vector2i.ZERO
+var _battle_toast_style: StyleBox
 
 
 func configure(owner: Control) -> void:
@@ -43,6 +44,8 @@ func configure(owner: Control) -> void:
 	screen_host = owner.get_node_or_null("SafeArea/ScreenHost") as Control
 	title_backdrop = owner.get_node_or_null("TitleFullBleedBackdrop") as Control
 	toast_label = owner.get_node_or_null("Toast") as Label
+	if toast_label and _battle_toast_style == null:
+		_battle_toast_style = toast_label.get_theme_stylebox("normal")
 	loading_layer = owner.get_node_or_null("LoadingLayer") as Control
 	loading_label = owner.get_node_or_null(
 		"LoadingLayer/Center/Panel/Margin/Content/LoadingLabel"
@@ -93,6 +96,9 @@ func mount(scene: PackedScene) -> Node:
 		return null
 	clear_screen()
 	var page := scene.instantiate()
+	var background := main.get_node_or_null("Background") as ColorRect
+	if background:
+		background.color = DesignTokens.BG_DEEP if scene == BATTLE_SCENE else FrontendPalette.BACKGROUND
 	screen_host.add_child(page)
 	call_deferred("_refresh_background_activity")
 	return page
@@ -101,6 +107,9 @@ func mount(scene: PackedScene) -> Node:
 func show_loading(message: String) -> void:
 	if loading_layer == null:
 		return
+	loading_layer.theme = FRONTEND_THEME if main.current_screen != SCREEN_GAME else SurfacePalette.BATTLE_THEME
+	(loading_layer.get_node("Shade") as ColorRect).color = Color(
+		FrontendPalette.TEXT if main.current_screen != SCREEN_GAME else DesignTokens.TEXT, 0.65)
 	loading_label.text = message
 	loading_layer.visible = true
 
@@ -127,10 +136,15 @@ func show_toast(message: String, is_error: bool = false) -> void:
 	if _toast_tween and _toast_tween.is_valid():
 		_toast_tween.kill()
 	_toast_tween = null
+	if main.current_screen != SCREEN_GAME:
+		toast_label.add_theme_stylebox_override("normal", FrontendPalette.panel(FrontendPalette.PANEL, 8, FrontendPalette.BORDER_SOFT, 1, 14))
+	else:
+		if _battle_toast_style:
+			toast_label.add_theme_stylebox_override("normal", _battle_toast_style)
 	toast_label.text = message
 	toast_label.modulate = Color.WHITE
 	if is_error:
-		toast_label.add_theme_color_override("font_color", DesignTokens.STATE_DANGER)
+		toast_label.add_theme_color_override("font_color", DesignTokens.STATE_DANGER if main.current_screen == SCREEN_GAME else FrontendPalette.DANGER)
 	else:
 		toast_label.remove_theme_color_override("font_color")
 	_layout_toast()
@@ -538,6 +552,9 @@ func show_title() -> void:
 	page.network_selected.connect(show_network_setup)
 	page.settings_requested.connect(main._show_settings)
 	page.help_requested.connect(main._show_help)
+	if title_backdrop:
+		title_backdrop.call("set_accent", page.featured_accent())
+		page.showcase_changed.connect(Callable(title_backdrop, "set_accent"))
 
 func show_network_setup(kind: String) -> void:
 	main._play_click()
@@ -564,6 +581,7 @@ func show_deck_select(mode: String = MODE_LOCAL) -> void:
 
 func build_game_screen() -> void:
 	main.current_screen = SCREEN_GAME
+	(main.get_node("Background") as ColorRect).color = DesignTokens.BG_DEEP
 	clear_screen()
 	main.battle_screen = BATTLE_SCENE.instantiate() as BattleTable
 	main.battle_screen.name = "GameScreen"

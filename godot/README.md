@@ -12,8 +12,10 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   同一 C++ 核心通过研究目录中的显式 pybind 服务离线实验。
 - 响应式三维实体牌桌、卡牌正反面与厚度、空间动画、三维硬币、音频和移动端自动画质分档。
 - 战斗统一通过选卡后的按钮使用卡牌；顶部任务条、合法目标及可用卡光边引导操作，攻击和撤退提供确认。手牌滑动仅用于浏览。
-- 奶油暖色全屏标题页，使用暖白面板、焦糖色操作、浅木质感展示台和八种基础能量；
-  首页只保留本地对战、挑战 AI、联机对战三个主入口，LAN/Relay 在网络大厅中选择。
+- 首页使用暖白、深靛蓝与朱红，左侧本地／AI／联机三个等权入口，右侧为带真实内腔、背部柔性连接、薄折盖和小徽章的皮质牌盒，以及带软垫的镂空卡架。
+  14 套预组每 8 秒随机轮换，不连续重复；可拖动观看角度，拖动和弹窗期间暂停。右侧不设按钮或重复文字。
+  选牌为牌盒卡册，联机使用方式／身份分段选择，设置使用分类目录；对战牌桌保留原有风格。
+  前台交互控件有清晰边界，当前选项用深蓝实底标识；牌组卡图采用暖白底衬，卡牌详情提供明确放大入口。
 - 前台导航仅支持鼠标与触控，交互目标仍遵循至少 48px 的触控尺寸；网络文本框可在点击或
   轻触后输入，Android 系统返回按钮/手势继续用于返回与打开对局菜单。
 - 全游戏统一沿用 1600×900 桌面布局；电脑和平板横屏保持相同的分区与操作流程，
@@ -49,7 +51,8 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   实验台提供普通命中、重击和「击倒 → 离场 → 奖励」连续演出，支持实时音效试听。
 - 主要页面和组件现在都包含完整可编辑场景树；动态手牌和动作按钮仍由实时数据生成。
 - 前台 Theme 位于 `res://ui/frontend/front_end_theme.tres`，只挂到标题、牌组、网络、
-  设置、帮助、详情和胜利等前台 surface；战斗与兼容 Theme 仍为 `res://ui/game_theme.tres`。
+  设置、帮助、详情和胜利等前台 surface；战斗仍为 `res://ui/game_theme.tres`，
+  战斗弹窗冻结为 `res://ui/frontend/battle_modal_theme.tres`，共享面板通过 `SurfacePalette` 跟随上下文。
   不要把前台 Theme 挂到 `Main` 或 `BattleTable` 根节点。
 - 前台背景与动效位于 `res://ui/frontend/frontend_backdrop.*` 和 `frontend_motion.gd`；
   所有变体都不加载边角装饰卡牌，胜利页只保留面板内的代表卡。弹窗用
@@ -58,17 +61,17 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   选项与滑杆均通过鼠标/触控操作。网络地址、端口和房间码 `LineEdit` 使用点击焦点，以保留
   实体键盘文字输入和移动端虚拟键盘；Android 系统返回事件不属于 `ui_cancel`，仍由 `Main`
   处理。
-- 标题页使用奶油米色渐变、低反差织物与浅木边缘组成的程序化背景；`F5` 时由 `Main` 的
+- 标题页使用暖白底与裁切精灵球几何组成的程序化背景；`F5` 时由 `Main` 的
   `TitleFullBleedBackdrop` 显示，单独按 `F6` 或在 Workbench 中预览时使用页面内的
   `EmbeddedBackdrop`，两份背景保持互斥以避免重复绘制或额外外框。
 - 前台字体为 `res://assets/ui/fonts/NotoSansCJKsc-VF.ttf`，来源、SHA-256 和 OFL 许可证见
-  同目录 `SOURCE.md` / `OFL.txt`；普通 UI/HUD 使用 600，控件与标题使用 700，长段文字使用
-  500 字重。项目原创 24×24 SVG 图标位于 `res://assets/ui/icons/`。
+  同目录 `SOURCE.md` / `OFL.txt`；前台正文 500、控件 600、标题 700；战斗保持原字重。
+  前台原创 SVG 位于 `res://assets/ui/frontend/`，原有战斗图标仍位于 `res://assets/ui/icons/`。
 - 8 种基础能量、无色和夜光能量的 256×256 RGBA 透明 PNG 位于
   `res://assets/ui/energy/`；运行时通过共享 `res://ui/energy_icon_catalog.gd` 读取。未知类型
   由调用方保留文字或中性徽章回退，不自动替换成无色；夜光能量按 `svg2-lume` 卡 ID 精确
-  映射，不会覆盖通用 `Rainbow`。标题页仅使用草、火、水、雷、超、斗、恶、钢八枚基础
-  能量图标，并以无黑色外框的透明素材直接组成能量带。完整来源表见该目录 `README.md`。
+  映射，不会覆盖通用 `Rainbow`。能量图标用于牌组属性，不再在首页排列装饰能量带。
+  完整来源表见该目录 `README.md`。
 - 177 张发布卡牌已按 `res://authoring/card_review_manifest.json` 与卡图 SHA-256
   完成对战字段审核；新旧卡的印刷信息和卡图统一由 `card_source_manifest.json` 固定到同一简中
   数据源，使用 `tools/sync_card_sources.ps1` 导入或加 `-Check` 核对。卡图均为 300×419 无损 WebP。
@@ -98,9 +101,9 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   两个槽位允许选择同一牌组。
   卡册使用哑光面板与清晰卡图，已分配标签与当前浏览高亮相互独立。
 - `NetworkLobbyPage`：使用 `ConnectionState` 的 `IDLE`、`VALIDATING`、`CONNECTING`、
-  `WAITING`、`CONNECTED`、`ERROR`，通过 `NetworkKindOption` 选择 LAN / Relay，并通过
+  `WAITING`、`CONNECTED`、`ERROR`，通过 `NetworkKindOption` 分段按钮选择 LAN / Relay，并通过
   `set_connection_state(state, message, room_code)` 更新固定状态区；`kind_changed(kind)` 只在
-  `IDLE` / `ERROR` 可触发。左栏始终展示方式图标、连接特性、身份徽章与角色提示，
+  `IDLE` / `ERROR` 可触发。左栏始终展示方式图标、当前牌组、规则、状态与角色提示，
   右栏使用可滚动的完整表单；`connect_requested(...)` 最后一个参数为房主设置的
   `apply_type_matchups`。地址、端口和房间码只有在
   点击或轻触文本框后才接收文字输入，页面不提供 Tab、方向键或手柄焦点导航。房主还会在
@@ -169,9 +172,9 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 对战选卡始终自动打开左侧说明，关闭说明不改变牌位与状态栏位置；选择弹窗中的选项与卡文始终并排。
 传入 `-- --capture` 可生成 `build/layout-unification/after/` 的截图与几何报告。
 
-首页使用 `FrontendCardShowcase3D.set_cards(card_ids)` / `set_active(active)`，最多展示三张公开卡。
-该组件复用实体卡网格与纹理缓存，拥有独立 SubViewport；低画质、减少动画时静态渲染，
-弹窗覆盖或页面隐藏时停止更新，不参与对局自动画质会话。所有弹窗统一前台主题，
+首页使用 `FrontendCardShowcase3D.set_cards(card_ids)` / `set_active(active)`；随机展示对应牌组的一张代表卡、
+两张卡背、背部相连的薄折盖牌盒和镂空卡架，公开卡替换接口仍最多接受三张。组件复用实体卡与纹理缓存，拥有单个独立 SubViewport；
+观看角度可拖动调整，随机轮换使用独立的外观 RNG；弹窗覆盖、应用暂停或页面隐藏时停止更新，不参与对局自动画质会话。弹窗根据 surface 隔离主题，
 `ModalSpec` 继续负责尺寸、遮罩、取消权限与返回恢复；对战 HUD 仍使用独立的游戏主题。
 
 发布包构建：
@@ -200,3 +203,11 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 
 版本、schema 和发布牌组以 [`data/release_manifest.json`](data/release_manifest.json)
 为唯一来源；当前发布状态见 [`../docs/RELEASE_NOTES.md`](../docs/RELEASE_NOTES.md)。
+
+
+前台快速截图：运行 `res://tests/ui_preview.gd -- --frontend-only`；仅检查首页可使用 `--title-only`。
+完整图形验收仍使用 `tools/test_frontend_club_graphics.ps1`，其中包含五种尺寸与三档帧时间门禁。
+
+首页专项回归为 `res://tests/title_showcase_contract.gd`，覆盖 14 套牌组与三个视角的模型间距、卡架各部件的穿模检查、随机轮换及暂停。
+图形脚本 `res://tests/showcase_model_review.gd` 输出正反面、双侧、俯仰、左右连接端、35°／90°开盖与空卡架共 19 张近景，保存到 `build/hinged-case-review/angles/`。首页保持闭盖；开合姿态用于检查盒口、内衬与后连接，专项回归验证连接两端在各角度不分离。
+`ui_preview.gd -- --home-review-only` 可输出三套牌组和对应侧视角截图。

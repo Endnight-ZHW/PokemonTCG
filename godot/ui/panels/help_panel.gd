@@ -100,6 +100,7 @@ const CATEGORIES := [
 
 
 func _ready() -> void:
+	SurfacePalette.apply(self)
 	_resolve_nodes()
 	_bind_categories()
 	show_category(0)
@@ -136,7 +137,7 @@ func _resolve_nodes() -> void:
 
 
 func _apply_layout() -> void:
-	var compact := size.x < 760.0
+	var compact := size.x < 760.0 and not SurfacePalette.is_frontend(self)
 	%ReadingLayout.vertical = compact
 	%CategoryBar.columns = 2 if compact else 1
 	%CategoryBar.custom_minimum_size.x = 0 if compact else 156

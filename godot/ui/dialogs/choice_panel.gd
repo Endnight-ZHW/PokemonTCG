@@ -237,15 +237,15 @@ func add_card_option(
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	badge.add_theme_font_size_override("font_size", 16)
-	badge.add_theme_color_override("font_color", FrontendPalette.INK)
+	badge.add_theme_color_override("font_color", BattleModalPalette.INK)
 	badge.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
 	badge.add_theme_constant_override("outline_size", 1)
 	badge.add_theme_stylebox_override(
 		"normal",
 		DesignTokens.panel_style(
-			FrontendPalette.GOLD,
+			BattleModalPalette.GOLD,
 			10,
-			FrontendPalette.GOLD,
+			BattleModalPalette.GOLD,
 			1,
 			2,
 		),
@@ -267,13 +267,13 @@ func add_card_option(
 		read_only_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		read_only_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		read_only_badge.add_theme_font_size_override("font_size", 16)
-		read_only_badge.add_theme_color_override("font_color", FrontendPalette.TEXT)
+		read_only_badge.add_theme_color_override("font_color", BattleModalPalette.TEXT)
 		read_only_badge.add_theme_stylebox_override(
 			"normal",
 			DesignTokens.panel_style(
-				FrontendPalette.INSET,
+				BattleModalPalette.INSET,
 				8,
-				Color(FrontendPalette.MUTED, 0.62),
+				Color(BattleModalPalette.MUTED, 0.62),
 				1,
 				3,
 			),
@@ -298,7 +298,7 @@ func add_card_option(
 	caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	caption.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	caption.add_theme_font_size_override("font_size", 16)
-	caption.add_theme_color_override("font_color", FrontendPalette.MUTED)
+	caption.add_theme_color_override("font_color", BattleModalPalette.MUTED)
 	content.add_child(caption)
 
 	card_grid.add_child(tile)
@@ -504,9 +504,9 @@ func _add_preview_cards(
 			placeholder.add_theme_stylebox_override(
 				"panel",
 				DesignTokens.panel_style(
-					FrontendPalette.RAISED,
+					BattleModalPalette.RAISED,
 					DesignTokens.RADIUS_SMALL,
-					FrontendPalette.BORDER,
+					BattleModalPalette.BORDER,
 					1,
 					4,
 				),
@@ -560,7 +560,7 @@ func _add_preview_cards(
 		assignment.tooltip_text = ""
 		assignment.accessibility_description = "尚未分配"
 		assignment.add_theme_font_size_override("font_size", 16)
-		assignment.add_theme_color_override("font_color", FrontendPalette.MUTED)
+		assignment.add_theme_color_override("font_color", BattleModalPalette.MUTED)
 		assignment.text = "第 %d 张 · 等待" % (index + 1)
 		assignment.visible = interactive_distribution
 		tile.add_child(assignment)
@@ -706,7 +706,7 @@ func _resolve_nodes() -> void:
 		content_row.resized.connect(_queue_responsive_layout)
 	if not preview_return_button.pressed.is_connected(_toggle_compact_preview):
 		preview_return_button.pressed.connect(_toggle_compact_preview)
-	FrontendPalette.style_scrollbar(%OptionsScroll.get_v_scroll_bar())
+	BattleModalPalette.style_scrollbar(%OptionsScroll.get_v_scroll_bar())
 	if energy_actions and not energy_actions.has_meta("choice_panel_connected"):
 		energy_actions.set_meta("choice_panel_connected", true)
 		undo_button.pressed.connect(func() -> void:
@@ -774,9 +774,9 @@ func _configure_preview_panel() -> void:
 		preview_panel.add_theme_stylebox_override(
 			"panel",
 			DesignTokens.panel_style(
-				FrontendPalette.INSET,
+				BattleModalPalette.INSET,
 				DesignTokens.RADIUS_SMALL,
-				FrontendPalette.BORDER,
+				BattleModalPalette.BORDER,
 				1,
 				8,
 			),
@@ -785,7 +785,7 @@ func _configure_preview_panel() -> void:
 		preview_text.bbcode_enabled = true
 		preview_text.focus_mode = Control.FOCUS_NONE
 		preview_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	FrontendPalette.style_scrollbar(%PreviewScroll.get_v_scroll_bar())
+	BattleModalPalette.style_scrollbar(%PreviewScroll.get_v_scroll_bar())
 
 
 func _preview_card(card_id: String) -> void:
@@ -980,17 +980,17 @@ func _refresh_card_tile_visual(option_id: String) -> void:
 	if caption:
 		caption.add_theme_color_override(
 			"font_color",
-			FrontendPalette.GOLD
+			BattleModalPalette.GOLD
 			if selected
-			else FrontendPalette.DANGER
+			else BattleModalPalette.DANGER
 			if blocked
-			else FrontendPalette.TEXT
+			else BattleModalPalette.TEXT
 			if read_only and hovered
-			else FrontendPalette.MUTED
+			else BattleModalPalette.MUTED
 			if read_only
-			else FrontendPalette.TEXT
+			else BattleModalPalette.TEXT
 			if hovered
-			else FrontendPalette.MUTED,
+			else BattleModalPalette.MUTED,
 		)
 		caption.tooltip_text = ""
 		caption.accessibility_description = (
@@ -1011,23 +1011,23 @@ func _apply_card_tile_style(
 	read_only: bool = false,
 ) -> void:
 	var background := DesignTokens.PANEL
-	var border := FrontendPalette.BORDER
+	var border := BattleModalPalette.BORDER
 	var border_width := 1
 	if selected:
-		background = FrontendPalette.INSET
-		border = FrontendPalette.GOLD
+		background = BattleModalPalette.INSET
+		border = BattleModalPalette.GOLD
 		border_width = 2
 	elif blocked:
-		background = FrontendPalette.INSET
-		border = Color(FrontendPalette.DANGER, 0.58 if hovered else 0.34)
+		background = BattleModalPalette.INSET
+		border = Color(BattleModalPalette.DANGER, 0.58 if hovered else 0.34)
 		border_width = 2 if hovered else 1
 	elif read_only:
-		background = FrontendPalette.INSET
-		border = Color(FrontendPalette.MUTED, 0.46 if hovered else 0.22)
+		background = BattleModalPalette.INSET
+		border = Color(BattleModalPalette.MUTED, 0.46 if hovered else 0.22)
 		border_width = 2 if hovered else 1
 	elif hovered:
-		background = FrontendPalette.INSET
-		border = FrontendPalette.GOLD
+		background = BattleModalPalette.INSET
+		border = BattleModalPalette.GOLD
 		border_width = 2
 	var style := DesignTokens.panel_style(
 		background,
@@ -1037,7 +1037,7 @@ func _apply_card_tile_style(
 		6,
 	)
 	if selected:
-		style.shadow_color = Color(FrontendPalette.GOLD, 0.10)
+		style.shadow_color = Color(BattleModalPalette.GOLD, 0.10)
 		style.shadow_size = 7
 		style.shadow_offset = Vector2.ZERO
 	tile.add_theme_stylebox_override("panel", style)
@@ -1076,35 +1076,35 @@ func _apply_text_option_style(option_id: String) -> void:
 	var normal_style: StyleBoxFlat
 	var hover_style: StyleBoxFlat
 	var pressed_style: StyleBoxFlat
-	var font_color := FrontendPalette.TEXT
-	var hover_font_color := FrontendPalette.TEXT
-	var pressed_font_color := FrontendPalette.TEXT
+	var font_color := BattleModalPalette.TEXT
+	var hover_font_color := BattleModalPalette.TEXT
+	var pressed_font_color := BattleModalPalette.TEXT
 	if selected:
 		normal_style = DesignTokens.panel_style(
-			FrontendPalette.INSET, 10, FrontendPalette.GOLD, 2, 12)
+			BattleModalPalette.INSET, 10, BattleModalPalette.GOLD, 2, 12)
 		hover_style = DesignTokens.panel_style(
-			FrontendPalette.INSET, 10, FrontendPalette.GOLD, 2, 12)
+			BattleModalPalette.INSET, 10, BattleModalPalette.GOLD, 2, 12)
 		pressed_style = DesignTokens.panel_style(
-			Color(FrontendPalette.GOLD, 0.12), 10, FrontendPalette.GOLD, 3, 12)
-		font_color = FrontendPalette.GOLD
-		hover_font_color = FrontendPalette.GOLD
-		pressed_font_color = FrontendPalette.TEXT
+			Color(BattleModalPalette.GOLD, 0.12), 10, BattleModalPalette.GOLD, 3, 12)
+		font_color = BattleModalPalette.GOLD
+		hover_font_color = BattleModalPalette.GOLD
+		pressed_font_color = BattleModalPalette.TEXT
 	elif blocked:
 		normal_style = DesignTokens.panel_style(
-			FrontendPalette.INSET, 10, Color(FrontendPalette.DANGER, 0.34), 1, 12)
+			BattleModalPalette.INSET, 10, Color(BattleModalPalette.DANGER, 0.34), 1, 12)
 		hover_style = DesignTokens.panel_style(
-			FrontendPalette.INSET, 10, Color(FrontendPalette.DANGER, 0.64), 2, 12)
+			BattleModalPalette.INSET, 10, Color(BattleModalPalette.DANGER, 0.64), 2, 12)
 		pressed_style = hover_style
-		font_color = FrontendPalette.MUTED
-		hover_font_color = FrontendPalette.DANGER
-		pressed_font_color = FrontendPalette.DANGER
+		font_color = BattleModalPalette.MUTED
+		hover_font_color = BattleModalPalette.DANGER
+		pressed_font_color = BattleModalPalette.DANGER
 	else:
 		normal_style = DesignTokens.panel_style(
-			FrontendPalette.RAISED, 10, FrontendPalette.BORDER, 1, 12)
+			BattleModalPalette.RAISED, 10, BattleModalPalette.BORDER, 1, 12)
 		hover_style = DesignTokens.panel_style(
-			FrontendPalette.RAISED, 10, FrontendPalette.GOLD, 2, 12)
+			BattleModalPalette.RAISED, 10, BattleModalPalette.GOLD, 2, 12)
 		pressed_style = DesignTokens.panel_style(
-			Color(FrontendPalette.GOLD, 0.10), 10, FrontendPalette.GOLD, 2, 12)
+			Color(BattleModalPalette.GOLD, 0.10), 10, BattleModalPalette.GOLD, 2, 12)
 	button.add_theme_stylebox_override("normal", normal_style)
 	button.add_theme_stylebox_override("hover", hover_style)
 	button.add_theme_stylebox_override("pressed", pressed_style)
@@ -1120,7 +1120,7 @@ func _apply_choice_selection_ring(card_view: CardView) -> void:
 	var style := DesignTokens.panel_style(
 		Color.TRANSPARENT,
 		11,
-		FrontendPalette.GOLD,
+		BattleModalPalette.GOLD,
 		3,
 		0,
 	)

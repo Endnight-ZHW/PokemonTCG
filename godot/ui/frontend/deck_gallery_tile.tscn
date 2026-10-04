@@ -1,10 +1,13 @@
 
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://ui/frontend/deck_gallery_tile.gd" id="1_tile"]
 
+[ext_resource type="Script" path="res://ui/frontend/deck_box_cover.gd" id="2_cover"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/arrow_right.svg" id="3_arrow"]
+
 [node name="DeckGalleryTile" type="Button"]
-custom_minimum_size = Vector2(244, 320)
+custom_minimum_size = Vector2(244, 290)
 layout_mode = 2
 mouse_default_cursor_shape = 2
 focus_mode = 0
@@ -37,6 +40,7 @@ custom_minimum_size = Vector2(0, 184)
 mouse_filter = 2
 layout_mode = 2
 theme_type_variation = &"FrontQuietPanel"
+script = ExtResource("2_cover")
 
 [node name="Artwork" type="TextureRect" parent="Margin/Content/ArtworkFrame"]
 unique_name_in_owner = true
@@ -66,6 +70,15 @@ theme_override_font_sizes/font_size = 19
 text = "牌组名称"
 text_overrun_behavior = 3
 
+[node name="BrowseArrow" type="TextureRect" parent="Margin/Content/Info/TitleRow"]
+custom_minimum_size = Vector2(24, 24)
+mouse_filter = 2
+layout_mode = 2
+self_modulate = Color(0.12549, 0.180392, 0.286275, 1)
+texture = ExtResource("3_arrow")
+expand_mode = 1
+stretch_mode = 5
+
 [node name="AssignmentBadge" type="PanelContainer" parent="Margin/Content/Info"]
 unique_name_in_owner = true
 visible = false
@@ -78,7 +91,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(44, 0)
 mouse_filter = 2
 layout_mode = 2
-theme_override_colors/font_color = Color(0.639216, 0.372549, 0.196078, 1)
+theme_override_colors/font_color = Color(0.784314, 0.231373, 0.207843, 1.000000)
 theme_override_font_sizes/font_size = 16
 text = "玩家 1"
 horizontal_alignment = 1
@@ -136,6 +149,7 @@ vertical_alignment = 1
 text_overrun_behavior = 3
 
 [node name="TaglineLabel" type="Label" parent="Margin/Content/Info"]
+visible = false
 unique_name_in_owner = true
 mouse_filter = 2
 layout_mode = 2

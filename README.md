@@ -7,9 +7,9 @@ ChoiceView 2、Protocol 6、Snapshot 3、Journal 1 和 RNG 2。
 当前收录 177 张卡牌、14 套预设卡组，包括简中嗨皮组合第4弹的狙射树枭、美录梅塔ex、
 故勒顿和密勒顿ex。四套均为 60 张，支持本地双人、Challenge AI 和两种联机模式。
 
-![Godot 4.7 奶油暖色开始界面](docs/images/godot-guide/title-cream.png)
+![Godot 4.7 实体牌组展示首页](docs/images/godot-guide/title-club.png)
 
-全游戏 UI 使用奶油暖色与浅木质感，设计与验收见
+对战外 UI 使用暖白、深靛蓝与朱红的实体卡牌设计；对战牌桌保留奶油暖色与浅木质感。设计与验收见
 [`docs/GODOT_DEVELOPMENT_GUIDE.md`](docs/GODOT_DEVELOPMENT_GUIDE.md)。
 
 ## 代码边界

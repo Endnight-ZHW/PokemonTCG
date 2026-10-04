@@ -23,6 +23,7 @@ var _category_grids: Array[GridContainer] = []
 
 
 func _ready() -> void:
+	SurfacePalette.apply(self)
 	_resolve_nodes()
 	resized.connect(_apply_responsive_columns)
 	call_deferred("_apply_responsive_columns")
@@ -107,6 +108,7 @@ func _add_core_card(card_id: String) -> void:
 	button.custom_minimum_size = Vector2(112, 148)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	button.theme_type_variation = &"FrontGhostButton"
 	button.tooltip_text = ""
 	button.accessibility_name = "查看卡牌：%s" % catalog.card_name(card_id)
@@ -178,6 +180,7 @@ func _add_category(supertype: String, rows: Array, total_count: int) -> void:
 		item.custom_minimum_size = Vector2(0, 58)
 		item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		item.focus_mode = Control.FOCUS_NONE
+		item.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		item.theme_type_variation = &"FrontGhostButton"
 		item.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		item.clip_text = true

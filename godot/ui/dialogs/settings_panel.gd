@@ -20,8 +20,10 @@ signal save_requested(values: Dictionary)
 
 
 func _ready() -> void:
+	SurfacePalette.apply(self)
 	_resolve_nodes()
 	_ensure_connections()
+	_setup_categories()
 
 
 func configure() -> void:
@@ -118,6 +120,9 @@ func _ensure_connections() -> void:
 
 
 func _toggle_advanced(expanded: bool) -> void:
+	if SurfacePalette.is_frontend(self):
+		show_category(2 if expanded else 0)
+		return
 	advanced_options.visible = expanded
 	advanced_button.text = "收起高级选项 −" if expanded else "高级选项 +"
 
@@ -170,3 +175,27 @@ func _fill_option(option: OptionButton, rows: Array, selected_value: Variant) ->
 
 func _update_percent_label(value: float, label: Label) -> void:
 	label.text = "%d%%" % roundi(value * 100.0)
+
+
+func _setup_categories() -> void:
+	if not SurfacePalette.is_frontend(self):
+		return
+	%CategoryLayout.show()
+	$Divider.hide()
+	%AdvancedButton.hide()
+	%AdvancedHeading.show()
+	%AudioSection.reparent(%CategoryContent)
+	%PictureSection.reparent(%CategoryContent)
+	%AdvancedOptions.reparent(%CategoryContent)
+	for row in [[%AudioCategory, 0], [%PictureCategory, 1], [%AdvancedCategory, 2]]:
+		(row[0] as Button).pressed.connect(show_category.bind(int(row[1])))
+	show_category(0)
+
+func show_category(index: int) -> void:
+	if not SurfacePalette.is_frontend(self):
+		return
+	var sections := [%AudioSection, %PictureSection, %AdvancedOptions]
+	var buttons := [%AudioCategory, %PictureCategory, %AdvancedCategory]
+	for i in range(sections.size()):
+		(sections[i] as Control).visible = i == index
+		(buttons[i] as Button).set_pressed_no_signal(i == index)
