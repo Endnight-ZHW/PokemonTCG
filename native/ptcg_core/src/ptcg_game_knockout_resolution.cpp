@@ -103,6 +103,8 @@ std::int64_t pokemon_hp(
             continue;
         }
         const Value *condition = modifier.find("condition");
+        if (condition != nullptr && !string_arg(*condition, "attacker_subtype").empty()
+            && !card_has_subtype(*definition, string_arg(*condition, "attacker_subtype"))) continue;
         if (
             condition != nullptr
             && condition->is_object()

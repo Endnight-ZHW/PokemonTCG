@@ -41,6 +41,22 @@
       "water": [
         "evolution",
         "target_control"
+      ],
+      "happy4_decidueye": [
+        "evolution",
+        "hand_engine"
+      ],
+      "happy4_melmetal": [
+        "evolution",
+        "energy_acceleration"
+      ],
+      "happy4_koraidon": [
+        "wide_board",
+        "energy_acceleration"
+      ],
+      "happy4_miraidon": [
+        "energy_acceleration",
+        "target_control"
       ]
     },
     "fallback": {
@@ -1438,6 +1454,556 @@
           "use_engine_ability": 22.0
         },
         "use_shared_defaults": true
+      },
+      "happy4_decidueye": {
+        "card_roles": {
+          "primary_attacker": [
+            "csvh4-003"
+          ],
+          "secondary_attacker": [
+            "csvh4-004",
+            "csvh4-025"
+          ],
+          "setup_basic": [
+            "csvh4-001"
+          ],
+          "evolution": [
+            "csvh4-002",
+            "csvh4-003"
+          ],
+          "evolution_core": [
+            "csvh4-002",
+            "csvh4-003"
+          ],
+          "bench_engine": [
+            "csvh4-027"
+          ],
+          "recovery": [
+            "csvh4-049",
+            "sv3-134",
+            "sv3-134"
+          ],
+          "search": [
+            "csvh4-056",
+            "csvh4-041",
+            "sv1-151",
+            "sv1-153"
+          ],
+          "resource": [
+            "sv1-ener-1"
+          ],
+          "draw": [
+            "sv2-young",
+            "sv1-180",
+            "sv1-189"
+          ],
+          "disruption": [
+            "sv1-176",
+            "sv2-catch"
+          ],
+          "switch": [
+            "sv1-150"
+          ],
+          "energy": [
+            "sv1-ener-1"
+          ],
+          "tool": [
+            "sv1-201"
+          ]
+        },
+        "content_hash": "2bfd66f34cc4f09d121328525b19eb486c57d7b0f01f408fcf2895c88aad3421",
+        "deck_key": "happy4_decidueye",
+        "matchup_weights": {
+          "ability_engine": 3.0,
+          "burst": 2.5,
+          "discard_recovery": 2.0,
+          "durability": 2.0,
+          "energy_acceleration": 3.0,
+          "energy_mobility": 2.5,
+          "evolution": 2.0,
+          "hand_engine": 2.0,
+          "healing": 2.5,
+          "target_control": 2.5,
+          "wide_board": 2.0
+        },
+        "schema": "ptcg.ai_deck_strategy",
+        "stage_goals": [
+          {
+            "description": "Establish a legal active Pokemon and a safe Bench.",
+            "id": "setup",
+            "priority": 100,
+            "targets": {}
+          },
+          {
+            "description": "Improve board options and attach Energy efficiently.",
+            "id": "develop",
+            "priority": 80,
+            "targets": {}
+          },
+          {
+            "description": "Prefer safe prize-taking actions.",
+            "id": "closeout",
+            "priority": 60,
+            "targets": {}
+          }
+        ],
+        "strategy_id": "happy4_decidueye_v1",
+        "version": 1,
+        "weights": {
+          "attach_primary": 18.0,
+          "attach_secondary": 9.0,
+          "attack_primary": 24.0,
+          "attack_secondary": 10.0,
+          "board_engine": 16.0,
+          "bundle_resource": 1.0,
+          "bundle_reserve": 12.0,
+          "board_primary": 28.0,
+          "candidate_engine": 4.0,
+          "candidate_primary": 6.0,
+          "choice_energy": 7.0,
+          "choice_engine": 15.0,
+          "choice_evolution": 14.0,
+          "choice_primary": 22.0,
+          "choice_resource": 4.0,
+          "choice_setup": 10.0,
+          "closeout": 20.0,
+          "damage_pressure": 0.08,
+          "discard_synergy": 16.0,
+          "evolve": 20.0,
+          "evolve_core": 30.0,
+          "hand_size": 1.5,
+          "play_acceleration": 20.0,
+          "play_disruption": 5.0,
+          "plan_readiness": 0.35,
+          "plan_prize_clock": 40.0,
+          "play_draw": 6.0,
+          "play_engine": 18.0,
+          "play_recovery": 10.0,
+          "play_search": 8.0,
+          "play_setup": 14.0,
+          "play_switch": 4.0,
+          "search_top_k": 6.0,
+          "stage_action_bonus": 7.0,
+          "stage_state_progress": 3.0,
+          "use_engine_ability": 22.0,
+          "engine_setup": 55.0,
+          "energy_reserve": 100.0,
+          "subtype_board": 28.0,
+          "spread_setup": 22.0
+        }
+      },
+      "happy4_melmetal": {
+        "card_roles": {
+          "primary_attacker": [
+            "csvh4-020"
+          ],
+          "secondary_attacker": [
+            "csvh4-021"
+          ],
+          "setup_basic": [
+            "csvh4-019",
+            "csvh4-016",
+            "svi-sqwk"
+          ],
+          "evolution": [
+            "csvh4-017",
+            "csvh4-020"
+          ],
+          "evolution_core": [
+            "csvh4-017",
+            "csvh4-020"
+          ],
+          "bench_engine": [
+            "csvh4-017"
+          ],
+          "energy_acceleration": [
+            "csvh4-017",
+            "csvh4-020",
+            "csvh4-021"
+          ],
+          "search": [
+            "csvh4-032",
+            "csvh4-058",
+            "sv1-151",
+            "sv1-153"
+          ],
+          "draw": [
+            "sv2-young",
+            "sv1-180",
+            "sv1-189"
+          ],
+          "disruption": [
+            "sv1-176",
+            "sv2-catch"
+          ],
+          "switch": [
+            "sv1-150"
+          ],
+          "recovery": [
+            "sv3-134"
+          ],
+          "energy": [
+            "sv1-ener-8"
+          ],
+          "tool": [
+            "svl-vitb"
+          ]
+        },
+        "content_hash": "2bfd66f34cc4f09d121328525b19eb486c57d7b0f01f408fcf2895c88aad3421",
+        "deck_key": "happy4_melmetal",
+        "matchup_weights": {
+          "ability_engine": 3.0,
+          "burst": 2.5,
+          "discard_recovery": 2.0,
+          "durability": 2.0,
+          "energy_acceleration": 3.0,
+          "energy_mobility": 2.5,
+          "evolution": 2.0,
+          "hand_engine": 2.0,
+          "healing": 2.5,
+          "target_control": 2.5,
+          "wide_board": 2.0
+        },
+        "schema": "ptcg.ai_deck_strategy",
+        "stage_goals": [
+          {
+            "description": "Establish a legal active Pokemon and a safe Bench.",
+            "id": "setup",
+            "priority": 100,
+            "targets": {}
+          },
+          {
+            "description": "Improve board options and attach Energy efficiently.",
+            "id": "develop",
+            "priority": 80,
+            "targets": {}
+          },
+          {
+            "description": "Prefer safe prize-taking actions.",
+            "id": "closeout",
+            "priority": 60,
+            "targets": {}
+          }
+        ],
+        "strategy_id": "happy4_melmetal_v1",
+        "version": 1,
+        "weights": {
+          "attach_primary": 18.0,
+          "attach_secondary": 9.0,
+          "attack_primary": 24.0,
+          "attack_secondary": 10.0,
+          "board_engine": 16.0,
+          "bundle_resource": 1.0,
+          "bundle_reserve": 12.0,
+          "board_primary": 28.0,
+          "candidate_engine": 4.0,
+          "candidate_primary": 6.0,
+          "choice_energy": 7.0,
+          "choice_engine": 15.0,
+          "choice_evolution": 14.0,
+          "choice_primary": 22.0,
+          "choice_resource": 4.0,
+          "choice_setup": 10.0,
+          "closeout": 20.0,
+          "damage_pressure": 0.08,
+          "discard_synergy": 16.0,
+          "evolve": 20.0,
+          "evolve_core": 30.0,
+          "hand_size": 1.5,
+          "play_acceleration": 20.0,
+          "play_disruption": 5.0,
+          "plan_readiness": 0.35,
+          "plan_prize_clock": 40.0,
+          "play_draw": 6.0,
+          "play_engine": 18.0,
+          "play_recovery": 10.0,
+          "play_search": 8.0,
+          "play_setup": 14.0,
+          "play_switch": 4.0,
+          "search_top_k": 6.0,
+          "stage_action_bonus": 7.0,
+          "stage_state_progress": 3.0,
+          "use_engine_ability": 22.0,
+          "engine_setup": 55.0,
+          "energy_reserve": 100.0,
+          "subtype_board": 28.0,
+          "spread_setup": 22.0
+        }
+      },
+      "happy4_koraidon": {
+        "card_roles": {
+          "primary_attacker": [
+            "csvh4-022"
+          ],
+          "secondary_attacker": [
+            "csvh4-005",
+            "csvh4-013",
+            "csvh4-014"
+          ],
+          "setup_basic": [
+            "csvh4-022",
+            "csvh4-005",
+            "csvh4-009",
+            "csvh4-013",
+            "csvh4-014"
+          ],
+          "bench_engine": [
+            "csvh4-009"
+          ],
+          "energy_acceleration": [
+            "csvh4-046",
+            "svf-hawl"
+          ],
+          "healing": [
+            "csvh4-009"
+          ],
+          "draw": [
+            "csvh4-046",
+            "csvh4-059",
+            "sv2-young",
+            "sv1-180",
+            "sv1-189"
+          ],
+          "search": [
+            "csvh4-034",
+            "sv1-151",
+            "sv1-153"
+          ],
+          "discard_synergy": [
+            "sv1-ener-2",
+            "sv1-ener-6"
+          ],
+          "disruption": [
+            "sv1-176",
+            "sv2-catch"
+          ],
+          "switch": [
+            "sv1-150"
+          ],
+          "recovery": [
+            "sv3-134"
+          ],
+          "energy": [
+            "sv1-ener-2",
+            "sv1-ener-6"
+          ],
+          "tool": [
+            "csvh4-043"
+          ]
+        },
+        "content_hash": "2bfd66f34cc4f09d121328525b19eb486c57d7b0f01f408fcf2895c88aad3421",
+        "deck_key": "happy4_koraidon",
+        "matchup_weights": {
+          "ability_engine": 3.0,
+          "burst": 2.5,
+          "discard_recovery": 2.0,
+          "durability": 2.0,
+          "energy_acceleration": 3.0,
+          "energy_mobility": 2.5,
+          "evolution": 2.0,
+          "hand_engine": 2.0,
+          "healing": 2.5,
+          "target_control": 2.5,
+          "wide_board": 2.0
+        },
+        "schema": "ptcg.ai_deck_strategy",
+        "stage_goals": [
+          {
+            "description": "Establish a legal active Pokemon and a safe Bench.",
+            "id": "setup",
+            "priority": 100,
+            "targets": {}
+          },
+          {
+            "description": "Improve board options and attach Energy efficiently.",
+            "id": "develop",
+            "priority": 80,
+            "targets": {}
+          },
+          {
+            "description": "Prefer safe prize-taking actions.",
+            "id": "closeout",
+            "priority": 60,
+            "targets": {}
+          }
+        ],
+        "strategy_id": "happy4_koraidon_v1",
+        "version": 1,
+        "weights": {
+          "attach_primary": 18.0,
+          "attach_secondary": 9.0,
+          "attack_primary": 24.0,
+          "attack_secondary": 10.0,
+          "board_engine": 16.0,
+          "bundle_resource": 1.0,
+          "bundle_reserve": 12.0,
+          "board_primary": 28.0,
+          "candidate_engine": 4.0,
+          "candidate_primary": 6.0,
+          "choice_energy": 7.0,
+          "choice_engine": 15.0,
+          "choice_evolution": 14.0,
+          "choice_primary": 22.0,
+          "choice_resource": 4.0,
+          "choice_setup": 10.0,
+          "closeout": 20.0,
+          "damage_pressure": 0.08,
+          "discard_synergy": 16.0,
+          "evolve": 20.0,
+          "evolve_core": 30.0,
+          "hand_size": 1.5,
+          "play_acceleration": 20.0,
+          "play_disruption": 5.0,
+          "plan_readiness": 0.35,
+          "plan_prize_clock": 40.0,
+          "play_draw": 6.0,
+          "play_engine": 18.0,
+          "play_recovery": 10.0,
+          "play_search": 8.0,
+          "play_setup": 14.0,
+          "play_switch": 4.0,
+          "search_top_k": 6.0,
+          "stage_action_bonus": 7.0,
+          "stage_state_progress": 3.0,
+          "use_engine_ability": 22.0,
+          "engine_setup": 55.0,
+          "energy_reserve": 100.0,
+          "subtype_board": 28.0,
+          "spread_setup": 22.0
+        }
+      },
+      "happy4_miraidon": {
+        "card_roles": {
+          "primary_attacker": [
+            "csvh4-024"
+          ],
+          "secondary_attacker": [
+            "csvh4-010",
+            "csvh4-006",
+            "csvh4-011"
+          ],
+          "setup_basic": [
+            "csvh4-023",
+            "csvh4-010",
+            "csvh4-024"
+          ],
+          "bench_engine": [
+            "csvh4-023"
+          ],
+          "energy_acceleration": [
+            "csvh4-023"
+          ],
+          "search": [
+            "csvh4-035",
+            "svl-ensw",
+            "sv1-151",
+            "sv1-153"
+          ],
+          "draw": [
+            "csvh4-051",
+            "sv2-young",
+            "sv1-180",
+            "sv1-189"
+          ],
+          "recovery": [
+            "csvh4-057",
+            "sv3-134"
+          ],
+          "disruption": [
+            "sv1-176",
+            "sv2-catch"
+          ],
+          "switch": [
+            "sv1-150"
+          ],
+          "energy": [
+            "sv1-ener-4",
+            "sv1-ener-5"
+          ],
+          "tool": [
+            "csvh4-044"
+          ]
+        },
+        "content_hash": "2bfd66f34cc4f09d121328525b19eb486c57d7b0f01f408fcf2895c88aad3421",
+        "deck_key": "happy4_miraidon",
+        "matchup_weights": {
+          "ability_engine": 3.0,
+          "burst": 2.5,
+          "discard_recovery": 2.0,
+          "durability": 2.0,
+          "energy_acceleration": 3.0,
+          "energy_mobility": 2.5,
+          "evolution": 2.0,
+          "hand_engine": 2.0,
+          "healing": 2.5,
+          "target_control": 2.5,
+          "wide_board": 2.0
+        },
+        "schema": "ptcg.ai_deck_strategy",
+        "stage_goals": [
+          {
+            "description": "Establish a legal active Pokemon and a safe Bench.",
+            "id": "setup",
+            "priority": 100,
+            "targets": {}
+          },
+          {
+            "description": "Improve board options and attach Energy efficiently.",
+            "id": "develop",
+            "priority": 80,
+            "targets": {}
+          },
+          {
+            "description": "Prefer safe prize-taking actions.",
+            "id": "closeout",
+            "priority": 60,
+            "targets": {}
+          }
+        ],
+        "strategy_id": "happy4_miraidon_v1",
+        "version": 1,
+        "weights": {
+          "attach_primary": 18.0,
+          "attach_secondary": 9.0,
+          "attack_primary": 24.0,
+          "attack_secondary": 10.0,
+          "board_engine": 16.0,
+          "bundle_resource": 1.0,
+          "bundle_reserve": 12.0,
+          "board_primary": 28.0,
+          "candidate_engine": 4.0,
+          "candidate_primary": 6.0,
+          "choice_energy": 7.0,
+          "choice_engine": 15.0,
+          "choice_evolution": 14.0,
+          "choice_primary": 22.0,
+          "choice_resource": 4.0,
+          "choice_setup": 10.0,
+          "closeout": 20.0,
+          "damage_pressure": 0.08,
+          "discard_synergy": 16.0,
+          "evolve": 20.0,
+          "evolve_core": 30.0,
+          "hand_size": 1.5,
+          "play_acceleration": 20.0,
+          "play_disruption": 5.0,
+          "plan_readiness": 0.35,
+          "plan_prize_clock": 40.0,
+          "play_draw": 6.0,
+          "play_engine": 18.0,
+          "play_recovery": 10.0,
+          "play_search": 8.0,
+          "play_setup": 14.0,
+          "play_switch": 4.0,
+          "search_top_k": 6.0,
+          "stage_action_bonus": 7.0,
+          "stage_state_progress": 3.0,
+          "use_engine_ability": 22.0,
+          "engine_setup": 55.0,
+          "energy_reserve": 100.0,
+          "subtype_board": 28.0,
+          "spread_setup": 22.0
+        }
       }
     },
     "version": 1,

@@ -1,9 +1,128 @@
 {
   "cards": {
+    "csvh4-006": {
+      "abilities": [],
+      "api_id": "csvh4-006",
+      "artist": "Souichirou Gunjima",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {
+                      "status": "PARALYZED"
+                    },
+                    "branches": {},
+                    "op": "apply_status"
+                  }
+                ],
+                "on_tails": []
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Lightning",
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [
+            {
+              "effect_type": "coin_flip",
+              "params": {
+                "on_heads": [
+                  {
+                    "effect_type": "status",
+                    "params": {
+                      "status": "PARALYZED"
+                    }
+                  }
+                ],
+                "on_tails": []
+              }
+            }
+          ],
+          "name": "冲击波",
+          "text": "抛掷1次硬币如果为正面，则令对手的战斗宝可梦陷入【麻痹】状态。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "bonus": 80,
+                "condition": "opponent_active_ex_or_v"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Lightning",
+            "Lightning",
+            "Colorless"
+          ],
+          "damage": 80,
+          "damage_text": "80+",
+          "effects": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "params": {
+                "bonus": 80,
+                "condition": "opponent_active_ex_or_v"
+              }
+            }
+          ],
+          "name": "超合金之手",
+          "text": "如果对手的战斗宝可梦是「宝可梦【ex】・V」的话，则追加造成80伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Lightning"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "这种宝可梦与某本探险记中记载的一种叫做铁臂膀的物体有许多相似之处。",
+      "hp": 140,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/10.png",
+      "image_url_small": "",
+      "name": "铁臂膀",
+      "number": "006/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 3,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "Future"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
     "svl-chin": {
       "abilities": [],
       "api_id": "svl-chin",
-      "artist": "",
+      "artist": "sowsow",
       "attacks": [
         {
           "commands": [],
@@ -25,21 +144,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "在黑暗的海底，触手上不断闪烁着的光是它们唯一的通信手段。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/16.png",
       "image_url_small": "",
       "name": "灯笼鱼",
-      "number": "",
+      "number": "009/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -57,7 +176,7 @@
     "svl-emol": {
       "abilities": [],
       "api_id": "svl-emol",
-      "artist": "",
+      "artist": "Nagomi Nijo",
       "attacks": [
         {
           "commands": [
@@ -112,21 +231,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "一边到处放电一边飞翔，因此鸟宝可梦们都不会靠近。得益于此，可以独占食物。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/24.png",
       "image_url_small": "",
       "name": "电飞鼠",
-      "number": "",
+      "number": "013/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -172,7 +291,7 @@
         }
       ],
       "api_id": "svl-flaa2",
-      "artist": "",
+      "artist": "OKACHEKE",
       "attacks": [
         {
           "commands": [],
@@ -196,21 +315,21 @@
       ],
       "evolves_from": "咩利羊",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "能将电力储存在松软的毛发中。因为储存了太多电力，所以身上有些地方已经变得光秃秃的了。",
       "hp": 90,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/22.png",
       "image_url_small": "",
       "name": "茸茸羊",
-      "number": "",
+      "number": "012/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Stage 1"
       ],
@@ -228,7 +347,7 @@
     "svl-lant": {
       "abilities": [],
       "api_id": "svl-lant",
-      "artist": "",
+      "artist": "ryoma uratsuka",
       "attacks": [
         {
           "commands": [
@@ -280,21 +399,21 @@
       ],
       "evolves_from": "灯笼鱼",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "发出强光蒙住猎物的眼睛。抓住那一瞬间的空档，使其遭受电的攻击。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/18.png",
       "image_url_small": "",
       "name": "电灯怪",
-      "number": "",
+      "number": "010/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Stage 1"
       ],
@@ -312,7 +431,7 @@
     "svl-mare2": {
       "abilities": [],
       "api_id": "svl-mare2",
-      "artist": "",
+      "artist": "Yukiko Baba",
       "attacks": [
         {
           "commands": [],
@@ -347,21 +466,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "绒毛摩擦产生的电力会被储存起来。如果觉得可爱而直接用手碰它的话，就会被啪地一下电得又麻又痛。",
       "hp": 60,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/20.png",
       "image_url_small": "",
       "name": "咩利羊",
-      "number": "",
+      "number": "011/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -379,7 +498,7 @@
     "svl-pikaex": {
       "abilities": [],
       "api_id": "svl-pikaex",
-      "artist": "",
+      "artist": "N-DESIGN Inc.",
       "attacks": [
         {
           "commands": [],
@@ -452,21 +571,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 190,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/14.png",
       "image_url_small": "",
       "name": "皮卡丘ex",
-      "number": "",
+      "number": "008/059",
       "prize_value": 2,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
         "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic",
         "ex"
@@ -485,7 +604,7 @@
     "svl-thun": {
       "abilities": [],
       "api_id": "svl-thun",
-      "artist": "",
+      "artist": "Souichirou Gunjima",
       "attacks": [
         {
           "commands": [
@@ -561,21 +680,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "一边在天空飞来飞去，一边到处打雷引发山火，因此被人嫌弃。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/26.png",
       "image_url_small": "",
       "name": "雷电云",
-      "number": "",
+      "number": "014/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -593,7 +712,7 @@
     "svl-zera": {
       "abilities": [],
       "api_id": "svl-zera",
-      "artist": "",
+      "artist": "HYOGONOSUKE",
       "attacks": [
         {
           "commands": [
@@ -633,21 +752,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "用与雷落下相同的速度急速接近敌人。会用锐利的爪子将对方撕得粉碎。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/28.png",
       "image_url_small": "",
       "name": "捷拉奥拉",
-      "number": "",
+      "number": "015/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],

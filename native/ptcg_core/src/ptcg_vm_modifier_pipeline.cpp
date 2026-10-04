@@ -137,6 +137,7 @@ bool execute_vm_modifier_pipeline(
             if (
                 applies
                 && opponent_active != nullptr
+                && !tool_effect_applies(cards, *opponent_active, "status_immunity")
                 && !(
                     context_mode == "attack"
                     && prevents_attack_effects(*opponent_active)
@@ -280,6 +281,7 @@ bool execute_vm_modifier_pipeline(
             );
             if (
                 target_kind == "any"
+                || target_kind == "all"
                 || target_kind == "self_basic"
                 || (
                     target_kind == "bench"
@@ -297,6 +299,13 @@ bool execute_vm_modifier_pipeline(
                     !bench_only,
                     true
                 );
+                const auto target_filter = string_arg(args, "target_filter", "any");
+                targets.erase(std::remove_if(targets.begin(), targets.end(),
+                    [&](const Value &entry) {
+                        return target_filter == "source"
+                            ? string_arg(entry, "slot") != source_slot
+                            : !card_matches_filter(cards, string_arg(entry, "card_id"), target_filter);
+                    }), targets.end());
                 if (target_kind == "self_basic") {
                     targets.erase(
                         std::remove_if(
@@ -341,13 +350,15 @@ bool execute_vm_modifier_pipeline(
                     }
                     // Hidden deck searches and optional attack effects may
                     // still resolve without finding a card.
+                    if (from_zone == "deck") {
+                        shuffle_array(source_cards, rng);
+                        result.event_types.emplace_back("deck_shuffled");
+                    }
                     result.success = true;
                     result.rng_state = rng.state();
                     early_return = true; return true;
                 }
-                const std::int64_t max_per_target = bench_only
-                    ? integer_arg(args, "max_per_target", 99)
-                    : amount;
+                const std::int64_t max_per_target = integer_arg(args, "max_per_target", bench_only ? 99 : amount);
                 const bool same_target = bool_arg(args, "same_target")
                     || target_kind == "any"
                     || target_kind == "self_basic";
@@ -645,6 +656,11 @@ bool execute_vm_modifier_pipeline(
                 string_arg(args, "target", "self") != "bench",
                 string_arg(args, "target", "self") != "self"
             );
+            targets.erase(std::remove_if(targets.begin(), targets.end(),
+                [&](const Value &entry) {
+                    return !card_matches_filter(cards, string_arg(entry, "card_id"),
+                        string_arg(args, "target_filter", "any"));
+                }), targets.end());
             const std::string target_type = string_arg(
                 args,
                 "target_pokemon_type"
@@ -799,7 +815,7 @@ bool execute_vm_modifier_pipeline(
                 {"card_ids", Value(std::move(presented_energy_ids))},
                 {"domain", Value("distribute_energy")},
                 {"energy_type", Value(filter)},
-                {"max_per_target", Value(same_target ? maximum : 99)},
+                {"max_per_target", Value(integer_arg(args, "max_per_target", same_target ? maximum : 99))},
                 {
                     "purpose",
                     Value("attach_discard_energy_distribution")

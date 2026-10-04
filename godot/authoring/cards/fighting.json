@@ -1,9 +1,294 @@
 {
   "cards": {
+    "csvh4-012": {
+      "abilities": [],
+      "api_id": "csvh4-012",
+      "artist": "Jerky",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {
+                      "target": "self"
+                    },
+                    "branches": {},
+                    "op": "prevent_all"
+                  }
+                ],
+                "on_tails": []
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Fighting"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [
+            {
+              "effect_type": "coin_flip",
+              "params": {
+                "on_heads": [
+                  {
+                    "effect_type": "prevent_all",
+                    "params": {
+                      "target": "self"
+                    }
+                  }
+                ],
+                "on_tails": []
+              }
+            }
+          ],
+          "name": "击打躲藏",
+          "text": "抛掷1次硬币如果为正面，则在下一个对手的回合，这只宝可梦不受到招式的伤害和效果影响。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Fighting",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 90,
+          "damage_text": "90",
+          "effects": [],
+          "name": "肘击",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Fighting"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "总是伪装成树的样子。身体构造比起植物来，好像更接近石头或岩石一类的东西。",
+      "hp": 110,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/22.png",
+      "image_url_small": "",
+      "name": "树才怪",
+      "number": "012/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "G",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Grass",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-013": {
+      "abilities": [],
+      "api_id": "csvh4-013",
+      "artist": "Mitsuhiro Arita",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Fighting",
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [],
+          "name": "撞倒",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "bonus": 80,
+                "condition": "own_bench_damaged"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Fighting",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 80,
+          "damage_text": "80+",
+          "effects": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "params": {
+                "bonus": 80,
+                "condition": "own_bench_damaged"
+              }
+            }
+          ],
+          "name": "愤怒突击",
+          "text": "如果自己的备战宝可梦身上放置有伤害指示物的话，则追加造成80伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Fighting"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "近年有人目击到它。雄伟牙这个名字来自于某本书里记载的生物。",
+      "hp": 140,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/24.png",
+      "image_url_small": "",
+      "name": "雄伟牙",
+      "number": "013/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 4,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "Ancient"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Psychic",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-014": {
+      "abilities": [],
+      "api_id": "csvh4-014",
+      "artist": "DOM",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "bonus": 70,
+                "condition": "field_energy_ge_3"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            },
+            {
+              "args": {
+                "ignore_weakness": true
+              },
+              "branches": {},
+              "op": "set_attack_flags"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Fighting"
+          ],
+          "damage": 20,
+          "damage_text": "20+",
+          "effects": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "params": {
+                "bonus": 70,
+                "condition": "field_energy_ge_3"
+              }
+            },
+            {
+              "effect_type": "attack_flags",
+              "params": {
+                "ignore_weakness": true
+              }
+            }
+          ],
+          "name": "磁场炸裂",
+          "text": "如果自己场上有3个及以上能量的话，则追加造成70伤害。这个招式的伤害不计算弱点。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Fighting",
+            "Colorless"
+          ],
+          "damage": 60,
+          "damage_text": "60",
+          "effects": [],
+          "name": "力量宝石",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Fighting"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "没有捕获记录。资料不足。其特征与某本探险记中所记载的生物一致。",
+      "hp": 120,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/26.png",
+      "image_url_small": "",
+      "name": "沙铁皮",
+      "number": "014/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "Ancient"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Grass",
+          "value": "×2"
+        }
+      ]
+    },
     "svf-klea": {
       "abilities": [],
       "api_id": "svf-klea",
-      "artist": "",
+      "artist": "Anesaki Dynamic",
       "attacks": [
         {
           "commands": [
@@ -67,21 +352,21 @@
       ],
       "evolves_from": "飞天螳螂",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "用坚硬的岩石守护自身，以粗犷的斧头砍倒大树。性情暴躁易怒。要是在荒野遇见它，逃跑将是唯一选择。",
       "hp": 140,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/30.png",
       "image_url_small": "",
       "name": "劈斧螳螂",
-      "number": "",
+      "number": "016/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Stage 1"
       ],
@@ -142,7 +427,7 @@
         }
       ],
       "api_id": "svf-luca",
-      "artist": "",
+      "artist": "NC Empire",
       "attacks": [
         {
           "commands": [
@@ -182,21 +467,21 @@
       ],
       "evolves_from": "利欧路",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "操纵一种被称为波导的力量来进行狩猎。这种力量就连巨大的岩石也能击得粉碎。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/24.png",
       "image_url_small": "",
       "name": "路卡利欧",
-      "number": "",
+      "number": "013/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Stage 1"
       ],
@@ -214,7 +499,7 @@
     "svf-pass": {
       "abilities": [],
       "api_id": "svf-pass",
-      "artist": "",
+      "artist": "Jerky",
       "attacks": [
         {
           "commands": [
@@ -254,21 +539,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "投出坚硬的树果战斗。若是投球技术差的训练家来下指示，它不会听从。",
       "hp": 110,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/28.png",
       "image_url_small": "",
       "name": "投掷猴",
-      "number": "",
+      "number": "015/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -286,7 +571,7 @@
     "svf-rio": {
       "abilities": [],
       "api_id": "svf-rio",
-      "artist": "",
+      "artist": "chibi",
       "attacks": [
         {
           "commands": [],
@@ -338,21 +623,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "伙伴之间会通过发出波导来进行与彼此的沟通。可以持续奔跑一整晚。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/22.png",
       "image_url_small": "",
       "name": "利欧路",
-      "number": "",
+      "number": "012/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -370,7 +655,7 @@
     "svf-terr": {
       "abilities": [],
       "api_id": "svf-terr",
-      "artist": "",
+      "artist": "nagimiso",
       "attacks": [
         {
           "commands": [
@@ -420,21 +705,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "拥有异常强大的力量。会把欺负弱小宝可梦的对手打得再也站不起来。",
       "hp": 130,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/26.png",
       "image_url_small": "",
       "name": "代拉基翁",
-      "number": "",
+      "number": "014/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 3,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],

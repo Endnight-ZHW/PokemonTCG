@@ -26,6 +26,19 @@ bool condition_applies(
     const Value &self = player(state, actor);
     const Value &opponent = player(state, 1 - actor);
     const Value *opponent_active = pokemon(opponent, "active");
+    if (condition == "hand_sizes_equal") {
+        return required(self, "hand").as_array().size()
+            == required(opponent, "hand").as_array().size();
+    }
+    if (condition == "opponent_prizes_le_4") {
+        return required(opponent, "prizes").as_array().size() <= 4;
+    }
+    if (condition == "opponent_active_ex_or_v") {
+        if (opponent_active == nullptr) return false;
+        const auto id = card_id(*opponent_active);
+        return card_has_subtype(cards, id, "ex") || card_has_subtype(cards, id, "V")
+            || card_has_subtype(cards, id, "VMAX") || card_has_subtype(cards, id, "VSTAR");
+    }
     if (condition == "own_bench_damaged") {
         const Array &bench = required(self, "bench").as_array();
         return std::any_of(
@@ -52,12 +65,12 @@ bool condition_applies(
     if (condition == "own_hand_empty") {
         return required(self, "hand").as_array().empty();
     }
-    if (condition == "field_energy_ge_5") {
+    if (condition == "field_energy_ge_5" || condition == "field_energy_ge_3") {
         std::int64_t total = 0;
         for (const Value *entry : all_pokemon(self)) {
             total += energy_units(cards, entry);
         }
-        return total >= 5;
+        return total >= (condition == "field_energy_ge_3" ? 3 : 5);
     }
     if (
         condition == "ko_by_attack_last_turn"
@@ -151,6 +164,18 @@ std::int64_t evaluate_formula_ast(
             "self"
         ) == "opponent" ? 1 - actor : actor;
         return bench_count(player(state, owner));
+    }
+    if (op == "pokemon_count") {
+        const auto owner = string_arg(formula, "player", "self") == "opponent"
+            ? 1 - actor : actor;
+        const Value *filter_value = formula.find("filter");
+        const auto filter = filter_value != nullptr && filter_value->is_object()
+            ? string_arg(*filter_value, "card_type", "pokemon") : "pokemon";
+        std::int64_t total = 0;
+        for (const Value *entry : all_pokemon(player(state, owner))) {
+            if (card_matches_filter(cards, card_id(*entry), filter)) ++total;
+        }
+        return total;
     }
     if (op == "hand_size") {
         const std::int32_t owner = string_arg(

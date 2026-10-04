@@ -1,9 +1,95 @@
 {
   "cards": {
+    "csvh4-005": {
+      "abilities": [],
+      "api_id": "csvh4-005",
+      "artist": "AKIRA EGAWA",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Fire"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [],
+          "name": "撞倒",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "bonus": 70,
+                "condition": "opponent_prizes_le_4"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Fire",
+            "Fire",
+            "Colorless"
+          ],
+          "damage": 100,
+          "damage_text": "100+",
+          "effects": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "params": {
+                "bonus": 70,
+                "condition": "opponent_prizes_le_4"
+              }
+            }
+          ],
+          "name": "爆燃突击",
+          "text": "如果对手的剩余奖赏卡张数在4张及以下的话，则追加造成70伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Fire"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "目击报告十分少。有把它喷出火柱大闹的样子拍摄下来的短片存在。",
+      "hp": 130,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/8.png",
+      "image_url_small": "",
+      "name": "破空焰",
+      "number": "005/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "Ancient"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Water",
+          "value": "×2"
+        }
+      ]
+    },
     "svi-chim": {
       "abilities": [],
       "api_id": "svi-chim",
-      "artist": "",
+      "artist": "Shin Nagasawa",
       "attacks": [
         {
           "commands": [
@@ -44,21 +130,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "腹部产生的瓦斯在屁屁燃烧着。身体状况不好的话，火焰会变弱。",
       "hp": 50,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/2.png",
       "image_url_small": "",
       "name": "小火焰猴",
-      "number": "",
+      "number": "002/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -76,7 +162,7 @@
     "svi-chiy": {
       "abilities": [],
       "api_id": "svi-chiy",
-      "artist": "",
+      "artist": "Oswaldo KATO",
       "attacks": [
         {
           "commands": [
@@ -149,21 +235,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "会操控３０００度的火焰。熔化岩石和沙砾来做成熔岩海，并在里边悠闲自在地游泳。",
       "hp": 110,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/10.png",
       "image_url_small": "",
       "name": "古玉鱼",
-      "number": "",
+      "number": "006/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -209,7 +295,7 @@
         }
       ],
       "api_id": "svi-ente",
-      "artist": "",
+      "artist": "toriyufu",
       "attacks": [
         {
           "commands": [
@@ -270,21 +356,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "据说如果炎帝吼叫的话，世界上的某处火山就会喷发。",
       "hp": 130,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/0.png",
       "image_url_small": "",
       "name": "炎帝",
-      "number": "",
+      "number": "001/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -302,7 +388,7 @@
     "svi-hrot": {
       "abilities": [],
       "api_id": "svi-hrot",
-      "artist": "",
+      "artist": "Scav",
       "attacks": [
         {
           "commands": [
@@ -342,21 +428,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "如果烤箱微波炉本身运转不良，钻进里边的洛托姆也会变得无精打采。",
       "hp": 90,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/8.png",
       "image_url_small": "",
       "name": "加热洛托姆",
-      "number": "",
+      "number": "005/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -374,7 +460,7 @@
     "svi-infr": {
       "abilities": [],
       "api_id": "svi-infr",
-      "artist": "",
+      "artist": "Anesaki Dynamic",
       "attacks": [
         {
           "commands": [
@@ -445,21 +531,21 @@
       ],
       "evolves_from": "猛火猴",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "用速度玩弄对手。会使用手脚并用的独特战斗方式。",
       "hp": 150,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/6.png",
       "image_url_small": "",
       "name": "烈焰猴",
-      "number": "",
+      "number": "004/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Stage 2"
       ],
@@ -477,7 +563,7 @@
     "svi-monf": {
       "abilities": [],
       "api_id": "svi-monf",
-      "artist": "",
+      "artist": "KEIICHIRO ITO",
       "attacks": [
         {
           "commands": [],
@@ -531,21 +617,21 @@
       ],
       "evolves_from": "小火焰猴",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "利用天花板和墙壁使出空中攻击。尾部的火焰也是武器之一。",
       "hp": 80,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/4.png",
       "image_url_small": "",
       "name": "猛火猴",
-      "number": "",
+      "number": "003/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Stage 1"
       ],

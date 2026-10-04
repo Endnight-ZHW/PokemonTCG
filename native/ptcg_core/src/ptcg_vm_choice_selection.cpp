@@ -106,8 +106,8 @@ bool resume_vm_choices(
         ) {
             const bool bench_energy = (
                 op == "look_top_deck"
-                && string_arg(args, "destination", "hand")
-                    == "bench_energy"
+                && (string_arg(args, "destination", "hand") == "bench_energy"
+                    || string_arg(args, "destination", "hand") == "field_energy")
             );
             Array bench_targets;
             if (bench_energy) {
@@ -119,7 +119,7 @@ bool resume_vm_choices(
                 for (Value &option : pokemon_options(
                     self,
                     actor,
-                    false,
+                    string_arg(args, "destination") == "field_energy",
                     true
                 )) {
                     Value *target = pokemon(
@@ -504,6 +504,10 @@ bool resume_vm_choices(
                         "hand",
                         bool_arg(args, "reveal") ? "public" : "owner"
                     );
+                }
+                if (bool_arg(args, "shuffle_remaining_bottom")) {
+                    shuffle_array(remaining_top, rng);
+                    result.event_types.emplace_back("deck_shuffled");
                 }
                 for (Value &entry : remaining_top) {
                     if (bool_arg(args, "shuffle_rest")) {

@@ -6,7 +6,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 ## 已实现
 
 - 本地双人和原生 Challenge AI；产品不注册 Deep 模式或第二套 AI 回退策略。
-- 10 套预组卡组；产品运行时和导出包不包含 ONNX 模型或研究文件。
+- 14 套预组卡组，包含嗨皮组合第4弹的狙射树枭、美录梅塔ex、故勒顿和密勒顿ex；产品运行时和导出包不包含 ONNX 模型或研究文件。
 - ENet LAN 与 WebSocket Relay Protocol v6 联机；旧 Protocol 5 房间明确拒绝且不提供桥接。
 - Native ABI 2 `ptcg_core` 是唯一规则引擎；GDScript 只负责会话绑定、UI、网络和表现，
   同一 C++ 核心通过研究目录中的显式 pybind 服务离线实验。
@@ -69,8 +69,10 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   由调用方保留文字或中性徽章回退，不自动替换成无色；夜光能量按 `svg2-lume` 卡 ID 精确
   映射，不会覆盖通用 `Rainbow`。标题页仅使用草、火、水、雷、超、斗、恶、钢八枚基础
   能量图标，并以无黑色外框的透明素材直接组成能量带。完整来源表见该目录 `README.md`。
-- 137 张发布卡牌已按 `res://authoring/card_review_manifest.json` 与卡图 SHA-256
-  完成对战字段审核；内容 `lint` 会拒绝缺卡、缺图、哈希覆盖不完整或残留 `G/M/D/[C]`
+- 177 张发布卡牌已按 `res://authoring/card_review_manifest.json` 与卡图 SHA-256
+  完成对战字段审核；新旧卡的印刷信息和卡图统一由 `card_source_manifest.json` 固定到同一简中
+  数据源，使用 `tools/sync_card_sources.ps1` 导入或加 `-Check` 核对。卡图均为 300×419 无损 WebP。
+  内容 `lint` 会拒绝缺卡、缺图、来源遗漏、哈希覆盖不完整或残留 `G/M/D/[C]`
   等内部能量符号的作者数据。卡牌详情统一由 `CardPresentation` 生成，战斗预览、选择弹窗
   与完整检查器不会再各自维护一套卡文格式。
 - `UILayoutPolicy` 是画布、留白、弹窗尺寸和牌桌阅读空间的共享策略。设计尺寸为 1600×900，

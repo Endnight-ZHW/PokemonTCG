@@ -344,6 +344,8 @@ std::int64_t pokemon_hp(
             continue;
         }
         const Value *condition = modifier.find("condition");
+        if (condition != nullptr && !string_arg(*condition, "attacker_subtype").empty()
+            && !card_has_subtype(cards, id, string_arg(*condition, "attacker_subtype"))) continue;
         if (
             condition != nullptr
             && condition->is_object()
@@ -953,7 +955,21 @@ void set_attack_damage(Value &context, std::int64_t damage, bool add) {
     set_integer(context, "base_damage", add ? previous + damage : damage);
 }
 
-void return_pokemon_to_hand(Value &player_value, const std::string &slot) {
+bool tool_effect_applies(const Value &cards, const Value &pokemon_value, const std::string &effect) {
+    const Value *tool = card_definition(cards, string_arg(pokemon_value, "attached_tool_id"));
+    const Value *effects = tool == nullptr ? nullptr : tool->find("compiled_trainer_effects");
+    if (effects == nullptr || !effects->is_array()) return false;
+    for (const Value &command : effects->as_array()) {
+        const Value *args = command.find("args");
+        if (string_arg(command, "op") != "register_tool_modifier" || args == nullptr
+            || string_arg(*args, "effect") != effect) continue;
+        const auto subtype = string_arg(*args, "attacker_subtype");
+        if (subtype.empty() || card_has_subtype(cards, card_id(pokemon_value), subtype)) return true;
+    }
+    return false;
+}
+
+void return_pokemon_to_hand(Value &player_value, const std::string &slot, bool discard_attachments) {
     Value *target = pokemon(player_value, slot);
     if (target == nullptr) {
         return;
@@ -966,15 +982,16 @@ void return_pokemon_to_hand(Value &player_value, const std::string &slot) {
         }
     }
     hand.emplace_back(card_id(*target));
+    Array &attachments = discard_attachments ? required(player_value, "discard").as_array() : hand;
     const Value *energy = target->find("energy_card_ids");
     if (energy != nullptr && energy->is_array()) {
         for (const Value &entry : energy->as_array()) {
-            hand.push_back(entry);
+            attachments.push_back(entry);
         }
     }
     const std::string tool = string_arg(*target, "attached_tool_id");
     if (!tool.empty()) {
-        hand.emplace_back(tool);
+        attachments.emplace_back(tool);
     }
     if (slot == "active") {
         player_value["active"] = Value();

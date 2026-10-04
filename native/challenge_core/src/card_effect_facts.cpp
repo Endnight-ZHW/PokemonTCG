@@ -132,6 +132,18 @@ bool card_matches_filter(const Value &cards, const std::string &card_id,
         return is_basic_pokemon(cards, card_id);
     if (filter == "pokemon")
         return is_pokemon(cards, card_id);
+    if (filter == "ancient_pokemon" || filter == "future_pokemon")
+        return is_pokemon(cards, card_id)
+            && has_subtype(*definition, filter == "ancient_pokemon" ? "Ancient" : "Future");
+    if (filter == "non_rule_evolution" || filter == "non_rule_pokemon_and_energy") {
+        const bool ordinary = is_pokemon(cards, card_id) && array_field(*definition, "rules").empty();
+        return filter == "non_rule_evolution" ? ordinary && !is_basic_pokemon(cards, card_id)
+            : ordinary || is_basic_energy(cards, card_id);
+    }
+    if (filter == "grass_pokemon_and_energy")
+        return card_matches_filter(cards, card_id, "grass_pokemon")
+            || (is_basic_energy(cards, card_id)
+                && array_contains(array_field(*definition, "provides_energy"), "Grass"));
     if (filter == "basic" || filter == "basic_energy") {
         return is_basic_energy(cards, card_id);
     }

@@ -1,5 +1,6 @@
 extends SceneTree
 
+const CardSources = preload("res://tools/card_source_registry.gd")
 var failures: Array[String] = []
 
 
@@ -24,14 +25,18 @@ func _run_contract() -> void:
 	var images := _load_json("res://data/card_images.json")
 	var hashes := _load_json("res://data/card_image_hashes.json")
 	var audit := _load_json("res://authoring/card_review_manifest.json")
+	var printings := _load_json(CardSources.PATH)
+	var printing_error := CardSources.validate_manifest(printings, cards.keys())
+	_check(printing_error.is_empty(),
+		"Every card must have a printing in the same pinned Simplified Chinese source: %s" % printing_error)
 	var reviewed: Array = audit.get("reviewed_card_ids", [])
 	var reviewed_set: Dictionary = {}
 	for value in reviewed:
 		var card_id := str(value)
 		_check(not reviewed_set.has(card_id), "audit contains duplicate card id: %s" % card_id)
 		reviewed_set[card_id] = true
-	_check(int(audit.get("card_count", 0)) == 137, "audit card_count must remain 137")
-	_check(cards.size() == 137, "runtime catalog must contain all 137 reviewed cards")
+	_check(int(audit.get("card_count", 0)) == 177, "audit card_count must be 177")
+	_check(cards.size() == 177, "runtime catalog must contain all 177 reviewed cards")
 	_check(reviewed.size() == cards.size(), "audit must cover every runtime card exactly once")
 	_check(images.size() == cards.size(), "image mapping must cover every runtime card")
 	_check(hashes.size() == cards.size(), "image hash mapping must cover every runtime card")
@@ -42,6 +47,14 @@ func _run_contract() -> void:
 		_check(hashes.has(card_id), "card is missing image hash: %s" % card_id)
 		_check(str(hashes.get(card_id, "")).length() == 64, "card image hash is not SHA-256: %s" % card_id)
 		_check(FileAccess.file_exists(str(images.get(card_id, ""))), "card image file is missing: %s" % card_id)
+		var card: Dictionary = cards[card_id]
+		_check(str(card.get("image_path", "")) == str(images.get(card_id, "")),
+			"compiled image path must match the shared mapping: %s" % card_id)
+		_check(str(card.get("image_url_large", "")) == CardSources.image_url(printings, card_id),
+			"card image must identify its pinned source printing: %s" % card_id)
+		for field in ["set_id", "set_name", "number", "rarity"]:
+			_check(not str(card.get(field, "")).is_empty(),
+				"printing metadata missing: %s:%s" % [card_id, field])
 	var corrected: Dictionary = audit.get("corrected_cards", {})
 	for card_id_value in corrected:
 		_check(cards.has(str(card_id_value)), "audit correction references unknown card: %s" % card_id_value)

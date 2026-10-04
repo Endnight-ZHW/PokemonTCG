@@ -1,7 +1,7 @@
 {
   "format": "ptcg_vm_descriptors_source/1",
   "payload": {
-    "descriptor_digest": "3aacb1f8b04f9f4a80680dfc44adfe0025558e2f90c3d0bc3e37ace583615ea4",
+    "descriptor_digest": "c29d7ed1fcfcf307c7deda76a90498e94656a331b06fc99cea89087d060ce79b",
     "descriptor_schema_version": 1,
     "descriptors": {
       "apply_attack_lock_basic": {
@@ -222,6 +222,9 @@
             },
             "to": {
               "type": "string"
+            },
+            "target_filter": {
+              "type": "string"
             }
           },
           "required": [],
@@ -278,6 +281,12 @@
             },
             "target_pokemon_type": {
               "type": "string"
+            },
+            "target_filter": {
+              "type": "string"
+            },
+            "max_per_target": {
+              "type": "integer"
             }
           },
           "required": [],
@@ -372,6 +381,12 @@
                 "self",
                 "opponent"
               ],
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            },
+            "filter": {
               "type": "string"
             }
           },
@@ -1062,6 +1077,12 @@
                 "opponent"
               ],
               "type": "string"
+            },
+            "filter": {
+              "type": "string"
+            },
+            "fail_attack_if_unpaid": {
+              "type": "boolean"
             }
           },
           "required": [],
@@ -1347,6 +1368,9 @@
             },
             "stadium_type": {
               "type": "string"
+            },
+            "formula_ast": {
+              "type": "object"
             }
           },
           "required": [],
@@ -1475,7 +1499,11 @@
         ],
         "args_schema": {
           "additional_properties": false,
-          "properties": {},
+          "properties": {
+            "unless_condition": {
+              "type": "string"
+            }
+          },
           "required": [],
           "type": "object"
         },
@@ -1899,6 +1927,12 @@
             },
             "target_pokemon_type": {
               "type": "string"
+            },
+            "shuffle_remaining_bottom": {
+              "type": "boolean"
+            },
+            "allow_cancel": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -2340,6 +2374,9 @@
             },
             "priority": {
               "type": "integer"
+            },
+            "amount": {
+              "type": "integer"
             }
           },
           "required": [],
@@ -2412,6 +2449,9 @@
             },
             "priority": {
               "type": "integer"
+            },
+            "attacker_subtype": {
+              "type": "string"
             }
           },
           "required": [],
@@ -2482,11 +2522,19 @@
       },
       "return_to_hand": {
         "allowed_contexts": [
-          "attack"
+          "attack",
+          "trainer"
         ],
         "args_schema": {
           "additional_properties": false,
-          "properties": {},
+          "properties": {
+            "choose_target": {
+              "type": "boolean"
+            },
+            "discard_attachments": {
+              "type": "boolean"
+            }
+          },
           "required": [],
           "type": "object"
         },
@@ -2499,7 +2547,7 @@
         },
         "implementation_kind": "atomic",
         "internal": false,
-        "may_suspend": false,
+        "may_suspend": true,
         "op": "return_to_hand",
         "preflight_evaluator": "always",
         "replaces_base_damage": false,
@@ -2833,6 +2881,9 @@
               "type": "string"
             },
             "you_choose": {
+              "type": "boolean"
+            },
+            "before_damage": {
               "type": "boolean"
             }
           },

@@ -12,21 +12,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/175.png",
       "image_url_small": "",
       "name": "草能量",
-      "number": "",
+      "number": "GRA",
       "prize_value": 0,
       "provides_energy": [
         "Grass"
       ],
-      "rarity": "",
+      "rarity": "无标记",
       "regulation_mark": "",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -48,21 +48,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/172.png",
       "image_url_small": "",
       "name": "火能量",
-      "number": "",
+      "number": "FIR",
       "prize_value": 0,
       "provides_energy": [
         "Fire"
       ],
-      "rarity": "",
+      "rarity": "无标记",
       "regulation_mark": "",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -84,21 +84,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/185.png",
       "image_url_small": "",
       "name": "水能量",
-      "number": "",
+      "number": "WAT",
       "prize_value": 0,
       "provides_energy": [
         "Water"
       ],
-      "rarity": "",
+      "rarity": "无标记",
       "regulation_mark": "",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -120,21 +120,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/178.png",
       "image_url_small": "",
       "name": "雷能量",
-      "number": "",
+      "number": "LIG",
       "prize_value": 0,
       "provides_energy": [
         "Lightning"
       ],
-      "rarity": "",
+      "rarity": "无标记",
       "regulation_mark": "",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -156,21 +156,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/184.png",
       "image_url_small": "",
       "name": "超能量",
-      "number": "",
+      "number": "PSY",
       "prize_value": 0,
       "provides_energy": [
         "Psychic"
       ],
-      "rarity": "",
+      "rarity": "无标记",
       "regulation_mark": "",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -192,21 +192,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/171.png",
       "image_url_small": "",
       "name": "斗能量",
-      "number": "",
+      "number": "FIG",
       "prize_value": 0,
       "provides_energy": [
         "Fighting"
       ],
-      "rarity": "",
+      "rarity": "无标记",
       "regulation_mark": "",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -228,21 +228,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/170.png",
       "image_url_small": "",
       "name": "恶能量",
-      "number": "",
+      "number": "DAR",
       "prize_value": 0,
       "provides_energy": [
         "Darkness"
       ],
-      "rarity": "",
+      "rarity": "无标记",
       "regulation_mark": "",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -264,21 +264,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/181.png",
       "image_url_small": "",
       "name": "钢能量",
-      "number": "",
+      "number": "MET",
       "prize_value": 0,
       "provides_energy": [
         "Metal"
       ],
-      "rarity": "",
+      "rarity": "无标记",
       "regulation_mark": "",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -308,24 +308,24 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/168.png",
       "image_url_small": "",
       "name": "夜光能量",
-      "number": "",
+      "number": "059/059",
       "prize_value": 0,
       "provides_energy": [
         "Rainbow"
       ],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
         "只要这张卡牌，被附着于宝可梦身上，就被视作1个所有属性的能量。",
         "如果身上附着了这张卡牌的宝可梦，身上还附着了除这张卡牌以外的特殊能量的话，则这张卡牌被视作1个无色能量。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Special"
       ],
@@ -364,25 +364,25 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/174.png",
       "image_url_small": "",
       "name": "双重涡轮能量",
-      "number": "",
+      "number": "062/064",
       "prize_value": 0,
       "provides_energy": [
         "Colorless",
         "Colorless"
       ],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
         "只要这张卡牌被附着于宝可梦身上，就被视作2个无色能量。",
         "身上附有这张卡牌的宝可梦所使用的招式，给对手的宝可梦造成的伤害「-20」。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Special"
       ],
@@ -423,24 +423,24 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/172.png",
       "image_url_small": "",
       "name": "喷射能量",
-      "number": "",
+      "number": "061/064",
       "prize_value": 0,
       "provides_energy": [
         "Colorless"
       ],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
         "只要这张卡牌被附着于宝可梦身上，就被视作1个无色能量。",
         "当将这张卡牌从手牌附着于备战宝可梦身上时，将该宝可梦与战斗宝可梦互换。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Special"
       ],
@@ -482,24 +482,24 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/178.png",
       "image_url_small": "",
       "name": "幸运能量",
-      "number": "",
+      "number": "064/064",
       "prize_value": 0,
       "provides_energy": [
         "Colorless"
       ],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
         "只要这张卡牌被附着于宝可梦身上，就被视作1个无色能量。",
         "身上附有这张卡牌的宝可梦，在战斗场上受到对手宝可梦的招式的伤害时，从自己的牌库上方抽取1张卡牌。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Special"
       ],
@@ -551,24 +551,24 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/176.png",
       "image_url_small": "",
       "name": "宝藏能量",
-      "number": "",
+      "number": "063/064",
       "prize_value": 0,
       "provides_energy": [
         "Colorless"
       ],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
         "只要这张卡牌被附着于宝可梦身上，就被视作1个无色能量。",
         "在自己的回合，当从反面朝上的自己的奖赏卡中拿取了这张卡牌时，在加入手牌前，可将这张卡牌附着于自己的宝可梦身上。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Special"
       ],

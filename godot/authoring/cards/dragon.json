@@ -1,5 +1,317 @@
 {
   "cards": {
+    "csvh4-022": {
+      "abilities": [],
+      "api_id": "csvh4-022",
+      "artist": "Teeziro",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "filter": {
+                        "card_type": "ancient_pokemon"
+                      },
+                      "op": "pokemon_count"
+                    },
+                    {
+                      "const": 30
+                    }
+                  ],
+                  "op": "mul"
+                }
+              },
+              "branches": {},
+              "op": "set_attack_damage_formula"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Fighting",
+            "Colorless"
+          ],
+          "damage": 30,
+          "damage_text": "30×",
+          "effects": [
+            {
+              "effect_type": "attack_damage_formula",
+              "params": {
+                "formula_ast": {
+                  "factors": [
+                    {
+                      "filter": {
+                        "card_type": "ancient_pokemon"
+                      },
+                      "op": "pokemon_count"
+                    },
+                    {
+                      "const": 30
+                    }
+                  ],
+                  "op": "mul"
+                }
+              }
+            }
+          ],
+          "name": "原生乱打",
+          "text": "造成自己场上「古代」宝可梦数量×30伤害。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "ignore_defender_damage_effects": true
+              },
+              "branches": {},
+              "op": "set_attack_flags"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Fire",
+            "Fighting",
+            "Colorless"
+          ],
+          "damage": 130,
+          "damage_text": "130",
+          "effects": [
+            {
+              "effect_type": "attack_flags",
+              "params": {
+                "ignore_defender_damage_effects": true
+              }
+            }
+          ],
+          "name": "撕裂",
+          "text": "这个招式的伤害，不计算对手战斗宝可梦身上所附加的效果。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Dragon"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "它似乎就是古老的探险记所提到的翼大王本尊。据记载，它曾用拳头击裂大地。",
+      "hp": 140,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/42.png",
+      "image_url_small": "",
+      "name": "故勒顿",
+      "number": "022/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "Ancient"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "csvh4-023": {
+      "abilities": [],
+      "api_id": "csvh4-023",
+      "artist": "GOSSAN",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "filter": "basic",
+                "from_zone": "deck",
+                "min_select": 0,
+                "select_source": true,
+                "target_filter": "future_pokemon",
+                "to": "all"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 40,
+          "damage_text": "40",
+          "effects": [
+            {
+              "effect_type": "energy_attach",
+              "params": {
+                "amount": 2,
+                "filter": "basic",
+                "from_zone": "deck",
+                "min_select": 0,
+                "select_source": true,
+                "target_filter": "future_pokemon",
+                "to": "all"
+              }
+            }
+          ],
+          "name": "巅峰加速",
+          "text": "选择自己牌库中最多2张基本能量，以任意方式附着于自己的「未来」宝可梦身上。并重洗牌库。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Lightning",
+            "Lightning",
+            "Psychic"
+          ],
+          "damage": 160,
+          "damage_text": "160",
+          "effects": [],
+          "name": "电火花攻击",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Dragon"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "它似乎就是古老的书籍中提及的铁大蛇。传说它曾用雷电将大地变为灰烬。",
+      "hp": 110,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/44.png",
+      "image_url_small": "",
+      "name": "密勒顿",
+      "number": "023/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "Future"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
+    "csvh4-024": {
+      "abilities": [],
+      "api_id": "csvh4-024",
+      "artist": "PLANETA Mochizuki",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "bonus": 100,
+                "condition": "opponent_active_damaged"
+              },
+              "branches": {},
+              "op": "conditional_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Lightning",
+            "Psychic"
+          ],
+          "damage": 60,
+          "damage_text": "60+",
+          "effects": [
+            {
+              "effect_type": "conditional_damage_bonus",
+              "params": {
+                "bonus": 100,
+                "condition": "opponent_active_damaged"
+              }
+            }
+          ],
+          "name": "排斥伏特",
+          "text": "如果对手的战斗宝可梦身上放置有伤害指示物的话，则追加造成100伤害。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "attack_name": "异度猛冲"
+              },
+              "branches": {},
+              "op": "apply_self_attack_lock"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Lightning",
+            "Psychic",
+            "Colorless"
+          ],
+          "damage": 220,
+          "damage_text": "220",
+          "effects": [
+            {
+              "effect_type": "self_attack_lock",
+              "params": {
+                "attack_name": "异度猛冲"
+              }
+            }
+          ],
+          "name": "异度猛冲",
+          "text": "在下一个自己的回合，这只宝可梦无法使用「异度猛冲」。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Dragon"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 220,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/46.png",
+      "image_url_small": "",
+      "name": "密勒顿ex",
+      "number": "024/059",
+      "prize_value": 2,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [
+        "当宝可梦ex【昏厥】时，对手将拿取2张奖赏卡。"
+      ],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "ex",
+        "Future"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": []
+    },
     "svg-alt": {
       "abilities": [
         {
@@ -27,7 +339,7 @@
         }
       ],
       "api_id": "svg-alt",
-      "artist": "",
+      "artist": "Saki Hayashiro",
       "attacks": [
         {
           "commands": [
@@ -63,21 +375,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 260,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/36.png",
       "image_url_small": "",
       "name": "七夕青鸟ex",
-      "number": "",
+      "number": "019/064",
       "prize_value": 2,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [
         "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Stage 1",
         "ex"
@@ -91,7 +403,7 @@
     "svg-dram": {
       "abilities": [],
       "api_id": "svg-dram",
-      "artist": "",
+      "artist": "hatachu",
       "attacks": [
         {
           "commands": [
@@ -149,21 +461,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "心地善良爱亲近人，但只要生气就会刮起强风吹倒一切。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/38.png",
       "image_url_small": "",
       "name": "老翁龙",
-      "number": "",
+      "number": "020/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -181,7 +493,7 @@
     "svg-tatsu": {
       "abilities": [],
       "api_id": "svg-tatsu",
-      "artist": "",
+      "artist": "Shibuzoh.",
       "attacks": [
         {
           "commands": [],
@@ -237,21 +549,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "非常狡猾奸诈的宝可梦。会假装虚弱来吸引猎物接近，接着让自己同伙的宝可梦发动攻击。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/40.png",
       "image_url_small": "",
       "name": "米立龙",
-      "number": "",
+      "number": "021/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],

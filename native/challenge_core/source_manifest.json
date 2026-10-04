@@ -32,6 +32,11 @@
     "policies/grass_policy.cpp",
     "policies/steel_policy.cpp",
     "policies/darkness_policy.cpp",
+    "policies/happy4_policy.cpp",
+    "policies/happy4_decidueye_policy.cpp",
+    "policies/happy4_melmetal_policy.cpp",
+    "policies/happy4_koraidon_policy.cpp",
+    "policies/happy4_miraidon_policy.cpp",
     "turn_planner.cpp",
     "match_memory.cpp"
   ]

@@ -11,9 +11,9 @@
   },
   "native_rules": {
     "action_schema_version": 4,
-    "card_ir_content_fingerprint": "885538fb59876953c3891984b3c3e0f3374c7f4b133624292ec9e4a48d47a79f",
-    "card_ir_contract_fingerprint": "14fa624a9053bd579265dd3adf86355b7032e745f4807a01d46dfc623f12379d",
-    "card_ir_source_fingerprint": "61ff38e9ea7bb7d454c72b2e09c061efd405dcaaf65b977de369b03190836d01",
+    "card_ir_content_fingerprint": "f118c9178a01c9ed5c02c51877d3dc2385a14bd67dea5e7eda8a06ecda231285",
+    "card_ir_contract_fingerprint": "4297189b1064d247d20448d38a56a77b357a0e4d216e0b3915247d0eb918a9f1",
+    "card_ir_source_fingerprint": "19a98bb9d04fd46989bd5d44438e6659c18b49bcedbbac512db04f1c5de5ad72",
     "card_ir_version": 4,
     "choice_view_schema_version": 2,
     "core": "ptcg_core",
@@ -22,7 +22,7 @@
     "native_abi_version": 2,
     "protocol_version": 6,
     "snapshot_schema_version": 3,
-    "vm_descriptor_digest": "3aacb1f8b04f9f4a80680dfc44adfe0025558e2f90c3d0bc3e37ace583615ea4",
+    "vm_descriptor_digest": "c29d7ed1fcfcf307c7deda76a90498e94656a331b06fc99cea89087d060ce79b",
     "vm_ir_version": 3
   },
   "product_name": "PokemonTCG",
@@ -36,7 +36,11 @@
     "dragon",
     "grass",
     "steel",
-    "darkness"
+    "darkness",
+    "happy4_decidueye",
+    "happy4_melmetal",
+    "happy4_koraidon",
+    "happy4_miraidon"
   ],
   "rng": {
     "algorithm": "xorshift32",

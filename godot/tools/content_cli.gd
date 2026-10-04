@@ -1,12 +1,13 @@
 extends SceneTree
 
+const CardSources = preload("res://tools/card_source_registry.gd")
 const AUTHORING_ROOT := "res://authoring"
 const CARD_ROOT := AUTHORING_ROOT + "/cards"
 const DATA_ROOT := "res://data"
 const CARD_REVIEW_MANIFEST := AUTHORING_ROOT + "/card_review_manifest.json"
-const EXPECTED_CARDS := 137
-const EXPECTED_DECKS := 10
-const EXPECTED_EFFECTS := 160
+const EXPECTED_CARDS := 177
+const EXPECTED_DECKS := 14
+const EXPECTED_EFFECTS := 218
 const EXPECTED_VM_DESCRIPTORS := 80
 
 
@@ -59,6 +60,10 @@ func _run() -> int:
 			_print_summary("CONTENT_STATUS", summary)
 		return 0
 	if command == "test":
+		var source_test_error := _run_source_tests(Dictionary(loaded["bundle"])["cards"])
+		if not source_test_error.is_empty():
+			printerr("CONTENT_ERROR %s" % source_test_error)
+			return 1
 		var compiler_test_error := _run_compiler_tests(
 			compiler, Dictionary(loaded["bundle"]), result)
 		if not compiler_test_error.is_empty():
@@ -86,6 +91,36 @@ func _run() -> int:
 		return 0
 	_print_summary("CONTENT_LINT_OK", summary)
 	return 0
+
+
+func _run_source_tests(cards: Dictionary) -> String:
+	var manifest: Dictionary = _read_json(CardSources.PATH)
+	var first_id := str(cards.keys()[0])
+	var missing := manifest.duplicate(true)
+	Dictionary(missing["cards"]).erase(first_id)
+	if CardSources.validate_cards(cards, missing).is_empty():
+		return "source_check_accepted_missing_printing"
+	var unpinned := manifest.duplicate(true)
+	Dictionary(unpinned["source"])["revision"] = "main"
+	if CardSources.validate_cards(cards, unpinned).is_empty():
+		return "source_check_accepted_unpinned_revision"
+	var missing_number := cards.duplicate(true)
+	Dictionary(missing_number[first_id])["number"] = ""
+	if CardSources.validate_cards(missing_number, manifest).is_empty():
+		return "source_check_accepted_missing_metadata"
+	var wrong_image := cards.duplicate(true)
+	Dictionary(wrong_image[first_id])["image_url_large"] = "https://example.invalid/other.png"
+	if CardSources.validate_cards(wrong_image, manifest).is_empty():
+		return "source_check_accepted_untracked_image"
+	var generated_field := cards.duplicate(true)
+	Dictionary(generated_field[first_id])["image_path"] = "res://assets/cards/other.webp"
+	if CardSources.validate_cards(generated_field, manifest).is_empty():
+		return "source_check_accepted_generated_fields"
+	var unsafe_path := manifest.duplicate(true)
+	Dictionary(Dictionary(unsafe_path["cards"])[first_id])["image"] = "../other.png"
+	if CardSources.validate_cards(cards, unsafe_path).is_empty():
+		return "source_check_accepted_invalid_image_path"
+	return ""
 
 
 func _run_compiler_tests(compiler: Variant, bundle: Dictionary, baseline: Dictionary) -> String:
@@ -284,6 +319,12 @@ func _load_authoring_bundle() -> Dictionary:
 				"pointer": "/cards/%s" % _pointer_token(card_id),
 			}
 		source_cards[filename] = document
+	var printing_manifest: Variant = _read_json(CardSources.PATH)
+	if not printing_manifest is Dictionary:
+		return {"success": false, "error": "card_source_manifest_missing"}
+	var printing_error := CardSources.validate_cards(cards, printing_manifest)
+	if not printing_error.is_empty():
+		return {"success": false, "error": printing_error}
 	var decks_document: Variant = _read_json(AUTHORING_ROOT + "/decks.json")
 	var strategies_document: Variant = _read_json(AUTHORING_ROOT + "/ai_strategies.json")
 	var descriptors_document: Variant = _read_json(AUTHORING_ROOT + "/vm_command_descriptors.json")
@@ -387,6 +428,9 @@ func _card_review_error(outputs: Dictionary) -> String:
 		or str(review.get("image_hash_algorithm", "")) != "sha256"
 		or str(review.get("image_hash_manifest", ""))
 			!= "res://data/card_image_hashes.json"
+		or str(review.get("printing_metadata_source", "")) != CardSources.PATH
+		or str(review.get("metadata_policy", "")) != "pinned_simplified_chinese_printing"
+		or not Array(review.get("excluded_fields", [])).is_empty()
 	):
 		return "card_review_manifest_contract_invalid"
 	var cards: Dictionary = outputs.get("cards", {})

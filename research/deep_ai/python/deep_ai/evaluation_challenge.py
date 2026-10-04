@@ -88,6 +88,7 @@ def run_challenge_evaluation(*, preset: str, candidate: Any, champion: Any, anch
                              declare_only: bool = False) -> dict[str, Any]:
     from .challenge_arena import (
         load_product_payloads, native_binding_build_info, prepare_agent_runtime,
+        scope_evaluation_payloads,
         validate_agent_identity, validate_equal_search_contract, with_preset_contract,
     )
     from .v3_contract import RELEASE_DECKS
@@ -105,6 +106,10 @@ def run_challenge_evaluation(*, preset: str, candidate: Any, champion: Any, anch
         champion = replace(champion, backend="in_process", executable_path="", build_manifest={})
     anchor = anchor or champion
     catalog, decks, _ = load_product_payloads()
+    source_catalog_hash = canonical_hash(catalog)
+    source_decks_hash = canonical_hash(decks)
+    evaluation_decks = ("fire", "water") if preset == "smoke" else RELEASE_DECKS
+    catalog, decks = scope_evaluation_payloads(catalog, decks, evaluation_decks)
     binding = native_binding_build_info()
     output = output.resolve()
     agents = {role: with_preset_contract(agent, preset) for role, agent in
@@ -134,9 +139,12 @@ def run_challenge_evaluation(*, preset: str, candidate: Any, champion: Any, anch
     if paired_screen and maximum != 1:
         raise ValueError("evaluation_refactor_requires_one_paired_matrix")
     protocol = EvaluationProtocol.create(
-        backend="challenge", mode=mode, decks=("fire", "water") if preset == "smoke" else RELEASE_DECKS, participants=participants,
+        backend="challenge", mode=mode, decks=evaluation_decks, participants=participants,
         context={"rules_hash": rules_content_hash(catalog), "rules_hash_schema": "card_semantics_v1",
                  "catalog_bundle_hash": canonical_hash(catalog), "decks_hash": canonical_hash(decks),
+                 "source_catalog_bundle_hash": source_catalog_hash,
+                 "source_decks_hash": source_decks_hash,
+                 "catalog_scope": "declared_decks_compiled_cards_v1",
                  "binding_hash": binding["binding_sha256"], "evaluation_code_hash": evaluation_code_hash(),
                  "rules_profile": "CN_MAINLAND_3_1_0", "apply_type_matchups": False,
                  "comparison_mode": comparison_mode,

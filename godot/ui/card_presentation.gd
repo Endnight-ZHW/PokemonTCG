@@ -13,6 +13,8 @@ const SUPERTYPE_NAMES := {
 	"energy": "能量",
 }
 const SUBTYPE_NAMES := {
+	"ancient": "古代",
+	"future": "未来",
 	"stage 1": "1阶进化",
 	"stage1": "1阶进化",
 	"stage 2": "2阶进化",

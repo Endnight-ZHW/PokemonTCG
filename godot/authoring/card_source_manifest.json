@@ -1,0 +1,1080 @@
+{
+  "cards": {
+    "csvh4-001": {
+      "collection_id": 465,
+      "image": "img/465/0.png",
+      "image_sha256": "5a06614a0e9262182d3638a83a308c1d1caad837c0ff4de0428eb9a107de450c",
+      "source_card_id": 18187
+    },
+    "csvh4-002": {
+      "collection_id": 465,
+      "image": "img/465/2.png",
+      "image_sha256": "c1ca6a1a26fd266eadbff93278d6878949ce1a5a2968344bae9d8b29a4947943",
+      "source_card_id": 18189
+    },
+    "csvh4-003": {
+      "collection_id": 465,
+      "image": "img/465/4.png",
+      "image_sha256": "9eb6d240b1f38f4e4d45f0959761419c666a8111f739c45a4b5e9d5a7c5f2cc2",
+      "source_card_id": 18191
+    },
+    "csvh4-004": {
+      "collection_id": 465,
+      "image": "img/465/6.png",
+      "image_sha256": "78ee65671066521eb82190b023a9f071475ac91e9862d9819b50f0af044c2d8e",
+      "source_card_id": 18193
+    },
+    "csvh4-005": {
+      "collection_id": 465,
+      "image": "img/465/8.png",
+      "image_sha256": "79d8e30b3e4849a65cfca7f8706dd1e62bc530f24f891c6deb6dfce3c2c6c303",
+      "source_card_id": 18195
+    },
+    "csvh4-006": {
+      "collection_id": 465,
+      "image": "img/465/10.png",
+      "image_sha256": "7ae86277265caa8836156e465f463fe1182525818b49e1dad12b809921f37f71",
+      "source_card_id": 18197
+    },
+    "csvh4-007": {
+      "collection_id": 465,
+      "image": "img/465/12.png",
+      "image_sha256": "434096f984e58b10b98386839b17722d9b8ffa969f0f29f46c1d390e2b581c9c",
+      "source_card_id": 18199
+    },
+    "csvh4-008": {
+      "collection_id": 465,
+      "image": "img/465/14.png",
+      "image_sha256": "7f60bcc92fa0859d445e52cb3f341dc501018a089749ea8af2f88ef758e57a8f",
+      "source_card_id": 18201
+    },
+    "csvh4-009": {
+      "collection_id": 465,
+      "image": "img/465/16.png",
+      "image_sha256": "82129382140738ada03ca2dd27e98a390d015ec1b129a82e2d93029dabcf60dd",
+      "source_card_id": 18203
+    },
+    "csvh4-010": {
+      "collection_id": 465,
+      "image": "img/465/18.png",
+      "image_sha256": "de75f1ef2d2e057c8788deabff155ed63d4669bce50cbd21bac1ef6ed9309971",
+      "source_card_id": 18205
+    },
+    "csvh4-011": {
+      "collection_id": 465,
+      "image": "img/465/20.png",
+      "image_sha256": "484bd7c84554399cb6802e182e843cc4412a860e74835a77c05a019641aff9ff",
+      "source_card_id": 18207
+    },
+    "csvh4-012": {
+      "collection_id": 465,
+      "image": "img/465/22.png",
+      "image_sha256": "794cf50f2a06a4ac656251e2b171cd149bfcba4cf46f6a0ac5020c7020a2eeb0",
+      "source_card_id": 18209
+    },
+    "csvh4-013": {
+      "collection_id": 465,
+      "image": "img/465/24.png",
+      "image_sha256": "ef93e432297bdb000daf7c1ffc57562af6e52a173e798cdbfdf3daa26ef2f353",
+      "source_card_id": 18211
+    },
+    "csvh4-014": {
+      "collection_id": 465,
+      "image": "img/465/26.png",
+      "image_sha256": "1108bc488c9fd895d9e0333f6c4ef6a77c3cf910a56972fc47d815f5f7aff5e9",
+      "source_card_id": 18213
+    },
+    "csvh4-015": {
+      "collection_id": 465,
+      "image": "img/465/28.png",
+      "image_sha256": "0eb4d8e6c2985e5b160f53f5cf249531c520d1d7a82b8359379a758ae516117d",
+      "source_card_id": 18215
+    },
+    "csvh4-016": {
+      "collection_id": 465,
+      "image": "img/465/30.png",
+      "image_sha256": "41b6f9859ee478aa300b28a5117b301c1d0d02b298bee598b115a47f1e86e8d1",
+      "source_card_id": 18217
+    },
+    "csvh4-017": {
+      "collection_id": 465,
+      "image": "img/465/32.png",
+      "image_sha256": "f29ce26a887527069364a92feb484b1fa59bed842d65ce6ea3adec94dc377d39",
+      "source_card_id": 18219
+    },
+    "csvh4-018": {
+      "collection_id": 465,
+      "image": "img/465/34.png",
+      "image_sha256": "836dca207085c4edc918d3abbaf001e3bbf626d5cfe4f4ccc6c20e8e2bc59242",
+      "source_card_id": 18221
+    },
+    "csvh4-019": {
+      "collection_id": 465,
+      "image": "img/465/36.png",
+      "image_sha256": "b5deb686e0587a9f0ad428cc05c929c60b910cbedef31650e5ead745937a2abc",
+      "source_card_id": 18223
+    },
+    "csvh4-020": {
+      "collection_id": 465,
+      "image": "img/465/38.png",
+      "image_sha256": "a404a079fcf876a2d567ffd9401fc4f244d2e5666c79170cd1609bed1ee2eb28",
+      "source_card_id": 18225
+    },
+    "csvh4-021": {
+      "collection_id": 465,
+      "image": "img/465/40.png",
+      "image_sha256": "ff89822f5ec7c2381b460d222230edaef640f0d9dda2274ba4c0c9234b37c192",
+      "source_card_id": 18227
+    },
+    "csvh4-022": {
+      "collection_id": 465,
+      "image": "img/465/42.png",
+      "image_sha256": "58c3cbb2f00c07dd6e5f24a02c17b55b5f99ea398da1bc68397a891da600f623",
+      "source_card_id": 18229
+    },
+    "csvh4-023": {
+      "collection_id": 465,
+      "image": "img/465/44.png",
+      "image_sha256": "51a8fe2596433d83efbe6f16e065efbef97620268b5a65de7ddb6eee83a48fa4",
+      "source_card_id": 18231
+    },
+    "csvh4-024": {
+      "collection_id": 465,
+      "image": "img/465/46.png",
+      "image_sha256": "daf420fb54e17d9c953fdf2e68cf9969e15bd59baf106b2315cdb32476fd91bd",
+      "source_card_id": 18233
+    },
+    "csvh4-025": {
+      "collection_id": 465,
+      "image": "img/465/48.png",
+      "image_sha256": "49a4d6ba4f80c1a200d5e89b0c9ba9a4a06a229058b01252f17d7cd16633fd49",
+      "source_card_id": 18235
+    },
+    "csvh4-027": {
+      "collection_id": 465,
+      "image": "img/465/52.png",
+      "image_sha256": "6e970b8af0fd7264a0f4eb85dcbd5c8f08f441300df65efc459990e295518dd2",
+      "source_card_id": 18239
+    },
+    "csvh4-030": {
+      "collection_id": 465,
+      "image": "img/465/58.png",
+      "image_sha256": "ffc6f4b9db36aca987f6fd26c8ec75508a05858e909ebe5c8c26ad695f33854d",
+      "source_card_id": 18245
+    },
+    "csvh4-032": {
+      "collection_id": 465,
+      "image": "img/465/62.png",
+      "image_sha256": "d2087abaf362d17514a76d850998784bd74b8aabbf0d8a3db6e72378cf2ee3bd",
+      "source_card_id": 18249
+    },
+    "csvh4-034": {
+      "collection_id": 465,
+      "image": "img/465/72.png",
+      "image_sha256": "6d2a0cdf0d87231ae0b977120a3b9ec0427a3f7e27fd885e0d423022f8dfbca9",
+      "source_card_id": 18259
+    },
+    "csvh4-035": {
+      "collection_id": 465,
+      "image": "img/465/74.png",
+      "image_sha256": "c5a2e6534110bca1e683662155d6e6dd846661dc3b7edde2c692ca73a1ea87db",
+      "source_card_id": 18261
+    },
+    "csvh4-041": {
+      "collection_id": 465,
+      "image": "img/465/110.png",
+      "image_sha256": "5535b9edcef0254a841ac70173da6a4fb076533f3a43129e30998d3372f85027",
+      "source_card_id": 18297
+    },
+    "csvh4-043": {
+      "collection_id": 465,
+      "image": "img/465/114.png",
+      "image_sha256": "36e7293a66baa81aa3b1d7e72a86f42634241f720ad5c85c0e752f2117604f56",
+      "source_card_id": 18301
+    },
+    "csvh4-044": {
+      "collection_id": 465,
+      "image": "img/465/116.png",
+      "image_sha256": "5da2d7915896b603632573aab52a35a7aa1453444f245cf37a4b25144d2ec24d",
+      "source_card_id": 18303
+    },
+    "csvh4-046": {
+      "collection_id": 465,
+      "image": "img/465/120.png",
+      "image_sha256": "e19d9b2b3281079c468487c8e76776aba9fbc3e424f0b187ffc490de2950ff18",
+      "source_card_id": 18307
+    },
+    "csvh4-049": {
+      "collection_id": 465,
+      "image": "img/465/132.png",
+      "image_sha256": "890ad6ebaa73697495a9ff8fc0653a45b7f15be2ada8646d8c3a365e57ba9593",
+      "source_card_id": 18319
+    },
+    "csvh4-051": {
+      "collection_id": 465,
+      "image": "img/465/142.png",
+      "image_sha256": "f7c5f2925a62093e3b05c0140be9f3ae78e877495be0d27e149b71080385a4f5",
+      "source_card_id": 18329
+    },
+    "csvh4-056": {
+      "collection_id": 465,
+      "image": "img/465/160.png",
+      "image_sha256": "fef6a32747dd9f991cf42b66fb425db396f5600f81939ddeb8cff037dabd99d2",
+      "source_card_id": 18347
+    },
+    "csvh4-057": {
+      "collection_id": 465,
+      "image": "img/465/162.png",
+      "image_sha256": "7b96600de99524f624e174506d7c656f0f97af380dba81fc4f19e6dba55aff8a",
+      "source_card_id": 18349
+    },
+    "csvh4-058": {
+      "collection_id": 465,
+      "image": "img/465/164.png",
+      "image_sha256": "45cd561d0959e7e7d9c0597b91a131a7b75020d3c25bf33483d5db1174ea80db",
+      "source_card_id": 18351
+    },
+    "csvh4-059": {
+      "collection_id": 465,
+      "image": "img/465/166.png",
+      "image_sha256": "713940a4e7fef7c39b90f0659aacb3aa0ce5f6ffe17e1130d5e2a1cd6b02a443",
+      "source_card_id": 18353
+    },
+    "sv1-104": {
+      "collection_id": 296,
+      "image": "img/296/32.png",
+      "image_sha256": "7b4f98c648d6630aca40bf5f029243167fd5dc691c722eb8bc29ce5a0a0762b3",
+      "source_card_id": 15068
+    },
+    "sv1-106": {
+      "collection_id": 296,
+      "image": "img/296/34.png",
+      "image_sha256": "e3921b5a1976034167224bf288ef094eb04c17ff2a9d2e0930fe0a3475aa91d8",
+      "source_card_id": 15069
+    },
+    "sv1-107": {
+      "collection_id": 296,
+      "image": "img/296/16.png",
+      "image_sha256": "d91b183879f39451a8d1bddba869ebf4760c43da69559f2c57114db8f4136a17",
+      "source_card_id": 15060
+    },
+    "sv1-108": {
+      "collection_id": 296,
+      "image": "img/296/18.png",
+      "image_sha256": "ac8e8b2f7d9e0c8e48e5a8ace5bdebb6cf44f12e57156c0ee558d413d26c48ba",
+      "source_card_id": 15061
+    },
+    "sv1-109": {
+      "collection_id": 296,
+      "image": "img/296/20.png",
+      "image_sha256": "565eca8a367bdc096e6e6704da4e97bbbf9e1daa0c609470c21845d969ad2d2a",
+      "source_card_id": 15062
+    },
+    "sv1-110": {
+      "collection_id": 296,
+      "image": "img/296/22.png",
+      "image_sha256": "e12da96a9faf9f38f998aed6d4fc1d26c82f8e8d47d9c7632dce16c23c9dbd5c",
+      "source_card_id": 15063
+    },
+    "sv1-111": {
+      "collection_id": 296,
+      "image": "img/296/24.png",
+      "image_sha256": "529286159bdc4500f513b310a7aec698ca807051c636b3f4e8faeb30cb1cf407",
+      "source_card_id": 15064
+    },
+    "sv1-112": {
+      "collection_id": 296,
+      "image": "img/296/26.png",
+      "image_sha256": "600415fea61d0643cabebb66df6e2cc4608fb68618b5e5046a9d7706f58e7385",
+      "source_card_id": 15065
+    },
+    "sv1-113": {
+      "collection_id": 296,
+      "image": "img/296/28.png",
+      "image_sha256": "2053cbfb92e519def788b7f05b19aed4a1c2cd4b9899c312cb139fff53a161b5",
+      "source_card_id": 15066
+    },
+    "sv1-114": {
+      "collection_id": 296,
+      "image": "img/296/30.png",
+      "image_sha256": "c575de5b6a1fe3efd1946c746f5e53787e22e85a92f6058f40e01653d7224413",
+      "source_card_id": 15067
+    },
+    "sv1-150": {
+      "collection_id": 296,
+      "image": "img/296/106.png",
+      "image_sha256": "ae57dda0d7c5e4b7fe8568ecf42291295d44ac6688aff07cd80b8ce4ca4b62c2",
+      "source_card_id": 15105
+    },
+    "sv1-151": {
+      "collection_id": 296,
+      "image": "img/296/86.png",
+      "image_sha256": "afc79b49c3b530d15a262e0ae433fd301e336bfa4003fab6332456ca8b8f6a55",
+      "source_card_id": 15095
+    },
+    "sv1-152": {
+      "collection_id": 296,
+      "image": "img/296/104.png",
+      "image_sha256": "ad13f57a163d8a3b5346d576f7b98563ee722ca7ef571035f2e5cf76e1a598c1",
+      "source_card_id": 15104
+    },
+    "sv1-153": {
+      "collection_id": 296,
+      "image": "img/296/96.png",
+      "image_sha256": "94ff997b4480300e1589a8d5b22a0e01c32ca5c175ab2e66e55fc84a9b8017b7",
+      "source_card_id": 15100
+    },
+    "sv1-170": {
+      "collection_id": 242,
+      "image": "img/242/72.png",
+      "image_sha256": "51b91e949d653d08f72d6071315f291252086636d54141991cf28deae99cfec9",
+      "source_card_id": 12350
+    },
+    "sv1-171": {
+      "collection_id": 242,
+      "image": "img/242/66.png",
+      "image_sha256": "0f645e5e38f700cf39bf7b2b8ba109d0789db7ef042787dc7699d059fd943669",
+      "source_card_id": 12347
+    },
+    "sv1-176": {
+      "collection_id": 296,
+      "image": "img/296/132.png",
+      "image_sha256": "544d44d72f8dfe2bdf2eb5bef3631cc7fae21410a3f0c82f3ac3d7d91cd58e95",
+      "source_card_id": 15118
+    },
+    "sv1-180": {
+      "collection_id": 296,
+      "image": "img/296/148.png",
+      "image_sha256": "418b560f73950ceb892a17cd1f867655ec5946f9dac833166366ddf95b86080e",
+      "source_card_id": 15126
+    },
+    "sv1-189": {
+      "collection_id": 296,
+      "image": "img/296/156.png",
+      "image_sha256": "f3cd273d14b41a38bd94774e3cc64d397b6a6ba696f74422997aa55eebcd22ff",
+      "source_card_id": 15130
+    },
+    "sv1-201": {
+      "collection_id": 296,
+      "image": "img/296/122.png",
+      "image_sha256": "942546ee4b2abf8286f0fb6419e3a5fbfb4c1c516dabcb1c7a54005b18b299b3",
+      "source_card_id": 15113
+    },
+    "sv1-202": {
+      "collection_id": 296,
+      "image": "img/296/124.png",
+      "image_sha256": "9e0a589e20ec6ffb828bebcdfb31fa8c532a34eced4685eeef7e9a5e2ae8a12b",
+      "source_card_id": 15114
+    },
+    "sv1-203": {
+      "collection_id": 296,
+      "image": "img/296/128.png",
+      "image_sha256": "62d8b82ac3d698c10c4cf639e399c9526578bc1d7bfa5e251905f2761938e798",
+      "source_card_id": 15116
+    },
+    "sv1-204": {
+      "collection_id": 268,
+      "image": "img/268/166.png",
+      "image_sha256": "aa847ef5b2fee3cf237d2065a9fc9093022abb0cb030a8f00610af5971d20b02",
+      "source_card_id": 13644
+    },
+    "sv1-49": {
+      "collection_id": 268,
+      "image": "img/268/6.png",
+      "image_sha256": "22075349101873bf5037bb4892f549510f350f19b136743a3eb53c00e09014fe",
+      "source_card_id": 13564
+    },
+    "sv1-ener-1": {
+      "collection_id": 242,
+      "image": "img/242/175.png",
+      "image_sha256": "ef434a257b3c7587024a3d3fa9bcfd741f9c65318b14c1b49006765d40102335",
+      "source_card_id": 12651
+    },
+    "sv1-ener-2": {
+      "collection_id": 242,
+      "image": "img/242/172.png",
+      "image_sha256": "aeef1410803821ba9cd35cad8203550f230b8cc96118fe8431ba375212a125dc",
+      "source_card_id": 12652
+    },
+    "sv1-ener-3": {
+      "collection_id": 242,
+      "image": "img/242/185.png",
+      "image_sha256": "4c370da1a01f314f686530e3af7bd53b2b205d513a1c12f50aa1b51ba83cd2a2",
+      "source_card_id": 12653
+    },
+    "sv1-ener-4": {
+      "collection_id": 242,
+      "image": "img/242/178.png",
+      "image_sha256": "f07e38ff3b7ca414c9a30ce66ce0a20a8422f92455335425dada314c0eb7cad9",
+      "source_card_id": 12654
+    },
+    "sv1-ener-5": {
+      "collection_id": 242,
+      "image": "img/242/184.png",
+      "image_sha256": "554cccf6a7af4ada2060749beee3c8ecb74e384cbf16daeb0ce3798d2fdd2aeb",
+      "source_card_id": 12655
+    },
+    "sv1-ener-6": {
+      "collection_id": 242,
+      "image": "img/242/171.png",
+      "image_sha256": "e364d2a09b1886aa5323fdefe5d133eeafa469d2338cf72f67fb2a150c989352",
+      "source_card_id": 12656
+    },
+    "sv1-ener-7": {
+      "collection_id": 242,
+      "image": "img/242/170.png",
+      "image_sha256": "ef90beabeda0ac565e4cf72d1a58f44d4ea6a1942a0dd54ce5d68cf69a011977",
+      "source_card_id": 12657
+    },
+    "sv1-ener-8": {
+      "collection_id": 242,
+      "image": "img/242/181.png",
+      "image_sha256": "2eddbc59f537a0d1924a828e6abbf179a6b754c33d24fed1c1401dfeff2801b7",
+      "source_card_id": 12658
+    },
+    "sv2-38": {
+      "collection_id": 268,
+      "image": "img/268/12.png",
+      "image_sha256": "252e75da8996e34e67bd47ac802a48c998053e43c9a58eaf5bea407ef077beac",
+      "source_card_id": 13567
+    },
+    "sv2-39": {
+      "collection_id": 268,
+      "image": "img/268/14.png",
+      "image_sha256": "2d26e59bc813c02644a24533c48c3c345c8258fb5de0b3278513c850f5327d1f",
+      "source_card_id": 13568
+    },
+    "sv2-cand": {
+      "collection_id": 268,
+      "image": "img/268/140.png",
+      "image_sha256": "8cae1e6a8c1375b1ac39488ad7d45be3e79f64cb87a184fbeddd64b659f1e2fc",
+      "source_card_id": 13631
+    },
+    "sv2-catch": {
+      "collection_id": 296,
+      "image": "img/296/114.png",
+      "image_sha256": "711576e6bd88b589e4b6a1f0cfa5d01521c0e437c10c8084611668bf18a790ba",
+      "source_card_id": 15109
+    },
+    "sv2-delib": {
+      "collection_id": 268,
+      "image": "img/268/8.png",
+      "image_sha256": "7275018ecfb6b2bf2dce72bd9b7e39a7b09c9db5667cd75e3627a1301e28f971",
+      "source_card_id": 13565
+    },
+    "sv2-glast": {
+      "collection_id": 268,
+      "image": "img/268/18.png",
+      "image_sha256": "ab9575910de79c932547254666cd219a8e97df809f3d7cd81f3da047252f884a",
+      "source_card_id": 13570
+    },
+    "sv2-grex": {
+      "collection_id": 268,
+      "image": "img/268/16.png",
+      "image_sha256": "9b30e62e29f411a6bad4c0f15253cbcbdf0935dd7901ce0b6cdfaa72952906af",
+      "source_card_id": 13569
+    },
+    "sv2-keldeo": {
+      "collection_id": 268,
+      "image": "img/268/10.png",
+      "image_sha256": "75c483f43d9dd9b0ffdf8f92c2618642c75057d0b4f342ca71e51d43126322a1",
+      "source_card_id": 13566
+    },
+    "sv2-starm": {
+      "collection_id": 268,
+      "image": "img/268/4.png",
+      "image_sha256": "747db3264020eec4fbd3bc5eeadf6a315f7d535e037bccdce58da98ff9910577",
+      "source_card_id": 13563
+    },
+    "sv2-staryu": {
+      "collection_id": 268,
+      "image": "img/268/2.png",
+      "image_sha256": "4ecdd58f3b57a13b57bc51c991cedb55a7049ef742c0fe8f3c316409cf2dff8b",
+      "source_card_id": 13562
+    },
+    "sv2-tatsu": {
+      "collection_id": 268,
+      "image": "img/268/20.png",
+      "image_sha256": "c1749f251ef0b7fbb81f3ad1c56aae9a6550413b2406026cf60a033b1c034ede",
+      "source_card_id": 13571
+    },
+    "sv2-young": {
+      "collection_id": 296,
+      "image": "img/296/140.png",
+      "image_sha256": "617bdd95e876fc6419bd6b30d5f2895d69b5707c7d105727267d99f680769add",
+      "source_card_id": 15122
+    },
+    "sv3-134": {
+      "collection_id": 296,
+      "image": "img/296/80.png",
+      "image_sha256": "87536d507705529bc2be0cedbc0e259389fccaa2c6f85efaf215cd1590ca81d1",
+      "source_card_id": 15092
+    },
+    "svd-absol": {
+      "collection_id": 268,
+      "image": "img/268/34.png",
+      "image_sha256": "ca60d9e041b9b26e609dc3659005e30dbd7a0702a015d6a6db55da5dec1029ee",
+      "source_card_id": 13578
+    },
+    "svd-dark-patch": {
+      "collection_id": 268,
+      "image": "img/268/88.png",
+      "image_sha256": "ca62f712ea6c3ffe4cc702d752d17e5f71b1d20807781ce59e2ea20ddb5b03b4",
+      "source_card_id": 13605
+    },
+    "svd-darkrai": {
+      "collection_id": 268,
+      "image": "img/268/36.png",
+      "image_sha256": "8e2f84b5a2552bfc1ef67a4eed9a76ee5fe1c6dbdc999952c74164ab0599e80b",
+      "source_card_id": 13579
+    },
+    "svd-dodrio": {
+      "collection_id": 268,
+      "image": "img/268/66.png",
+      "image_sha256": "853d3698514ec9d16c61999fcb260683bb6ce55e0b630eeda40347e05e8752e8",
+      "source_card_id": 13594
+    },
+    "svd-doduo": {
+      "collection_id": 268,
+      "image": "img/268/64.png",
+      "image_sha256": "e3af9d8c585f8dcfc69026ddab3e494eea728d373154a4e91c3dedbb99489903",
+      "source_card_id": 13593
+    },
+    "svd-hard-belt": {
+      "collection_id": 268,
+      "image": "img/268/126.png",
+      "image_sha256": "c4f844fa842a6e1046fa0b0c34d8843816ad44b80354a03a1c696b6a21d239a5",
+      "source_card_id": 13624
+    },
+    "svd-mabosstiff-ex": {
+      "collection_id": 268,
+      "image": "img/268/42.png",
+      "image_sha256": "56db33665283ac6d37d59a50c89b2f526803b25c0d1f93f1f173cb81137f2553",
+      "source_card_id": 13582
+    },
+    "svd-maschiff": {
+      "collection_id": 268,
+      "image": "img/268/40.png",
+      "image_sha256": "676b9b12d2ac367b2a545406f6937b52040f79ef7fc684e6d0fe9a0d2a43cbed",
+      "source_card_id": 13581
+    },
+    "svd-morpeko": {
+      "collection_id": 268,
+      "image": "img/268/38.png",
+      "image_sha256": "326669654757efabc6ff82a7857c3eb94c283ce23d08238da51090a338dedb2f",
+      "source_card_id": 13580
+    },
+    "svd-seviper": {
+      "collection_id": 268,
+      "image": "img/268/32.png",
+      "image_sha256": "71e833ce8a6faa2e7c67d68a674b6ec29ad19e68d4f167f600b10af6ad59dd7a",
+      "source_card_id": 13577
+    },
+    "svf-ensw2": {
+      "collection_id": 268,
+      "image": "img/268/74.png",
+      "image_sha256": "f084f3ef7a0899d78418f6b88dcdf9a3c29a4b9704182e7200c78db903c7f65b",
+      "source_card_id": 13598
+    },
+    "svf-farf": {
+      "collection_id": 268,
+      "image": "img/268/62.png",
+      "image_sha256": "3670bdc34b184bc6e367cb3c802e1a11cfd2344bf9a471019de94062ea288363",
+      "source_card_id": 13592
+    },
+    "svf-hawl": {
+      "collection_id": 268,
+      "image": "img/268/72.png",
+      "image_sha256": "bedcd6c928a0b6c6f69d4dc9f414c46fd04764bb06203e7eac7b85f7a6186ada",
+      "source_card_id": 13597
+    },
+    "svf-houb": {
+      "collection_id": 268,
+      "image": "img/268/130.png",
+      "image_sha256": "287f2b4d7e34994cd32a4eaf8e16aa1da9841727245a1b708999fcf793ca5549",
+      "source_card_id": 13626
+    },
+    "svf-klea": {
+      "collection_id": 268,
+      "image": "img/268/30.png",
+      "image_sha256": "34266689cb136c901a6b11559400049df7e3c22d4d58151f91ed36d86fb3606f",
+      "source_card_id": 13576
+    },
+    "svf-luca": {
+      "collection_id": 268,
+      "image": "img/268/24.png",
+      "image_sha256": "4f7dd8bb23c93023351ddfe0697c5fb358bf43ed49d1356724bf1783f3bbb2aa",
+      "source_card_id": 13573
+    },
+    "svf-pass": {
+      "collection_id": 268,
+      "image": "img/268/28.png",
+      "image_sha256": "b5cd9d2a0ffd6e468b02bfad25015749a00e9b5552ec4664c7ce677fe8af4625",
+      "source_card_id": 13575
+    },
+    "svf-potion": {
+      "collection_id": 296,
+      "image": "img/296/78.png",
+      "image_sha256": "23fb0b67a547cc8961e30fd78900f5fde21f715f518b5d480b55e5e87832c606",
+      "source_card_id": 15091
+    },
+    "svf-rio": {
+      "collection_id": 268,
+      "image": "img/268/22.png",
+      "image_sha256": "ebae2a8a02c01e63d99588bc5a36f507cdf628013ca1ed3c916257ed53ea4382",
+      "source_card_id": 13572
+    },
+    "svf-scyt": {
+      "collection_id": 268,
+      "image": "img/268/0.png",
+      "image_sha256": "926d0e146f9ec76bb4fdf703c5cce6e703d6c53ff0df0f4566eb1ce757b8289a",
+      "source_card_id": 13561
+    },
+    "svf-terr": {
+      "collection_id": 268,
+      "image": "img/268/26.png",
+      "image_sha256": "6794b228b5006b3028ac2f6814897c9310a6bb2295e9b604689377b97cbb2e49",
+      "source_card_id": 13574
+    },
+    "svg-alt": {
+      "collection_id": 296,
+      "image": "img/296/36.png",
+      "image_sha256": "72f5b00a73402797e398bf2535872aace87b3244039f1e0da1507606e121823b",
+      "source_card_id": 15070
+    },
+    "svg-beri": {
+      "collection_id": 296,
+      "image": "img/296/166.png",
+      "image_sha256": "6f77dd7f93e4aeb372e601e9e62e7657c3910617cad42d88ee52eabf1373c4df",
+      "source_card_id": 15135
+    },
+    "svg-cast": {
+      "collection_id": 296,
+      "image": "img/296/52.png",
+      "image_sha256": "7a926ed4ae32119afe2bdc4ee61a46393e4bd7f416ca15c378891594d5cad7d4",
+      "source_card_id": 15078
+    },
+    "svg-ceti": {
+      "collection_id": 296,
+      "image": "img/296/14.png",
+      "image_sha256": "77b9af348023180d14feffe80711f7616bd503c6122d50dc5e2fd52fbd796458",
+      "source_card_id": 15059
+    },
+    "svg-ceto": {
+      "collection_id": 296,
+      "image": "img/296/12.png",
+      "image_sha256": "702ff56d74fc9da029d46e92c566c0ee777c2f0870e1566e2174437e1816aede",
+      "source_card_id": 15058
+    },
+    "svg-chef": {
+      "collection_id": 296,
+      "image": "img/296/130.png",
+      "image_sha256": "41f8d6ac81732f4b13166e76819dd9b5f5ad9763171fca725efd3b82d5e65b36",
+      "source_card_id": 15117
+    },
+    "svg-dram": {
+      "collection_id": 296,
+      "image": "img/296/38.png",
+      "image_sha256": "245a63c5fce05c0f72f10b6ec6b37a5541c5fd280268bd6ba8a570419ce9ce88",
+      "source_card_id": 15071
+    },
+    "svg-milt": {
+      "collection_id": 296,
+      "image": "img/296/48.png",
+      "image_sha256": "8d220c2bcb58cc9b352d75de7d62ca4c7b5477f565f453278aad6f9d7fa6c2ca",
+      "source_card_id": 15076
+    },
+    "svg-swa": {
+      "collection_id": 296,
+      "image": "img/296/50.png",
+      "image_sha256": "571e773a974b7b3f6ce0ffa9c363c4a889b5a7f280fb1ec82ba1390f642d01c5",
+      "source_card_id": 15077
+    },
+    "svg-tatsu": {
+      "collection_id": 296,
+      "image": "img/296/40.png",
+      "image_sha256": "eddaaf7fe65ff3185e0a02677c45e11627cf72274db7fcca4528ebc4307dbbfb",
+      "source_card_id": 15072
+    },
+    "svg2-brel": {
+      "collection_id": 242,
+      "image": "img/242/2.png",
+      "image_sha256": "7aa25fbd735a8b11bf5874ac3312d7e00dd783fe9f002db65232ee090ff55525",
+      "source_card_id": 12282
+    },
+    "svg2-empo": {
+      "collection_id": 242,
+      "image": "img/242/12.png",
+      "image_sha256": "c5ee186726d55a1d1211120c1fe234d74b75a89bbb9c37673dba3077e2cbcaba",
+      "source_card_id": 12287
+    },
+    "svg2-exps": {
+      "collection_id": 242,
+      "image": "img/242/120.png",
+      "image_sha256": "07b0a706961a27beeb1a7cc0251cceaa16795eda13ac0b6c5fafabf681c61a2c",
+      "source_card_id": 12401
+    },
+    "svg2-gard": {
+      "collection_id": 242,
+      "image": "img/242/146.png",
+      "image_sha256": "215f911563cc989dec2b749ce0cd235f167f6645ae22077471113e6b4f4e33e9",
+      "source_card_id": 12427
+    },
+    "svg2-grot": {
+      "collection_id": 242,
+      "image": "img/242/6.png",
+      "image_sha256": "779f4b8872faa9c64aee5b19c7b020ca6080a243b4a6d425dcaa7d0db073b028",
+      "source_card_id": 12284
+    },
+    "svg2-hamm": {
+      "collection_id": 242,
+      "image": "img/242/78.png",
+      "image_sha256": "3e3ad2b2161474ee3d9c088f15925dd1692768f84e00c30203423c9144d5f2b7",
+      "source_card_id": 12353
+    },
+    "svg2-lume": {
+      "collection_id": 242,
+      "image": "img/242/168.png",
+      "image_sha256": "0c7de69f22eff1c9c1c753fb400f008f2ae727b4f12feba68e42789399d8d235",
+      "source_card_id": 12447
+    },
+    "svg2-shro": {
+      "collection_id": 242,
+      "image": "img/242/0.png",
+      "image_sha256": "4a4ebeac7103409b5c6e5a6f834a2bdc8c359ef6eafb84c60f22310f8b15c81e",
+      "source_card_id": 12281
+    },
+    "svg2-tort": {
+      "collection_id": 242,
+      "image": "img/242/8.png",
+      "image_sha256": "211704cb89518e8c67ae295abd5b160f4e20f0bf97056e90d4ec7d45ac9b53cb",
+      "source_card_id": 12285
+    },
+    "svg2-turt": {
+      "collection_id": 242,
+      "image": "img/242/4.png",
+      "image_sha256": "ce18abecac46bb3a85be39cb41da7dc6ce8e4207ab5f4ab96ea9d60c1f65fe8c",
+      "source_card_id": 12283
+    },
+    "svg2-zaru": {
+      "collection_id": 242,
+      "image": "img/242/10.png",
+      "image_sha256": "472efb2855c9fbdeb374dc4d59e8c6bc28187ffec8515c9759f473d53fadf6b3",
+      "source_card_id": 12286
+    },
+    "svi-aipo": {
+      "collection_id": 296,
+      "image": "img/296/42.png",
+      "image_sha256": "b605e4e50a9f3c1c3590f3001e800d3703c95c9c1b752607fe80abd23f106d63",
+      "source_card_id": 15073
+    },
+    "svi-ambi": {
+      "collection_id": 296,
+      "image": "img/296/44.png",
+      "image_sha256": "6e3021724fbfd6c4bb7b76c216332c30681a049f366afa504ed89dda94423c88",
+      "source_card_id": 15074
+    },
+    "svi-cait": {
+      "collection_id": 296,
+      "image": "img/296/126.png",
+      "image_sha256": "6ab83bf391d5e17b777645b53550ebba7a68f811d88198477bf8fba10859b52a",
+      "source_card_id": 15115
+    },
+    "svi-chim": {
+      "collection_id": 296,
+      "image": "img/296/2.png",
+      "image_sha256": "cc36bfec95aab15fd29c389cad35c7dfd43170eb859ebddd965aaaf0bb37f11f",
+      "source_card_id": 15053
+    },
+    "svi-chiy": {
+      "collection_id": 296,
+      "image": "img/296/10.png",
+      "image_sha256": "0537fd94f9a1aae2634a176f2c2d7b04d1c2c9620279e0101d8dc57bfebd45ac",
+      "source_card_id": 15057
+    },
+    "svi-dtur": {
+      "collection_id": 296,
+      "image": "img/296/174.png",
+      "image_sha256": "447a32832a2099536e36a53951ebf4359415ad5f4a05aed0de674a55be2f7d9a",
+      "source_card_id": 15139
+    },
+    "svi-enst": {
+      "collection_id": 296,
+      "image": "img/296/70.png",
+      "image_sha256": "2ba9d7331fea5f8269ba6f7ccf0b2264e611bfd64333619597b2d12468293c78",
+      "source_card_id": 15087
+    },
+    "svi-ente": {
+      "collection_id": 296,
+      "image": "img/296/0.png",
+      "image_sha256": "421e10a8e356eaebcadcb88f01a78796fd87b6b9d385778d9b8267c12e41eae9",
+      "source_card_id": 15052
+    },
+    "svi-erec": {
+      "collection_id": 296,
+      "image": "img/296/76.png",
+      "image_sha256": "c3980c7627e3e8c9911f0739ae5191457aa0aa91ee31a339a9b5ff70f015d5ec",
+      "source_card_id": 15090
+    },
+    "svi-flam": {
+      "collection_id": 296,
+      "image": "img/296/68.png",
+      "image_sha256": "b149fafa3d06dd383b04dd4f37f9beed216c07c7715822837a12a1a2abc89b88",
+      "source_card_id": 15086
+    },
+    "svi-gree": {
+      "collection_id": 296,
+      "image": "img/296/58.png",
+      "image_sha256": "b1e1e8a7a9fbcbf50b56df98bf735c88ee76efcec9e40f7ef49d9f6f7cd060b5",
+      "source_card_id": 15081
+    },
+    "svi-hrot": {
+      "collection_id": 296,
+      "image": "img/296/8.png",
+      "image_sha256": "6e987767ad48f9f2b8c39f2ea4d72f7e047e4d6baa61a5524589309ba6c1dea5",
+      "source_card_id": 15056
+    },
+    "svi-inde": {
+      "collection_id": 296,
+      "image": "img/296/60.png",
+      "image_sha256": "2da7beb2034ad806ad4a14ee0c29e01f132012d9190b3d962558c77f1425eec9",
+      "source_card_id": 15082
+    },
+    "svi-infr": {
+      "collection_id": 296,
+      "image": "img/296/6.png",
+      "image_sha256": "e0b4e1a913bdcf8232749d02334052b25e446f12859b3654e680564d6a72874a",
+      "source_card_id": 15055
+    },
+    "svi-jete": {
+      "collection_id": 296,
+      "image": "img/296/172.png",
+      "image_sha256": "a2542d646f1bc62f79b44cd7c85716ac0782f45b6c3eae41d7ec93f03054c3d6",
+      "source_card_id": 15138
+    },
+    "svi-maus": {
+      "collection_id": 296,
+      "image": "img/296/64.png",
+      "image_sha256": "931362e7a4398da2abc060a41afa50668787a93c5bc3879fd88344515fde587e",
+      "source_card_id": 15084
+    },
+    "svi-mela": {
+      "collection_id": 296,
+      "image": "img/296/170.png",
+      "image_sha256": "fbba2983a77694ca96e7a697dbba5c49d3df96fa7ef4c839e7e7bf99d360cdc8",
+      "source_card_id": 15137
+    },
+    "svi-mirc": {
+      "collection_id": 296,
+      "image": "img/296/178.png",
+      "image_sha256": "3e4ed81c713161496b456141a30652092810317e1a9b4f0baf674bf2e6137d13",
+      "source_card_id": 15141
+    },
+    "svi-monf": {
+      "collection_id": 296,
+      "image": "img/296/4.png",
+      "image_sha256": "43c9a329ae4e6884c501211092a32442ac5707d83787155db7c092da9f55d885",
+      "source_card_id": 15054
+    },
+    "svi-nemb": {
+      "collection_id": 296,
+      "image": "img/296/94.png",
+      "image_sha256": "75941c577749b9b7b017281fb505405a9d0c1bc158ab3bd461a5473b4386d0bf",
+      "source_card_id": 15099
+    },
+    "svi-popp": {
+      "collection_id": 296,
+      "image": "img/296/168.png",
+      "image_sha256": "7220c33b6639f3751863e4487dfb925dbac69c206d170758f5ea201511d79a2a",
+      "source_card_id": 15136
+    },
+    "svi-skwv": {
+      "collection_id": 296,
+      "image": "img/296/56.png",
+      "image_sha256": "d6dc9f69a20b8965a1c4caa63910a59ee5c82e2d579c9fc2268613b2cdb8d055",
+      "source_card_id": 15080
+    },
+    "svi-sqwk": {
+      "collection_id": 296,
+      "image": "img/296/66.png",
+      "image_sha256": "341dcfdaa432f4d6fb81d65ec4e4fe55e4fd91e66ee7342403e520b30d1dddee",
+      "source_card_id": 15085
+    },
+    "svi-stan": {
+      "collection_id": 296,
+      "image": "img/296/46.png",
+      "image_sha256": "217bb4ff88a6810a7d54980ae72651eb0c3719dbf186e9f5b37bfce6a78c71d3",
+      "source_card_id": 15075
+    },
+    "svi-tand": {
+      "collection_id": 296,
+      "image": "img/296/62.png",
+      "image_sha256": "4c5018641739ec6e7700316744bbc2b51b791c7a8c96d0bd9bac588793196f2f",
+      "source_card_id": 15083
+    },
+    "svi-trea": {
+      "collection_id": 296,
+      "image": "img/296/176.png",
+      "image_sha256": "57fcc2827ded25267489f923d59db02c804723259d97934afc715e5c859e33bf",
+      "source_card_id": 15140
+    },
+    "svl-chat": {
+      "collection_id": 242,
+      "image": "img/242/62.png",
+      "image_sha256": "b51e412dc885df6d02d7914809f2085b39857e5ca320e93e573592c1d6d1b125",
+      "source_card_id": 12312
+    },
+    "svl-chin": {
+      "collection_id": 242,
+      "image": "img/242/16.png",
+      "image_sha256": "ea6e23020a54758dd7427799b3890c8140f2b46f949238b198a2d4dc598fb41c",
+      "source_card_id": 12289
+    },
+    "svl-emol": {
+      "collection_id": 242,
+      "image": "img/242/24.png",
+      "image_sha256": "377f0eb5ad32b7c61b28ae9e1fd12c4b438dc67d7c1e12baaafbbc7bfa11a250",
+      "source_card_id": 12293
+    },
+    "svl-ensw": {
+      "collection_id": 242,
+      "image": "img/242/68.png",
+      "image_sha256": "3c3136be93bb545b56151057287498799994b8a178114897a9a67f09165920ae",
+      "source_card_id": 12348
+    },
+    "svl-flaa2": {
+      "collection_id": 242,
+      "image": "img/242/22.png",
+      "image_sha256": "4318bce3bc8ad3603404ef665c56e81af7d86ccaf779548097df4bc883afc585",
+      "source_card_id": 12292
+    },
+    "svl-lant": {
+      "collection_id": 242,
+      "image": "img/242/18.png",
+      "image_sha256": "59cfa60ce28ee73e2c96f9217b7d360f7d5b0880bd568029f322e08879cc7c86",
+      "source_card_id": 12290
+    },
+    "svl-mare2": {
+      "collection_id": 242,
+      "image": "img/242/20.png",
+      "image_sha256": "9f897938e719c207ec0ef17d5b9e74ba8d332587f226f7f52a9993cc8c731cc3",
+      "source_card_id": 12291
+    },
+    "svl-pikaex": {
+      "collection_id": 242,
+      "image": "img/242/14.png",
+      "image_sha256": "db8fadb164d4ebbd6039cdf33c5392d311ed7eeda2997ebdf5fc504d0824ea11",
+      "source_card_id": 12288
+    },
+    "svl-thun": {
+      "collection_id": 242,
+      "image": "img/242/26.png",
+      "image_sha256": "99709e296764646b5a7a06e4ab63250c7918949c07e48f5a066553ead1757fe6",
+      "source_card_id": 12294
+    },
+    "svl-trks": {
+      "collection_id": 242,
+      "image": "img/242/84.png",
+      "image_sha256": "5ac66233be48475ea71bb9e70fd2a202be60e84ef27f6c3b20c16a59b2977ddc",
+      "source_card_id": 12356
+    },
+    "svl-vitb": {
+      "collection_id": 268,
+      "image": "img/268/128.png",
+      "image_sha256": "2ee61b37b5fb0bf69c6f71cea33350c04fef1e1f515b5642bf1a6bf25f7b33a6",
+      "source_card_id": 13625
+    },
+    "svl-zera": {
+      "collection_id": 242,
+      "image": "img/242/28.png",
+      "image_sha256": "316f6fb5f04b9bc1a351c0ec882d905eab3a0ceedf91a5e543c63f83bb044459",
+      "source_card_id": 12295
+    },
+    "svl-zinn": {
+      "collection_id": 242,
+      "image": "img/242/164.png",
+      "image_sha256": "f0289996946a241ab00ed1510b40b53abf06a42bf2c2764ac8a08f6d46beb0bd",
+      "source_card_id": 12445
+    },
+    "svm-bronzong": {
+      "collection_id": 268,
+      "image": "img/268/48.png",
+      "image_sha256": "e39f2ec8e9e51d63b34fd862aac9ec43f11ae14bc9e027c99abf44123c108ac3",
+      "source_card_id": 13585
+    },
+    "svm-bronzor": {
+      "collection_id": 268,
+      "image": "img/268/46.png",
+      "image_sha256": "655a1b32995327de48194cb6d92e013f11e80bc1b1e90e5b47e579be556a4acd",
+      "source_card_id": 13584
+    },
+    "svm-cobalion": {
+      "collection_id": 268,
+      "image": "img/268/52.png",
+      "image_sha256": "1ac85e051ee1dd27910b9109f236dcc80426d1ce7519b58f6dc945804a00c8b5",
+      "source_card_id": 13587
+    },
+    "svm-dialga": {
+      "collection_id": 268,
+      "image": "img/268/50.png",
+      "image_sha256": "629bdcd03197b7c8f7f3f845d836454c51666707eb13a76770f28a3d0345d822",
+      "source_card_id": 13586
+    },
+    "svm-klefki": {
+      "collection_id": 268,
+      "image": "img/268/54.png",
+      "image_sha256": "333d0ac9adc36242d725eb9b4efaf622b36fe0d1535e7d92aaabeb9728f3891f",
+      "source_card_id": 13588
+    },
+    "svm-marnie-pride": {
+      "collection_id": 268,
+      "image": "img/268/168.png",
+      "image_sha256": "06f1fae19a0653cf3b670607ae4f00d19639f6bcbf66eab9f3841774e546cecc",
+      "source_card_id": 13645
+    },
+    "svm-orthworm": {
+      "collection_id": 268,
+      "image": "img/268/60.png",
+      "image_sha256": "d227ec4a04d07be047ff49d745e3c66aaa575c073c2ba477068ef282bebdd54d",
+      "source_card_id": 13591
+    },
+    "svm-skarmory": {
+      "collection_id": 268,
+      "image": "img/268/44.png",
+      "image_sha256": "2a58d0674aa402b56ea26745e048532496f2869bfc85584231d426ec015836f8",
+      "source_card_id": 13583
+    },
+    "svm-smeargle": {
+      "collection_id": 268,
+      "image": "img/268/68.png",
+      "image_sha256": "3f45d42b48643127316fce71af800315949c144f221cf42ab4ee2b340371717a",
+      "source_card_id": 13595
+    },
+    "svm-zacian": {
+      "collection_id": 268,
+      "image": "img/268/56.png",
+      "image_sha256": "47cd1118616cf5944182a533d6ee0fb0b7cd7ca0007f920a576ad2d9648f4ebc",
+      "source_card_id": 13589
+    },
+    "svm-zamazenta": {
+      "collection_id": 268,
+      "image": "img/268/58.png",
+      "image_sha256": "3eb29818e000aa0915ddba9c407c67a3f3dd0dbec9bc245814455a50c5d35aa0",
+      "source_card_id": 13590
+    }
+  },
+  "image_format": {
+    "format": "webp",
+    "height": 419,
+    "lossless": true,
+    "width": 300
+  },
+  "schema": "ptcg.card_sources/1",
+  "source": {
+    "dataset_path": "ptcg_chs_infos.json",
+    "dataset_sha256": "e75780d4b93b5c77fa1bf4a627082abeebe9b5577d57cbbc6929f5ae68951004",
+    "language": "zh-Hans",
+    "repository": "https://github.com/duanxr/PTCG-CHS-Datasets",
+    "revision": "ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c"
+  }
+}

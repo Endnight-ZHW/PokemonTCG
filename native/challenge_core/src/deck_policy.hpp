@@ -60,6 +60,11 @@ class DeckPolicy {
 };
 
 std::shared_ptr<const DeckPolicy> make_generic_policy();
+std::shared_ptr<const DeckPolicy> make_happy4_policy(const std::string &archetype);
+std::shared_ptr<const DeckPolicy> make_happy4_decidueye_policy();
+std::shared_ptr<const DeckPolicy> make_happy4_melmetal_policy();
+std::shared_ptr<const DeckPolicy> make_happy4_koraidon_policy();
+std::shared_ptr<const DeckPolicy> make_happy4_miraidon_policy();
 std::shared_ptr<const DeckPolicy> make_fire_policy();
 std::shared_ptr<const DeckPolicy> make_water_policy();
 std::shared_ptr<const DeckPolicy> make_psychic_policy();

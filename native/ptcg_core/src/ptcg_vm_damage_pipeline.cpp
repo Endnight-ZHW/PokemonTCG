@@ -75,7 +75,7 @@ bool execute_vm_damage_pipeline(
             Array options = pokemon_options(
                 target_player,
                 damage ? 1 - actor : actor,
-                true,
+                string_arg(args, "target") != "bench",
                 true
             );
             if (!damage) {
@@ -83,12 +83,13 @@ bool execute_vm_damage_pipeline(
                     std::remove_if(
                         options.begin(),
                         options.end(),
-                        [&target_player](const Value &entry) {
+                        [&target_player, &cards, &args](const Value &entry) {
                             const Value *target = pokemon(
                                 target_player,
                                 string_arg(entry, "slot")
                             );
                             return target == nullptr
+                                || !card_matches_filter(cards, card_id(*target), string_arg(args, "filter", "any"))
                                 || get_integer(
                                     *target,
                                     "damage_counters"
@@ -97,6 +98,11 @@ bool execute_vm_damage_pipeline(
                     ),
                     options.end()
                 );
+                if (options.empty()) {
+                    result.success = true;
+                    result.rng_state = rng.state();
+                    early_return = true; return true;
+                }
                 if (options.size() == 1) {
                     const std::string target_slot = string_arg(
                         options.front(), "slot");
@@ -543,6 +549,16 @@ bool execute_vm_damage_pipeline(
                 "from",
                 string_arg(args, "from_zone", "hand")
             );
+            Array options = zone_options(cards, self, actor, zone,
+                string_arg(args, "filter", "any"));
+            if (static_cast<std::int64_t>(options.size()) < amount) {
+                if (!bool_arg(args, "fail_attack_if_unpaid"))
+                    throw std::invalid_argument("discard_cost_cards_insufficient");
+                result.context["attack_failed"] = Value(true);
+                result.success = true;
+                result.rng_state = rng.state();
+                early_return = true; return true;
+            }
             suspend(
                 pending_request(
                     "discard_cards",
@@ -551,13 +567,7 @@ bool execute_vm_damage_pipeline(
                     amount,
                     false,
                     false,
-                    zone_options(
-                        cards,
-                        self,
-                        actor,
-                        zone,
-                        "any"
-                    ),
+                    std::move(options),
                     "discard_cards"
                 ),
                 make_continuation(

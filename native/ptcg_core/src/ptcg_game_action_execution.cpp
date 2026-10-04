@@ -1,5 +1,6 @@
 #include "ptcg_game.hpp"
 #include "ptcg_game_internal.hpp"
+#include "ptcg_rules_internal.hpp"
 
 #include <algorithm>
 #include <array>
@@ -462,6 +463,17 @@ GameExecutionResult NativeGameKernel::apply_action(
                     throw std::invalid_argument("tool_target_missing");
                 }
                 (*target)["attached_tool_id"] = Value(id);
+                if (rules_detail::tool_effect_applies(cards_, *target, "status_immunity")) {
+                    const Value statuses = required(*target, "status_conditions");
+                    (*target)["status_conditions"] = Value::make_array();
+                    (*target)["paralyzed_since_turn"] = Value(0);
+                    for (const auto &status : statuses.as_array()) {
+                        append_event(result, "status_removed", Object{
+                            {"player", Value(actor)}, {"target_player", Value(actor)},
+                            {"slot", Value(string_arg(action_params, "target_slot", "active"))},
+                            {"status", status}, {"visibility", Value("public")}});
+                    }
+                }
                 append_tool_modifiers(
                     *target,
                     *definition,

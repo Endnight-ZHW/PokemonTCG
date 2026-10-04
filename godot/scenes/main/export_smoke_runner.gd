@@ -49,7 +49,7 @@ func _run_release_runtime(services: Dictionary) -> Dictionary:
 	var valid := (
 		not app_version.is_empty()
 		and app_version == str(release.get("version", ""))
-		and release_decks.size() == 10
+		and _release_catalog_matches(release_decks)
 		and card_cache_size > 0
 		and texture_cache != null
 		and _load_release_ui_resources()
@@ -63,6 +63,22 @@ func _run_release_runtime(services: Dictionary) -> Dictionary:
 	return _success(
 		("PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 "
 		+ "challenge=native onnx_assets=0") % app_version)
+
+
+func _release_catalog_matches(release_decks: Array) -> bool:
+	var catalog := CardCatalog.shared()
+	if release_decks.is_empty() or release_decks.size() != catalog.decks.size():
+		return false
+	var seen: Dictionary = {}
+	for key_value in release_decks:
+		var key := str(key_value)
+		if seen.has(key) or not catalog.decks.has(key) or catalog.expand_deck(key).size() != 60:
+			return false
+		seen[key] = true
+	for card_id in catalog.cards:
+		if not ResourceLoader.exists("res://assets/cards/%s.webp" % card_id):
+			return false
+	return true
 
 
 func _load_release_ui_resources() -> bool:

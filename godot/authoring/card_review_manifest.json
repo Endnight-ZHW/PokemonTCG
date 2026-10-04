@@ -1,10 +1,50 @@
 {
   "schema": "ptcg.card_visual_audit/1",
-  "card_count": 137,
+  "card_count": 177,
   "image_hash_algorithm": "sha256",
   "image_hash_manifest": "res://data/card_image_hashes.json",
   "review_policy": "card_art_authoritative_gameplay_fields",
   "reviewed_card_ids": [
+    "csvh4-001",
+    "csvh4-002",
+    "csvh4-003",
+    "csvh4-004",
+    "csvh4-005",
+    "csvh4-006",
+    "csvh4-007",
+    "csvh4-008",
+    "csvh4-009",
+    "csvh4-010",
+    "csvh4-011",
+    "csvh4-012",
+    "csvh4-013",
+    "csvh4-014",
+    "csvh4-015",
+    "csvh4-016",
+    "csvh4-017",
+    "csvh4-018",
+    "csvh4-019",
+    "csvh4-020",
+    "csvh4-021",
+    "csvh4-022",
+    "csvh4-023",
+    "csvh4-024",
+    "csvh4-025",
+    "csvh4-027",
+    "csvh4-030",
+    "csvh4-032",
+    "csvh4-034",
+    "csvh4-035",
+    "csvh4-041",
+    "csvh4-043",
+    "csvh4-044",
+    "csvh4-046",
+    "csvh4-049",
+    "csvh4-051",
+    "csvh4-056",
+    "csvh4-057",
+    "csvh4-058",
+    "csvh4-059",
     "sv1-104",
     "sv1-106",
     "sv1-107",
@@ -144,47 +184,131 @@
     "svm-zamazenta"
   ],
   "corrected_cards": {
-    "sv1-114": ["attack_cost"],
-    "sv2-delib": ["hp", "weakness", "attack_cost"],
-    "sv2-grex": ["attack_name"],
-    "svd-absol": ["weakness"],
-    "svd-darkrai": ["weakness"],
-    "svd-dodrio": ["weakness", "resistance"],
-    "svd-doduo": ["weakness", "resistance"],
-    "svd-mabosstiff-ex": ["weakness"],
-    "svd-maschiff": ["weakness"],
-    "svd-morpeko": ["weakness"],
-    "svd-seviper": ["weakness"],
-    "svf-hawl": ["name"],
-    "svf-klea": ["weakness"],
-    "svg-cast": ["weakness", "resistance"],
-    "svg2-gard": ["rule_text"],
-    "svg2-grot": ["ability_text"],
-    "svg2-lume": ["rule_text"],
-    "svg2-zaru": ["attack_text"],
-    "svg-tatsu": ["weakness"],
-    "svi-dtur": ["rule_text"],
-    "svi-jete": ["rule_text"],
-    "svi-maus": ["ability_text"],
-    "svi-mirc": ["rule_text"],
-    "svi-trea": ["rule_text"],
-    "svm-bronzong": ["ability_text", "weakness", "resistance"],
-    "svm-bronzor": ["weakness", "resistance"],
-    "svm-cobalion": ["ability_text", "weakness", "resistance"],
-    "svm-dialga": ["attack_text", "weakness", "resistance"],
-    "svm-klefki": ["weakness", "resistance"],
-    "svm-marnie-pride": ["name"],
-    "svm-orthworm": ["ability_text", "weakness", "resistance"],
-    "svm-skarmory": ["weakness", "resistance"],
-    "svm-smeargle": ["weakness"],
-    "svm-zacian": ["weakness", "resistance"],
-    "svm-zamazenta": ["weakness", "resistance"]
+    "sv1-114": [
+      "attack_cost"
+    ],
+    "sv2-delib": [
+      "hp",
+      "weakness",
+      "attack_cost"
+    ],
+    "sv2-grex": [
+      "attack_name"
+    ],
+    "svd-absol": [
+      "weakness"
+    ],
+    "svd-darkrai": [
+      "weakness"
+    ],
+    "svd-dodrio": [
+      "weakness",
+      "resistance"
+    ],
+    "svd-doduo": [
+      "weakness",
+      "resistance"
+    ],
+    "svd-mabosstiff-ex": [
+      "weakness"
+    ],
+    "svd-maschiff": [
+      "weakness"
+    ],
+    "svd-morpeko": [
+      "weakness"
+    ],
+    "svd-seviper": [
+      "weakness"
+    ],
+    "svf-hawl": [
+      "name"
+    ],
+    "svf-klea": [
+      "weakness"
+    ],
+    "svg-cast": [
+      "weakness",
+      "resistance"
+    ],
+    "svg2-gard": [
+      "rule_text"
+    ],
+    "svg2-grot": [
+      "ability_text"
+    ],
+    "svg2-lume": [
+      "rule_text"
+    ],
+    "svg2-zaru": [
+      "attack_text"
+    ],
+    "svg-tatsu": [
+      "weakness"
+    ],
+    "svi-dtur": [
+      "rule_text"
+    ],
+    "svi-jete": [
+      "rule_text"
+    ],
+    "svi-maus": [
+      "ability_text"
+    ],
+    "svi-mirc": [
+      "rule_text"
+    ],
+    "svi-trea": [
+      "rule_text"
+    ],
+    "svm-bronzong": [
+      "ability_text",
+      "weakness",
+      "resistance"
+    ],
+    "svm-bronzor": [
+      "weakness",
+      "resistance"
+    ],
+    "svm-cobalion": [
+      "ability_text",
+      "weakness",
+      "resistance"
+    ],
+    "svm-dialga": [
+      "attack_text",
+      "weakness",
+      "resistance"
+    ],
+    "svm-klefki": [
+      "weakness",
+      "resistance"
+    ],
+    "svm-marnie-pride": [
+      "name"
+    ],
+    "svm-orthworm": [
+      "ability_text",
+      "weakness",
+      "resistance"
+    ],
+    "svm-skarmory": [
+      "weakness",
+      "resistance"
+    ],
+    "svm-smeargle": [
+      "weakness"
+    ],
+    "svm-zacian": [
+      "weakness",
+      "resistance"
+    ],
+    "svm-zamazenta": [
+      "weakness",
+      "resistance"
+    ]
   },
-  "excluded_fields": [
-    "artist",
-    "number",
-    "rarity",
-    "set_id",
-    "set_name"
-  ]
+  "excluded_fields": [],
+  "printing_metadata_source": "res://authoring/card_source_manifest.json",
+  "metadata_policy": "pinned_simplified_chinese_printing"
 }

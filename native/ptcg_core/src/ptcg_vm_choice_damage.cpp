@@ -78,6 +78,10 @@ bool resume_vm_damage(
             );
             Array discarded_ids = selected_card_id_values(
                 selected_options);
+            for (const Value &id : discarded_ids) {
+                if (!card_matches_filter(cards, id.string_or(), string_arg(args, "filter", "any")))
+                    throw std::invalid_argument("discard_selection_filter_mismatch");
+            }
             const std::size_t removed = discard_selected(
                 self,
                 zone,

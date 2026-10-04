@@ -9,7 +9,7 @@ Historical agents remain external, frozen evaluation artifacts.
 
 - `ChallengeController` validates requests, owns immutable catalog knowledge,
   selects the policy, coordinates cancellation and publishes results.
-- `DeckPolicyRegistry` registers the ten release policies in `policies/`.
+- `DeckPolicyRegistry` registers the fourteen release policies in `policies/`.
   Each policy owns its development stages, action preferences, resource retention,
   position valuation, candidate coverage and card combinations. Fire and Water
   allow another target to take the last nonterminal search slot; the other policies
@@ -31,7 +31,7 @@ Historical agents remain external, frozen evaluation artifacts.
 
 `source_manifest.json` is the single runtime source list for both bindings and
 native tests. Unknown deck keys use `generic_policy_v1`, limited to three actions
-of lookahead. All ten release keys have explicit policies; missing release
+of lookahead. All fourteen release keys have explicit policies; missing release
 strategy data fails configuration instead of silently losing deck specialization.
 
 ## Decision contract

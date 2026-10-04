@@ -1,9 +1,480 @@
 {
   "cards": {
+    "csvh4-007": {
+      "abilities": [],
+      "api_id": "csvh4-007",
+      "artist": "matazo",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 20
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "damage_counters",
+                          "target": "opponent"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "set_attack_damage_formula"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Psychic",
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20+",
+          "effects": [
+            {
+              "effect_type": "attack_damage_formula",
+              "params": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 20
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "damage_counters",
+                          "target": "opponent"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "精神伤害",
+          "text": "追加造成对手战斗宝可梦身上放置的伤害指示物数量×10伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "尾巴上有小小的头。如果有敌人从背后靠近，就会受本能驱使地咬过去。",
+      "hp": 90,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/12.png",
+      "image_url_small": "",
+      "name": "麒麟奇",
+      "number": "007/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-008": {
+      "abilities": [],
+      "api_id": "csvh4-008",
+      "artist": "Takumi Wada",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 2
+              }
+            }
+          ],
+          "name": "吸引",
+          "text": "从自己牌库上方抽取2张卡牌。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Psychic",
+            "Colorless"
+          ],
+          "damage": 60,
+          "damage_text": "60",
+          "effects": [],
+          "name": "礁湖飞行",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "通过心灵感应交流情感。用能令光发生折射的羽毛包裹身体来让自己隐形。",
+      "hp": 110,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/14.png",
+      "image_url_small": "",
+      "name": "拉帝亚斯",
+      "number": "008/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-009": {
+      "abilities": [],
+      "api_id": "csvh4-009",
+      "artist": "kawayoo",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 100,
+                "filter": "ancient_pokemon",
+                "target": "bench"
+              },
+              "branches": {},
+              "op": "choose_heal_damage"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "potion_heal",
+              "params": {
+                "amount": 100,
+                "filter": "ancient_pokemon",
+                "target": "bench"
+              }
+            }
+          ],
+          "name": "歌唱激励",
+          "text": "回复自己备战区中的1只「古代」宝可梦「100」HP。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 40,
+          "damage_text": "40",
+          "effects": [],
+          "name": "巨声",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "过去只有１次目击纪录。这只宝可梦与古老的探险记所记载的神秘生物长得很像。",
+      "hp": 90,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/16.png",
+      "image_url_small": "",
+      "name": "吼叫尾",
+      "number": "009/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "Ancient"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-010": {
+      "abilities": [],
+      "api_id": "csvh4-010",
+      "artist": "takuyoa",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 20,
+                "choose_targets": true,
+                "count": 1
+              },
+              "branches": {},
+              "op": "deal_bench_damage"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20",
+          "effects": [
+            {
+              "effect_type": "bench_damage",
+              "params": {
+                "amount": 20,
+                "choose_targets": true,
+                "count": 1
+              }
+            }
+          ],
+          "name": "双子镭射",
+          "text": "给对手的1只备战宝可梦，也造成20伤害。[备战宝可梦不计算弱点、抗性。]"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "attack_name": "意念之刃"
+              },
+              "branches": {},
+              "op": "apply_self_attack_lock"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Psychic",
+            "Psychic",
+            "Colorless"
+          ],
+          "damage": 120,
+          "damage_text": "120",
+          "effects": [
+            {
+              "effect_type": "self_attack_lock",
+              "params": {
+                "attack_name": "意念之刃"
+              }
+            }
+          ],
+          "name": "意念之刃",
+          "text": "在下一个自己的回合，这只宝可梦无法使用「意念之刃」。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "它有可能就是某本探险记中记载的名为铁武者的物体。",
+      "hp": 130,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/18.png",
+      "image_url_small": "",
+      "name": "铁武者",
+      "number": "010/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "Future"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Metal",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-011": {
+      "abilities": [],
+      "api_id": "csvh4-011",
+      "artist": "GIDORA",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "unless_condition": "hand_sizes_equal"
+              },
+              "branches": {},
+              "op": "fail_attack"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Psychic",
+            "Colorless"
+          ],
+          "damage": 170,
+          "damage_text": "170",
+          "effects": [
+            {
+              "effect_type": "attack_fail",
+              "params": {
+                "unless_condition": "hand_sizes_equal"
+              }
+            }
+          ],
+          "name": "调节角击",
+          "text": "如果自己的手牌与对手的手牌张数不同的话，则这个招式失败。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Psychic"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "身体似乎是金属质地。名字来自古书中所记载的神秘物体。",
+      "hp": 140,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/20.png",
+      "image_url_small": "",
+      "name": "铁磐岩",
+      "number": "011/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 3,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "Future"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Darkness",
+          "value": "×2"
+        }
+      ]
+    },
     "sv1-104": {
       "abilities": [],
       "api_id": "sv1-104",
-      "artist": "",
+      "artist": "Shibuzoh.",
       "attacks": [
         {
           "commands": [],
@@ -38,16 +509,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "据说它是由还未接触人类就去世的流浪犬宝可梦转生而来的。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/32.png",
       "image_url_small": "",
       "name": "墓仔狗",
-      "number": "",
+      "number": "017/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -56,8 +527,8 @@
       ],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -75,7 +546,7 @@
     "sv1-106": {
       "abilities": [],
       "api_id": "sv1-106",
-      "artist": "",
+      "artist": "Kouki Saitou",
       "attacks": [
         {
           "commands": [
@@ -137,16 +608,16 @@
       ],
       "evolves_from": "墓仔狗",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "被深深悼念的宝可梦转生而成的样子。不喜欢被摸到头上的突起物。",
       "hp": 140,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/34.png",
       "image_url_small": "",
       "name": "墓扬犬",
-      "number": "",
+      "number": "018/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -155,8 +626,8 @@
       ],
       "retreat_cost": 3,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Stage 1"
       ],
@@ -174,7 +645,7 @@
     "sv1-107": {
       "abilities": [],
       "api_id": "sv1-107",
-      "artist": "",
+      "artist": "Teeziro",
       "attacks": [
         {
           "commands": [
@@ -213,16 +684,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "由于羽翼未丰，所以会跳着移动。一直在注视着什么。",
       "hp": 50,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/16.png",
       "image_url_small": "",
       "name": "天然雀",
-      "number": "",
+      "number": "009/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -231,8 +702,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -295,7 +766,7 @@
         }
       ],
       "api_id": "sv1-108",
-      "artist": "",
+      "artist": "DOM",
       "attacks": [
         {
           "commands": [],
@@ -319,16 +790,16 @@
       ],
       "evolves_from": "天然雀",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "能够看穿过去和未来。日复一日注视着太阳动向的奇异宝可梦。",
       "hp": 100,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/18.png",
       "image_url_small": "",
       "name": "天然鸟",
-      "number": "",
+      "number": "010/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -337,8 +808,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Stage 1"
       ],
@@ -356,7 +827,7 @@
     "sv1-109": {
       "abilities": [],
       "api_id": "sv1-109",
-      "artist": "",
+      "artist": "Narumi Sato",
       "attacks": [
         {
           "commands": [
@@ -446,16 +917,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "月亮的盈缺似乎会影响它力量的增减。每到满月之夜就会变得活跃。",
       "hp": 90,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/20.png",
       "image_url_small": "",
       "name": "月石",
-      "number": "",
+      "number": "011/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -464,8 +935,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -507,7 +978,7 @@
         }
       ],
       "api_id": "sv1-110",
-      "artist": "",
+      "artist": "hncl",
       "attacks": [
         {
           "commands": [],
@@ -531,16 +1002,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "通过心灵感应和人类交流情感。用能令光发生折射的羽毛变成其他的样子。",
       "hp": 110,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/22.png",
       "image_url_small": "",
       "name": "拉帝亚斯",
-      "number": "",
+      "number": "012/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -549,8 +1020,8 @@
       ],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -568,7 +1039,7 @@
     "sv1-111": {
       "abilities": [],
       "api_id": "sv1-111",
-      "artist": "",
+      "artist": "chibi",
       "attacks": [
         {
           "commands": [],
@@ -623,16 +1094,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "拥有很高的智商，能理解人类的语言。是讨厌争斗且温柔的宝可梦。",
       "hp": 110,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/24.png",
       "image_url_small": "",
       "name": "拉帝欧斯",
-      "number": "",
+      "number": "013/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -641,8 +1112,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -660,7 +1131,7 @@
     "sv1-112": {
       "abilities": [],
       "api_id": "sv1-112",
-      "artist": "",
+      "artist": "Saya Tsuruta",
       "attacks": [
         {
           "commands": [],
@@ -713,16 +1184,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "宇宙病毒发生突变后变成了宝可梦。出现在极光的附近。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/26.png",
       "image_url_small": "",
       "name": "代欧奇希斯",
-      "number": "",
+      "number": "014/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -731,8 +1202,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -750,7 +1221,7 @@
     "sv1-113": {
       "abilities": [],
       "api_id": "sv1-113",
-      "artist": "",
+      "artist": "Tika Matsuno",
       "attacks": [
         {
           "commands": [
@@ -825,16 +1296,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "据说，如果拿着克雷色利亚的羽毛睡觉，就能做个美梦。被称为新月的化身。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/28.png",
       "image_url_small": "",
       "name": "克雷色利亚",
-      "number": "",
+      "number": "015/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -843,8 +1314,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -862,7 +1333,7 @@
     "sv1-114": {
       "abilities": [],
       "api_id": "sv1-114",
-      "artist": "",
+      "artist": "Tika Matsuno",
       "attacks": [
         {
           "commands": [
@@ -938,21 +1409,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "由于体型娇小，发电器官尚未发达，因此会用尾巴吸取人类住宅的电力来充电。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/30.png",
       "image_url_small": "",
       "name": "咚咚鼠",
-      "number": "",
+      "number": "016/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],

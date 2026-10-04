@@ -3458,6 +3458,314 @@
         "surface": "action"
       }
     ],
+    "happy4_decidueye": [
+      {
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "csvh4-020"
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "own": {
+            "active": {
+              "card_id": "csvh4-002",
+              "damage_counters": 0,
+              "energy_card_ids": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "turn_number": 3
+        },
+        "id": "decidueye_build_stage2",
+        "over": {
+          "card_id": "csvh4-027",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "csvh4-003",
+          "kind": "EVOLVE"
+        },
+        "surface": "action"
+      },
+      {
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "csvh4-020"
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "own": {
+            "active": {
+              "card_id": "csvh4-003",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-1"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "turn_number": 3
+        },
+        "id": "decidueye_refill_without_grass",
+        "over": {
+          "attack_index": 1,
+          "card_id": "csvh4-003",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "csvh4-003",
+          "kind": "DECLARE_ATTACK"
+        },
+        "surface": "action"
+      }
+    ],
+    "happy4_koraidon": [
+      {
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "csvh4-020"
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "own": {
+            "active": {
+              "card_id": "csvh4-022",
+              "damage_counters": 0,
+              "energy_card_ids": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "turn_number": 3
+        },
+        "id": "koraidon_fill_ancient_board",
+        "over": {
+          "card_id": "csvh4-012",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "csvh4-005",
+          "kind": "PLAY_BASIC"
+        },
+        "surface": "action"
+      },
+      {
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "csvh4-020"
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "own": {
+            "active": {
+              "card_id": "csvh4-022",
+              "damage_counters": 0,
+              "energy_card_ids": []
+            },
+            "bench": [
+              {
+                "card_id": "csvh4-005",
+                "damage_counters": 0,
+                "energy_card_ids": []
+              }
+            ],
+            "discard": [],
+            "hand": []
+          },
+          "turn_number": 3
+        },
+        "id": "koraidon_recover_and_attach",
+        "over": {
+          "card_id": "sv1-180",
+          "kind": "PLAY_TRAINER"
+        },
+        "preferred": {
+          "card_id": "csvh4-046",
+          "kind": "PLAY_TRAINER"
+        },
+        "surface": "action"
+      }
+    ],
+    "happy4_melmetal": [
+      {
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "csvh4-020"
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "own": {
+            "active": {
+              "card_id": "csvh4-020",
+              "damage_counters": 0,
+              "energy_card_ids": []
+            },
+            "bench": [
+              {
+                "card_id": "csvh4-016",
+                "damage_counters": 0,
+                "energy_card_ids": []
+              }
+            ],
+            "discard": [],
+            "hand": []
+          },
+          "turn_number": 3
+        },
+        "id": "melmetal_evolve_engine",
+        "over": {
+          "card_id": "csvh4-015",
+          "kind": "PLAY_BASIC"
+        },
+        "preferred": {
+          "card_id": "csvh4-017",
+          "kind": "EVOLVE"
+        },
+        "surface": "action"
+      },
+      {
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "csvh4-020"
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "own": {
+            "active": {
+              "card_id": "csvh4-020",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-8"
+              ]
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "turn_number": 3
+        },
+        "id": "melmetal_charge_before_punch",
+        "over": {
+          "attack_index": 1,
+          "card_id": "csvh4-020",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "csvh4-020",
+          "kind": "DECLARE_ATTACK"
+        },
+        "surface": "action"
+      }
+    ],
+    "happy4_miraidon": [
+      {
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "csvh4-020"
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "own": {
+            "active": {
+              "card_id": "csvh4-024",
+              "damage_counters": 0,
+              "energy_card_ids": []
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "turn_number": 1
+        },
+        "id": "miraidon_open_with_accelerator",
+        "over": {
+          "card_id": "csvh4-008",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "active"
+          }
+        },
+        "preferred": {
+          "card_id": "csvh4-023",
+          "kind": "PLAY_BASIC",
+          "target": {
+            "slot": "active"
+          }
+        },
+        "surface": "action"
+      },
+      {
+        "context": {
+          "opponent": {
+            "active": {
+              "card_id": "csvh4-020"
+            },
+            "bench": [],
+            "discard": [],
+            "hand": []
+          },
+          "own": {
+            "active": {
+              "card_id": "csvh4-023",
+              "damage_counters": 0,
+              "energy_card_ids": [
+                "sv1-ener-4"
+              ]
+            },
+            "bench": [
+              {
+                "card_id": "csvh4-024",
+                "damage_counters": 0,
+                "energy_card_ids": []
+              }
+            ],
+            "discard": [],
+            "hand": []
+          },
+          "turn_number": 3
+        },
+        "id": "miraidon_charge_future",
+        "over": {
+          "attack_index": 1,
+          "card_id": "csvh4-023",
+          "kind": "DECLARE_ATTACK"
+        },
+        "preferred": {
+          "attack_index": 0,
+          "card_id": "csvh4-023",
+          "kind": "DECLARE_ATTACK"
+        },
+        "surface": "action"
+      }
+    ],
     "lightning": [
       {
         "category": "setup",

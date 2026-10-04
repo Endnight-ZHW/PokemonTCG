@@ -6,13 +6,25 @@ Godot/C++。
 
 ## 内容与运行时
 
+- 加入嗨皮组合第4弹的狙射树枭、美录梅塔ex、故勒顿、密勒顿ex四套60张预设，
+  新增27张宝可梦与13张训练家，复用同效果的现有卡牌。古代／未来筛选、分配附能、
+  洗混查看卡后置底、攻击费用、道具与回收效果均在原生规则核心结算。
+- 每套新增专用 Challenge 策略；新增卡组逐套覆盖 LAN、Relay 同卡组完整对局。
+  `happy4_contract.gd` 验证固定清单、真实卡牌结算、私有选择恢复和非法响应回滚；
+  `happy4_visual_contract.gd` 生成桌面和紧凑尺寸的选组与选择弹窗验收图。
+- 第4弹版本依据[官方商品介绍](https://www.pokemon.cn/tcg/product/21022.html)核对；全部
+  177 张新旧卡统一从[简中卡牌资料集](https://github.com/duanxr/PTCG-CHS-Datasets)的固定提交
+  导入印刷元数据及无损 WebP 卡图。`card_source_manifest.json` 记录每张卡的精确版本及原图
+  SHA-256，`tools/sync_card_sources.ps1` 统一导入与校验；本地路径由编译器生成。
 - `native/ptcg_core` 仍是唯一权威规则核心，并新增无框架依赖的内容编译器。
-- 137 张卡、10 套牌、160 个效果和 80 个 VM 描述符的唯一作者源迁到
+- 177 张卡、14 套牌、218 个效果和 80 个 VM 描述符的唯一作者源位于
   `godot/authoring`；`tools/content.ps1` 统一 lint、test、export 和 stale check。
 - Card IR 升级为 `ptcg_card_ir/4`，source map 使用作者文件路径与 JSON Pointer；语义和
   作者位置分别使用 SHA-256 `content_fingerprint` / `source_fingerprint`。
 - `NativeContentCompiler` 通过 GDExtension 暴露结构化诊断和内容契约。
-- Challenge 的 109 个战术场景由 C++ 直接读取严格 JSON，不再生成 Python 二进制夹具。
+- Challenge 的 117 个战术场景由 C++ 直接读取严格 JSON，不再生成 Python 二进制夹具。
+- 跨版本 AI 对比按声明的参赛牌组加载完整卡牌规则，避免冻结旧版因无关新卡的 VM 参数而失败；
+  双方与裁判使用相同输入，并记录实际输入和原始发布数据的哈希。
 
 ## Relay 与 Python 边界
 

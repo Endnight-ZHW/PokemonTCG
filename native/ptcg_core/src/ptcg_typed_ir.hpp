@@ -175,6 +175,14 @@ enum class VmArgKey : std::uint8_t {
     shuffle_hand,
     you_choose,
     stadium_type,
+    target_filter,
+    fail_attack_if_unpaid,
+    unless_condition,
+    before_damage,
+    shuffle_remaining_bottom,
+    choose_target,
+    discard_attachments,
+    allow_cancel,
 };
 
 VmArgKey vm_arg_key_from_string(std::string_view value) noexcept;
@@ -185,6 +193,7 @@ enum class FormulaOp : std::uint8_t {
     constant,
     damage_counters,
     bench_count,
+    pokemon_count,
     hand_size,
     discard_count,
     energy_count,

@@ -3,7 +3,7 @@
     "svd-absol": {
       "abilities": [],
       "api_id": "svd-absol",
-      "artist": "",
+      "artist": "GIDORA",
       "attacks": [
         {
           "commands": [
@@ -96,21 +96,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "如风一般在山野中奔跑。能用它像弓一样的角来感知自然灾害的预兆。",
       "hp": 100,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/34.png",
       "image_url_small": "",
       "name": "阿勃梭鲁",
-      "number": "",
+      "number": "018/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -128,7 +128,7 @@
     "svd-dark-patch": {
       "abilities": [],
       "api_id": "svd-dark-patch",
-      "artist": "",
+      "artist": "Ryo Ueda",
       "attacks": [],
       "commands": [
         {
@@ -148,21 +148,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/88.png",
       "image_url_small": "",
       "name": "暗黑补丁",
-      "number": "",
+      "number": "042/058",
       "prize_value": 0,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
         "选择自己弃牌区中的1张「基本恶能量」，附着于备战区的恶宝可梦身上。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Item"
       ],
@@ -185,7 +185,7 @@
     "svd-darkrai": {
       "abilities": [],
       "api_id": "svd-darkrai",
-      "artist": "",
+      "artist": "Shin Nagasawa",
       "attacks": [
         {
           "commands": [
@@ -256,21 +256,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "以往曾有过在无月的夜里，村子里所有的人都做了恶梦的怪事。村民们宣称恶梦中出现的宝可梦就是此宝可梦。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/36.png",
       "image_url_small": "",
       "name": "达克莱伊",
-      "number": "",
+      "number": "019/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -327,7 +327,7 @@
         }
       ],
       "api_id": "svd-dodrio",
-      "artist": "",
+      "artist": "Anesaki Dynamic",
       "attacks": [
         {
           "commands": [
@@ -384,16 +384,16 @@
       ],
       "evolves_from": "嘟嘟",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "极少见的珍稀物种。３个脑袋会各自表现出愉快、悲伤和愤怒之情。",
       "hp": 100,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/66.png",
       "image_url_small": "",
       "name": "嘟嘟利",
-      "number": "",
+      "number": "034/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -402,8 +402,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Stage 1"
       ],
@@ -421,7 +421,7 @@
     "svd-doduo": {
       "abilities": [],
       "api_id": "svd-doduo",
-      "artist": "",
+      "artist": "Anesaki Dynamic",
       "attacks": [
         {
           "commands": [
@@ -462,16 +462,16 @@
       "evolves_to": [
         "嘟嘟利"
       ],
-      "flavor_text": "",
+      "flavor_text": "２个脑袋好像能用类似心灵感应的力量来互通想法。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/64.png",
       "image_url_small": "",
       "name": "嘟嘟",
-      "number": "",
+      "number": "033/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -480,8 +480,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -499,7 +499,7 @@
     "svd-hard-belt": {
       "abilities": [],
       "api_id": "svd-hard-belt",
-      "artist": "",
+      "artist": "Toyste Beach",
       "attacks": [],
       "commands": [
         {
@@ -517,21 +517,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 0,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/126.png",
       "image_url_small": "",
       "name": "坚硬束带",
-      "number": "",
+      "number": "049/058",
       "prize_value": 0,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
         "身上放有这张卡牌的1阶进化宝可梦，受到对手宝可梦的招式的伤害「-30」。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Tool"
       ],
@@ -552,7 +552,7 @@
     "svd-mabosstiff-ex": {
       "abilities": [],
       "api_id": "svd-mabosstiff-ex",
-      "artist": "",
+      "artist": "PLANETA Mochizuki",
       "attacks": [
         {
           "commands": [
@@ -645,19 +645,19 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 260,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/42.png",
       "image_url_small": "",
       "name": "獒教父ex",
-      "number": "",
+      "number": "022/058",
       "prize_value": 2,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 3,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Stage 1",
         "ex"
@@ -676,7 +676,7 @@
     "svd-maschiff": {
       "abilities": [],
       "api_id": "svd-maschiff",
-      "artist": "",
+      "artist": "Shibuzoh.",
       "attacks": [
         {
           "commands": [],
@@ -715,21 +715,21 @@
       "evolves_to": [
         "獒教父ex"
       ],
-      "flavor_text": "",
+      "flavor_text": "为了不被对手看扁而总是皱着一张脸，却反而会让哭泣的孩子破涕为笑。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/40.png",
       "image_url_small": "",
       "name": "偶叫獒",
-      "number": "",
+      "number": "021/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -747,7 +747,7 @@
     "svd-morpeko": {
       "abilities": [],
       "api_id": "svd-morpeko",
-      "artist": "",
+      "artist": "NC Empire",
       "attacks": [
         {
           "commands": [
@@ -841,21 +841,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "饥饿荷尔蒙改变了它的性情。它会做尽一切的坏事，直到把肚子填饱为止。",
       "hp": 80,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/38.png",
       "image_url_small": "",
       "name": "莫鲁贝可",
-      "number": "",
+      "number": "020/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -873,7 +873,7 @@
     "svd-seviper": {
       "abilities": [],
       "api_id": "svd-seviper",
-      "artist": "",
+      "artist": "Nisota Niso",
       "attacks": [
         {
           "commands": [],
@@ -945,21 +945,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "会用坚硬的岩石来打磨刀刃般的尾巴。会躲在草丛里，趁猎物靠近时用毒牙袭击。",
       "hp": 110,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/32.png",
       "image_url_small": "",
       "name": "饭匙蛇",
-      "number": "",
+      "number": "017/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],

@@ -1,5 +1,6 @@
 #include "ptcg_game.hpp"
 #include "ptcg_game_internal.hpp"
+#include "ptcg_rules_internal.hpp"
 
 #include <algorithm>
 #include <array>
@@ -153,6 +154,10 @@ bool card_matches_filter(
     if (normalized == "pokemon") {
         return pokemon_card;
     }
+    if (normalized == "ancient_pokemon" || normalized == "future_pokemon"
+        || normalized == "grass_pokemon_and_energy" || normalized == "non_rule_evolution"
+        || normalized == "non_rule_pokemon_and_energy")
+        return rules_detail::card_matches_filter(cards, card_id.string_or(), normalized);
     if (
         normalized == "basic"
         || normalized == "basic_energy"
@@ -368,6 +373,7 @@ bool has_energy_target(
         args,
         "target_pokemon_type"
     );
+    const auto target_filter = string_arg(args, "target_filter", "any");
     std::vector<std::pair<std::string, const Value *>> rows;
     append_pokemon_rows(owner, rows);
     return std::any_of(
@@ -377,8 +383,11 @@ bool has_energy_target(
             &cards,
             &effective_target,
             &required_type,
+            &target_filter,
             &source_slot
         ](const auto &row) {
+            if (target_filter == "source" ? row.first != (source_slot.empty() ? "active" : source_slot)
+                : !rules_detail::card_matches_filter(cards, string_arg(*row.second, "card_id"), target_filter)) return false;
             if (
                 effective_target == "self"
                 && row.first != (
@@ -483,7 +492,16 @@ bool effect_has_visible_target(
     const bool own_deck_has_card = !required(
         owner, "deck").as_array().empty();
     if (op == "draw_cards") {
-        return own_deck_has_card;
+        return own_deck_has_card && (args.find("formula_ast") == nullptr
+            || rules_detail::evaluate_formula_ast(required(args, "formula_ast"), cards, state, actor) > 0);
+    }
+    if (op == "discard_cards") {
+        std::int64_t count = 0;
+        const auto &hand = required(owner, "hand").as_array();
+        for (std::size_t i = 0; i < hand.size(); ++i)
+            if (i != source_hand_index && rules_detail::card_matches_filter(
+                cards, hand[i].string_or(), string_arg(args, "filter", "any"))) ++count;
+        return count >= integer_arg(args, "amount", 1);
     }
     if (op == "draw_until") {
         return own_deck_has_card
@@ -858,6 +876,13 @@ bool effect_list_has_visible_target(
     }
     bool has_visible_effect = false;
     for (const Value &effect : effects.as_array()) {
+        if (string_arg(effect, "op") == "discard_cards") {
+            if (!effect_has_visible_target(cards, state, actor, effect, source_hand_index, source_slot))
+                return false;
+            // Paying a Trainer's cost is not, by itself, an effect that makes
+            // the Trainer playable (for example drawing zero with an empty Bench).
+            continue;
+        }
         has_visible_effect = has_visible_effect
             || effect_has_visible_target(
                 cards,

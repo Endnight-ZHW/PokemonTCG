@@ -14,9 +14,17 @@ const PUBLISHED_ORDER: Array[String] = [
 	"steel",
 	"dragon",
 	"colorless",
+	"happy4_decidueye",
+	"happy4_melmetal",
+	"happy4_koraidon",
+	"happy4_miraidon",
 ]
 
 const PUBLISHED_VISUALS := {
+	"happy4_decidueye": {"representative": "csvh4-003", "tagline": "羽箭蓄势，强力射击"},
+	"happy4_melmetal": {"representative": "csvh4-020", "tagline": "金属制造，重拳出击"},
+	"happy4_koraidon": {"representative": "csvh4-022", "tagline": "古代伙伴，原生乱打"},
+	"happy4_miraidon": {"representative": "csvh4-024", "tagline": "未来加速，追击制胜"},
 	"grass": {"representative": "svg2-tort", "tagline": "稳健成长，厚实收束"},
 	"fire": {"representative": "svi-infr", "tagline": "积蓄火力，连续进攻"},
 	"water": {"representative": "sv2-grex", "tagline": "灵活调度，伺机爆发"},

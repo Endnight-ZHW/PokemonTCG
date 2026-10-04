@@ -49,6 +49,7 @@ if ($joinedImportOutput -match $fatalGodotErrorPattern) {
 }
 
 $contracts = @(
+    @('happy4_contract', 'HAPPY4_CONTRACT_OK', 'Happy Set 4 deck lists, real card effects and choice privacy'),
     @('card_catalog_contract', 'CARD_CATALOG_CONTRACT_OK', 'Card catalog contract'),
     @('card_presentation_contract', 'CARD_PRESENTATION_CONTRACT_OK', 'Card audit, shared presentation and player-facing notification text'),
     @('network_protocol_contract', 'NETWORK_PROTOCOL_CONTRACT_OK', 'Network protocol contract'),

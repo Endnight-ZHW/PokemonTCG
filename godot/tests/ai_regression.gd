@@ -632,6 +632,9 @@ func _automatic_choice(
 	var selected: Array[String] = []
 	var category_limits: Dictionary = request.presentation.get("category_limits", {})
 	var category_counts: Dictionary = {}
+	var used_sources: Dictionary = {}
+	var per_target: Dictionary = {}
+	var first_target := ""
 	for index in range(count):
 		var chosen_id := ""
 		for offset in range(request.options.size()):
@@ -640,11 +643,20 @@ func _automatic_choice(
 			var option_id := str(option.get("option_id", ""))
 			if option_id.is_empty() or (not request.allow_duplicates and option_id in selected):
 				continue
+			var ref: Dictionary = option.get("ref", {})
+			var target := "%s:%s" % [ref.get("player", -1), ref.get("slot", option_id)]
+			var source := option_id.get_slice(":", 1) if request.request_type == "distribute_energy" and option_id.begins_with("energy:") else ""
+			if not source.is_empty() and used_sources.has(source): continue
+			if bool(request.presentation.get("same_target", false)) and not first_target.is_empty() and first_target != target: continue
+			if int(per_target.get(target, 0)) >= int(request.presentation.get("max_per_target", 2147483647)): continue
 			var category := _automatic_choice_category(option, catalog)
 			var limit := int(category_limits.get(category, 2147483647))
 			if not category.is_empty() and int(category_counts.get(category, 0)) >= limit:
 				continue
 			chosen_id = option_id
+			if not source.is_empty(): used_sources[source] = true
+			per_target[target] = int(per_target.get(target, 0)) + 1
+			if first_target.is_empty(): first_target = target
 			if not category.is_empty():
 				category_counts[category] = int(category_counts.get(category, 0)) + 1
 			break

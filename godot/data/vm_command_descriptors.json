@@ -1,5 +1,5 @@
 {
-  "descriptor_digest": "3aacb1f8b04f9f4a80680dfc44adfe0025558e2f90c3d0bc3e37ace583615ea4",
+  "descriptor_digest": "c29d7ed1fcfcf307c7deda76a90498e94656a331b06fc99cea89087d060ce79b",
   "descriptor_schema_version": 1,
   "descriptors": {
     "apply_attack_lock_basic": {
@@ -218,6 +218,9 @@
           "select_source": {
             "type": "boolean"
           },
+          "target_filter": {
+            "type": "string"
+          },
           "to": {
             "type": "string"
           }
@@ -261,6 +264,9 @@
           "filter": {
             "type": "string"
           },
+          "max_per_target": {
+            "type": "integer"
+          },
           "min_select": {
             "minimum": 0,
             "type": "integer"
@@ -272,6 +278,9 @@
             "type": "boolean"
           },
           "target": {
+            "type": "string"
+          },
+          "target_filter": {
             "type": "string"
           },
           "target_pokemon_type": {
@@ -358,11 +367,17 @@
             "minimum": 0,
             "type": "integer"
           },
+          "filter": {
+            "type": "string"
+          },
           "player": {
             "enum": [
               "self",
               "opponent"
             ],
+            "type": "string"
+          },
+          "target": {
             "type": "string"
           },
           "target_player": {
@@ -1048,6 +1063,12 @@
             "minimum": 0,
             "type": "integer"
           },
+          "fail_attack_if_unpaid": {
+            "type": "boolean"
+          },
+          "filter": {
+            "type": "string"
+          },
           "from": {
             "type": "string"
           },
@@ -1336,6 +1357,9 @@
             "minimum": 0,
             "type": "integer"
           },
+          "formula_ast": {
+            "type": "object"
+          },
           "player": {
             "enum": [
               "self",
@@ -1473,7 +1497,11 @@
       ],
       "args_schema": {
         "additional_properties": false,
-        "properties": {},
+        "properties": {
+          "unless_condition": {
+            "type": "string"
+          }
+        },
         "required": [],
         "type": "object"
       },
@@ -1868,6 +1896,9 @@
       "args_schema": {
         "additional_properties": false,
         "properties": {
+          "allow_cancel": {
+            "type": "boolean"
+          },
           "count": {
             "minimum": 0,
             "type": "integer"
@@ -1886,6 +1917,9 @@
             "type": "boolean"
           },
           "reveal": {
+            "type": "boolean"
+          },
+          "shuffle_remaining_bottom": {
             "type": "boolean"
           },
           "shuffle_rest": {
@@ -2326,6 +2360,9 @@
       "args_schema": {
         "additional_properties": false,
         "properties": {
+          "amount": {
+            "type": "integer"
+          },
           "filter_names": {
             "items": {
               "type": "string"
@@ -2405,6 +2442,9 @@
           "amount": {
             "type": "integer"
           },
+          "attacker_subtype": {
+            "type": "string"
+          },
           "effect": {
             "type": "string"
           },
@@ -2480,11 +2520,19 @@
     },
     "return_to_hand": {
       "allowed_contexts": [
-        "attack"
+        "attack",
+        "trainer"
       ],
       "args_schema": {
         "additional_properties": false,
-        "properties": {},
+        "properties": {
+          "choose_target": {
+            "type": "boolean"
+          },
+          "discard_attachments": {
+            "type": "boolean"
+          }
+        },
         "required": [],
         "type": "object"
       },
@@ -2497,7 +2545,7 @@
       },
       "implementation_kind": "atomic",
       "internal": false,
-      "may_suspend": false,
+      "may_suspend": true,
       "op": "return_to_hand",
       "preflight_evaluator": "always",
       "replaces_base_damage": false,
@@ -2820,6 +2868,9 @@
       "args_schema": {
         "additional_properties": false,
         "properties": {
+          "before_damage": {
+            "type": "boolean"
+          },
           "optional": {
             "type": "boolean"
           },

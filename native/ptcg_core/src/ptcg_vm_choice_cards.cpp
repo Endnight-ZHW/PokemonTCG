@@ -221,8 +221,8 @@ bool resume_vm_cards(
                 || target_kind == "self_basic";
             const std::int64_t max_per_target = std::max<std::int64_t>(
                 0,
-                target_kind == "bench"
-                    ? integer_arg(args, "max_per_target", 99)
+                args.find("max_per_target") != nullptr
+                    ? integer_arg(args, "max_per_target")
                     : integer_arg(
                         continuation,
                         "effective_amount",
@@ -261,6 +261,10 @@ bool resume_vm_cards(
                         "energy_attachment_target_missing"
                     );
                 }
+                const auto target_filter = string_arg(args, "target_filter", "any");
+                if (target_filter == "source" ? selected_target_slot != source_slot
+                    : !card_matches_filter(cards, card_id(*target), target_filter))
+                    throw std::invalid_argument("energy_attachment_target_filter_mismatch");
                 const auto energy = std::find_if(
                     source_cards.begin(),
                     source_cards.end(),
@@ -378,7 +382,7 @@ bool resume_vm_cards(
             validate_energy_distribution_selection(
                 targets,
                 same_target,
-                same_target
+                args.find("max_per_target") != nullptr ? integer_arg(args, "max_per_target") : same_target
                     ? std::max<std::int64_t>(
                         0,
                         integer_arg(args, "amount", 1)
@@ -398,6 +402,8 @@ bool resume_vm_cards(
                         "energy_attachment_target_missing"
                     );
                 }
+                if (!card_matches_filter(cards, card_id(*target), string_arg(args, "target_filter", "any")))
+                    throw std::invalid_argument("energy_attachment_target_filter_mismatch");
                 const std::string selected_id =
                     energy_option_card_id(targets[index]);
                 const auto source = std::find_if(

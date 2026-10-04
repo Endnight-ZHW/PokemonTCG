@@ -1,5 +1,6 @@
 #include "card_evaluation_detail.hpp"
 #include "ptcg_game_internal.hpp"
+#include "ptcg_rules_internal.hpp"
 
 namespace ptcg::ai::card_evaluation {
 
@@ -118,6 +119,12 @@ bool branch_has_effect(const Value *branch, const std::string &kind) {
 bool condition_applies(const Value &state, std::int32_t actor, const Value &params,
                        const Value &cards) {
     const std::string condition = string_field(params, "condition");
+    if (condition == "opponent_prizes_le_4" || condition == "opponent_active_ex_or_v"
+        || condition == "field_energy_ge_3" || condition == "hand_sizes_equal") {
+        const Value *definitions = field(cards, "cards");
+        return rules_detail::condition_applies(definitions == nullptr ? cards : *definitions,
+            state, actor, condition);
+    }
     const Value *opponent_active = active(state, 1 - actor);
     if (condition == "opponent_active_damaged") {
         return opponent_active != nullptr && integer_field(*opponent_active, "damage_counters") > 0;
@@ -199,6 +206,11 @@ std::int64_t effect_damage(const RulesSession &position, const Value &state, std
         return integer_field(params, "base") +
                bench_count(own) * integer_field(params, "per_bench");
     if (kind == "attack_damage_formula") {
+        if (const Value *formula = field(params, "formula_ast")) {
+            const Value *definitions = field(cards, "cards");
+            return rules_detail::evaluate_formula_ast(*formula,
+                definitions == nullptr ? cards : *definitions, state, actor);
+        }
         std::int64_t total = integer_field(params, "base") +
                              bench_count(own) * integer_field(params, "per_own_bench");
         const std::string energy_type = string_field(params, "per_self_energy_type");
@@ -389,6 +401,9 @@ std::int64_t reference_modified_attack_damage(const Value &state, std::int32_t a
     }
     for (const Value &modifier : array_field(attacker, "modifiers")) {
         const Value *operation = field(modifier, "operation");
+        const Value *condition = field(modifier, "condition");
+        const auto subtype = condition == nullptr ? std::string{} : string_field(*condition, "attacker_subtype");
+        if (!subtype.empty() && (attacker_definition == nullptr || !has_subtype(*attacker_definition, subtype))) continue;
         if (operation != nullptr && operation->is_object() &&
             string_field(*operation, "kind") == "damage_delta") {
             damage += integer_field(*operation, "amount");
@@ -417,8 +432,12 @@ std::int64_t reference_modified_attack_damage(const Value &state, std::int32_t a
             const Value &params =
                 params_value != nullptr && params_value->is_object() ? *params_value : empty;
             const std::string name = string_field(params, "effect");
+            const auto subtype = string_field(params, "attacker_subtype");
+            if (!subtype.empty() && (attacker_definition == nullptr || !has_subtype(*attacker_definition, subtype))) continue;
             if (name == "damage_boost_10")
                 damage += 10;
+            else if (name == "damage_boost")
+                damage += integer_field(params, "amount");
             else if (name == "damage_boost_when_behind" &&
                      array_field(player(state, actor), "prizes").size() >
                          array_field(player(state, 1 - actor), "prizes").size()) {
@@ -499,6 +518,24 @@ std::int64_t estimated_attack_damage(const RulesSession &position, const Value &
     if (attack_index >= attacks.size())
         return 0;
     const Value &attack = attacks[attack_index];
+    const Value *definitions = field(cards, "cards");
+    const Value &rule_cards = definitions == nullptr ? cards : *definitions;
+    for (const Value &effect : array_field(attack, "effects")) {
+        const Value *params_value = field(effect, "params");
+        static const Value empty_params = Value::make_object();
+        const Value &params = params_value != nullptr && params_value->is_object()
+            ? *params_value : empty_params;
+        if (string_field(effect, "effect_type") == "attack_fail") {
+            const auto condition = string_field(params, "unless_condition");
+            if (condition.empty() || !rules_detail::condition_applies(rule_cards, state, actor, condition)) return 0;
+        }
+        if (bool_field(params, "fail_attack_if_unpaid")) {
+            std::int64_t available = 0;
+            for (const auto &id : array_field(player(state, actor), "hand"))
+                if (rules_detail::card_matches_filter(rule_cards, id.string_or(), string_field(params, "filter", "any"))) ++available;
+            if (available < integer_field(params, "amount", 1)) return 0;
+        }
+    }
     const auto flattened = flatten_effects(array_field(attack, "effects"));
     bool full_damage = false;
     bool ignore_defender = false;

@@ -1,9 +1,301 @@
 {
   "cards": {
+    "csvh4-025": {
+      "abilities": [],
+      "api_id": "csvh4-025",
+      "artist": "Tomokazu Komiya",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 20
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "damage_counters",
+                          "target": "opponent"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "set_attack_damage_formula"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20+",
+          "effects": [
+            {
+              "effect_type": "attack_damage_formula",
+              "params": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 20
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "damage_counters",
+                          "target": "opponent"
+                        },
+                        {
+                          "const": 10
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "大葱殴打",
+          "text": "追加造成对手战斗宝可梦身上放置的伤害指示物数量×10点伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "会将翅膀拿着的茎状植物当成剑一般去劈砍对手。在非常时期会拿它当作食物。",
+      "hp": 80,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/48.png",
+      "image_url_small": "",
+      "name": "大葱鸭",
+      "number": "025/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "F",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-027": {
+      "abilities": [],
+      "api_id": "csvh4-027",
+      "artist": "Tika Matsuno",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "pokemon",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "search",
+              "params": {
+                "count": 1,
+                "destination": "hand",
+                "filter": "pokemon",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              }
+            }
+          ],
+          "name": "找朋友",
+          "text": "选择自己牌库中的1张宝可梦，在给对手看过之后，加入手牌。并重洗牌库。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 80,
+          "damage_text": "80",
+          "effects": [],
+          "name": "巴掌",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "心地善良的宝可梦。通过触角接触，就能了解对方的心情和身体状况。",
+      "hp": 100,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/52.png",
+      "image_url_small": "",
+      "name": "差不多娃娃",
+      "number": "027/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "G",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fighting",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-030": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "amount": 3
+              },
+              "branches": {},
+              "op": "register_reactive_thorns"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "reactive_thorns",
+              "params": {
+                "amount": 3
+              }
+            }
+          ],
+          "name": "自动还击",
+          "text": "当这只宝可梦，在战斗场上受到对手宝可梦的招式的伤害时，将3个伤害指示物放置于使用了招式的宝可梦身上。",
+          "trigger": "passive"
+        }
+      ],
+      "api_id": "csvh4-030",
+      "artist": "KEIICHIRO ITO",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 110,
+          "damage_text": "110",
+          "effects": [],
+          "name": "爆破疾风",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Colorless"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "古老的书籍中所记载的叫做铁脖颈的物体说不定就是这只宝可梦。",
+      "hp": 130,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/58.png",
+      "image_url_small": "",
+      "name": "铁脖颈",
+      "number": "030/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [
+        {
+          "energy_type": "Fighting",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic",
+        "Future"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Lightning",
+          "value": "×2"
+        }
+      ]
+    },
     "svf-farf": {
       "abilities": [],
       "api_id": "svf-farf",
-      "artist": "",
+      "artist": "KG-2000",
       "attacks": [
         {
           "commands": [
@@ -54,16 +346,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "用植物的茎来战斗。茎的挥舞方式存在着好几种不同的流派。",
       "hp": 90,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/62.png",
       "image_url_small": "",
       "name": "大葱鸭",
-      "number": "",
+      "number": "032/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -72,8 +364,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -91,7 +383,7 @@
     "svf-hawl": {
       "abilities": [],
       "api_id": "svf-hawl",
-      "artist": "",
+      "artist": "Miki Tanaka",
       "attacks": [
         {
           "commands": [
@@ -167,16 +459,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "利用发挥轻盈体型优势的战法，在消耗了对手的体力之后使用华丽的绝招分出胜负。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/72.png",
       "image_url_small": "",
       "name": "摔角鹰人",
-      "number": "",
+      "number": "037/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -185,8 +477,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -204,7 +496,7 @@
     "svg-cast": {
       "abilities": [],
       "api_id": "svg-cast",
-      "artist": "",
+      "artist": "kawayoo",
       "attacks": [
         {
           "commands": [
@@ -272,21 +564,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "样子会根据天气发生变化。天气越恶劣，性格也会变得越暴躁。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/52.png",
       "image_url_small": "",
       "name": "飘浮泡泡",
-      "number": "",
+      "number": "027/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -304,7 +596,7 @@
     "svg-milt": {
       "abilities": [],
       "api_id": "svg-milt",
-      "artist": "",
+      "artist": "sowsow",
       "attacks": [
         {
           "commands": [
@@ -344,21 +636,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "如果不每天帮它挤鲜奶，它的身体就会不舒服。鲜奶的味道会随季节改变。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/48.png",
       "image_url_small": "",
       "name": "大奶罐",
-      "number": "",
+      "number": "025/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -376,7 +668,7 @@
     "svg-swa": {
       "abilities": [],
       "api_id": "svg-swa",
-      "artist": "",
+      "artist": "Miki Tanaka",
       "attacks": [
         {
           "commands": [
@@ -413,16 +705,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "像丝绵一样的翅膀中含有空气，触感蓬松。绝不会忽视对翅膀精细地保养。",
       "hp": 50,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/50.png",
       "image_url_small": "",
       "name": "青绵鸟",
-      "number": "",
+      "number": "026/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -431,8 +723,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -450,7 +742,7 @@
     "svi-aipo": {
       "abilities": [],
       "api_id": "svi-aipo",
-      "artist": "",
+      "artist": "aspara",
       "attacks": [
         {
           "commands": [
@@ -502,21 +794,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "会从树上寻找猎物。发现喜食的甜竹竹后，就会兴奋地飞扑过去。",
       "hp": 60,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/42.png",
       "image_url_small": "",
       "name": "长尾怪手",
-      "number": "",
+      "number": "022/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -534,7 +826,7 @@
     "svi-ambi": {
       "abilities": [],
       "api_id": "svi-ambi",
-      "artist": "",
+      "artist": "Hitoshi Ariga",
       "attacks": [
         {
           "commands": [
@@ -613,21 +905,21 @@
       ],
       "evolves_from": "长尾怪手",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "无论做什么都会用到尾巴。如果被它的２条尾巴抱紧，那就证明是真的和你很亲近。",
       "hp": 100,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/44.png",
       "image_url_small": "",
       "name": "双尾怪手",
-      "number": "",
+      "number": "023/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Stage 1"
       ],
@@ -645,7 +937,7 @@
     "svi-flam": {
       "abilities": [],
       "api_id": "svi-flam",
-      "artist": "",
+      "artist": "kantaro",
       "attacks": [
         {
           "commands": [],
@@ -698,16 +990,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "拥有被称为同步的习性，因此会整个群体一起有条不紊地发动攻击。",
       "hp": 110,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/68.png",
       "image_url_small": "",
       "name": "缠红鹤",
-      "number": "",
+      "number": "035/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -716,8 +1008,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -735,7 +1027,7 @@
     "svi-gree": {
       "abilities": [],
       "api_id": "svi-gree",
-      "artist": "",
+      "artist": "sui",
       "attacks": [
         {
           "commands": [
@@ -806,21 +1098,21 @@
       ],
       "evolves_from": "贪心栗鼠",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "在尾巴里囤积树果。虽然囤过头了就会掉出来，但是迟钝的它不会发现。",
       "hp": 130,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/58.png",
       "image_url_small": "",
       "name": "藏饱栗鼠",
-      "number": "",
+      "number": "030/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 3,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Stage 1"
       ],
@@ -838,7 +1130,7 @@
     "svi-inde": {
       "abilities": [],
       "api_id": "svi-inde",
-      "artist": "",
+      "artist": "Saya Tsuruta",
       "attacks": [
         {
           "commands": [
@@ -916,21 +1208,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "能通过自己的角去感受附近生物的情感。正面情绪是它的能量之源。",
       "hp": 90,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/60.png",
       "image_url_small": "",
       "name": "爱管侍",
-      "number": "",
+      "number": "031/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -982,7 +1274,7 @@
         }
       ],
       "api_id": "svi-maus",
-      "artist": "",
+      "artist": "5ban Graphics",
       "attacks": [
         {
           "commands": [
@@ -1024,21 +1316,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 230,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/64.png",
       "image_url_small": "",
       "name": "一家鼠ex",
-      "number": "",
+      "number": "033/064",
       "prize_value": 2,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
         "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Stage 1",
         "ex"
@@ -1057,7 +1349,7 @@
     "svi-skwv": {
       "abilities": [],
       "api_id": "svi-skwv",
-      "artist": "",
+      "artist": "Miki Tanaka",
       "attacks": [
         {
           "commands": [],
@@ -1079,21 +1371,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "在伽勒尔随处可见。如果不往两边的颊囊里塞满树果，就会感到不安。",
       "hp": 60,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/56.png",
       "image_url_small": "",
       "name": "贪心栗鼠",
-      "number": "",
+      "number": "029/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -1111,7 +1403,7 @@
     "svi-sqwk": {
       "abilities": [],
       "api_id": "svi-sqwk",
-      "artist": "",
+      "artist": "Oswaldo KATO",
       "attacks": [
         {
           "commands": [
@@ -1210,16 +1502,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "拥有绿色羽毛的怒鹦哥势力最为庞大。在觅食时段的早晨和夜晚会非常吵。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/66.png",
       "image_url_small": "",
       "name": "怒鹦哥",
-      "number": "",
+      "number": "034/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -1228,8 +1520,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -1247,7 +1539,7 @@
     "svi-stan": {
       "abilities": [],
       "api_id": "svi-stan",
-      "artist": "",
+      "artist": "Shibuzoh.",
       "attacks": [
         {
           "commands": [],
@@ -1321,21 +1613,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "角的曲度可以微妙地改变周围空气的流动，制造出一个神奇的空间。",
       "hp": 110,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/46.png",
       "image_url_small": "",
       "name": "惊角鹿",
-      "number": "",
+      "number": "024/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -1353,7 +1645,7 @@
     "svi-tand": {
       "abilities": [],
       "api_id": "svi-tand",
-      "artist": "",
+      "artist": "Sekio",
       "attacks": [
         {
           "commands": [],
@@ -1388,21 +1680,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "凭借默契十足的团队合作，用门牙切断能当作巢穴的材料的东西，并将其搬走。",
       "hp": 40,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/62.png",
       "image_url_small": "",
       "name": "一对鼠",
-      "number": "",
+      "number": "032/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -1420,7 +1712,7 @@
     "svl-chat": {
       "abilities": [],
       "api_id": "svl-chat",
-      "artist": "",
+      "artist": "sui",
       "attacks": [
         {
           "commands": [
@@ -1471,16 +1763,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "学习人类的语言来鸣叫。当伙伴们聚集在同一个地方时，大家就会学习到同样的词汇。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/62.png",
       "image_url_small": "",
       "name": "聒噪鸟",
-      "number": "",
+      "number": "032/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -1489,8 +1781,8 @@
       ],
       "retreat_cost": 0,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],

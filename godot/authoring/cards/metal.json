@@ -1,5 +1,734 @@
 {
   "cards": {
+    "csvh4-015": {
+      "abilities": [],
+      "api_id": "csvh4-015",
+      "artist": "aspara",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "before_damage": true,
+                "target": "opponent",
+                "you_choose": true
+              },
+              "branches": {},
+              "op": "switch_pokemon"
+            },
+            {
+              "args": {
+                "amount": 30
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "switch",
+              "params": {
+                "before_damage": true,
+                "target": "opponent",
+                "you_choose": true
+              }
+            },
+            {
+              "effect_type": "damage",
+              "params": {
+                "amount": 30
+              }
+            }
+          ],
+          "name": "引诱摧残",
+          "text": "选择对手的1只备战宝可梦，将其与战斗宝可梦互换。然后，给新出场的宝可梦造成30伤害。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Metal",
+            "Metal",
+            "Colorless"
+          ],
+          "damage": 100,
+          "damage_text": "100",
+          "effects": [],
+          "name": "锐利之牙",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "会用温顺的长相让对手大意，然后再用大颚一口咬住对手。咬住后就绝不会松口。",
+      "hp": 90,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/28.png",
+      "image_url_small": "",
+      "name": "大嘴娃",
+      "number": "015/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-016": {
+      "abilities": [],
+      "api_id": "csvh4-016",
+      "artist": "hatachu",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Metal"
+          ],
+          "damage": 10,
+          "damage_text": "10",
+          "effects": [],
+          "name": "亮爪",
+          "text": ""
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 10,
+                "target": "self"
+              },
+              "branches": {},
+              "op": "deal_damage"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Metal",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 50,
+          "damage_text": "50",
+          "effects": [
+            {
+              "effect_type": "damage",
+              "params": {
+                "amount": 10,
+                "target": "self"
+              }
+            }
+          ],
+          "name": "钢铁撞击",
+          "text": "给这只宝可梦也造成10伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "从臀部发出磁力，猛地将敌人吸过来，然后用锐利的爪子把对方刺穿。",
+      "hp": 70,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/30.png",
+      "image_url_small": "",
+      "name": "铁哑铃",
+      "number": "016/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-017": {
+      "abilities": [
+        {
+          "ability_type": "Ability",
+          "commands": [
+            {
+              "args": {
+                "allow_cancel": false,
+                "count": 4,
+                "destination": "field_energy",
+                "filter": "metal_energy",
+                "min_select": 0,
+                "reveal": false,
+                "shuffle_remaining_bottom": true,
+                "take": 4,
+                "target_pokemon_type": ""
+              },
+              "branches": {},
+              "op": "look_top_deck"
+            }
+          ],
+          "effects": [
+            {
+              "effect_type": "look_top_deck",
+              "params": {
+                "allow_cancel": false,
+                "count": 4,
+                "destination": "field_energy",
+                "filter": "metal_energy",
+                "min_select": 0,
+                "reveal": false,
+                "shuffle_remaining_bottom": true,
+                "take": 4,
+                "target_pokemon_type": ""
+              }
+            }
+          ],
+          "name": "金属制造者",
+          "text": "在自己的回合可以使用1次。查看自己牌库上方4张卡牌，选择其中任意数量的「基本【钢】能量」，以任意方式附着于自己的宝可梦身上。将剩余的卡牌全部翻到反面重洗，放回牌库下方。",
+          "trigger": "on_turn"
+        }
+      ],
+      "api_id": "csvh4-017",
+      "artist": "Nobuhiro Imagawa",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Metal",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 60,
+          "damage_text": "60",
+          "effects": [],
+          "name": "光束",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "铁哑铃",
+      "evolves_to": [],
+      "flavor_text": "２只铁哑铃因磁力结合起来了。因为有了２个大脑，精神力量也强化到了２倍。",
+      "hp": 100,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/32.png",
+      "image_url_small": "",
+      "name": "金属怪",
+      "number": "017/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-018": {
+      "abilities": [],
+      "api_id": "csvh4-018",
+      "artist": "Sekio",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {},
+              "branches": {
+                "on_heads": [
+                  {
+                    "args": {
+                      "target": "self"
+                    },
+                    "branches": {},
+                    "op": "prevent_damage"
+                  }
+                ],
+                "on_tails": []
+              },
+              "op": "flip_coin"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "coin_flip",
+              "params": {
+                "on_heads": [
+                  {
+                    "effect_type": "prevent_damage",
+                    "params": {
+                      "target": "self"
+                    }
+                  }
+                ],
+                "on_tails": []
+              }
+            }
+          ],
+          "name": "变圆",
+          "text": "抛掷1次硬币如果为正面，则在下一个对手的回合，这只宝可梦不受到招式的伤害。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Metal",
+            "Colorless"
+          ],
+          "damage": 50,
+          "damage_text": "50",
+          "effects": [],
+          "name": "滚动冲撞",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "在危急时刻会把身体卷成一团，倒竖起背上的尖刺，不分青红皂白地发出电击。",
+      "hp": 80,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/34.png",
+      "image_url_small": "",
+      "name": "托戈德玛尔",
+      "number": "018/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "G",
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-019": {
+      "abilities": [],
+      "api_id": "csvh4-019",
+      "artist": "Taiga Kayama",
+      "attacks": [
+        {
+          "commands": [],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Metal",
+            "Metal"
+          ],
+          "damage": 50,
+          "damage_text": "50",
+          "effects": [],
+          "name": "头锤",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "会溶解金属然后吃掉。通过让液态金属在体内循环来制造能量。",
+      "hp": 80,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/36.png",
+      "image_url_small": "",
+      "name": "美录坦",
+      "number": "019/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 3,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-020": {
+      "abilities": [],
+      "api_id": "csvh4-020",
+      "artist": "PLANETA Igarashi",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 2,
+                "filter": "basic_metal",
+                "from_zone": "deck",
+                "min_select": 0,
+                "select_source": true,
+                "target_filter": "source",
+                "to": "all"
+              },
+              "branches": {},
+              "op": "attach_energy"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Metal"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "energy_attach",
+              "params": {
+                "amount": 2,
+                "filter": "basic_metal",
+                "from_zone": "deck",
+                "min_select": 0,
+                "select_source": true,
+                "target_filter": "source",
+                "to": "all"
+              }
+            }
+          ],
+          "name": "金属吸收",
+          "text": "选择自己牌库中最多2张「基本【钢】能量」，附着于这只宝可梦身上。并重洗牌库。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 90
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "Metal",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 30
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "set_attack_damage_formula"
+            }
+          ],
+          "converted_energy_cost": 4,
+          "cost": [
+            "Colorless",
+            "Colorless",
+            "Colorless",
+            "Colorless"
+          ],
+          "damage": 90,
+          "damage_text": "90+",
+          "effects": [
+            {
+              "effect_type": "attack_damage_formula",
+              "params": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 90
+                    },
+                    {
+                      "factors": [
+                        {
+                          "energy_type": "Metal",
+                          "op": "energy_count",
+                          "scope": "self"
+                        },
+                        {
+                          "const": 30
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "全金属拳斗",
+          "text": "追加造成这只宝可梦身上附着的【钢】能量数量×30伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "美录坦",
+      "evolves_to": [],
+      "flavor_text": "",
+      "hp": 300,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/38.png",
+      "image_url_small": "",
+      "name": "美录梅塔ex",
+      "number": "020/059",
+      "prize_value": 2,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "G",
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 4,
+      "rules": [
+        "当宝可梦ex【昏厥】时，对手将拿取2张奖赏卡。"
+      ],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Stage 1",
+        "ex"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-021": {
+      "abilities": [],
+      "api_id": "csvh4-021",
+      "artist": "Tonji Matsuno",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "energy_type": "basic_metal",
+                "select_source": true,
+                "target": "bench"
+              },
+              "branches": {},
+              "op": "attach_energy_from_discard"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Metal"
+          ],
+          "damage": 30,
+          "damage_text": "30",
+          "effects": [
+            {
+              "effect_type": "attach_from_discard",
+              "params": {
+                "amount": 1,
+                "energy_type": "basic_metal",
+                "select_source": true,
+                "target": "bench"
+              }
+            }
+          ],
+          "name": "铁之咆哮",
+          "text": "选择自己弃牌区中的1张「基本【钢】能量」，附着于备战宝可梦身上。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "attack_name": "__all__"
+              },
+              "branches": {},
+              "op": "apply_self_attack_lock"
+            }
+          ],
+          "converted_energy_cost": 3,
+          "cost": [
+            "Metal",
+            "Metal",
+            "Colorless"
+          ],
+          "damage": 130,
+          "damage_text": "130",
+          "effects": [
+            {
+              "effect_type": "self_attack_lock",
+              "params": {
+                "attack_name": "__all__"
+              }
+            }
+          ],
+          "name": "英勇之剑",
+          "text": "在下一个自己的回合，这只宝可梦无法使用招式。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Metal"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "能斩断世间万物，因此被称为妖精王之剑，让敌友都对其敬畏不已。",
+      "hp": 120,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/40.png",
+      "image_url_small": "",
+      "name": "苍响",
+      "number": "021/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "G",
+      "resistances": [
+        {
+          "energy_type": "Grass",
+          "value": "-30"
+        }
+      ],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
     "svm-bronzong": {
       "abilities": [
         {
@@ -29,7 +758,7 @@
         }
       ],
       "api_id": "svm-bronzong",
-      "artist": "",
+      "artist": "Hasuno",
       "attacks": [
         {
           "commands": [],
@@ -53,16 +782,16 @@
       ],
       "evolves_from": "铜镜怪",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "它身上的纹路让许多学者都认为它原本并不存在于伽勒尔。",
       "hp": 110,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/48.png",
       "image_url_small": "",
       "name": "青铜钟",
-      "number": "",
+      "number": "025/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [
         {
           "energy_type": "Grass",
@@ -71,8 +800,8 @@
       ],
       "retreat_cost": 3,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Stage 1"
       ],
@@ -90,7 +819,7 @@
     "svm-bronzor": {
       "abilities": [],
       "api_id": "svm-bronzor",
-      "artist": "",
+      "artist": "Kouki Saitou",
       "attacks": [
         {
           "commands": [
@@ -146,16 +875,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "靠着不可思议的能量漂浮在半空。人们将其背上所刻的纹路视为神圣，相同纹路有时会被刻在古时的坟墓等地。",
       "hp": 60,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/46.png",
       "image_url_small": "",
       "name": "铜镜怪",
-      "number": "",
+      "number": "024/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [
         {
           "energy_type": "Grass",
@@ -164,8 +893,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -211,7 +940,7 @@
         }
       ],
       "api_id": "svm-cobalion",
-      "artist": "",
+      "artist": "Shin Nagasawa",
       "attacks": [
         {
           "commands": [
@@ -261,16 +990,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "传说它曾经与代拉基翁和毕力吉翁一起，为了保护合众地区的宝可梦而与人类作战。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/52.png",
       "image_url_small": "",
       "name": "勾帕路翁",
-      "number": "",
+      "number": "027/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [
         {
           "energy_type": "Grass",
@@ -279,8 +1008,8 @@
       ],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -298,7 +1027,7 @@
     "svm-dialga": {
       "abilities": [],
       "api_id": "svm-dialga",
-      "artist": "",
+      "artist": "5ban Graphics",
       "attacks": [
         {
           "commands": [
@@ -394,16 +1123,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "拥有操纵时间的力量，在神奥地区的神话里被描述成神。",
       "hp": 130,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/50.png",
       "image_url_small": "",
       "name": "帝牙卢卡",
-      "number": "",
+      "number": "026/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [
         {
           "energy_type": "Grass",
@@ -412,8 +1141,8 @@
       ],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -431,7 +1160,7 @@
     "svm-klefki": {
       "abilities": [],
       "api_id": "svm-klefki",
-      "artist": "",
+      "artist": "MAHOU",
       "attacks": [
         {
           "commands": [
@@ -470,16 +1199,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "过去一直住在矿山里，但因为作为食物的矿物不断减少，便开始出现在村落里。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/54.png",
       "image_url_small": "",
       "name": "钥圈儿",
-      "number": "",
+      "number": "028/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [
         {
           "energy_type": "Grass",
@@ -488,8 +1217,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -535,7 +1264,7 @@
         }
       ],
       "api_id": "svm-orthworm",
-      "artist": "",
+      "artist": "Hitoshi Ariga",
       "attacks": [
         {
           "commands": [
@@ -581,16 +1310,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "遭到敌人攻击时，会把体毛当做拳头使用，朝着敌人大秀拳头风暴。",
       "hp": 130,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/60.png",
       "image_url_small": "",
       "name": "拖拖蚓",
-      "number": "",
+      "number": "031/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Grass",
@@ -599,8 +1328,8 @@
       ],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -618,7 +1347,7 @@
     "svm-skarmory": {
       "abilities": [],
       "api_id": "svm-skarmory",
-      "artist": "",
+      "artist": "Takeshi Nakamura",
       "attacks": [
         {
           "commands": [],
@@ -671,16 +1400,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "由于它身上掉落下来的羽毛可以用来制剑，因此作为纹章的图案也很有人气。",
       "hp": 120,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/44.png",
       "image_url_small": "",
       "name": "盔甲鸟",
-      "number": "",
+      "number": "023/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [
         {
           "energy_type": "Fighting",
@@ -689,8 +1418,8 @@
       ],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -708,7 +1437,7 @@
     "svm-smeargle": {
       "abilities": [],
       "api_id": "svm-smeargle",
-      "artist": "",
+      "artist": "Mizue",
       "attacks": [
         {
           "commands": [
@@ -766,21 +1495,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "会用尾巴前端渗出的体液画下标记。对于有些标记，爱好者会以高价买卖。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/68.png",
       "image_url_small": "",
       "name": "图图犬",
-      "number": "",
+      "number": "035/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -798,7 +1527,7 @@
     "svm-zacian": {
       "abilities": [],
       "api_id": "svm-zacian",
-      "artist": "",
+      "artist": "nagimiso",
       "attacks": [
         {
           "commands": [
@@ -874,16 +1603,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "用过去使用的兵器武装自己。即使是超极巨化宝可梦，也能以一剑将之拿下。",
       "hp": 130,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/56.png",
       "image_url_small": "",
       "name": "苍响",
-      "number": "",
+      "number": "029/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [
         {
           "energy_type": "Grass",
@@ -892,8 +1621,8 @@
       ],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -937,7 +1666,7 @@
         }
       ],
       "api_id": "svm-zamazenta",
-      "artist": "",
+      "artist": "GIDORA",
       "attacks": [
         {
           "commands": [
@@ -997,16 +1726,16 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "能够反弹一切的攻击，因此被称为格斗王之盾，受到人们的畏惧与尊崇。",
       "hp": 130,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/58.png",
       "image_url_small": "",
       "name": "藏玛然特",
-      "number": "",
+      "number": "030/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [
         {
           "energy_type": "Grass",
@@ -1015,8 +1744,8 @@
       ],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],

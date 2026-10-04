@@ -1,12 +1,13 @@
 from __future__ import annotations
 import json
+import copy
 import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 from deep_ai.challenge_arena import (ArenaAgentSpec, NativeChallengeArena, load_product_payloads,
-    validate_agent_identity, validate_equal_search_contract, with_preset_contract)
+    scope_evaluation_payloads, validate_agent_identity, validate_equal_search_contract, with_preset_contract)
 from deep_ai.evaluation import evaluate
 from deep_ai.evaluation_challenge import ChallengeEvaluationBackend
 from deep_ai.evaluation_protocol import GameEvidence
@@ -18,6 +19,44 @@ except ImportError:
 
 
 class ChallengeContractTests(unittest.TestCase):
+    def test_tournament_catalog_excludes_unused_cards_and_preserves_all_rules(self):
+        catalog, decks, _ = load_product_payloads()
+        original = copy.deepcopy(catalog)
+        scoped, scoped_decks = scope_evaluation_payloads(catalog, decks, ("fire", "water"))
+        expected = {row["card_id"] for key in ("fire", "water") for row in decks[key]["cards"]}
+        self.assertEqual(set(scoped), expected)
+        self.assertEqual(set(scoped_decks), {"fire", "water"})
+        self.assertNotIn("csvh4-003", scoped)
+        self.assertNotIn("card_ir", scoped)
+        for card_id in expected:
+            self.assertEqual(scoped[card_id], catalog["cards"][card_id])
+        self.assertEqual(scoped_decks, {key: decks[key] for key in ("fire", "water")})
+        scoped["svi-infr"]["attacks"][0]["compiled_effects"].clear()
+        scoped_decks["fire"]["cards"].clear()
+        self.assertEqual(catalog, original)
+        self.assertEqual(sum(row["count"] for row in decks["fire"]["cards"]), 60)
+
+    def test_participating_new_rules_are_never_stripped_for_an_old_agent(self):
+        catalog, decks, _ = load_product_payloads()
+        scoped, _ = scope_evaluation_payloads(catalog, decks, ("happy4_decidueye",))
+        self.assertEqual(scoped["csvh4-003"], catalog["cards"]["csvh4-003"])
+        commands = scoped["csvh4-003"]["attacks"][1]["compiled_effects"]
+        self.assertTrue(commands[0]["args"]["fail_attack_if_unpaid"])
+        flat, _ = scope_evaluation_payloads(catalog["cards"], decks, ("happy4_decidueye",))
+        self.assertEqual(flat, scoped)
+
+    def test_tournament_catalog_rejects_missing_decks_and_card_definitions(self):
+        catalog, decks, _ = load_product_payloads()
+        for keys in ((), ("fire", "fire")):
+            with self.assertRaisesRegex(ValueError, "evaluation_invalid_deck_scope"):
+                scope_evaluation_payloads(catalog, decks, keys)
+        with self.assertRaisesRegex(ValueError, "evaluation_deck_scope_unknown_deck"):
+            scope_evaluation_payloads(catalog, decks, ("missing",))
+        broken = copy.deepcopy(catalog)
+        del broken["cards"][decks["fire"]["cards"][0]["card_id"]]
+        with self.assertRaisesRegex(ValueError, "evaluation_deck_scope_missing_card"):
+            scope_evaluation_payloads(broken, decks, ("fire",))
+
     def test_unfrozen_agent_tracks_the_product_engine(self):
         from deep_ai.challenge_arena import load_agent_spec, product_engine_id
         self.assertEqual(load_agent_spec("current-test").evaluation_options["engine"], product_engine_id())

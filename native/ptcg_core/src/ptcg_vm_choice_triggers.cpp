@@ -34,7 +34,8 @@ bool resume_vm_triggers(
 ) {
     (void)kernel;
     if (!(
-        op == "relocate_energy"
+        op == "return_to_hand"
+        || op == "relocate_energy"
         || op == "search_any_and_switch"
         || op == "shuffle_from_discard_to_deck"
         || op == "switch_pokemon"
@@ -49,7 +50,18 @@ bool resume_vm_triggers(
         result.continuation = std::move(next_continuation);
     };
 
-        if (op == "relocate_energy") {
+        if (op == "return_to_hand") {
+            if (selected_options.as_array().size() != 1)
+                throw std::invalid_argument("return_pokemon_selection_required");
+            const auto &option = selected_options.as_array().front();
+            const auto slot = string_arg(option, "slot");
+            const Value *target = pokemon(self, slot);
+            if (integer_arg(option, "player", -1) != actor || target == nullptr
+                || card_id(*target) != string_arg(option, "card_id"))
+                throw std::invalid_argument("return_pokemon_selection_invalid");
+            return_pokemon_to_hand(self, slot, bool_arg(args, "discard_attachments"));
+            result.event_types.emplace_back("card_moved");
+        } else if (op == "relocate_energy") {
             auto relocation_targets = [
                 &self,
                 actor

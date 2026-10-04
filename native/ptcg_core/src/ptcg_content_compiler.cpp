@@ -634,8 +634,8 @@ Value compile_content_bundle(const Value &bundle) {
         });
     }
 
-    if (runtime_cards.as_object().size() != 137U) {
-        diagnostic(diagnostics, "content_card_count_invalid", "release catalog must contain 137 cards");
+    if (runtime_cards.as_object().size() != 177U) {
+        diagnostic(diagnostics, "content_card_count_invalid", "release catalog must contain 177 cards");
     }
     auto card_strings = std::make_shared<CardStringTable>(runtime_cards);
     VmCatalog vm_catalog(runtime_cards, card_strings);
@@ -680,15 +680,15 @@ Value compile_content_bundle(const Value &bundle) {
             }
         }
     }
-    if (command_count != 160) {
+    if (command_count != 218) {
         diagnostic(
             diagnostics,
             "content_effect_count_invalid",
-            "release catalog must compile exactly 160 effects");
+            "release catalog must compile exactly 218 effects");
     }
     validate_decks(*decks, runtime_cards, diagnostics);
-    if (decks->as_object().size() != 10U) {
-        diagnostic(diagnostics, "content_deck_count_invalid", "expected exactly 10 release decks");
+    if (decks->as_object().size() != 14U) {
+        diagnostic(diagnostics, "content_deck_count_invalid", "expected exactly 14 release decks");
     }
     Value runtime_strategies = resolve_strategy_defaults(*strategies, diagnostics);
     validate_strategies(runtime_strategies, *decks, runtime_cards, diagnostics);

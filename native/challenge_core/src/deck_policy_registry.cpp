@@ -121,6 +121,10 @@ DeckPolicyRegistry::DeckPolicyRegistry(Value strategies, Value catalog) {
     policies_.emplace("grass", make_grass_policy());
     policies_.emplace("steel", make_steel_policy());
     policies_.emplace("darkness", make_darkness_policy());
+    policies_.emplace("happy4_decidueye", make_happy4_decidueye_policy());
+    policies_.emplace("happy4_melmetal", make_happy4_melmetal_policy());
+    policies_.emplace("happy4_koraidon", make_happy4_koraidon_policy());
+    policies_.emplace("happy4_miraidon", make_happy4_miraidon_policy());
     const Value *strategy_rows = strategies.find("strategies");
     const Value *archetypes = strategies.find("deck_archetypes");
     strategies_ = strategy_rows != nullptr && strategy_rows->is_object() ? *strategy_rows

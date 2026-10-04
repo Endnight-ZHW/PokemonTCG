@@ -12,6 +12,10 @@ func _initialize() -> void:
 	var relay_url := _argument_value("--relay-url")
 	if not relay_url.is_empty():
 		summaries.append(_play_network_game("relay", relay_url))
+	for deck in ["happy4_decidueye", "happy4_melmetal", "happy4_koraidon", "happy4_miraidon"]:
+		summaries.append(_play_network_game("lan", "", deck))
+		if not relay_url.is_empty():
+			summaries.append(_play_network_game("relay", relay_url, deck))
 	for summary in summaries:
 		if not bool(summary.get("success", false)):
 			failures.append("%s: %s" % [
@@ -27,12 +31,13 @@ func _initialize() -> void:
 		quit(1)
 
 
-func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary:
+func _play_network_game(transport_kind: String, relay_url: String, requested_deck: String = "") -> Dictionary:
 	var host := NetworkMatchController.new()
 	var client := NetworkMatchController.new()
 	var port := 20000 + int(Time.get_ticks_msec() % 1000)
 	var error := OK
 	var deck_key := "fire" if transport_kind == "lan" else "steel"
+	if not requested_deck.is_empty(): deck_key = requested_deck
 	if transport_kind == "lan":
 		error = host.host_lan(port, deck_key, 20260621)
 		if error == OK:

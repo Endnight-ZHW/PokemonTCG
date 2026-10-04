@@ -9,7 +9,7 @@
 
 namespace ptcg::ai {
 
-// Precompiled, data-backed implementation of DeckStrategy plus all ten release
+// Precompiled, data-backed implementation of DeckStrategy plus all release
 // specialization hooks. It reads only the public/determinized state supplied
 // to the acting player and never creates legal actions.
 class DeckPolicyRegistry {

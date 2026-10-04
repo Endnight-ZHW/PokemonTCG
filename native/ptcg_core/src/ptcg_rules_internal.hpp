@@ -66,7 +66,8 @@ void append_modifier( Value &pokemon_value, const std::string &op, const Value &
 Value modifier_probe( const std::string &op, const Value &args, const Value *source, std::int32_t actor, const std::string &source_slot );
 std::int64_t bench_count(const Value &player_value);
 void set_attack_damage(Value &context, std::int64_t damage, bool add);
-void return_pokemon_to_hand(Value &player_value, const std::string &slot);
+void return_pokemon_to_hand(Value &player_value, const std::string &slot, bool discard_attachments = false);
+bool tool_effect_applies(const Value &cards, const Value &pokemon_value, const std::string &effect);
 Value pokemon_option( const Value &pokemon_value, std::int32_t owner, const std::string &slot );
 Value card_option( const std::string &id, std::int32_t owner, const std::string &zone, std::int64_t index );
 Value attachment_option( const std::string &id, std::int32_t owner, const std::string &slot, std::int64_t index );

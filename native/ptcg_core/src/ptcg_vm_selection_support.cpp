@@ -294,6 +294,23 @@ bool card_matches_filter(
     if (normalized == "pokemon") {
         return card_is_pokemon(cards, id);
     }
+    if (normalized == "ancient_pokemon" || normalized == "future_pokemon") {
+        return card_is_pokemon(cards, id) && card_has_subtype(
+            cards, id, normalized == "ancient_pokemon" ? "Ancient" : "Future");
+    }
+    if (normalized == "non_rule_pokemon_and_energy"
+        || normalized == "non_rule_evolution") {
+        const Value *rules = definition == nullptr ? nullptr : definition->find("rules");
+        const bool ordinary = card_is_pokemon(cards, id)
+            && (rules == nullptr || !rules->is_array() || rules->as_array().empty());
+        return normalized == "non_rule_evolution"
+            ? ordinary && !card_has_subtype(cards, id, "Basic")
+            : ordinary || card_matches_filter(cards, id, "basic_energy");
+    }
+    if (normalized == "grass_pokemon_and_energy") {
+        return card_matches_filter(cards, id, "grass_pokemon")
+            || card_matches_filter(cards, id, "grass_energy");
+    }
     if (normalized == "basic_pokemon") {
         return card_is_pokemon(cards, id)
             && card_has_subtype(cards, id, "Basic");

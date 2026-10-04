@@ -3,7 +3,7 @@
     "sv1-49": {
       "abilities": [],
       "api_id": "sv1-49",
-      "artist": "",
+      "artist": "Teeziro",
       "attacks": [
         {
           "commands": [
@@ -46,21 +46,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "头脑聪慧，心地善良的宝可梦。会一边以优美的声音歌唱，一边畅游于大海之上。",
       "hp": 130,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/6.png",
       "image_url_small": "",
       "name": "拉普拉斯",
-      "number": "",
+      "number": "004/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -78,7 +78,7 @@
     "sv2-38": {
       "abilities": [],
       "api_id": "sv2-38",
-      "artist": "",
+      "artist": "Atsuya Uki",
       "attacks": [
         {
           "commands": [
@@ -127,21 +127,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "用细腻的泡泡包住身体，保护皮肤。装得无忧无虑的，实则很精明地窥视着四周。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/12.png",
       "image_url_small": "",
       "name": "呱呱泡蛙",
-      "number": "",
+      "number": "007/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -159,7 +159,7 @@
     "sv2-39": {
       "abilities": [],
       "api_id": "sv2-39",
-      "artist": "",
+      "artist": "Tonji Matsuno",
       "attacks": [
         {
           "commands": [
@@ -198,21 +198,21 @@
       ],
       "evolves_from": "呱呱泡蛙",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "灵巧的身体不输给任何人。只需１分钟就能登上超过６００米高的塔顶。",
       "hp": 90,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/14.png",
       "image_url_small": "",
       "name": "呱头蛙",
-      "number": "",
+      "number": "008/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Stage 1"
       ],
@@ -230,7 +230,7 @@
     "sv2-delib": {
       "abilities": [],
       "api_id": "sv2-delib",
-      "artist": "",
+      "artist": "miki kudo",
       "attacks": [
         {
           "commands": [
@@ -282,21 +282,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "一整天都在搬运食物。据说曾有遇险的人因为信使鸟的食物而得救。",
       "hp": 90,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/8.png",
       "image_url_small": "",
       "name": "信使鸟",
-      "number": "",
+      "number": "005/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -314,7 +314,7 @@
     "sv2-glast": {
       "abilities": [],
       "api_id": "sv2-glast",
-      "artist": "",
+      "artist": "Jiro Sasumo",
       "attacks": [
         {
           "commands": [
@@ -383,21 +383,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "会从蹄子释放出强力的冷气。性格粗暴，只要是自己想要的东西，就会竭尽全力去抢夺。",
       "hp": 130,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/18.png",
       "image_url_small": "",
       "name": "雪暴马",
-      "number": "",
+      "number": "010/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -415,7 +415,7 @@
     "sv2-grex": {
       "abilities": [],
       "api_id": "sv2-grex",
-      "artist": "",
+      "artist": "takuyoa",
       "attacks": [
         {
           "commands": [
@@ -488,21 +488,21 @@
       "evolves_to": [],
       "flavor_text": "",
       "hp": 300,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/16.png",
       "image_url_small": "",
       "name": "甲贺忍蛙ex",
-      "number": "",
+      "number": "009/058",
       "prize_value": 2,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [
         "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
       ],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Stage 2",
         "ex"
@@ -521,7 +521,7 @@
     "sv2-keldeo": {
       "abilities": [],
       "api_id": "sv2-keldeo",
-      "artist": "",
+      "artist": "Naoyo Kimura",
       "attacks": [
         {
           "commands": [],
@@ -592,21 +592,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "通过令自己觉悟，让全身充满力量，变得敏捷，如果跳起来，只能看到残影。",
       "hp": 110,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/10.png",
       "image_url_small": "",
       "name": "凯路迪欧",
-      "number": "",
+      "number": "006/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -650,7 +650,7 @@
         }
       ],
       "api_id": "sv2-starm",
-      "artist": "",
+      "artist": "Arai Kiriko",
       "attacks": [
         {
           "commands": [],
@@ -673,21 +673,21 @@
       ],
       "evolves_from": "海星星",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "会高速旋转着身体一边游泳一边吸收微小的浮游生物。",
       "hp": 90,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/4.png",
       "image_url_small": "",
       "name": "宝石海星",
-      "number": "",
+      "number": "003/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Stage 1"
       ],
@@ -705,7 +705,7 @@
     "sv2-staryu": {
       "abilities": [],
       "api_id": "sv2-staryu",
-      "artist": "",
+      "artist": "Arai Kiriko",
       "attacks": [
         {
           "commands": [
@@ -747,21 +747,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "虽然会遭到鱼宝可梦的啄食，但身体即使被咬掉一块也能马上再生，所以完全不在意。",
       "hp": 60,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/2.png",
       "image_url_small": "",
       "name": "海星星",
-      "number": "",
+      "number": "002/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -779,7 +779,7 @@
     "sv2-tatsu": {
       "abilities": [],
       "api_id": "sv2-tatsu",
-      "artist": "",
+      "artist": "OKACHEKE",
       "attacks": [
         {
           "commands": [
@@ -847,21 +847,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "小型的龙宝可梦。会住在吃吼霸嘴里，保护自己免于外敌袭击。",
       "hp": 70,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/20.png",
       "image_url_small": "",
       "name": "米立龙",
-      "number": "",
+      "number": "011/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -879,7 +879,7 @@
     "svg-ceti": {
       "abilities": [],
       "api_id": "svg-ceti",
-      "artist": "",
+      "artist": "Anesaki Dynamic",
       "attacks": [
         {
           "commands": [],
@@ -949,21 +949,21 @@
       ],
       "evolves_from": "走鲸",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "上颚的角集中了冰之能量，会使其变得超低温，以此来将自己的周围冻结。",
       "hp": 180,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/14.png",
       "image_url_small": "",
       "name": "浩大鲸",
-      "number": "",
+      "number": "008/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 3,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Stage 1"
       ],
@@ -981,7 +981,7 @@
     "svg-ceto": {
       "abilities": [],
       "api_id": "svg-ceto",
-      "artist": "",
+      "artist": "Shin Nagasawa",
       "attacks": [
         {
           "commands": [],
@@ -1004,21 +1004,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "在寒冷地带会组成约５只的群体来生活。喜欢雪或冰所包含的矿物质。",
       "hp": 80,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/296/12.png",
       "image_url_small": "",
       "name": "走鲸",
-      "number": "",
+      "number": "007/064",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH3C",
+      "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
       "subtypes": [
         "Basic"
       ],
@@ -1060,7 +1060,7 @@
         }
       ],
       "api_id": "svg2-empo",
-      "artist": "",
+      "artist": "Kouki Saitou",
       "attacks": [
         {
           "commands": [
@@ -1099,21 +1099,21 @@
       ],
       "evolves_from": "波皇子",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "从嘴部延伸出的３只角是实力的象征。领袖的角是最大的。",
       "hp": 160,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/12.png",
       "image_url_small": "",
       "name": "帝王拿波",
-      "number": "",
+      "number": "007/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Stage 2"
       ],

@@ -1,5 +1,6 @@
 #include "ptcg_game.hpp"
 #include "ptcg_game_internal.hpp"
+#include "ptcg_rules_internal.hpp"
 
 #include <algorithm>
 #include <array>
@@ -582,6 +583,7 @@ bool attached_tool_damage_boost_targets_active(
             }
             const std::string name = string_arg(*args, "effect");
             return name == "damage_boost_10"
+                || name == "damage_boost"
                 || name == "damage_boost_when_behind";
         }
     );
@@ -629,6 +631,11 @@ std::int64_t attached_attack_damage_delta(
         for (const Value &modifier : modifiers->as_array()) {
             const Value *operation = modifier.find("operation");
             const Value *condition = modifier.find("condition");
+            if (condition != nullptr && !string_arg(*condition, "attacker_subtype").empty()) {
+                const auto *definition = card_definition(cards, string_arg(attacker, "card_id"));
+                if (definition == nullptr || !card_has_subtype(
+                    *definition, string_arg(*condition, "attacker_subtype"))) continue;
+            }
             if (
                 condition != nullptr
                 && condition->is_object()
@@ -1253,6 +1260,7 @@ std::int64_t effective_retreat_cost(
     const Value &active,
     const Value *active_card
 ) {
+    if (rules_detail::tool_effect_applies(cards, active, "zero_retreat")) return 0;
     std::int64_t cost = active_card != nullptr
         ? integer_arg(*active_card, "retreat_cost")
         : 0;

@@ -591,6 +591,398 @@
     "key": "grass",
     "name": "土台龟"
   },
+  "happy4_decidueye": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "csvh4-001",
+        "count": 4
+      },
+      {
+        "card_id": "csvh4-002",
+        "count": 3
+      },
+      {
+        "card_id": "csvh4-003",
+        "count": 4
+      },
+      {
+        "card_id": "csvh4-027",
+        "count": 1
+      },
+      {
+        "card_id": "csvh4-025",
+        "count": 1
+      },
+      {
+        "card_id": "csvh4-004",
+        "count": 1
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-152",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-041",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-201",
+        "count": 1
+      },
+      {
+        "card_id": "csvh4-049",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-056",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-ener-1",
+        "count": 16
+      }
+    ],
+    "energy_type": "Grass",
+    "key": "happy4_decidueye",
+    "name": "狙射树枭"
+  },
+  "happy4_koraidon": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "csvh4-005",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-009",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-012",
+        "count": 1
+      },
+      {
+        "card_id": "csvh4-013",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-014",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-022",
+        "count": 4
+      },
+      {
+        "card_id": "svf-hawl",
+        "count": 1
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "csvh4-034",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-043",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-046",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-059",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-ener-2",
+        "count": 6
+      },
+      {
+        "card_id": "sv1-ener-6",
+        "count": 10
+      }
+    ],
+    "energy_type": "Dragon",
+    "key": "happy4_koraidon",
+    "name": "故勒顿"
+  },
+  "happy4_melmetal": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "csvh4-020",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-015",
+        "count": 1
+      },
+      {
+        "card_id": "csvh4-016",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-017",
+        "count": 1
+      },
+      {
+        "card_id": "csvh4-018",
+        "count": 1
+      },
+      {
+        "card_id": "csvh4-019",
+        "count": 3
+      },
+      {
+        "card_id": "csvh4-021",
+        "count": 2
+      },
+      {
+        "card_id": "svl-chat",
+        "count": 1
+      },
+      {
+        "card_id": "svi-sqwk",
+        "count": 1
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "csvh4-032",
+        "count": 2
+      },
+      {
+        "card_id": "svl-vitb",
+        "count": 2
+      },
+      {
+        "card_id": "svf-houb",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-058",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-ener-8",
+        "count": 16
+      }
+    ],
+    "energy_type": "Metal",
+    "key": "happy4_melmetal",
+    "name": "美录梅塔ex"
+  },
+  "happy4_miraidon": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "csvh4-024",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-006",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-007",
+        "count": 1
+      },
+      {
+        "card_id": "csvh4-008",
+        "count": 1
+      },
+      {
+        "card_id": "csvh4-010",
+        "count": 3
+      },
+      {
+        "card_id": "csvh4-011",
+        "count": 1
+      },
+      {
+        "card_id": "csvh4-023",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-030",
+        "count": 2
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 2
+      },
+      {
+        "card_id": "svl-ensw",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-035",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-044",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-051",
+        "count": 2
+      },
+      {
+        "card_id": "csvh4-057",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-ener-4",
+        "count": 8
+      },
+      {
+        "card_id": "sv1-ener-5",
+        "count": 8
+      }
+    ],
+    "energy_type": "Dragon",
+    "key": "happy4_miraidon",
+    "name": "密勒顿ex"
+  },
   "lightning": {
     "card_count": 60,
     "cards": [

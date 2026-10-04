@@ -154,6 +154,11 @@ constexpr std::array VM_ARG_ROWS{
     PTCG_VM_ARG_ROW(ignore_resistance), PTCG_VM_ARG_ROW(affect),
     PTCG_VM_ARG_ROW(shuffle_hand), PTCG_VM_ARG_ROW(you_choose),
     PTCG_VM_ARG_ROW(stadium_type),
+    PTCG_VM_ARG_ROW(target_filter), PTCG_VM_ARG_ROW(fail_attack_if_unpaid),
+    PTCG_VM_ARG_ROW(unless_condition), PTCG_VM_ARG_ROW(before_damage),
+    PTCG_VM_ARG_ROW(shuffle_remaining_bottom), PTCG_VM_ARG_ROW(choose_target),
+    PTCG_VM_ARG_ROW(discard_attachments),
+    PTCG_VM_ARG_ROW(allow_cancel),
 };
 #undef PTCG_VM_ARG_ROW
 
@@ -179,6 +184,7 @@ bool fail(std::string *error, std::string message) {
 FormulaOp formula_op_from_string(std::string_view value) noexcept {
     if (value == "damage_counters") return FormulaOp::damage_counters;
     if (value == "bench_count") return FormulaOp::bench_count;
+    if (value == "pokemon_count") return FormulaOp::pokemon_count;
     if (value == "hand_size") return FormulaOp::hand_size;
     if (value == "discard_count") return FormulaOp::discard_count;
     if (value == "energy_count") return FormulaOp::energy_count;

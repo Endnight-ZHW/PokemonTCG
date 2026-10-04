@@ -21,6 +21,10 @@ from engine.game_engine import _flatten_native_rows
 
 @unittest.skipUnless(native is not None, "native research binding is not built")
 class ChallengeControllerTests(unittest.TestCase):
+    # These winning-position fixtures must supply costs paid from the hand in
+    # addition to the Energy already attached to the attacking Pokemon.
+    ATTACK_HAND_PAYMENTS = {"csvh4-003": ("sv1-ener-1",)}
+
     @classmethod
     def setUpClass(cls):
         cls.catalog, cls.decks, cls.strategies = load_product_payloads()
@@ -336,7 +340,8 @@ class ChallengeControllerTests(unittest.TestCase):
                     energies.append(card)
                 self.controller = self.make_controller()
                 self.combat_position(deck, attacker, energies=energies[:-1],
-                                     hand=energies[-1:], analyze=False)
+                                     hand=[*energies[-1:], *self.ATTACK_HAND_PAYMENTS.get(attacker, ())],
+                                     analyze=False)
                 state = self.session.snapshot()
                 defender = state["players"][1]["active"]
                 defender["damage_counters"] = (self.catalog["cards"][defender["card_id"]]["hp"] - 10) // 10
@@ -409,7 +414,9 @@ class ChallengeControllerTests(unittest.TestCase):
                 attack = next(move for move in self.catalog["cards"][attacker]["attacks"]
                               if move.get("damage", 0) > 0)
                 self.controller = self.make_controller()
-                self.combat_position(deck, base, hand=[switch], bench=[attacker], analyze=False)
+                self.combat_position(deck, base,
+                                     hand=[switch, *self.ATTACK_HAND_PAYMENTS.get(attacker, ())],
+                                     bench=[attacker], analyze=False)
                 state = self.session.snapshot()
                 owner = state["players"][0]
                 for required in attack["cost"]:

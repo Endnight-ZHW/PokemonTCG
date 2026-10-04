@@ -1,9 +1,412 @@
 {
   "cards": {
+    "csvh4-001": {
+      "abilities": [],
+      "api_id": "csvh4-001",
+      "artist": "Yoshimi Miyoshi",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 1
+              },
+              "branches": {},
+              "op": "draw_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "draw",
+              "params": {
+                "amount": 1
+              }
+            }
+          ],
+          "name": "叼",
+          "text": "从自己牌库上方抽取1张卡牌。"
+        },
+        {
+          "commands": [],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Grass"
+          ],
+          "damage": 10,
+          "damage_text": "10",
+          "effects": [],
+          "name": "树叶",
+          "text": ""
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "一边飞行一边射出刀刃般锐利的羽毛，距离近时会使出猛烈的踢击。",
+      "hp": 70,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/0.png",
+      "image_url_small": "",
+      "name": "木木枭",
+      "number": "001/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-002": {
+      "abilities": [],
+      "api_id": "csvh4-002",
+      "artist": "sui",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 20,
+                "choose_targets": true,
+                "count": 1
+              },
+              "branches": {},
+              "op": "deal_bench_damage"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Grass",
+            "Colorless"
+          ],
+          "damage": 40,
+          "damage_text": "40",
+          "effects": [
+            {
+              "effect_type": "bench_damage",
+              "params": {
+                "amount": 20,
+                "choose_targets": true,
+                "count": 1
+              }
+            }
+          ],
+          "name": "刺穿",
+          "text": "给对手的1只备战宝可梦，也造成20伤害。[备战宝可梦不计算弱点、抗性。]"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "木木枭",
+      "evolves_to": [],
+      "flavor_text": "对气息非常敏感。从气息就能察觉身后所站的对手，投掷出锋利的羽毛给予致命一击。",
+      "hp": 90,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/2.png",
+      "image_url_small": "",
+      "name": "投羽枭",
+      "number": "002/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "G",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Stage 1"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-003": {
+      "abilities": [],
+      "api_id": "csvh4-003",
+      "artist": "DOM",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "target_hand_size": 7
+              },
+              "branches": {},
+              "op": "draw_until"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "draw_until",
+              "params": {
+                "target": 7,
+                "target_hand_size": 7
+              }
+            }
+          ],
+          "name": "羽毛贮存",
+          "text": "从牌库上方抽取卡牌，直到自己的手牌变为7张为止。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "amount": 1,
+                "fail_attack_if_unpaid": true,
+                "filter": "grass_energy",
+                "from": "hand"
+              },
+              "branches": {},
+              "op": "discard_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Grass"
+          ],
+          "damage": 170,
+          "damage_text": "170",
+          "effects": [
+            {
+              "effect_type": "discard",
+              "params": {
+                "amount": 1,
+                "fail_attack_if_unpaid": true,
+                "filter": "grass_energy",
+                "from": "hand"
+              }
+            }
+          ],
+          "name": "强力射击",
+          "text": "将自己手牌中的1张「基本【草】能量」放于弃牌区。如果无法将卡牌放于弃牌区的话，则这个招式失败。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "投羽枭",
+      "evolves_to": [],
+      "flavor_text": "会像射箭那样射出藏在自己翅膀里的箭羽。只要瞄准目标就绝不会射偏。",
+      "hp": 150,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/4.png",
+      "image_url_small": "",
+      "name": "狙射树枭",
+      "number": "003/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 2,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Stage 2"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
+    "csvh4-004": {
+      "abilities": [],
+      "api_id": "csvh4-004",
+      "artist": "Sanosuke Sakuma",
+      "attacks": [
+        {
+          "commands": [
+            {
+              "args": {
+                "count": 2,
+                "destination": "hand",
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              },
+              "branches": {},
+              "op": "search_cards"
+            }
+          ],
+          "converted_energy_cost": 1,
+          "cost": [
+            "Colorless"
+          ],
+          "damage": 0,
+          "damage_text": "",
+          "effects": [
+            {
+              "effect_type": "search",
+              "params": {
+                "count": 2,
+                "destination": "hand",
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "min_select": 0,
+                "reveal": true
+              }
+            }
+          ],
+          "name": "山中漫步",
+          "text": "选择自己牌库中最多2张基本能量，在给对手看过之后，加入手牌。并重洗牌库。"
+        },
+        {
+          "commands": [
+            {
+              "args": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 20
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "bench_count",
+                          "player": "opponent"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              },
+              "branches": {},
+              "op": "set_attack_damage_formula"
+            }
+          ],
+          "converted_energy_cost": 2,
+          "cost": [
+            "Grass",
+            "Colorless"
+          ],
+          "damage": 20,
+          "damage_text": "20+",
+          "effects": [
+            {
+              "effect_type": "attack_damage_formula",
+              "params": {
+                "formula_ast": {
+                  "op": "add",
+                  "terms": [
+                    {
+                      "const": 20
+                    },
+                    {
+                      "factors": [
+                        {
+                          "op": "bench_count",
+                          "player": "opponent"
+                        },
+                        {
+                          "const": 20
+                        }
+                      ],
+                      "op": "mul"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "name": "鬼返",
+          "text": "追加造成对手备战宝可梦数量×20伤害。"
+        }
+      ],
+      "commands": [],
+      "energy_effects": [],
+      "energy_types": [
+        "Grass"
+      ],
+      "evolves_from": "",
+      "evolves_to": [],
+      "flavor_text": "喜欢恶作剧，好奇心旺盛。会释出蕴藏在面具内的属性的能量战斗。",
+      "hp": 110,
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/465/6.png",
+      "image_url_small": "",
+      "name": "厄诡椪 碧草面具",
+      "number": "004/059",
+      "prize_value": 1,
+      "provides_energy": [],
+      "rarity": "无标记",
+      "regulation_mark": "H",
+      "resistances": [],
+      "retreat_cost": 1,
+      "rules": [],
+      "set_id": "CSVH4C",
+      "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
+      "subtypes": [
+        "Basic"
+      ],
+      "supertype": "Pokémon",
+      "trainer_effects": [],
+      "trainer_text": "",
+      "trainer_type": "",
+      "weaknesses": [
+        {
+          "energy_type": "Fire",
+          "value": "×2"
+        }
+      ]
+    },
     "svf-scyt": {
       "abilities": [],
       "api_id": "svf-scyt",
-      "artist": "",
+      "artist": "GIDORA",
       "attacks": [
         {
           "commands": [],
@@ -25,21 +428,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "双臂的大镰刀锋利程度堪比神兵利器。动作迅捷灵敏，没有猎物能逃出其指掌。",
       "hp": 90,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/268/0.png",
       "image_url_small": "",
       "name": "飞天螳螂",
-      "number": "",
+      "number": "001/058",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH2C",
+      "set_name": "嗨皮卡组 路卡利欧&甲贺忍蛙&藏玛然特&獒教父",
       "subtypes": [
         "Basic"
       ],
@@ -57,7 +460,7 @@
     "svg2-brel": {
       "abilities": [],
       "api_id": "svg2-brel",
-      "artist": "",
+      "artist": "Ryuta Fuse",
       "attacks": [
         {
           "commands": [],
@@ -79,21 +482,21 @@
       ],
       "evolves_from": "蘑蘑菇",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "会撒出毒孢子，然后再让因吸入孢子而苦痛不堪的对手吃上一记重拳。",
       "hp": 110,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/2.png",
       "image_url_small": "",
       "name": "斗笠菇",
-      "number": "",
+      "number": "002/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Stage 1"
       ],
@@ -143,7 +546,7 @@
         }
       ],
       "api_id": "svg2-grot",
-      "artist": "",
+      "artist": "Nisota Niso",
       "attacks": [
         {
           "commands": [],
@@ -167,21 +570,21 @@
       ],
       "evolves_from": "草苗龟",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "知道哪里会涌出清澈的水，会让伙伴宝可梦骑在它背上，将其运到那个地方。",
       "hp": 100,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/6.png",
       "image_url_small": "",
       "name": "树林龟",
-      "number": "",
+      "number": "004/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 3,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Stage 1"
       ],
@@ -199,7 +602,7 @@
     "svg2-shro": {
       "abilities": [],
       "api_id": "svg2-shro",
-      "artist": "",
+      "artist": "kurumitsu",
       "attacks": [
         {
           "commands": [
@@ -238,21 +641,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "喜欢潮湿的地方，白天会呆在森林的树荫里一动不动。会从头上放出毒粉。",
       "hp": 60,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/0.png",
       "image_url_small": "",
       "name": "蘑蘑菇",
-      "number": "",
+      "number": "001/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "G",
       "resistances": [],
       "retreat_cost": 1,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -270,7 +673,7 @@
     "svg2-tort": {
       "abilities": [],
       "api_id": "svg2-tort",
-      "artist": "",
+      "artist": "Oswaldo KATO",
       "attacks": [
         {
           "commands": [
@@ -334,21 +737,21 @@
       ],
       "evolves_from": "树林龟",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "有时候小小的宝可梦们会聚集起来，在一动不动的土台龟的背上建造巢穴。",
       "hp": 190,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/8.png",
       "image_url_small": "",
       "name": "土台龟",
-      "number": "",
+      "number": "005/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 4,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Stage 2"
       ],
@@ -366,7 +769,7 @@
     "svg2-turt": {
       "abilities": [],
       "api_id": "svg2-turt",
-      "artist": "",
+      "artist": "Narumi Sato",
       "attacks": [
         {
           "commands": [],
@@ -401,21 +804,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "用全身进行光合作用，制造氧气。如果口渴，头上的叶子就会枯萎。",
       "hp": 80,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/4.png",
       "image_url_small": "",
       "name": "草苗龟",
-      "number": "",
+      "number": "003/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "F",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],
@@ -433,7 +836,7 @@
     "svg2-zaru": {
       "abilities": [],
       "api_id": "svg2-zaru",
-      "artist": "",
+      "artist": "Shin Nagasawa",
       "attacks": [
         {
           "commands": [
@@ -525,21 +928,21 @@
       ],
       "evolves_from": "",
       "evolves_to": [],
-      "flavor_text": "",
+      "flavor_text": "长在身上的藤蔓断掉之后会变成土壤的养分，帮助森林中的植物成长。",
       "hp": 130,
-      "image_url_large": "",
+      "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/10.png",
       "image_url_small": "",
       "name": "萨戮德",
-      "number": "",
+      "number": "006/059",
       "prize_value": 1,
       "provides_energy": [],
-      "rarity": "",
-      "regulation_mark": "",
+      "rarity": "无标记",
+      "regulation_mark": "E",
       "resistances": [],
       "retreat_cost": 2,
       "rules": [],
-      "set_id": "",
-      "set_name": "",
+      "set_id": "CSVH1C",
+      "set_name": "嗨皮组合 皮卡丘&皮皮&草苗龟&索财灵",
       "subtypes": [
         "Basic"
       ],

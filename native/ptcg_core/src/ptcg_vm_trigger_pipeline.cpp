@@ -56,8 +56,18 @@ bool execute_vm_trigger_pipeline(
     };
 
         if (op == "return_to_hand") {
-            return_pokemon_to_hand(self, source_slot);
-            result.event_types.emplace_back("card_moved");
+            if (bool_arg(args, "choose_target")) {
+                auto options = pokemon_options(self, actor, true, true);
+                auto request = pending_request("select_pokemon", actor, 1, 1, false, false,
+                    std::move(options), "return_pokemon");
+                request["prompt"] = Value(bool_arg(args, "discard_attachments")
+                    ? "请选择要放回手牌的宝可梦（附着的能量和道具将弃置）。"
+                    : "请选择要放回手牌的宝可梦。");
+                suspend(std::move(request), make_continuation(op, command_spec, actor, source_slot));
+            } else {
+                return_pokemon_to_hand(self, source_slot, bool_arg(args, "discard_attachments"));
+                result.event_types.emplace_back("card_moved");
+            }
         } else if (
             op == "search_any_and_switch"
             || op == "search_cards"
@@ -204,7 +214,9 @@ bool execute_vm_trigger_pipeline(
                 )
             );
         } else if (op == "set_attack_damage_formula") {
-            std::int64_t total = integer_arg(args, "base");
+            std::int64_t total = args.find("formula_ast") != nullptr
+                ? evaluate_formula_ast(required(args, "formula_ast"), cards, result.state, actor)
+                : integer_arg(args, "base");
             const Value *condition_bonus = args.find("condition_bonus");
             if (
                 condition_bonus != nullptr

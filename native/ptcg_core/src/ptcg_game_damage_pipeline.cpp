@@ -368,12 +368,14 @@ void append_tool_modifiers(
         std::string hook;
         std::string layer;
         std::string scope = "self";
-        if (effect_name == "damage_boost_10") {
+        if (effect_name == "damage_boost_10" || effect_name == "damage_boost") {
             hook = "MODIFY_DAMAGE";
             layer = "attacker_adjust";
             scope = "attached_attacker";
             condition["target_active"] = Value(true);
-            operation["amount"] = Value(10);
+            operation["amount"] = Value(integer_arg(args, "amount", 10));
+            if (!string_arg(args, "attacker_subtype").empty())
+                condition["attacker_subtype"] = Value(string_arg(args, "attacker_subtype"));
             operation["kind"] = Value("damage_delta");
         } else if (effect_name == "damage_boost_when_behind") {
             hook = "MODIFY_DAMAGE";
@@ -392,10 +394,11 @@ void append_tool_modifiers(
                 -std::abs(integer_arg(args, "amount", 30))
             );
             operation["kind"] = Value("damage_delta");
-        } else if (effect_name == "hp_boost_basic") {
+        } else if (effect_name == "hp_boost_basic" || effect_name == "hp_boost_subtype") {
             hook = "MAX_HP";
             layer = "add";
-            condition["target_basic"] = Value(true);
+            if (effect_name == "hp_boost_basic") condition["target_basic"] = Value(true);
+            else condition["attacker_subtype"] = Value(string_arg(args, "attacker_subtype"));
             operation["amount"] = Value(
                 integer_arg(args, "amount", 50)
             );
@@ -968,7 +971,7 @@ void apply_reactive_thorns(
                 continue;
             }
             const Value *names = args->find("filter_names");
-            std::int64_t matching = 0;
+            std::int64_t matching = args->find("amount") != nullptr ? 1 : 0;
             const std::array<std::string, 6> slots = {
                 "active",
                 "bench_0",
@@ -997,7 +1000,7 @@ void apply_reactive_thorns(
             }
             if (matching > 0) {
                 const std::int64_t amount = matching
-                    * integer_arg(*args, "per_pokemon", 3) * 10;
+                    * integer_arg(*args, "amount", integer_arg(*args, "per_pokemon", 3)) * 10;
                 const std::int64_t maximum_hp = pokemon_hp(cards, *attacker);
                 const bool was_knocked_out = maximum_hp > 0
                     && integer_arg(*attacker, "damage_counters") * 10
@@ -1040,6 +1043,8 @@ bool attack_effect_runs_before_damage(
     const std::string &op,
     const Value &args
 ) {
+    if (bool_arg(args, "fail_attack_if_unpaid") || bool_arg(args, "before_damage"))
+        return true;
     if (op == "deal_damage") {
         return string_arg(
             args,

@@ -86,7 +86,9 @@ bool execute_vm_card_pipeline(
                 );
             const auto drawn = draw_cards(
                 player(result.state, target),
-                integer_arg(args, "amount", 1)
+                args.find("formula_ast") != nullptr
+                    ? evaluate_formula_ast(required(args, "formula_ast"), cards, result.state, actor)
+                    : integer_arg(args, "amount", 1)
             );
             append_cards_drawn_event(result, target, drawn, op);
         } else if (
@@ -131,7 +133,9 @@ bool execute_vm_card_pipeline(
                 )
             );
         } else if (op == "fail_attack") {
-            result.context["attack_failed"] = Value(true);
+            const auto condition = string_arg(args, "unless_condition");
+            if (condition.empty() || !condition_applies(cards, result.state, actor, condition))
+                result.context["attack_failed"] = Value(true);
         } else if (
             op == "flip_coin"
             || op == "flip_coin_repeat_damage"
@@ -410,7 +414,8 @@ bool execute_vm_card_pipeline(
             const bool has_options = !options.empty();
             const std::int64_t request_minimum = has_options ? minimum : 0;
             const std::int64_t request_maximum = has_options ? take : 0;
-            const bool request_can_cancel = has_options && minimum <= 0;
+            const bool request_can_cancel = has_options && minimum <= 0
+                && bool_arg(args, "allow_cancel", true);
             Value request = pending_request(
                 attach ? "look_top_attach_energy" : "look_top",
                 actor,

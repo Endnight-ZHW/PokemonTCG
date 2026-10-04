@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import os
 import re
 import time
@@ -94,6 +95,38 @@ class ArenaAgentSpec:
 def load_product_payloads() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     return native_catalog_payload(), _read_json(PRODUCT_DECKS), _read_json(
         PRODUCT_STRATEGIES
+    )
+
+
+def scope_evaluation_payloads(
+    catalog: Mapping[str, Any],
+    decks: Mapping[str, Any],
+    deck_keys: Sequence[str],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Give both agents and the referee exactly the declared tournament cards.
+
+    The runtime definitions already contain all compiled VM commands. Use that
+    supported native input form instead of attaching the full release IR's
+    fingerprints to a smaller catalog. An unsupported command on a participating
+    card remains intact and must still fail in an incompatible frozen agent.
+    """
+    if not deck_keys or len(set(deck_keys)) != len(deck_keys):
+        raise ValueError("evaluation_invalid_deck_scope")
+    cards = catalog.get("cards", catalog)
+    scoped_decks: dict[str, Any] = {}
+    required_cards: set[str] = set()
+    for key in sorted(deck_keys):
+        if key not in decks:
+            raise ValueError(f"evaluation_deck_scope_unknown_deck:{key}")
+        scoped_decks[key] = copy.deepcopy(decks[key])
+        for row in decks[key]["cards"]:
+            card_id = str(row["card_id"])
+            if card_id not in cards:
+                raise ValueError(f"evaluation_deck_scope_missing_card:{key}:{card_id}")
+            required_cards.add(card_id)
+    return (
+        {card_id: copy.deepcopy(cards[card_id]) for card_id in sorted(required_cards)},
+        scoped_decks,
     )
 
 

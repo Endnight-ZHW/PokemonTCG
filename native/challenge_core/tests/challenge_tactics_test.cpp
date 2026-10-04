@@ -625,7 +625,7 @@ int main(int argc, char **argv) {
             }
         }
         std::cout << "CHALLENGE_CORE_TACTICS_OK scenarios=" << count << '\n';
-        return count == 109 ? 0 : 4;
+        return count == 117 ? 0 : 4;
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         return 2;
