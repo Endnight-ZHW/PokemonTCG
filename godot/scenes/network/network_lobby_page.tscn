@@ -154,241 +154,16 @@ horizontal_scroll_mode = 0
 [node name="Body" type="HBoxContainer" parent="PageMargin/Page/BodyScroll"]
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/separation = 20
-
-[node name="IntroPanel" type="PanelContainer" parent="PageMargin/Page/BodyScroll/Body"]
-unique_name_in_owner = true
-clip_contents = true
-custom_minimum_size = Vector2(350, 0)
-layout_mode = 2
-theme_type_variation = &"FrontQuietPanel"
-mouse_filter = 2
-
-[node name="IntroMargin" type="MarginContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel"]
-layout_mode = 2
-
-[node name="Intro" type="VBoxContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin"]
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_constants/separation = 12
-
-[node name="IntroAccent" type="ColorRect" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 4)
-layout_mode = 2
-mouse_filter = 2
-color = Color(0.784314, 0.231373, 0.207843, 1.000000)
-
-[node name="IntroHeader" type="HBoxContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 78)
-layout_mode = 2
-theme_override_constants/separation = 14
-
-[node name="IntroIconFrame" type="PanelContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroHeader"]
-custom_minimum_size = Vector2(74, 74)
-layout_mode = 2
-theme_type_variation = &"FrontQuietPanel"
-
-[node name="IconCenter" type="CenterContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroHeader/IntroIconFrame"]
-layout_mode = 2
-
-[node name="IntroIcon" type="TextureRect" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroHeader/IntroIconFrame/IconCenter"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(46, 46)
-layout_mode = 2
-mouse_filter = 2
-texture = ExtResource("4_lan")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="HeaderCopy" type="VBoxContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroHeader"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 1
-
-[node name="IntroEyebrow" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroHeader/HeaderCopy"]
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.349020, 0.396078, 0.474510, 1.000000)
-theme_override_font_sizes/font_size = 16
-text = "连接方式"
-
-[node name="KindLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroHeader/HeaderCopy"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontHeadingLabel"
-theme_override_colors/font_color = Color(0.125490, 0.180392, 0.286275, 1.000000)
-theme_override_font_sizes/font_size = 28
-text = "局域网直连"
-
-[node name="KindCode" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroHeader/HeaderCopy"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.349020, 0.396078, 0.474510, 1.000000)
-theme_override_font_sizes/font_size = 16
-text = "同一网络内连接"
-
-[node name="KindDescription" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 68)
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.349020, 0.396078, 0.474510, 1.000000)
-theme_override_font_sizes/font_size = 16
-text = "两台设备处于同一网络时，直接建立低延迟对局。对局判定始终由房主负责。"
-vertical_alignment = 1
-autowrap_mode = 3
-text_overrun_behavior = 3
-max_lines_visible = 4
-
-[node name="IntroSeparator" type="HSeparator" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro"]
-layout_mode = 2
-
-[node name="OverviewHeader" type="HBoxContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 34)
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="OverviewLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/OverviewHeader"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"FrontSectionLabel"
-theme_override_font_sizes/font_size = 18
-text = "本次对战"
-vertical_alignment = 1
-
-[node name="RoleBadge" type="PanelContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/OverviewHeader"]
-layout_mode = 2
-theme_type_variation = &"FrontQuietPanel"
-
-[node name="RoleBadgeLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/OverviewHeader/RoleBadge"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(92, 26)
-layout_mode = 2
-theme_override_colors/font_color = Color(0.349020, 0.396078, 0.474510, 1.000000)
-theme_override_font_sizes/font_size = 16
-text = "房主 · 创建"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="FeatureList" type="VBoxContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 7
-
-[node name="FeatureOneRow" type="HBoxContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/FeatureList"]
-custom_minimum_size = Vector2(0, 34)
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="FeatureOneIcon" type="TextureRect" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/FeatureList/FeatureOneRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(20, 20)
-layout_mode = 2
-mouse_filter = 2
-texture = ExtResource("8_deck")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="FeatureOne" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/FeatureList/FeatureOneRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 16
-text = "同一 Wi-Fi / 有线网络"
-vertical_alignment = 1
-
-[node name="FeatureTwoRow" type="HBoxContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/FeatureList"]
-custom_minimum_size = Vector2(0, 34)
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="FeatureTwoIcon" type="TextureRect" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/FeatureList/FeatureTwoRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(20, 20)
-layout_mode = 2
-mouse_filter = 2
-texture = ExtResource("6_info")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="FeatureTwo" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/FeatureList/FeatureTwoRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 16
-text = "低延迟设备直连"
-vertical_alignment = 1
-
-[node name="FeatureThreeRow" type="HBoxContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/FeatureList"]
-custom_minimum_size = Vector2(0, 34)
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="FeatureThreeIcon" type="TextureRect" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/FeatureList/FeatureThreeRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(20, 20)
-layout_mode = 2
-mouse_filter = 2
-texture = ExtResource("9_link")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="FeatureThree" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/FeatureList/FeatureThreeRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 16
-text = "隐藏信息按玩家隔离"
-vertical_alignment = 1
-
-[node name="IntroSpacer" type="Control" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro"]
-layout_mode = 2
-size_flags_vertical = 3
-mouse_filter = 2
-
-[node name="IntroTipPanel" type="PanelContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 76)
-layout_mode = 2
-theme_type_variation = &"FrontStatusPanel"
-
-[node name="TipContent" type="HBoxContainer" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroTipPanel"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="TipIcon" type="TextureRect" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroTipPanel/TipContent"]
-self_modulate = Color(0.349020, 0.396078, 0.474510, 1.000000)
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-mouse_filter = 2
-texture = ExtResource("6_info")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="IntroTip" type="Label" parent="PageMargin/Page/BodyScroll/Body/IntroPanel/IntroMargin/Intro/IntroTipPanel/TipContent"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"FrontMutedLabel"
-theme_override_colors/font_color = Color(0.125490, 0.180392, 0.286275, 1.000000)
-theme_override_font_sizes/font_size = 16
-text = "房主创建后，将本机局域网地址与端口告诉挑战者。"
-vertical_alignment = 1
-autowrap_mode = 3
-text_overrun_behavior = 3
-max_lines_visible = 3
+size_flags_vertical = 0
+theme_override_constants/separation = 24
 
 [node name="FormPanel" type="PanelContainer" parent="PageMargin/Page/BodyScroll/Body"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 640)
+custom_minimum_size = Vector2(0, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"FrontRaisedPanel"
+size_flags_stretch_ratio = 1.2
 
 [node name="FormMargin" type="MarginContainer" parent="PageMargin/Page/BodyScroll/Body/FormPanel"]
 layout_mode = 2
@@ -399,7 +174,7 @@ theme_override_constants/margin_bottom = 24
 
 [node name="Form" type="VBoxContainer" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 16
 
 [node name="NetworkKindLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
 unique_name_in_owner = true
@@ -500,18 +275,144 @@ theme_type_variation = &"FrontMutedLabel"
 theme_override_colors/font_color = Color(0.713725, 0.188235, 0.219608, 1.000000)
 text = "加入 互联网房间时必须填写房间码。"
 
-[node name="RulesLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
+[node name="NetworkDeckOption" type="OptionButton" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
+focus_mode = 0
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+visible = false
+
+[node name="StatusPanel" type="PanelContainer" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 68)
+layout_mode = 2
+theme_type_variation = &"FrontStatusPanel"
+
+[node name="StatusMargin" type="MarginContainer" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form/StatusPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 8
+
+[node name="StatusContent" type="VBoxContainer" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form/StatusPanel/StatusMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="StatusDot" type="Label" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form/StatusPanel/StatusMargin/StatusContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(26, 0)
+layout_mode = 2
+text = "●"
+vertical_alignment = 1
+visible = false
+
+[node name="NetworkStatusLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form/StatusPanel/StatusMargin/StatusContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontMutedLabel"
+text = "房主运行权威规则；挑战者只提交动作和选择。"
+vertical_alignment = 1
+autowrap_mode = 3
+text_overrun_behavior = 3
+max_lines_visible = 3
+
+[node name="RoomCodeDisplay" type="LineEdit" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form/StatusPanel/StatusMargin/StatusContent"]
+focus_mode = 0
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(180, 48)
+layout_mode = 2
+editable = false
+selecting_enabled = true
+theme_override_font_sizes/font_size = 26
+
+[node name="CopyRoomButton" type="Button" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form/StatusPanel/StatusMargin/StatusContent"]
+focus_mode = 0
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(112, 48)
+layout_mode = 2
+theme_type_variation = &"FrontSecondaryButton"
+text = "复制连接信息"
+
+[node name="NetworkConnectButton" type="Button" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
+focus_mode = 0
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+theme_type_variation = &"FrontPrimaryButton"
+text = "创建房间"
+
+[node name="DeckPanel" type="PanelContainer" parent="PageMargin/Page/BodyScroll/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.8
+theme_type_variation = &"FrontRaisedPanel"
+
+[node name="DeckContent" type="VBoxContainer" parent="PageMargin/Page/BodyScroll/Body/DeckPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="DeckLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+text = "参战牌组"
+
+[node name="SelectedDeckArt" type="TextureRect" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 264)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="SelectedDeckName" type="Label" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+horizontal_alignment = 1
+
+[node name="DeckMetaRow" type="HBoxContainer" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 6
+
+[node name="SelectedDeckAttribute" type="TextureRect" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent/DeckMetaRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(28, 28)
+expand_mode = 1
+stretch_mode = 5
+
+[node name="SelectedDeckMeta" type="Label" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent/DeckMetaRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+
+[node name="ChangeDeckButton" type="Button" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 48)
+focus_mode = 0
+theme_type_variation = &"FrontSecondaryButton"
+text = "更换牌组"
+
+[node name="RulesLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontSectionLabel"
 text = "对局规则"
+visible = false
 
-[node name="RuleRow" type="HBoxContainer" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
+[node name="RuleRow" type="HBoxContainer" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 10
+size_flags_horizontal = 3
 
-[node name="TypeMatchupToggle" type="CheckButton" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form/RuleRow"]
+[node name="TypeMatchupToggle" type="CheckButton" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent/RuleRow"]
 unique_name_in_owner = true
 focus_mode = 0
 custom_minimum_size = Vector2(0, 48)
@@ -521,7 +422,7 @@ theme_type_variation = &"FrontRuleToggle"
 text = "启用弱点与抗性"
 tooltip_text = "当前已关闭（项目默认）；房主可在开局前修改，创建房间后锁定。"
 
-[node name="RuleStatusBadge" type="Label" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form/RuleRow"]
+[node name="RuleStatusBadge" type="Label" parent="PageMargin/Page/BodyScroll/Body/DeckPanel/DeckContent"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(152, 42)
 layout_mode = 2
@@ -530,79 +431,6 @@ theme_override_styles/normal = SubResource("Style_rule_badge")
 text = "已关闭 · 可修改"
 horizontal_alignment = 1
 vertical_alignment = 1
-
-[node name="DeckLabel" type="Label" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontSectionLabel"
-text = "参战牌组"
-
-[node name="NetworkDeckOption" type="OptionButton" parent="PageMargin/Page/BodyScroll/Body/FormPanel/FormMargin/Form"]
-focus_mode = 0
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 54)
-layout_mode = 2
-
-[node name="StatusPanel" type="PanelContainer" parent="PageMargin/Page"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 68)
-layout_mode = 2
-theme_type_variation = &"FrontStatusPanel"
-
-[node name="StatusMargin" type="MarginContainer" parent="PageMargin/Page/StatusPanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 18
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 18
-theme_override_constants/margin_bottom = 8
-
-[node name="StatusContent" type="HBoxContainer" parent="PageMargin/Page/StatusPanel/StatusMargin"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="StatusDot" type="Label" parent="PageMargin/Page/StatusPanel/StatusMargin/StatusContent"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(26, 0)
-layout_mode = 2
-text = "●"
-vertical_alignment = 1
-
-[node name="NetworkStatusLabel" type="Label" parent="PageMargin/Page/StatusPanel/StatusMargin/StatusContent"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"FrontMutedLabel"
-text = "房主运行权威规则；挑战者只提交动作和选择。"
-vertical_alignment = 1
-autowrap_mode = 2
-text_overrun_behavior = 3
-max_lines_visible = 3
-
-[node name="RoomCodeDisplay" type="LineEdit" parent="PageMargin/Page/StatusPanel/StatusMargin/StatusContent"]
-focus_mode = 0
-unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(180, 48)
-layout_mode = 2
-editable = false
-selecting_enabled = true
-
-[node name="CopyRoomButton" type="Button" parent="PageMargin/Page/StatusPanel/StatusMargin/StatusContent"]
-focus_mode = 0
-unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(112, 48)
-layout_mode = 2
-theme_type_variation = &"FrontSecondaryButton"
-text = "复制房间码"
-
-[node name="NetworkConnectButton" type="Button" parent="PageMargin/Page"]
-focus_mode = 0
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 58)
-layout_mode = 2
-theme_type_variation = &"FrontPrimaryButton"
-text = "创建房间"
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
 unique_name_in_owner = true

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <metadata>Dragon TCG outline: https://malie.io/static/draft/html/_images/Dragon.svg ; globe treatment matches local energy icons.</metadata>
+  <defs>
+    <radialGradient id="gold" cx="40%" cy="32%" r="76%">
+      <stop offset="0" stop-color="#f6e58a"/>
+      <stop offset=".48" stop-color="#d6bd4e"/>
+      <stop offset=".77" stop-color="#b49a2c"/>
+      <stop offset="1" stop-color="#7b651c"/>
+    </radialGradient>
+    <radialGradient id="rim" cx="50%" cy="48%" r="52%">
+      <stop offset=".68" stop-color="#fff2b7" stop-opacity="0"/>
+      <stop offset=".86" stop-color="#fff2b7" stop-opacity=".12"/>
+      <stop offset=".94" stop-color="#fff6cf" stop-opacity=".42"/>
+      <stop offset="1" stop-color="#b79b31" stop-opacity=".65"/>
+    </radialGradient>
+    <radialGradient id="glint">
+      <stop offset="0" stop-color="#fffef5" stop-opacity=".95"/>
+      <stop offset=".25" stop-color="#fffdef" stop-opacity=".76"/>
+      <stop offset="1" stop-color="#fffdef" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bounce">
+      <stop offset="0" stop-color="#fff2b0" stop-opacity=".80"/>
+      <stop offset="1" stop-color="#fff2b0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="side" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffdef" stop-opacity="0"/>
+      <stop offset=".30" stop-color="#fffef6" stop-opacity=".85"/>
+      <stop offset=".63" stop-color="#fff4bc" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#fff4bc" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="128" r="104" fill="url(#gold)"/>
+  <circle cx="128" cy="128" r="104" fill="url(#rim)"/>
+  <ellipse cx="105" cy="207" rx="68" ry="21" fill="url(#bounce)"/>
+  <path d="M195 54 C220 77 229 119 215 157" fill="none" stroke="url(#side)" stroke-width="11" stroke-linecap="round"/>
+  <g transform="translate(48 47) scale(17)">
+    <g transform="translate(6.94689 2.714)">
+      <path fill="#030403" fill-rule="nonzero" d="M0,3.975C-0.444,3.865 -0.987,3.717 -1.175,3.663L-1.427,2.721L0,3.975ZM-3.237,-0.272C-3.251,-0.284 -3.27,-0.284 -3.283,-0.275C-3.297,-0.267 -3.304,-0.25 -3.3,-0.233L-2.608,2.203L-2.284,3.412C-2.873,3.249 -3.435,2.87 -3.83,2.365C-4.427,1.6 -4.686,0.713 -4.539,-0.069C-4.434,-0.641 -4.119,-1.096 -3.638,-1.384C-2.311,-2.175 -0.187,-1.734 1.24,-0.391C1.257,-0.377 1.279,-0.379 1.294,-0.392C1.309,-0.406 1.309,-0.428 1.296,-0.444C0.059,-1.866 -1.671,-2.714 -3.329,-2.714C-4.555,-2.714 -5.593,-2.245 -6.246,-1.392C-6.935,-0.494 -7.123,0.709 -6.779,1.999C-6.141,4.381 -3.842,6.382 -1.431,6.656C-1.233,6.678 -1.039,6.689 -0.853,6.689C0.653,6.689 1.89,5.966 2.443,4.714L-3.237,-0.272Z"/>
+    </g>
+  </g>
+  <ellipse cx="80" cy="78" rx="22" ry="21" fill="url(#glint)" opacity=".8"/>
+</svg>

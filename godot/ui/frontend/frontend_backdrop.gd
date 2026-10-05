@@ -28,29 +28,26 @@ func _draw() -> void:
 		return
 	draw_rect(Rect2(Vector2.ZERO, size), FrontendPalette.BACKGROUND)
 	if variant == "title":
-		var right_tint := Color("e7edeb").lerp(accent_tint, 0.055)
-		for band in range(80):
-			var t := float(band) / 79.0
-			var blend := smoothstep(0.20, 0.80, t)
-			draw_rect(Rect2(size.x * t, 0, size.x / 79.0 + 1, size.y), FrontendPalette.BACKGROUND.lerp(right_tint, blend))
-		var center := Vector2(size.x * 0.79, size.y * 0.38)
-		var radius := size.y * 0.37
-		for ring in range(30, 0, -1):
-			draw_circle(center, radius * float(ring) / 20.0, Color(Color.WHITE, 0.018), true, -1, true)
-		for r in [radius, radius * 1.22]:
-			draw_arc(center, r, PI * 1.12, TAU * 1.03, 96, Color(accent_tint.darkened(0.25), 0.13), 1.0, true)
-		var horizon := size.y * 0.70
-		draw_line(Vector2(size.x * 0.48, horizon), Vector2(size.x, horizon), Color(FrontendPalette.TEXT, 0.065), 1, true)
-		for offset in range(4):
-			var y := horizon + pow(float(offset + 1) / 4, 1.6) * (size.y - horizon)
-			draw_line(Vector2(size.x * 0.48, y), Vector2(size.x, y), Color(FrontendPalette.TEXT, 0.025), 1, true)
-		for x in range(8):
-			for y in range(4):
-				draw_circle(Vector2(size.x - 42 - x * 16, 38 + y * 16), 1.2, Color(FrontendPalette.TEXT, 0.10), true, -1, true)
+		draw_rect(Rect2(Vector2.ZERO, size), HomePalette.BACKGROUND)
+		var center := Vector2(size.x * 0.78, size.y * 0.48)
+		var radius := size.y * 0.42
+		var tint := HomePalette.BACKGROUND.lerp(accent_tint, 0.085)
+		for ring in range(60, 0, -1):
+			var fraction := float(ring) / 60.0
+			draw_circle(center, radius * 1.48 * fraction, Color(tint, 0.04), true, -1, true)
+		var line_color := Color(accent_tint.darkened(0.25), 0.07)
+		draw_arc(center, radius, PI * 1.08, TAU * 1.12, 128, line_color, 2.0, true)
+		draw_arc(center, radius * 0.77, -PI * 0.32, PI * 0.55, 96, Color(Color.WHITE, 0.75), 16, true)
+		var ball_center := Vector2(size.x * 0.98, size.y * 0.10)
+		var ball_radius := size.y * 0.17
+		var ball_ink := Color(HomePalette.TEXT, 0.035)
+		draw_circle(ball_center, ball_radius, ball_ink, false, 12, true)
+		draw_line(ball_center - Vector2(ball_radius, 0), ball_center + Vector2(ball_radius, 0), ball_ink, 12, true)
+		draw_circle(ball_center, ball_radius * 0.25, HomePalette.BACKGROUND, true, -1, true)
+		draw_circle(ball_center, ball_radius * 0.25, ball_ink, false, 8, true)
 
 	else:
-		draw_line(Vector2.ZERO, Vector2(size.x, 0), FrontendPalette.TEXT, 6)
-		draw_line(Vector2.ZERO, Vector2(size.x * 0.10, 0), FrontendPalette.GOLD, 6)
-		if variant == VARIANT_VICTORY:
-			draw_arc(Vector2(size.x * 0.82, size.y * 0.4), size.y * 0.42,
-				0, TAU, 96, Color("e8e6df"), 34, true)
+		var center := Vector2(size.x * 0.75, size.y * 0.48)
+		var tint := accent_tint if variant == VARIANT_VICTORY else Color("c5d6e6")
+		for ring in range(40, 0, -1):
+			draw_circle(center, size.y * 0.75 * float(ring) / 40.0, Color(tint, 0.009), true, -1, true)

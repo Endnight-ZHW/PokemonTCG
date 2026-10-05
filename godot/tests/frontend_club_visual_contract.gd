@@ -4,11 +4,11 @@ extends SceneTree
 ## Run with -- --skip-performance for layout-only iteration.
 const OUTPUT := "res://../build/frontend-club/after"
 const SIZES := [Vector2i(1600, 900), Vector2i(1280, 720), Vector2i(900, 540),
-	Vector2i(2000, 900), Vector2i(640, 960)]
+	Vector2i(2000, 900), Vector2i(640, 960), Vector2i(1024, 768), Vector2i(1920, 1080)]
 var main: Control
 var settings: Node
 var failures: Array[String] = []
-var report := {"schema": "ptcg.frontend_club/1", "profiles": [], "lifecycle": []}
+var report := {"schema": "ptcg.frontend_club/2", "profiles": [], "action_profiles": [], "page_profiles": [], "lifecycle": []}
 
 
 func _initialize() -> void:
@@ -129,6 +129,7 @@ func run() -> void:
 	await check_lifecycle()
 	if "--skip-performance" not in OS.get_cmdline_user_args():
 		await measure_performance()
+		await measure_page_performance()
 	report["failures"] = failures
 	var report_name := "layout-validation.json" if report.profiles.is_empty() else "validation.json"
 	var file := FileAccess.open("res://../build/frontend-club/" + report_name, FileAccess.WRITE)
@@ -204,3 +205,60 @@ func measure_performance() -> void:
 		report.profiles.append(row)
 		check(row.passes_budget, "Homepage frame budget exceeded: " + JSON.stringify(row))
 		print("FRONTEND_FRAME_PROFILE ", JSON.stringify(row))
+		var action_frames: Array[float] = []
+		for index in range(Engine.max_fps * 3):
+			if index % Engine.max_fps == 0:
+				title.card_stage._toggle_case()
+				title.card_stage._toss_coin()
+			var start := Time.get_ticks_usec()
+			await process_frame
+			await RenderingServer.frame_post_draw
+			action_frames.append(float(Time.get_ticks_usec() - start) / 1000.0)
+		action_frames.sort()
+		var action_row := {"quality": profile,
+			"p95_ms": action_frames[ceili(action_frames.size() * 0.95) - 1],
+			"frames": action_frames.size()}
+		action_row["passes_budget"] = action_row.p95_ms <= (36.0 if profile == "low" else 20.0)
+		report.action_profiles.append(action_row)
+		check(action_row.passes_budget, "Homepage action frame budget exceeded: " + JSON.stringify(action_row))
+		print("FRONTEND_ACTION_FRAME_PROFILE ", JSON.stringify(action_row))
+		title.card_stage._lid_target = 0
+		title.card_stage._cancel_interaction()
+
+
+func measure_page_performance() -> void:
+	for profile in ["high", "medium", "low"]:
+		settings.quality_profile = profile
+		settings.changed.emit()
+		Engine.max_fps = settings.target_fps()
+		for page_name in ["decks", "network", "settings", "help", "deck-detail", "card-detail", "result"]:
+			main.modal_host_controller.close()
+			await settle(16)
+			match page_name:
+				"decks": main.shell_view.show_deck_select("local")
+				"network": main.shell_view.show_network_setup("lan")
+				"settings": main._show_settings()
+				"help": main._show_help()
+				"deck-detail": main._show_deck_details("fire")
+				"card-detail": main._show_card_inspector({"card_id": "svi-ente"})
+				"result":
+					var result: Control = main.shell_view.mount(load("res://scenes/end/victory_screen.tscn"))
+					result.configure(0, 18, "玩家 1", "svi-ente", {"mode": "local", "winner_deck_name": "烈焰猴"})
+			await settle(12)
+			var frames: Array[float] = []
+			for index in range(Engine.max_fps):
+				if page_name == "decks":
+					(main.screen_host.get_child(0) as DeckSelectPage).gallery_scroll.scroll_vertical += 2
+				elif page_name == "deck-detail":
+					main.modal_scroll.scroll_vertical += 2
+				var started := Time.get_ticks_usec()
+				await process_frame
+				await RenderingServer.frame_post_draw
+				frames.append(float(Time.get_ticks_usec() - started) / 1000.0)
+			frames.sort()
+			var row := {"quality": profile, "page": page_name, "frames": frames.size(),
+				"p95_ms": frames[ceili(frames.size() * 0.95) - 1]}
+			row["passes_budget"] = row.p95_ms <= (36.0 if profile == "low" else 20.0)
+			report.page_profiles.append(row)
+			check(row.passes_budget, "Front-end page exceeded its frame budget: " + JSON.stringify(row))
+			print("FRONTEND_PAGE_PROFILE ", JSON.stringify(row))

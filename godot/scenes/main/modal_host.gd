@@ -22,12 +22,23 @@ var main: Variant
 var generation := 0
 var back_action := Callable()
 var closing := false
+var _shade_tap := PointerTap.new()
 var _close_completion := Callable()
 var _close_completion_generation := -1
 
 
 func _ready() -> void:
 	visibility_changed.connect(_sync_battle_input)
+
+func _input(event: InputEvent) -> void:
+	if not visible or closing or active_spec == null or not active_spec.dismiss_on_shade:
+		return
+	if _shade_tap.handle(self, make_input_local(event)):
+		var start := _shade_tap.gesture.origin
+		var end := _shade_tap.gesture.position
+		if not PointerGesture.contains_viewport_point(modal_panel, start) and not PointerGesture.contains_viewport_point(modal_panel, end):
+			handle_back()
+			get_viewport().set_input_as_handled()
 
 
 func _sync_battle_input() -> void:
@@ -66,6 +77,7 @@ func open(
 	spec: ModalSpec = null,
 ) -> void:
 	PointerGesture.cancel_all()
+	_shade_tap.gesture.clear()
 	if main.battle_screen:
 		main.battle_screen.close_log_drawer()
 		main.battle_screen.cancel_pointer_gestures()
@@ -106,6 +118,8 @@ func open(
 	modal_confirm.theme_type_variation = _button_variation(
 		resolved_spec.confirm_role,
 	)
+	if resolved_spec.surface == ModalSpec.Surface.FRONTEND and confirm_text in ["关闭", "返回卡牌详情", "返回牌组详情"]:
+		modal_confirm.theme_type_variation = &"FrontSecondaryButton"
 	modal_cancel.text = cancel_text
 	modal_cancel.disabled = false
 	modal_cancel.visible = resolved_spec.cancellable and not cancel_text.is_empty()
@@ -240,6 +254,11 @@ func _free_children_immediate(parent: Node) -> void:
 
 func begin(spec: ModalSpec, available_size: Vector2) -> void:
 	active_spec = spec
+	var frontend := spec.surface == ModalSpec.Surface.FRONTEND
+	(modal_confirm.get_parent() as BoxContainer).alignment = BoxContainer.ALIGNMENT_END if frontend else BoxContainer.ALIGNMENT_BEGIN
+	for button in [modal_confirm, modal_cancel]:
+		button.size_flags_horizontal = Control.SIZE_FILL if frontend else Control.SIZE_EXPAND_FILL
+		button.custom_minimum_size.x = 160 if frontend else 0
 	set_meta("ui_surface", spec.surface)
 	if modal_shade:
 		var alpha := modal_shade.color.a
@@ -250,6 +269,8 @@ func begin(spec: ModalSpec, available_size: Vector2) -> void:
 		modal_panel.remove_theme_stylebox_override("panel")
 		_apply_layout(spec, available_size)
 	if modal_scroll:
+		modal_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED if spec.body_owns_scroll else ScrollContainer.SCROLL_MODE_AUTO
+		modal_body.size_flags_vertical = Control.SIZE_EXPAND_FILL if spec.body_owns_scroll else Control.SIZE_FILL
 		SurfacePalette.for_control(self).style_scrollbar(modal_scroll.get_v_scroll_bar())
 		SurfacePalette.for_control(self).style_scrollbar(modal_scroll.get_h_scroll_bar())
 

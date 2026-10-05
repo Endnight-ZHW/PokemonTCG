@@ -9,7 +9,7 @@
 [ext_resource type="Texture2D" path="res://assets/ui/frontend/deck.svg" id="6_deck"]
 [ext_resource type="Texture2D" path="res://assets/ui/frontend/refresh.svg" id="7_refresh"]
 [ext_resource type="Texture2D" path="res://assets/ui/frontend/arrow_left.svg" id="8_arrow_left"]
-[ext_resource type="Texture2D" path="res://assets/app_icon.svg" id="9_app_icon"]
+[ext_resource type="Texture2D" path="res://assets/ui/frontend/result_placeholder.svg" id="9_app_icon"]
 
 [sub_resource type="Animation" id="Animation_reset"]
 resource_name = "RESET"
@@ -94,7 +94,7 @@ layout_mode = 2
 unique_name_in_owner = true
 custom_minimum_size = Vector2(1120, 0)
 layout_mode = 2
-theme_type_variation = &"FrontQuietPanel"
+theme_type_variation = &"FrontCardFrame"
 
 [node name="PanelMargin" type="MarginContainer" parent="SafeContent/Center/VictoryPanel"]
 unique_name_in_owner = true
@@ -110,45 +110,9 @@ layout_mode = 2
 theme_override_constants/separation = 12
 alignment = 1
 
-[node name="CelebrationHeader" type="HBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
-layout_mode = 2
-theme_override_constants/separation = 9
-alignment = 1
-
-[node name="TrophyIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/CelebrationHeader"]
-custom_minimum_size = Vector2(24, 24)
-layout_mode = 2
-self_modulate = Color(0.784314, 0.231373, 0.207843, 1.000000)
-texture = ExtResource("4_trophy")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Eyebrow" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/CelebrationHeader"]
-layout_mode = 2
-theme_type_variation = &"FrontSectionLabel"
-theme_override_font_sizes/font_size = 16
-text = "对局结算"
-vertical_alignment = 1
-
-[node name="WinnerLabel" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontHeadingLabel"
-theme_override_font_sizes/font_size = 46
-text = "玩家 1，胜利！"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="ResultSubtitle" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 16
-text = "对局已结束"
-horizontal_alignment = 1
-
 [node name="HeaderDivider" type="HSeparator" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
 layout_mode = 2
+visible = false
 
 [node name="ResultGrid" type="GridContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
 unique_name_in_owner = true
@@ -162,7 +126,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(300, 304)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_type_variation = &"FrontQuietPanel"
+theme_type_variation = &"FrontCardFrame"
 
 [node name="CardStageContent" type="VBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage"]
 layout_mode = 2
@@ -199,12 +163,13 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="PlaceholderIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage/CardStageContent/CardFrameCenter/CardFrame/CardPlaceholder"]
-custom_minimum_size = Vector2(72, 72)
+custom_minimum_size = Vector2(190, 266)
 layout_mode = 2
-modulate = Color(0.349020, 0.396078, 0.474510, 1.000000)
+modulate = Color(1, 1, 1, 1)
 texture = ExtResource("9_app_icon")
 expand_mode = 1
 stretch_mode = 5
+self_modulate = Color(1, 1, 1, 1)
 
 [node name="CardNameLabel" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage/CardStageContent"]
 unique_name_in_owner = true
@@ -218,17 +183,56 @@ text_overrun_behavior = 3
 [node name="MatchPanel" type="PanelContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_type_variation = &"FrontQuietPanel"
+theme_type_variation = &"FrontCardFrame"
 
 [node name="MatchContent" type="VBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 16
+alignment = 1
+
+[node name="CelebrationHeader" type="HBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
+layout_mode = 2
+theme_override_constants/separation = 9
+alignment = 0
+
+[node name="TrophyIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/CelebrationHeader"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+self_modulate = Color(0.784314, 0.231373, 0.207843, 1.000000)
+texture = ExtResource("4_trophy")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Eyebrow" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/CelebrationHeader"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 16
+text = "对局结算"
+vertical_alignment = 1
+
+[node name="WinnerLabel" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontHeadingLabel"
+theme_override_font_sizes/font_size = 46
+text = "玩家 1，胜利！"
+horizontal_alignment = 0
+autowrap_mode = 2
+
+[node name="ResultSubtitle" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 16
+text = "对局已结束"
+horizontal_alignment = 0
 
 [node name="MatchHeading" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
 layout_mode = 2
 theme_type_variation = &"FrontSectionLabel"
 theme_override_font_sizes/font_size = 20
 text = "本局摘要"
+visible = false
 
 [node name="SummaryLabel" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
 unique_name_in_owner = true
@@ -240,6 +244,7 @@ autowrap_mode = 2
 
 [node name="StatsDivider" type="HSeparator" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
 layout_mode = 2
+visible = false
 
 [node name="ModeRow" type="HBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
 unique_name_in_owner = true
@@ -335,6 +340,7 @@ text = "0 回合"
 
 [node name="ButtonsDivider" type="HSeparator" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
 layout_mode = 2
+visible = false
 
 [node name="Buttons" type="HBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
 layout_mode = 2

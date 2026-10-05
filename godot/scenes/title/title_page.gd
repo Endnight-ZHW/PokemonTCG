@@ -6,6 +6,8 @@ signal network_selected(kind: String)
 signal settings_requested
 signal help_requested
 signal showcase_changed(accent: Color)
+signal card_art_requested(card_id: String)
+signal showcase_sound_requested(cue: String)
 
 const MAX_CONTENT_WIDTH := 1440.0
 @export var game_title := "宝可梦\n卡牌对战"
@@ -17,6 +19,11 @@ var _application_suspended := false
 var _version_text := "v0.0.0"
 var _embedded_backdrop_enabled := true
 var _background_active := true
+var _transitioning := false
+var _rotation_epoch := 0
+var _transition_tween: Tween
+var _transition_accent_from := Color.WHITE
+
 
 @onready var embedded_backdrop: FrontendBackdrop = %EmbeddedBackdrop
 @onready var safe_content: MarginContainer = %SafeContent
@@ -43,10 +50,13 @@ func _ready() -> void:
 	if _deck_index < 0:
 		_deck_index = _showcase_rng.randi_range(0, _deck_keys.size() - 1) if not _deck_keys.is_empty() else 0
 	_refresh_featured_deck()
+	card_stage.card_activated.connect(card_art_requested.emit)
+	card_stage.sound_requested.connect(showcase_sound_requested.emit)
+	_style_home()
 	showcase_timer.timeout.connect(_rotate_random_deck)
 	card_stage.interaction_changed.connect(_on_showcase_interaction)
 	showcase_timer.start()
-	visibility_changed.connect(_refresh_rotation_pause)
+	visibility_changed.connect(_on_visibility_changed)
 	_connect_actions()
 	resized.connect(_apply_responsive_layout)
 	_apply_responsive_layout()
@@ -70,7 +80,7 @@ func set_background_active(active: bool) -> void:
 		card_stage.set_active(active)
 		_refresh_rotation_pause()
 		if not active:
-			FrontendMotion.settle(card_stage)
+			_cancel_feature_transition()
 
 func _connect_actions() -> void:
 	for row in [
@@ -95,16 +105,16 @@ func _apply_responsive_layout() -> void:
 		safe_content.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 12, 32))
 	page_frame.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 12, 24))
 	header_panel.custom_minimum_size.y = 0
-	title_label.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 38, 48))
+	title_label.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 38, 50))
 	body_grid.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 20, 48))
 	body_grid.add_theme_constant_override("v_separation", 12)
 	hero_panel.custom_minimum_size = Vector2(UILayoutPolicy.fit(size, 360, 640), 0)
 	modes_panel.custom_minimum_size.x = UILayoutPolicy.fit(size, 330, 420)
 	card_stage.custom_minimum_size.y = 0
-	mode_stack.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 10, 14))
+	mode_stack.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 10, 16))
 	for button in [%LocalTwoPlayerButton, %AIButton, %NetworkButton]:
 		button.custom_minimum_size.y = UILayoutPolicy.fit(size, 84, 96)
-	footer_row.custom_minimum_size.y = 52
+	footer_row.custom_minimum_size.y = 24
 
 func _play_enter() -> void:
 	FrontendMotion.play_enter(page_frame, 0.22, 0.992)
@@ -117,17 +127,92 @@ func featured_accent() -> Color:
 	var deck := CardCatalog.shared().get_deck(featured_deck_key())
 	return DesignTokens.type_color(str(deck.get("energy_type", "Colorless")))
 
+func _rotation_blocked() -> bool:
+	return not _background_active or _application_suspended or not is_visible_in_tree() or card_stage.is_interacting()
+
 func _rotate_random_deck() -> void:
-	if _deck_keys.size() < 2 or not _background_active or _application_suspended or not is_visible_in_tree() or card_stage.is_interacting():
+	if _deck_keys.size() < 2 or _rotation_blocked() or _transitioning:
 		return
-	# A dedicated cosmetic RNG never consumes the battle/session random stream.
+	_transitioning = true
+	_rotation_epoch += 1
+	var epoch := _rotation_epoch
 	var next := _showcase_rng.randi_range(0, _deck_keys.size() - 2)
-	_deck_index = next + 1 if next >= _deck_index else next
-	_refresh_featured_deck()
-	FrontendMotion.play_enter(card_stage, 0.20, 1.0)
+	next = next + 1 if next >= _deck_index else next
+	var card_id := DeckVisualCatalog.representative_card(CardCatalog.shared(), _deck_keys[next])
+	var path := str(CardCatalog.shared().get_card(card_id).get("image_path", ""))
+	var texture_cache := get_node("/root/CardTextureCache")
+	var paths: Array[String] = [path]
+	var handle: MotionHandle = texture_cache.prefetch(paths)
+	_refresh_rotation_pause()
+	if not handle.is_finished():
+		await handle.completed
+	if epoch != _rotation_epoch:
+		return
+	if _rotation_blocked() or path.is_empty() or texture_cache.get_cached_or_request(path) == null:
+		_cancel_feature_transition()
+		return
+	if FrontendMotion.decorative_motion_enabled():
+		_transition_accent_from = featured_accent()
+		_transition_tween = create_tween()
+		_transition_tween.tween_method(_fade_feature_out, 0.0, 1.0, 0.14)
+		_transition_tween.tween_callback(_commit_feature.bind(next, epoch))
+		_transition_tween.tween_method(_fade_feature_in, 0.0, 1.0, 0.18)
+		_transition_tween.tween_callback(_finish_feature_transition.bind(epoch))
+	else:
+		_commit_feature(next, epoch)
+		_finish_feature_transition(epoch)
+
+func _commit_feature(index: int, epoch: int) -> void:
+	if epoch != _rotation_epoch:
+		return
+	_deck_index = index
+	_refresh_featured_deck(false)
+
+func _fade_feature_out(amount: float) -> void:
+	card_stage.modulate.a = 1.0 - amount
+	_apply_feature_accent(_transition_accent_from.lerp(HomePalette.BACKGROUND, amount))
+
+func _fade_feature_in(amount: float) -> void:
+	card_stage.modulate.a = amount
+	_apply_feature_accent(HomePalette.BACKGROUND.lerp(featured_accent(), amount))
+
+func _apply_feature_accent(color: Color) -> void:
+	embedded_backdrop.set_accent(color)
+	showcase_changed.emit(color)
+
+func _finish_feature_transition(epoch: int) -> void:
+	if epoch != _rotation_epoch:
+		return
+	_transitioning = false
+	card_stage.modulate.a = 1.0
+	_apply_feature_accent(featured_accent())
+	showcase_timer.start()
+	_refresh_rotation_pause()
+
+func _cancel_feature_transition() -> void:
+	_rotation_epoch += 1
+	_transitioning = false
+	if _transition_tween and _transition_tween.is_valid():
+		_transition_tween.kill()
+	FrontendMotion.settle(card_stage)
+	if is_node_ready():
+		_apply_feature_accent(featured_accent())
+		showcase_timer.start()
+		_refresh_rotation_pause()
 
 func _refresh_rotation_pause() -> void:
-	showcase_timer.paused = not _background_active or _application_suspended or not is_visible_in_tree() or card_stage.is_interacting()
+	var paused := _rotation_blocked() or _transitioning
+	if showcase_timer.paused and not paused:
+		showcase_timer.start()
+	showcase_timer.paused = paused
+
+func _on_visibility_changed() -> void:
+	if not is_inside_tree() or not is_node_ready():
+		return
+	if not is_visible_in_tree():
+		_cancel_feature_transition()
+	else:
+		_refresh_rotation_pause()
 
 func _notification(what: int) -> void:
 	if what in [NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT]:
@@ -137,9 +222,11 @@ func _notification(what: int) -> void:
 	else:
 		return
 	if is_node_ready():
+		if _application_suspended:
+			_cancel_feature_transition()
 		_refresh_rotation_pause()
 
-func _refresh_featured_deck() -> void:
+func _refresh_featured_deck(apply_accent: bool = true) -> void:
 	var key := featured_deck_key()
 	var catalog := CardCatalog.shared()
 	var deck := catalog.get_deck(key)
@@ -148,11 +235,26 @@ func _refresh_featured_deck() -> void:
 	_remembered_deck_key = key
 	card_stage.set_cards([DeckVisualCatalog.representative_card(catalog, key)])
 	card_stage.set_deck(name_value, type_value, int(deck.get("card_count", 0)))
-	embedded_backdrop.set_accent(featured_accent())
-	showcase_changed.emit(featured_accent())
+	if apply_accent:
+		_apply_feature_accent(featured_accent())
 
 func _on_showcase_interaction(active: bool) -> void:
-	FrontendMotion.settle(card_stage)
+	if active:
+		_cancel_feature_transition()
 	if not active:
 		showcase_timer.start()
 	_refresh_rotation_pause()
+
+
+func _style_home() -> void:
+	title_label.add_theme_color_override("font_color", HomePalette.TEXT)
+	version_label.add_theme_color_override("font_color", HomePalette.MUTED)
+	for button: Button in [%SettingsButton, %HelpButton]:
+		button.add_theme_stylebox_override("normal", HomePalette.utility_style())
+		button.add_theme_stylebox_override("hover", HomePalette.utility_style(false, true))
+		button.add_theme_stylebox_override("pressed", HomePalette.utility_style(true))
+		button.add_theme_stylebox_override("hover_pressed", HomePalette.utility_style(true))
+		button.add_theme_color_override("font_color", HomePalette.TEXT)
+		button.add_theme_color_override("font_hover_color", HomePalette.TEXT)
+		button.add_theme_color_override("font_pressed_color", HomePalette.TEXT)
+		button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND

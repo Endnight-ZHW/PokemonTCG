@@ -85,7 +85,7 @@ func set_assignment_state(
 
 func _configure_energy_badge(energy_type: String) -> void:
 	var display_name := EnergyIconCatalog.type_display_name_for(energy_type)
-	var icon_texture := EnergyIconCatalog.texture_for(energy_type)
+	var icon_texture := FrontendAttributes.texture_for(energy_type)
 	energy_label.text = display_name
 	energy_icon.texture = icon_texture
 	energy_icon.visible = icon_texture != null

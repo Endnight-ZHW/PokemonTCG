@@ -6,7 +6,7 @@ const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
 signal rematch_requested
 signal title_requested
 
-const MAX_PANEL_WIDTH := 1120.0
+const MAX_PANEL_WIDTH := 1160.0
 
 var winner := 0
 var turn_count := 0
@@ -14,6 +14,7 @@ var winner_name := ""
 var winner_card_id := ""
 var context: Dictionary = {}
 var _entrance_started := false
+var celebration: ResultCelebration
 
 @onready var safe_content: MarginContainer = %SafeContent
 @onready var victory_panel: PanelContainer = %VictoryPanel
@@ -42,6 +43,12 @@ var _entrance_started := false
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	celebration = ResultCelebration.new()
+	add_child(celebration)
+	celebration.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	victory_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	card_stage.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	result_grid.get_node("MatchPanel").add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	_connect_actions()
 	if not resized.is_connected(_apply_responsive_layout):
 		resized.connect(_apply_responsive_layout)
@@ -90,6 +97,8 @@ func _refresh() -> void:
 	var network := str(context.get("mode", "")) in ["network", "lan", "relay"]
 	rematch_button.text = "返回联机大厅" if network else "重新选牌"
 	footer_hint.text = ""
+	(find_child("TrophyIcon", true, false) as TextureRect).self_modulate = FrontendPalette.MUTED if _is_draw() else FrontendPalette.GOLD
+	(find_child("DeckCaption", true, false) as Label).text = "参战牌组" if _is_draw() else "获胜牌组"
 	if _is_draw():
 		winner_label.text = "本局平局"
 		result_subtitle.text = "本局没有胜者"
@@ -119,7 +128,7 @@ func _refresh() -> void:
 
 func _refresh_card() -> void:
 	var card_data: Dictionary = {}
-	if not winner_card_id.is_empty():
+	if not winner_card_id.is_empty() and not _is_draw():
 		card_data = CardDatabase.get_card(winner_card_id)
 	var image_path := str(card_data.get("image_path", ""))
 	card_image.texture = (
@@ -137,6 +146,9 @@ func _refresh_card() -> void:
 	elif resolved_name.is_empty():
 		resolved_name = "本局未记录代表卡"
 	card_name_label.text = resolved_name
+	var types: Array = card_data.get("energy_types", [])
+	var tint := Color("cbd4dd") if _is_draw() or types.is_empty() else DesignTokens.type_color(str(types[0]))
+	($FrontendBackdrop as FrontendBackdrop).set_accent(tint)
 	card_image.tooltip_text = ""
 	card_image.accessibility_name = resolved_name
 
@@ -224,14 +236,14 @@ func _apply_responsive_layout() -> void:
 	panel_margin.add_theme_constant_override("margin_top", UILayoutPolicy.fit_int(size, 12, 28))
 	panel_margin.add_theme_constant_override("margin_bottom", UILayoutPolicy.fit_int(size, 12, 28))
 	content.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 8, 12))
-	winner_label.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 32, 46))
-	content.get_node("CelebrationHeader").visible = true
+	winner_label.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 36, 52))
+	find_child("CelebrationHeader", true, false).visible = true
 	result_subtitle.visible = true
 	summary_label.visible = true
-	footer_hint.visible = true
-	var stage_size := UILayoutPolicy.fit(size, 180, 260)
+	footer_hint.visible = false
+	var stage_size := UILayoutPolicy.fit(size, 300, 380)
 	card_stage.custom_minimum_size = Vector2(stage_size, stage_size)
-	var card_width := UILayoutPolicy.fit(size, 128, 160)
+	var card_width := UILayoutPolicy.fit(size, 242, 318)
 	card_frame.custom_minimum_size = Vector2(card_width, card_width * 1.4)
 	for row: HBoxContainer in [mode_row, deck_row, turn_row]:
 		row.custom_minimum_size.y = UILayoutPolicy.fit(size, 36, 44)
@@ -253,6 +265,8 @@ func _start_entrance() -> void:
 	if not FRONTEND_MOTION.decorative_motion_enabled():
 		_show_final_motion_state()
 		return
+	if celebration and not _is_draw():
+		celebration.play()
 	var animation: Animation = (
 		animation_player.get_animation("enter") if animation_player else null
 	)
@@ -270,6 +284,8 @@ func _on_runtime_settings_changed() -> void:
 
 
 func _show_final_motion_state() -> void:
+	if celebration:
+		celebration.finish()
 	if animation_player:
 		animation_player.stop()
 		animation_player.speed_scale = 1.0

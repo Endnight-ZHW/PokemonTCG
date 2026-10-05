@@ -10,6 +10,8 @@ var host: ModalHost
 var catalog: CardCatalog
 var in_battle := false
 var player_names: Array[String] = []
+## Optional persistence adapter; the application uses AppSettings by default.
+var settings_writer := Callable()
 
 func configure_context(p_catalog: CardCatalog, p_in_battle: bool, names: Array[String]) -> void:
 	catalog = p_catalog
@@ -36,7 +38,7 @@ func _show_help(
 		"关闭",
 		"",
 		in_battle,
-		ModalSpec.battle(Vector2(900, 700), true) if in_battle else ModalSpec.frontend(Vector2(1040, 700)),
+		ModalSpec.battle(Vector2(900, 700), true) if in_battle else ModalSpec.frontend(Vector2(1040, 700)).with_reading_pane(),
 	)
 	var panel := HELP_PANEL_SCENE.instantiate() as HelpPanel
 	host.modal_body.add_child(panel)
@@ -55,6 +57,24 @@ func _show_help(
 		host.close(resume_action)
 	, CONNECT_ONE_SHOT)
 
+## Direct gallery route; closing restores the existing title instance and pose.
+func show_home_card_art(card_id: String) -> void:
+	var card := catalog.get_card(card_id)
+	if card.is_empty():
+		return
+	click_requested.emit()
+	var spec := ModalSpec.frontend(Vector2(720, 850))
+	spec.shade_alpha = 0.62
+	spec.dismiss_on_shade = true
+	host.open(str(card.get("name", "")), "关闭", "", false, spec)
+	var art := CardArtPanel.new()
+	art.name = "CardArtZoom"
+	art.texture = CardTextureCache.get_texture(str(card.get("image_path", "")))
+	art.accessibility_name = str(card.get("name", "卡牌原图"))
+	host.modal_body.add_child(art)
+	host.back_action = host.close
+	host.modal_confirm.pressed.connect(host.close, CONNECT_ONE_SHOT)
+
 func _show_card_inspector(
 	context: Dictionary,
 	return_action: Callable = Callable(),
@@ -71,7 +91,7 @@ func _show_card_inspector(
 	var card_spec := (
 		ModalSpec.battle(Vector2(860, 700), in_battle)
 		if in_battle
-		else ModalSpec.frontend(Vector2(860, 700))
+		else ModalSpec.frontend(Vector2(1080, 740))
 	)
 	if return_action.is_valid():
 		card_spec.stack_behavior = ModalSpec.StackBehavior.RESTORE_PARENT
@@ -211,7 +231,7 @@ func _show_deck_details(
 		"关闭",
 		"",
 		false,
-		ModalSpec.frontend(Vector2(980, 720)),
+		ModalSpec.frontend(Vector2(1120, 760)),
 	)
 	var panel := DECK_DETAIL_PANEL_SCENE.instantiate() as DeckDetailPanel
 	host.modal_body.add_child(panel)
@@ -251,12 +271,16 @@ func _show_settings(resume_choice_context: Dictionary = {}) -> void:
 		"保存设置",
 		"取消",
 		in_battle,
-		ModalSpec.battle(Vector2(900, 760), true) if in_battle else ModalSpec.frontend(Vector2(1040, 700)),
+		ModalSpec.battle(Vector2(900, 760), true) if in_battle else ModalSpec.frontend(Vector2(960, 620)).with_reading_pane(),
 	)
 	var panel := SETTINGS_PANEL_SCENE.instantiate() as SettingsPanel
 	host.modal_body.add_child(panel)
 	panel.configure()
-	panel.save_requested.connect(_save_settings_values.bind(field_choice_context))
+	var settings_generation := host.generation
+	panel.save_requested.connect(func(values: Dictionary) -> void:
+		if host.generation == settings_generation:
+			_save_settings_values(values, field_choice_context)
+	, CONNECT_DEFERRED)
 	# Keep the save action connected while the modal remains open so a transient
 	# filesystem failure can be corrected and retried without reopening Settings.
 	host.modal_confirm.pressed.connect(panel.request_save)
@@ -275,6 +299,33 @@ func _save_settings_values(
 	values: Dictionary,
 	resume_choice_context: Dictionary = {},
 ) -> void:
+	var previous := {}
+	for key in ["master_volume", "muted", "card_cache_size", "animation_mode",
+		"quality_profile", "music_volume", "sfx_volume"]:
+		previous[key] = AppSettings.get(key)
+	# Persist the normalized draft before notifying audio, rendering, or battle
+	# listeners. Failed writes leave both runtime state and the form intact.
+	var signals_were_blocked := AppSettings.is_blocking_signals()
+	AppSettings.set_block_signals(true)
+	_apply_settings_values(values)
+	var saved: bool = settings_writer.call() if settings_writer.is_valid() else AppSettings.save_settings()
+	if not saved:
+		_apply_settings_values(previous)
+	AppSettings.set_block_signals(signals_were_blocked)
+	if not saved:
+		toast_requested.emit("设置保存失败。", true)
+		return
+	if not signals_were_blocked:
+		AppSettings.changed.emit()
+	host.close(_complete_auxiliary_modal.bind(
+		resume_choice_context,
+		Callable(),
+	))
+	Engine.max_fps = AppSettings.target_fps()
+	toast_requested.emit("设置已保存。", false)
+
+
+func _apply_settings_values(values: Dictionary) -> void:
 	AppSettings.update(
 		float(values.get("master_volume", AppSettings.master_volume)),
 		bool(values.get("muted", AppSettings.muted)),
@@ -284,12 +335,16 @@ func _save_settings_values(
 		float(values.get("music_volume", AppSettings.music_volume)),
 		float(values.get("sfx_volume", AppSettings.sfx_volume)),
 	)
-	if not AppSettings.save_settings():
-		toast_requested.emit("设置保存失败。", true)
-		return
-	host.close(_complete_auxiliary_modal.bind(
-		resume_choice_context,
-		Callable(),
-	))
-	Engine.max_fps = AppSettings.target_fps()
-	toast_requested.emit("设置已保存。", false)
+
+
+func show_deck_picker(page: NetworkLobbyPage) -> void:
+	host.open("选择参战牌组", "取消", "", false, ModalSpec.frontend(Vector2(1120, 760)).with_button_roles(ModalSpec.ButtonRole.SECONDARY))
+	var picker := DeckPickerPanel.new()
+	host.modal_body.add_child(picker)
+	picker.configure(catalog, page.selected_deck_key())
+	var picker_generation := host.generation
+	picker.deck_selected.connect(func(key: String) -> void:
+		if host.generation == picker_generation and is_instance_valid(page) and page.select_deck(key):
+			host.close()
+	, CONNECT_DEFERRED)
+	host.modal_confirm.pressed.connect(host.close, CONNECT_ONE_SHOT)

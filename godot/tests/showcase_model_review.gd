@@ -35,6 +35,7 @@ func run() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUTPUT))
 	for card in stage._backs:
 		card.hide()
+	stage._coin.hide()
 	stage._world.get_node("DisplayMat").hide()
 	stage._world.get_node("CaseContactShadow").hide()
 	var views := [["front", -18.0, 12.0], ["three-quarter", 20.0, 24.0],
@@ -62,7 +63,7 @@ func run() -> void:
 				stage.cards[0].show()
 		if subject == "case":
 			for side in [-1.0, 1.0]:
-				var joint_target: Vector3 = stage._case_root.to_global(Vector3(side * 0.76, 2.04, -0.58))
+				var joint_target: Vector3 = stage._case_root.to_global(Vector3(side * (ShowcaseCaseGeometry.WIDTH * 0.5 - 0.05), 2.04, -ShowcaseCaseGeometry.DEPTH * 0.5))
 				stage.camera.position = joint_target + stage._case_root.basis * Vector3(side * 0.55, 0.30, -0.85).normalized() * 2.0
 				stage.camera.look_at(joint_target)
 				await settle()

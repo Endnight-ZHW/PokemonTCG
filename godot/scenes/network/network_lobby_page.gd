@@ -5,6 +5,10 @@ const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
 const LAN_OVERVIEW_ICON := preload("res://assets/ui/frontend/lan.svg")
 const RELAY_OVERVIEW_ICON := preload("res://assets/ui/frontend/globe.svg")
 
+signal deck_picker_requested
+
+var catalog: CardCatalog
+
 signal back_requested
 signal kind_changed(kind: String)
 signal connect_requested(
@@ -43,28 +47,10 @@ var _received_locked_rules_options := false
 @onready var page: VBoxContainer = %Page
 @onready var page_scroll: ScrollContainer = %BodyScroll
 @onready var back_button: Button = %BackButton
-@onready var intro_panel: PanelContainer = %IntroPanel
 @onready var form_panel: PanelContainer = %FormPanel
 @onready var steps: HBoxContainer = %Steps
 @onready var heading: Label = %Heading
 @onready var subtitle: Label = %Subtitle
-@onready var kind_label: Label = %KindLabel
-@onready var kind_description: Label = %KindDescription
-@onready var intro_accent: ColorRect = %IntroAccent
-@onready var intro_icon: TextureRect = %IntroIcon
-@onready var kind_code: Label = %KindCode
-@onready var role_badge_label: Label = %RoleBadgeLabel
-@onready var intro_tip: Label = %IntroTip
-@onready var intro_feature_icons: Array[TextureRect] = [
-	%FeatureOneIcon,
-	%FeatureTwoIcon,
-	%FeatureThreeIcon,
-]
-@onready var intro_feature_labels: Array[Label] = [
-	%FeatureOne,
-	%FeatureTwo,
-	%FeatureThree,
-]
 @onready var kind_control_label: Label = %NetworkKindLabel
 @onready var kind_option: OptionButton = %NetworkKindOption
 @onready var role_option: OptionButton = %NetworkRoleOption
@@ -97,12 +83,14 @@ func _ready() -> void:
 	_ensure_connections()
 	status_label.set("accessibility_live", 1)
 	resized.connect(_apply_responsive_layout)
+	get_node("PageMargin/Page/BodyScroll/Body/DeckPanel").add_theme_stylebox_override("panel", FrontendPalette.panel(Color.WHITE, 24, Color.TRANSPARENT, 0, 20))
 	_apply_responsive_layout()
 
 
 func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> void:
 	_resolve_nodes()
 	_ensure_connections()
+	catalog = p_catalog
 	_clear_room_code()
 	room_input.clear()
 	_received_locked_rules_options = false
@@ -136,72 +124,48 @@ func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> voi
 
 
 func _resolve_nodes() -> void:
-	page = get_node("%Page") as VBoxContainer
+	page = %Page
 	page_scroll = %BodyScroll
-	FrontendPalette.style_scrollbar(page_scroll.get_v_scroll_bar())
-	back_button = page.get_node("TopBar/BackButton") as Button
-	intro_panel = get_node("%IntroPanel") as PanelContainer
-	steps = page.get_node("Steps") as HBoxContainer
-	heading = page.get_node("TopBar/TitleGroup/Heading") as Label
-	subtitle = page.get_node("TopBar/TitleGroup/Subtitle") as Label
-	kind_label = get_node("%KindLabel") as Label
-	kind_description = get_node("%KindDescription") as Label
-	intro_accent = get_node("%IntroAccent") as ColorRect
-	intro_icon = get_node("%IntroIcon") as TextureRect
-	kind_code = get_node("%KindCode") as Label
-	role_badge_label = get_node("%RoleBadgeLabel") as Label
-	intro_tip = get_node("%IntroTip") as Label
-	intro_feature_icons = [
-		get_node("%FeatureOneIcon") as TextureRect,
-		get_node("%FeatureTwoIcon") as TextureRect,
-		get_node("%FeatureThreeIcon") as TextureRect,
-	]
-	intro_feature_labels = [
-		get_node("%FeatureOne") as Label,
-		get_node("%FeatureTwo") as Label,
-		get_node("%FeatureThree") as Label,
-	]
-	var form := page.get_node("BodyScroll/Body/FormPanel/FormMargin/Form") as VBoxContainer
-	role_label = form.get_node("RoleLabel") as Label
-	role_option = form.get_node("NetworkRoleOption") as OptionButton
-	address_label = form.get_node("AddressRow/AddressLabel") as Label
-	address_input = form.get_node("AddressRow/NetworkAddressInput") as LineEdit
-	address_error = form.get_node("AddressRow/AddressError") as Label
-	kind_control_label = form.get_node("NetworkKindLabel") as Label
+	back_button = %BackButton
+	form_panel = %FormPanel
+	steps = %Steps
+	heading = %Heading
+	subtitle = %Subtitle
+	kind_control_label = %NetworkKindLabel
 	kind_option = %NetworkKindOption
-	port_row = form.get_node("PortRow") as VBoxContainer
-	port_input = port_row.get_node("NetworkPortInput") as LineEdit
-	port_error = port_row.get_node("PortError") as Label
-	room_row = form.get_node("RoomCodeRow") as VBoxContainer
-	room_input = room_row.get_node("NetworkRoomInput") as LineEdit
-	room_error = room_row.get_node("RoomError") as Label
-	deck_option = form.get_node("NetworkDeckOption") as OptionButton
-	deck_label = form.get_node("DeckLabel") as Label
-	rules_label = form.get_node("RulesLabel") as Label
-	rule_row = form.get_node("RuleRow") as HBoxContainer
-	matchup_toggle = rule_row.get_node("TypeMatchupToggle") as CheckButton
-	rule_status_badge = rule_row.get_node("RuleStatusBadge") as Label
-	for option in [kind_option, role_option, deck_option]:
-		option.get_popup().allow_search = false
-	status_panel = page.get_node("StatusPanel") as PanelContainer
-	var status_content := status_panel.get_node("StatusMargin/StatusContent") as HBoxContainer
-	status_dot = status_content.get_node("StatusDot") as Label
-	status_label = status_content.get_node("NetworkStatusLabel") as Label
-	room_code_display = status_content.get_node("RoomCodeDisplay") as LineEdit
-	copy_room_button = status_content.get_node("CopyRoomButton") as Button
-	connect_button = page.get_node("NetworkConnectButton") as Button
-	kind_option.accessibility_name = "联机方式"
-	role_option.accessibility_name = "联机身份"
-	address_input.accessibility_name = "连接地址"
-	port_input.accessibility_name = "局域网端口"
-	room_input.accessibility_name = "房间码"
-	deck_option.accessibility_name = "联机牌组"
-	matchup_toggle.accessibility_name = "弱点与抗性规则"
-	room_code_display.accessibility_name = "当前房间码"
+	role_option = %NetworkRoleOption
+	role_label = %RoleLabel
+	address_label = %AddressLabel
+	address_input = %NetworkAddressInput
+	port_row = %PortRow
+	port_input = %NetworkPortInput
+	room_row = %RoomCodeRow
+	room_input = %NetworkRoomInput
+	deck_option = %NetworkDeckOption
+	deck_label = %DeckLabel
+	rules_label = %RulesLabel
+	rule_row = %RuleRow
+	matchup_toggle = %TypeMatchupToggle
+	rule_status_badge = %RuleStatusBadge
+	status_panel = %StatusPanel
+	status_dot = %StatusDot
+	status_label = %NetworkStatusLabel
+	room_code_display = %RoomCodeDisplay
+	copy_room_button = %CopyRoomButton
+	connect_button = %NetworkConnectButton
+	address_error = %AddressError
+	port_error = %PortError
+	room_error = %RoomError
+	FrontendPalette.style_scrollbar(page_scroll.get_v_scroll_bar())
 	port_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
+	for entry in [[kind_option, "联机方式"], [role_option, "联机身份"], [address_input, "连接地址"], [port_input, "局域网端口"], [room_input, "房间码"], [deck_option, "联机牌组"], [%ChangeDeckButton, "更换参战牌组"], [matchup_toggle, "弱点与抗性规则"], [room_code_display, "当前连接信息"]]:
+		(entry[0] as Control).accessibility_name = str(entry[1])
+
 
 
 func _ensure_connections() -> void:
+	if not %ChangeDeckButton.pressed.is_connected(deck_picker_requested.emit):
+		%ChangeDeckButton.pressed.connect(deck_picker_requested.emit)
 	if not back_button.pressed.is_connected(back_requested.emit):
 		back_button.pressed.connect(back_requested.emit)
 	if not connect_button.pressed.is_connected(_emit_connect_requested):
@@ -238,7 +202,6 @@ func _select_kind_option(value: String) -> void:
 
 func _apply_kind_presentation() -> void:
 	var relay := kind == "relay"
-	var accent := RELAY_ACCENT if relay else LAN_ACCENT
 	_updating_kind_ui = true
 	_select_kind_option(kind)
 	heading.text = "互联网联机" if relay else "局域网联机"
@@ -247,18 +210,6 @@ func _apply_kind_presentation() -> void:
 		if relay
 		else "连接同一局域网内的 Windows 或 Android 设备"
 	)
-	kind_label.text = "远程中继" if relay else "局域网直连"
-	kind_code.text = "房间码连接" if relay else "同一网络内连接"
-	kind_description.text = (
-		"和远方的朋友对战。选择服务器，由一方创建房间，再把房间码分享给对方。"
-		if relay
-		else "在同一 Wi-Fi 或有线网络中对战。创建房间后，将主机地址和端口分享给对方。"
-	)
-	intro_accent.color = accent
-	intro_icon.texture = RELAY_OVERVIEW_ICON if relay else LAN_OVERVIEW_ICON
-	intro_icon.modulate = accent
-	kind_code.add_theme_color_override("font_color", accent)
-	role_badge_label.add_theme_color_override("font_color", accent)
 	address_label.text = "服务器地址" if relay else "主机地址"
 	address_input.accessibility_name = "服务器地址" if relay else "主机地址"
 	address_input.placeholder_text = (
@@ -326,22 +277,7 @@ func refresh_fields(_selected: int) -> void:
 
 
 func _refresh_intro_role_copy() -> void:
-	if role_badge_label == null or intro_tip == null or role_option.item_count == 0:
-		return
-	var host := selected_role() == "host"
-	role_badge_label.text = "房主 · 创建" if host else "挑战者 · 加入"
-	if kind == "relay":
-		intro_tip.text = (
-			"创建后复制房间码，并分享给远端挑战者。"
-			if host
-			else "输入房主分享的房间码，即可加入远程对局。"
-		)
-	else:
-		intro_tip.text = (
-			"创建后，将本机局域网地址与端口告诉挑战者。"
-			if host
-			else "向房主确认局域网地址与端口，再选择加入房间。"
-		)
+	_refresh_connection_summary()
 
 
 func selected_role() -> String:
@@ -478,6 +414,7 @@ func set_connection_state(
 	port_input.editable = not locked
 	room_input.editable = not locked
 	deck_option.disabled = locked
+	%ChangeDeckButton.disabled = locked
 	matchup_toggle.disabled = locked or selected_role() != "host"
 	_refresh_matchup_toggle_presentation()
 	connect_button.disabled = locked
@@ -503,6 +440,12 @@ func set_connection_state(
 		"font_color",
 		FrontendPalette.TEXT if state != ConnectionState.ERROR else FRONT_ERROR,
 	)
+	if kind == "lan" and state == ConnectionState.WAITING and _current_room_code.is_empty():
+		var addresses: Array[String] = []
+		for address in IP.get_local_addresses():
+			if address.is_valid_ip_address() and not address.contains(":") and not address.begins_with("127.") and not address.begins_with("169.254."):
+				addresses.append("%s:%s" % [address, port_input.text])
+		_current_room_code = " / ".join(addresses) if not addresses.is_empty() else "端口 %s" % port_input.text
 	var show_code := not _current_room_code.is_empty() and state in [
 		ConnectionState.WAITING,
 		ConnectionState.CONNECTED,
@@ -511,6 +454,8 @@ func set_connection_state(
 	copy_room_button.visible = show_code
 	if show_code:
 		room_code_display.text = _current_room_code
+		room_code_display.tooltip_text = _current_room_code
+		room_code_display.add_theme_font_size_override("font_size", 20 if kind == "lan" else 30)
 	if state == ConnectionState.ERROR:
 		connect_button.disabled = false
 		connect_button.text = "重新尝试"
@@ -602,28 +547,31 @@ func _copy_room_code() -> void:
 	if _current_room_code.is_empty():
 		return
 	DisplayServer.clipboard_set(_current_room_code)
-	status_label.text = "房间码已复制：%s" % _current_room_code
+	status_label.text = "连接信息已复制" if kind == "lan" else "房间码已复制：%s" % _current_room_code
 
 
 func _apply_responsive_layout() -> void:
 	if not is_node_ready() or page == null:
 		return
-	intro_panel.visible = true
+
 	steps.visible = false
 	form_panel.custom_minimum_size.y = 0
 	page.custom_minimum_size.x = 0
-	intro_panel.custom_minimum_size.x = UILayoutPolicy.fit(size, 256, 350)
-	var margin := UILayoutPolicy.content_margin(size, 1200, 16, 20)
+
+	var margin := UILayoutPolicy.content_margin(size, 1360, 16, 24)
 	var page_margin := get_node("PageMargin") as MarginContainer
 	for edge in ["left", "right"]:
 		page_margin.add_theme_constant_override("margin_" + edge, margin)
 	for edge in ["top", "bottom"]:
 		page_margin.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 12, 28))
 	page.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 10, 18))
-	status_panel.custom_minimum_size.y = 56
+	status_panel.custom_minimum_size.y = 64
+	%SelectedDeckArt.custom_minimum_size.y = UILayoutPolicy.fit(size, 164, 260)
+	rule_status_badge.add_theme_font_size_override("font_size", 14)
+	rule_status_badge.add_theme_stylebox_override("normal", FrontendPalette.panel(Color("f1f4f8"), 12, Color.TRANSPARENT, 0, 6))
 	connect_button.custom_minimum_size.y = 56
 	heading.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 26, 34))
-	subtitle.visible = true
+	subtitle.visible = false
 	var form_margin := form_panel.get_node("FormMargin") as MarginContainer
 	for edge in ["top", "bottom", "left", "right"]:
 		form_margin.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 10, 18))
@@ -640,9 +588,12 @@ func handle_back() -> bool:
 func _apply_form_visibility() -> void:
 	if role_label == null:
 		return
-	for control in [kind_control_label, kind_option, role_label, role_option, address_input.get_parent(), deck_label, deck_option, rules_label, rule_row, connect_button]:
+	for control in [kind_control_label, kind_option, role_label, role_option, address_input.get_parent(), deck_label, rule_row, connect_button]:
 		control.visible = true
 	kind_control_label.visible = false
+	deck_option.visible = false
+	rules_label.visible = false
+	address_input.get_parent().visible = kind == "relay" or selected_role() == "client"
 	_sync_segments()
 	port_row.visible = kind == "lan"
 	room_row.visible = kind == "relay" and selected_role() == "client"
@@ -662,19 +613,23 @@ func _sync_segments() -> void:
 
 
 func _refresh_connection_summary(_index: int = -1) -> void:
-	if intro_feature_labels.size() < 3 or deck_option == null:
+	if catalog == null:
 		return
-	intro_feature_labels[0].text = "牌组  /  " + (deck_option.get_item_text(deck_option.selected) if deck_option.selected >= 0 else "尚未选择")
-	intro_feature_labels[1].text = "弱点与抗性  /  " + ("已开启" if matchup_toggle.button_pressed else "已关闭")
-	if selected_role() != "host" and not _received_locked_rules_options:
-		intro_feature_labels[1].text = "对局规则  /  等待房主同步"
-	intro_feature_labels[2].text = str({
-		ConnectionState.IDLE: "等待创建或加入",
-		ConnectionState.VALIDATING: "检查连接信息",
-		ConnectionState.CONNECTING: "正在连接",
-		ConnectionState.WAITING: "等待对手",
-		ConnectionState.CONNECTED: "对手已连接",
-		ConnectionState.ERROR: "连接失败",
-	}.get(connection_state, ""))
-	for icon in intro_feature_icons:
-		icon.modulate = FrontendPalette.MUTED
+	var key := selected_deck_key()
+	var deck := catalog.get_deck(key)
+	%SelectedDeckArt.texture = FrontendAttributes.card_texture(catalog, DeckVisualCatalog.representative_card(catalog, key))
+	%SelectedDeckName.text = str(deck.get("name", key))
+	var energy := str(deck.get("energy_type", "Colorless"))
+	%SelectedDeckAttribute.texture = FrontendAttributes.texture_for(energy)
+	%SelectedDeckMeta.text = "%s · %d 张" % [EnergyIconCatalog.type_display_name_for(energy), int(deck.get("card_count", 0))]
+
+
+func select_deck(key: String) -> bool:
+	if deck_option.disabled:
+		return false
+	for idx in range(deck_option.item_count):
+		if str(deck_option.get_item_metadata(idx)) == key:
+			deck_option.select(idx)
+			_refresh_connection_summary()
+			return true
+	return false

@@ -34,7 +34,8 @@ func run() -> void:
 		check(key in keys, "Showcase used an unpublished deck")
 		var stage: Variant = page.card_stage
 		check(stage.card_ids == [DeckVisualCatalog.representative_card(catalog, key)], "Featured art did not follow the selected deck")
-		check(page.card_stage._name_plate.text == str(catalog.get_deck(key).name), "Deck name did not follow the artwork")
+		check(stage._case_root.find_children("*", "Label3D").is_empty(), "Case retained text labels")
+		check(stage._case_material.get_shader_parameter("pattern_image") == ShowcaseFinishes.pattern_for(str(catalog.get_deck(key).energy_type)), "Case pattern did not follow the deck attribute")
 		for yaw in [-16.0, 0.0, 16.0]:
 			stage._camera_yaw = yaw
 			stage._request_frame()
@@ -58,7 +59,7 @@ func run() -> void:
 	page._refresh_featured_deck()
 	for attempt in range(30):
 		var previous_key: String = page.featured_deck_key()
-		page._rotate_random_deck()
+		await page._rotate_random_deck()
 		check(page.featured_deck_key() != previous_key, "Random rotation repeated the same deck")
 	check(page.find_child("PreviousDeckButton", true, false) == null
 		and page.find_child("NextDeckButton", true, false) == null, "Manual deck switching controls returned")
@@ -94,7 +95,7 @@ func run() -> void:
 	page.card_stage._drag_view(Vector2(-10000, 10000))
 	check(is_equal_approx(page.card_stage._camera_yaw, 16.0) and is_equal_approx(page.card_stage._camera_pitch, 6.0), "Drag exceeded the framing bounds")
 	page.card_stage._set_dragging(false)
-	check(not page.showcase_timer.paused and page.showcase_timer.time_left > 7.5, "Releasing drag did not restart the rotation interval")
+	check(not page.showcase_timer.paused and page.showcase_timer.time_left > 11.5, "Releasing drag did not restart the rotation interval")
 	await check_pointer_drag(page)
 	main.free()
 	await settle()
@@ -127,7 +128,7 @@ func check_case_construction(stage: Variant) -> void:
 	stage._set_case_open(0)
 	var lid: MeshInstance3D = stage._lid_root.get_node("ContinuousLeatherFlap")
 	var lid_faces := lid.mesh.get_faces()
-	for rim_point in [Vector3(0.885, 0, 0), Vector3(0.50, 0, 0.669)]:
+	for rim_point in [Vector3(ShowcaseCaseGeometry.WIDTH * 0.5 - 0.015, 0, 0), Vector3(0.40, 0, ShowcaseCaseGeometry.DEPTH * 0.5 - 0.001)]:
 		var lowest := INF
 		for i in range(0, lid_faces.size(), 3):
 			var a: Vector3 = stage._lid_root.transform * lid_faces[i]

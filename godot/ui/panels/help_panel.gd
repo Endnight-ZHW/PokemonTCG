@@ -103,6 +103,9 @@ func _ready() -> void:
 	SurfacePalette.apply(self)
 	_resolve_nodes()
 	_bind_categories()
+	if SurfacePalette.is_frontend(self):
+		size_flags_vertical = Control.SIZE_EXPAND_FILL
+		FrontendReadingPane.wrap(content_body)
 	show_category(0)
 	resized.connect(_apply_layout)
 	call_deferred("_apply_layout")
@@ -124,11 +127,54 @@ func show_category(index: int) -> void:
 	var category: Dictionary = CATEGORIES[resolved]
 	content_body.add_child(_label(str(category["title"]), "FrontHeadingLabel"))
 	content_body.add_child(_label(str(category["summary"]), "FrontMutedLabel"))
+	if SurfacePalette.is_frontend(self):
+		_add_diagram(resolved)
+		(content_body.get_parent() as ScrollContainer).scroll_vertical = 0
 	for section_value in category["sections"]:
 		var section: Dictionary = section_value
-		content_body.add_child(_label(str(section["title"]), "FrontSectionLabel"))
+		var target := content_body
+		if SurfacePalette.is_frontend(self):
+			var panel := PanelContainer.new()
+			panel.add_theme_stylebox_override("panel", FrontendPalette.panel(Color("f3f5f8"), 16, Color.TRANSPARENT, 0, 18))
+			target = VBoxContainer.new()
+			target.add_theme_constant_override("separation", 10)
+			panel.add_child(target)
+			content_body.add_child(panel)
+		target.add_child(_label(str(section["title"]), "FrontSectionLabel"))
 		for row in section["rows"]:
-			content_body.add_child(_label("•  " + str(row), ""))
+			target.add_child(_label("•  " + str(row), ""))
+
+
+func _add_diagram(category: int) -> void:
+	var diagram := GridContainer.new()
+	diagram.columns = 3 if category == 2 else 7 if category in [1, 3] else 2
+	diagram.add_theme_constant_override("h_separation", 10)
+	diagram.add_theme_constant_override("v_separation", 10)
+	diagram.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content_body.add_child(diagram)
+	var steps: Array = [
+		["01  选择模式与牌组", "02  放置基础宝可梦", "03  完成准备", "04  按高亮提示操作"],
+		["01  回合开始 · 抽牌", "02  主要阶段 · 使用卡牌", "03  攻击 · 结束回合", "04  宝可梦检查 → 下一回合"],
+		["奖励卡", "战斗区", "牌库", "弃牌区", "备战区", "竞技场"],
+		["01  选择局域网 / 互联网", "02  房主创建房间", "03  分享地址 / 房间码", "04  对手加入 → 进入对局"],
+	][category]
+	for index in range(steps.size()):
+		if category in [1, 3] and index > 0:
+			var arrow := _label("→", "FrontMutedLabel")
+			arrow.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			diagram.add_child(arrow)
+		var panel := PanelContainer.new()
+		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		panel.custom_minimum_size.y = 64
+		var fill := Color("eaf0f8") if index % 2 else Color("fbefdf")
+		panel.add_theme_stylebox_override("panel", FrontendPalette.panel(fill, 14, Color.TRANSPARENT, 0, 12))
+		var caption := _label(str(steps[index]), "")
+		caption.add_theme_font_size_override("font_size", 16)
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		panel.add_child(caption)
+		diagram.add_child(panel)
+	if category == 2:
+		content_body.add_child(_label("己方区域示意 · 手牌位于牌桌下方", "FrontMutedLabel"))
 
 
 func _resolve_nodes() -> void:

@@ -2,17 +2,17 @@ class_name ShowcaseCaseGeometry
 extends RefCounted
 
 ## Dimensions shared by the hollow body, flexible rear joint and folded lid.
-const WIDTH := 1.80
-const DEPTH := 1.34
+const WIDTH := 1.50
+const DEPTH := 1.12
 const HEIGHT := 2.06
 const WALL := 0.028
 const CORNER := 0.035
-const LID_WIDTH := 1.82
+const LID_WIDTH := WIDTH + 0.02
 const LID_THICKNESS := 0.026
 const HINGE_Y := 2.045
 const HINGE_RADIUS := 0.041
 const HINGE_LENGTH := HINGE_RADIUS * PI * 0.5
-const FRONT := 0.707
+const FRONT := DEPTH * 0.5 + 0.037
 const FLAP_BOTTOM := 0.78
 const FOLD_RADIUS := 0.036
 const FLAP_CORNER := 0.075

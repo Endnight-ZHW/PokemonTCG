@@ -12,9 +12,13 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   同一 C++ 核心通过研究目录中的显式 pybind 服务离线实验。
 - 响应式三维实体牌桌、卡牌正反面与厚度、空间动画、三维硬币、音频和移动端自动画质分档。
 - 战斗统一通过选卡后的按钮使用卡牌；顶部任务条、合法目标及可用卡光边引导操作，攻击和撤退提供确认。手牌滑动仅用于浏览。
-- 首页使用暖白、深靛蓝与朱红，左侧本地／AI／联机三个等权入口，右侧为带真实内腔、背部柔性连接、薄折盖和小徽章的皮质牌盒，以及带软垫的镂空卡架。
-  14 套预组每 8 秒随机轮换，不连续重复；可拖动观看角度，拖动和弹窗期间暂停。右侧不设按钮或重复文字。
-  选牌为牌盒卡册，联机使用方式／身份分段选择，设置使用分类目录；对战牌桌保留原有风格。
+- 首页使用独立 `HomePalette`：暖白底、深蓝标题、红／蓝／金色图标徽章与柔和立体按钮，设置和帮助位于右上角。
+  右侧保留收窄的皮质翻盖牌盒、主卡、镂空卡架和两张卡背，并增加展示硬币。盒身无文字，以素色皮革为主，十种属性各有右下角小面积同色压纹；盒盖和侧面不铺花纹。
+  点击牌盒开合、主卡直接放大、硬币翻转，拖动转动视角；右侧不设文字提示、浮动图标或手动切换按钮。
+  14 套预组空闲每 12 秒随机轮换，不连续重复；悬停物件、开盒、翻币、拖动、弹窗及后台时暂停，恢复空闲后重新计时。
+  选牌为三列／两列完整卡图画廊与双人准备区，浏览不改分配；联机使用单页房间面板和单人换牌浮层。
+  设置、帮助使用固定分类与独立正文滚动；卡牌详情按规则分组，牌组详情合并为卡图网格。
+  结算显示完整代表卡、属性光晕和一次轻庆祝；对战牌桌与战斗弹窗保留原有风格。
   前台交互控件有清晰边界，当前选项用深蓝实底标识；牌组卡图采用暖白底衬，卡牌详情提供明确放大入口。
 - 前台导航仅支持鼠标与触控，交互目标仍遵循至少 48px 的触控尺寸；网络文本框可在点击或
   轻触后输入，Android 系统返回按钮/手势继续用于返回与打开对局菜单。
@@ -70,7 +74,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 - 8 种基础能量、无色和夜光能量的 256×256 RGBA 透明 PNG 位于
   `res://assets/ui/energy/`；运行时通过共享 `res://ui/energy_icon_catalog.gd` 读取。未知类型
   由调用方保留文字或中性徽章回退，不自动替换成无色；夜光能量按 `svg2-lume` 卡 ID 精确
-  映射，不会覆盖通用 `Rainbow`。能量图标用于牌组属性，不再在首页排列装饰能量带。
+  映射，不会覆盖通用 `Rainbow`。前台统一由 `FrontendAttributes.texture_for` 读取十种属性，龙系使用已修正的矢量球面徽章；战斗仍使用原 `EnergyIconCatalog`。
   完整来源表见该目录 `README.md`。
 - 177 张发布卡牌已按 `res://authoring/card_review_manifest.json` 与卡图 SHA-256
   完成对战字段审核；新旧卡的印刷信息和卡图统一由 `card_source_manifest.json` 固定到同一简中
@@ -94,7 +98,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   标题页发出的默认模式分别为 `local`、`challenge` 和 `lan`。
 - `DeckSelectPage`：使用 `selected_deck_key(player_idx)`、`select_deck(player_idx, key)` 和
   `deck_count()`；挑战模式固定为 `challenge`，先后攻由开局硬币胜者选择。
-  左侧双列卡册和右侧详情始终并排；点击卡册仅浏览，点击“分配给玩家”后才更新对应槽位。
+  左侧三列／两列画廊和右侧准备区始终并排；点击卡组仅浏览，由两个选用按钮通过 `_assign_preview_to(player_idx)` 更新对应玩家。
   两个区域独立滚动，调整窗口不进入另一页或重置牌组分配。
   `start_requested(mode, deck1, deck2, forced_first, apply_type_matchups)` 中 `forced_first` 传 `-1`，
   最后一个参数来自默认关闭的项目规则开关。
@@ -102,9 +106,8 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   卡册使用哑光面板与清晰卡图，已分配标签与当前浏览高亮相互独立。
 - `NetworkLobbyPage`：使用 `ConnectionState` 的 `IDLE`、`VALIDATING`、`CONNECTING`、
   `WAITING`、`CONNECTED`、`ERROR`，通过 `NetworkKindOption` 分段按钮选择 LAN / Relay，并通过
-  `set_connection_state(state, message, room_code)` 更新固定状态区；`kind_changed(kind)` 只在
-  `IDLE` / `ERROR` 可触发。左栏始终展示方式图标、当前牌组、规则、状态与角色提示，
-  右栏使用可滚动的完整表单；`connect_requested(...)` 最后一个参数为房主设置的
+  `set_connection_state(state, message, room_code)` 更新左侧状态区；`kind_changed(kind)` 只在
+  `IDLE` / `ERROR` 可触发。左侧展示连接字段与状态，右侧展示当前牌组与规则；`deck_picker_requested` 打开复用画廊的单人选择浮层，`select_deck(key)` 更新现有选项数据；`connect_requested(...)` 最后一个参数为房主设置的
   `apply_type_matchups`。地址、端口和房间码只有在
   点击或轻触文本框后才接收文字输入，页面不提供 Tab、方向键或手柄焦点导航。房主还会在
   开局前锁定弱点/抗性选项，挑战者只读确认。
@@ -146,7 +149,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 .\tools\smoke_godot_build.ps1
 ```
 
-`test_godot.ps1` 按 25 个功能入口运行；音频归入动画、通知文案归入卡牌呈现、手牌布局归入三维契约，
+`test_godot.ps1` 包含首页交互、模型与既有功能回归入口；音频归入动画、通知文案归入卡牌呈现、手牌布局归入三维契约，
 原有回归用例继续覆盖。它包含统一桌面布局、较小窗口缩放、前台多分辨率、四边安全区、鼠标/触控专用输入契约、
 弹窗历史、Android 系统返回、Theme 隔离、原生会话/搜索和交互 contract。本地、Challenge、
 LAN 与 Relay 另有完整实战回归；研究模型不参与产品门禁。
@@ -173,8 +176,9 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 传入 `-- --capture` 可生成 `build/layout-unification/after/` 的截图与几何报告。
 
 首页使用 `FrontendCardShowcase3D.set_cards(card_ids)` / `set_active(active)`；随机展示对应牌组的一张代表卡、
-两张卡背、背部相连的薄折盖牌盒和镂空卡架，公开卡替换接口仍最多接受三张。组件复用实体卡与纹理缓存，拥有单个独立 SubViewport；
-观看角度可拖动调整，随机轮换使用独立的外观 RNG；弹窗覆盖、应用暂停或页面隐藏时停止更新，不参与对局自动画质会话。弹窗根据 surface 隔离主题，
+两张卡背、背部相连的薄折盖牌盒、盒内合并卡叠、镂空卡架与可翻转硬币，公开卡替换接口仍最多接受三张。组件复用实体卡与纹理缓存，拥有单个独立 SubViewport；
+主卡通过 `card_activated(card_id)` 转发至首页 `card_art_requested(card_id)`，复用 `CardArtPanel`，关闭后保留原陈列状态。
+观看角度可拖动调整，随机轮换与硬币使用独立的外观 RNG；新卡图预取完成后再切换。弹窗覆盖、失焦、应用暂停或页面隐藏时收束动作并停止更新，不参与对局自动画质会话。弹窗根据 surface 隔离主题，
 `ModalSpec` 继续负责尺寸、遮罩、取消权限与返回恢复；对战 HUD 仍使用独立的游戏主题。
 
 发布包构建：
@@ -209,5 +213,9 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 完整图形验收仍使用 `tools/test_frontend_club_graphics.ps1`，其中包含五种尺寸与三档帧时间门禁。
 
 首页专项回归为 `res://tests/title_showcase_contract.gd`，覆盖 14 套牌组与三个视角的模型间距、卡架各部件的穿模检查、随机轮换及暂停。
-图形脚本 `res://tests/showcase_model_review.gd` 输出正反面、双侧、俯仰、左右连接端、35°／90°开盖与空卡架共 19 张近景，保存到 `build/hinged-case-review/angles/`。首页保持闭盖；开合姿态用于检查盒口、内衬与后连接，专项回归验证连接两端在各角度不分离。
+图形脚本 `res://tests/showcase_model_review.gd` 输出正反面、双侧、俯仰、左右连接端、35°／90°开盖与空卡架共 19 张近景，保存到 `build/hinged-case-review/angles/`。首页默认闭盖，点击可打开；专项回归验证连接两端在各角度不分离。
+`res://tests/home_interaction_contract.gd` 覆盖鼠标／触控、开盖反向、赏卡返回、遮罩关闭、翻币防重入、失焦与弹窗中断、轮换及六种尺寸的全开视角边界。
+`res://tests/home_prop_clearance_contract.gd` 核验龙属性角标的分辨率、透明边缘、圆球尺寸与符号占比，并以 2,892 个姿态检查硬币与台面、牌盒、卡架、卡牌的间距；加 `-- --capture` 输出 `build/home-fixes/` 的角标近景和抛币关键帧。硬币先抬起后翻转、放平后落下，旋转外轮廓始终保留台面间隙。
+龙属性角标采用标准矢量轮廓与 256px 金色球面处理，来源见 `assets/ui/frontend/README.md`；`res://tests/home_badge_style_review.gd` 输出水／草／钢／龙的同尺寸与同灯光对照。
+使用图形 Godot 并加 `-- --capture`，可生成 `build/home-redesign/after/` 的首页、全部牌组、按钮状态、开盒、赏卡和翻币截图。前台图形验收另采集三档画质的空闲与动作期间 P95 帧时间。
 `ui_preview.gd -- --home-review-only` 可输出三套牌组和对应侧视角截图。

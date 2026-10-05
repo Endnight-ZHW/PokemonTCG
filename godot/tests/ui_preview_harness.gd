@@ -435,11 +435,10 @@ func _assert_network_first_screen(page: NetworkLobbyPage, label: String) -> bool
 		push_error("%s preview is missing its network layout controls" % label)
 		return false
 	var frame := page.page.get_global_rect().grow(1.0)
-	var scroll := page.page_scroll
 	var fits := page.get_global_rect().grow(1.0).encloses(frame.grow(-1.0))
 	for control in [page.back_button, page.form_panel, page.status_panel, page.connect_button]:
 		fits = fits and frame.encloses(control.get_global_rect())
-	fits = fits and not scroll.get_global_rect().intersects(page.connect_button.get_global_rect())
+	fits = fits and not page.status_panel.get_global_rect().intersects(page.connect_button.get_global_rect())
 	if not fits:
 		push_error("%s: lobby form or fixed footer escaped its page" % label)
 	return fits

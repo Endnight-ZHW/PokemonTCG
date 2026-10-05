@@ -30,6 +30,8 @@ var surface := Surface.FRONTEND
 var opaque_shade := false
 var shade_alpha := 0.48
 var cancellable := true
+var dismiss_on_shade := false
+var body_owns_scroll := false
 var stack_behavior := StackBehavior.REPLACE
 var confirm_role := ButtonRole.PRIMARY
 var cancel_role := ButtonRole.SECONDARY
@@ -67,4 +69,9 @@ func with_button_roles(
 ) -> ModalSpec:
 	confirm_role = confirm
 	cancel_role = cancel
+	return self
+
+
+func with_reading_pane() -> ModalSpec:
+	body_owns_scroll = true
 	return self

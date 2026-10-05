@@ -552,6 +552,8 @@ func show_title() -> void:
 	page.network_selected.connect(show_network_setup)
 	page.settings_requested.connect(main._show_settings)
 	page.help_requested.connect(main._show_help)
+	page.card_art_requested.connect(main._show_home_card_art)
+	page.showcase_sound_requested.connect(main.audio_director.play_cue)
 	if title_backdrop:
 		title_backdrop.call("set_accent", page.featured_accent())
 		page.showcase_changed.connect(Callable(title_backdrop, "set_accent"))
@@ -568,6 +570,10 @@ func show_network_setup(kind: String) -> void:
 	page.back_requested.connect(show_title)
 	page.kind_changed.connect(main._on_network_kind_changed)
 	page.connect_requested.connect(main._on_network_connect_requested)
+	page.deck_picker_requested.connect(func() -> void:
+		main._prepare_auxiliary_panels()
+		main.auxiliary_panels.show_deck_picker(page)
+	)
 
 func show_deck_select(mode: String = MODE_LOCAL) -> void:
 	main._play_click()

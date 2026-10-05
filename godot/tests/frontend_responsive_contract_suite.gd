@@ -34,111 +34,28 @@ func _check_shared_backdrop_contract() -> void:
 
 func _check_network_intro_contract(catalog: CardCatalog) -> void:
 	context.tree.root.size = Vector2i(1600, 900)
-	var packed := load(context.PAGE_SCENES.network) as PackedScene
-	context._check(packed != null, "Network lobby scene is unavailable for intro-card checks")
-	if packed == null:
-		return
-	var page := packed.instantiate() as Control
+	var page := load(context.PAGE_SCENES.network).instantiate() as NetworkLobbyPage
 	context.tree.root.add_child(page)
-	page.call("configure", catalog, "lan", "wss://relay.example.test")
+	page.configure(catalog, "lan", "wss://relay.example.test")
 	await context._settle_layout(4)
-	var intro_panel := page.get_node("%IntroPanel") as PanelContainer
-	var form_panel := page.find_child("FormPanel", true, false) as PanelContainer
-	var body := page.find_child("Body", true, false) as HBoxContainer
-	var top_bar := page.find_child("TopBar", true, false) as HBoxContainer
-	var page_frame := page.get_node("%Page") as VBoxContainer
-	var description := page.get_node("%KindDescription") as Label
-	var tip := page.get_node("%IntroTip") as Label
-	var kind_label := page.get_node("%KindLabel") as Label
-	var kind_code := page.get_node("%KindCode") as Label
-	var intro_icon := page.get_node("%IntroIcon") as TextureRect
-	var role_badge := page.get_node("%RoleBadgeLabel") as Label
 	_check_network_wide_first_screen(page, "LAN idle")
-	context._check(
-		intro_panel.visible,
-		"1600x900 network lobby must expose the wide connection overview",
-	)
-	context._check((page.get_node("%FeatureList") as Control).is_visible_in_tree(),
-		"The current deck, room rules and connection status must remain visible")
-	context._check(
-		context._rect_inside(intro_panel.get_global_rect(), body.get_global_rect())
-		and context._rect_inside(form_panel.get_global_rect(), body.get_global_rect()),
-		"Network overview or form escaped the wide Body container",
-	)
-	context._check_pair_not_overlapping(intro_panel, form_panel, "network-intro-wide")
-	context._check(
-		form_panel.size.x >= 620.0,
-		"Network overview consumed too much width from the connection form",
-	)
-	context._check_named_inside(page, intro_panel.get_global_rect(), [
-		"IntroAccent", "IntroHeader", "KindDescription", "OverviewHeader",
-		"FeatureList", "IntroTipPanel",
-	], "network-intro-wide")
-	context._check(
-		description.autowrap_mode == TextServer.AUTOWRAP_WORD_SMART
-		and description.get_line_count() >= 2
-		and description.get_visible_line_count() == description.get_line_count(),
-		"LAN overview description does not wrap fully inside the left card",
-	)
-	context._check(
-		tip.get_visible_line_count() == tip.get_line_count(),
-		"LAN overview role hint is clipped",
-	)
-	context._check(
-		kind_label.text == "局域网直连"
-		and kind_code.text.contains("同一网络")
-		and intro_icon.texture.resource_path.ends_with("lan.svg")
-		and role_badge.text == "房主 · 创建",
-		"LAN overview presentation is stale or incomplete",
-	)
-	var decorative_targets: Array[Control] = []
-	context._collect_pointer_targets(intro_panel, decorative_targets)
-	context._check(
-		decorative_targets.is_empty() and intro_panel.mouse_filter == Control.MOUSE_FILTER_IGNORE,
-		"Decorative network overview must not enter the pointer path",
-	)
-	var role_option := page.get_node("%NetworkRoleOption") as OptionButton
-	role_option.select(1)
-	page.call("refresh_fields", 1)
-	context._check(
-		role_badge.text == "挑战者 · 加入" and tip.text.contains("局域网地址"),
-		"LAN overview did not follow the selected client role",
-	)
-	var kind_option := page.get_node("%NetworkKindOption") as OptionButton
-	kind_option.select(1)
-	kind_option.item_selected.emit(1)
+	var deck_panel := page.find_child("DeckPanel", true, false) as Control
+	context._check_pair_not_overlapping(page.form_panel, deck_panel, "network room and deck")
+	context._check((page.get_node("%SelectedDeckArt") as TextureRect).texture != null,
+		"Lobby must show the complete selected deck artwork")
+	context._check(not page.address_input.is_visible_in_tree(), "LAN host must not display an unused address input")
+	page.role_option.select(1)
+	page.refresh_fields(1)
+	context._check(page.address_input.is_visible_in_tree(), "LAN client must expose the address input")
+	page.kind_option.item_selected.emit(1)
 	await context._settle_layout(3)
-	context._check(
-		kind_label.text == "远程中继"
-		and kind_code.text.contains("房间码")
-		and intro_icon.texture.resource_path.ends_with("globe.svg")
-		and (page.get_node("%FeatureOne") as Label).text.contains(page.deck_option.get_item_text(page.deck_option.selected))
-		and tip.text.contains("房间码"),
-		"Relay overview did not update its icon, facts, or role hint",
-	)
-	role_option.select(0)
-	page.call("refresh_fields", 0)
+	context._check(page.kind == "relay" and page.room_input.is_visible_in_tree(),
+		"Internet client must expose the room-code input")
+	page.set_connection_state(NetworkLobbyPage.ConnectionState.WAITING, "等待对手", "ROOM42")
 	await context._settle_layout(3)
-	_check_network_wide_first_screen(page, "Relay idle")
-	context._check(
-		context._rect_inside(page_frame.get_global_rect(), Rect2(Vector2.ZERO, context.tree.root.size)),
-		"LAN/Relay role changes clipped the wide network page "
-		+ "(relay_host_y=%.1f page=%s context.tree.root=%s)" % [
-			top_bar.global_position.y, page_frame.get_global_rect(), context.tree.root.size,
-		],
-	)
-	page.call(
-		"set_connection_state",
-		NetworkLobbyPage.ConnectionState.WAITING,
-		"房间已创建，等待挑战者加入。",
-		"ROOM42",
-	)
-	await context._settle_layout(3)
-	_check_network_wide_first_screen(page, "Relay waiting")
-	page.call("set_connection_state", NetworkLobbyPage.ConnectionState.ERROR,
-		"连接失败：无法到达指定设备。请确认双方处于同一局域网、系统防火墙允许当前端口，并核对房主地址后重新尝试。")
-	await context._settle_layout(3)
-	_check_network_wide_first_screen(page, "Relay long error")
+	_check_network_wide_first_screen(page, "relay waiting")
+	context._check(page.copy_room_button.visible and (page.get_node("%ChangeDeckButton") as Button).disabled,
+		"Waiting room must expose copying and lock deck changes")
 	page.queue_free()
 	await context._settle_layout(2)
 
@@ -154,8 +71,8 @@ func _check_network_wide_first_screen(page: NetworkLobbyPage, label: String) -> 
 		context._check(context._rect_inside(control.get_global_rect(), frame),
 			"%s: lobby content or fixed action escaped the page" % label)
 	context._check(page.connect_button.size.y >= 56, "Lobby primary action must retain its 56px target")
-	context._check_pair_not_overlapping(scroll, page.status_panel, "lobby fixed status")
-	context._check_pair_not_overlapping(scroll, page.connect_button, "lobby fixed action")
+	context._check_pair_not_overlapping(page.role_option, page.status_panel, "lobby status")
+	context._check_pair_not_overlapping(page.status_panel, page.connect_button, "lobby submit")
 
 
 func _check_network_scrollbar_width_contract(catalog: CardCatalog) -> void:
@@ -273,11 +190,11 @@ func _check_deck_tile_visual_contract(catalog: CardCatalog) -> void:
 	)
 	first.call("_configure_energy_badge", "Dragon")
 	context._check(
-		not energy_icon.visible
-		and energy_icon.texture == null
+		energy_icon.visible
+		and energy_icon.texture == FrontendAttributes.texture_for("Dragon")
 		and (first.get_node("%EnergyLabel") as Label).text == "龙属性"
 		and energy_badge.accessibility_name.contains("龙属性"),
-		"Unsupported deck energy type must fall back to text without a Colorless icon",
+		"Dragon badges must share the corrected vector with the home page",
 	)
 	first.call("_configure_energy_badge", "Grass")
 	for node in first.find_children("*", "ColorRect", true, false):
@@ -368,7 +285,7 @@ func _check_same_instance_resize(catalog: CardCatalog) -> void:
 	host.size = Vector2(1024, 768)
 	await context._settle_layout(4)
 	context._check(
-		network.intro_panel.visible
+		(network.get_node("%ChangeDeckButton") as Control).visible
 		and network.kind_option.is_visible_in_tree()
 		and context.tree.root.gui_get_focus_owner() == null,
 		"Network same-instance wide→compact resize changed step or created focus",
@@ -605,11 +522,11 @@ func _check_decks(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 	var label := context._case_label("decks", viewport_size)
 	context._check_full_page(page, mounted.safe_host, label)
 	context._check_named_inside(page, context._simulated_safe_rect(mounted.safe_host), [
-		"PageContent", "TopBar", "SlotPanel", "MasterDetail", "ActionBar",
+		"PageContent", "TopBar", "MasterDetail",
 		"GalleryPanel", "DetailPanel", "StartButton",
 	], label)
 	context._check_named_non_overlapping(page, [
-		"TopBar", "SlotPanel", "MasterDetail", "ActionBar",
+		"TopBar", "MasterDetail",
 	], label)
 	context._check_named_non_overlapping(page, ["GalleryPanel", "DetailPanel"], label)
 	context._check_pointer_only_controls(page, label, context._simulated_safe_rect(mounted.safe_host))
@@ -849,7 +766,7 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 		"Page", "TopBar", "BodyScroll", "StatusPanel", "NetworkConnectButton",
 	], label)
 	context._check_named_non_overlapping(page, [
-		"TopBar", "Steps", "BodyScroll", "StatusPanel", "NetworkConnectButton",
+		"TopBar", "BodyScroll",
 	], label)
 	context._check_pointer_only_controls(page, label, context._simulated_safe_rect(mounted.safe_host))
 	context._check_no_horizontal_scroll(page, label)
@@ -872,10 +789,10 @@ func _check_network_compact_pointer_flow(page: Control) -> void:
 		and rule_row.visible,
 		"Network must show its complete desktop form on a tablet",
 	)
-	context._check(deck_option.is_visible_in_tree(), "First lobby step must include deck selection")
+	context._check((page.get_node("%ChangeDeckButton") as Control).is_visible_in_tree(), "First lobby step must include deck selection")
 	await context._settle_layout()
 	context._check(address_input.is_visible_in_tree() and rule_row.is_visible_in_tree()
-		and deck_option.is_visible_in_tree() and address_input.focus_mode == Control.FOCUS_CLICK
+		and (page.get_node("%ChangeDeckButton") as Control).is_visible_in_tree() and address_input.focus_mode == Control.FOCUS_CLICK
 		and page.get_viewport().gui_get_focus_owner() == null,
 		"Second lobby step must combine click-only connection fields with room rules")
 	page.call("show_locked_rules_options", {"apply_type_matchups": true})
@@ -900,7 +817,7 @@ func _check_network_compact_pointer_flow(page: Control) -> void:
 	)
 	await context._settle_layout()
 	context._check(
-		deck_option.is_visible_in_tree()
+		(page.get_node("%ChangeDeckButton") as Control).is_visible_in_tree()
 		and page.get_viewport().gui_get_focus_owner() == null,
 		"Network compact back did not restore the unfocused connection-information step",
 	)
@@ -974,30 +891,15 @@ func _check_deck_detail(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 	context._check_horizontal_inside(page, safe_rect, label)
 	context._check_pointer_only_controls(page, label)
 	context._check_no_horizontal_scroll(page, label)
-	var core_grid := page.get_node("%CoreGrid") as GridContainer
-	context._check(core_grid.get_child_count() > 0, "%s: core card grid is empty" % label)
-	for wrapper in core_grid.get_children():
-		context._check(
-			wrapper is Button and wrapper.get_child_count() == 1,
-			"%s: core card must be a dedicated clickable preview" % label,
-		)
-		if wrapper.get_child_count() != 1 or not (wrapper.get_child(0) is CenterContainer):
-			continue
-		var center := wrapper.get_child(0) as CenterContainer
-		if center.get_child_count() != 1 or not (center.get_child(0) is PanelContainer):
-			continue
-		var frame := center.get_child(0) as PanelContainer
-		var aspect := frame.size.x / maxf(frame.size.y, 1.0)
-		context._check(
-			absf(aspect - 94.0 / 132.0) <= 0.04,
-			"%s: core card aspect ratio is distorted (%s)" % [label, frame.size],
-		)
-		var image := frame.get_child(0) as TextureRect if frame.get_child_count() == 1 else null
-		context._check(
-			image != null
-			and image.stretch_mode == TextureRect.STRETCH_KEEP_ASPECT_CENTERED,
-			"%s: core card artwork must preserve its full aspect" % label,
-		)
+	var panel := page as DeckDetailPanel
+	context._check(panel._category_grids.size() == 3, "Deck detail must group all three card categories")
+	for grid in panel._category_grids:
+		context._check(grid.columns >= 2, "Deck detail must remain an artwork grid")
+		for child in grid.get_children():
+			context._check(child is FrontendCardTile, "Every unique card must have a clickable artwork tile")
+			var images := child.find_children("*", "TextureRect", true, false)
+			context._check(images.size() == 1 and (images[0] as TextureRect).stretch_mode == TextureRect.STRETCH_KEEP_ASPECT_CENTERED,
+				"Deck detail artwork must preserve its full aspect")
 	context._unmount(mounted)
 	await context._settle_layout(2)
 

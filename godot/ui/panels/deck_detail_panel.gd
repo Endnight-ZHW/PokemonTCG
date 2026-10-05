@@ -54,8 +54,12 @@ func configure(p_catalog: CardCatalog, deck_key: String) -> bool:
 		int(counts.get("Trainer", 0)),
 		int(counts.get("Energy", 0)),
 	]
-	for card_id in DeckVisualCatalog.preview_cards(catalog, deck_key, 4):
-		_add_core_card(card_id)
+	core_grid.visible = not SurfacePalette.is_frontend(self)
+	$CoreTitle.visible = core_grid.visible
+	$CompositionTitle.visible = core_grid.visible
+	if core_grid.visible:
+		for card_id in DeckVisualCatalog.preview_cards(catalog, deck_key, 4):
+			_add_core_card(card_id)
 	for supertype in CATEGORY_ORDER:
 		var rows: Array = grouped.get(supertype, [])
 		if not rows.is_empty():
@@ -84,6 +88,14 @@ func _group_rows(deck: Dictionary) -> Dictionary:
 		var supertype := str(card.get("supertype", ""))
 		if not grouped.has(supertype):
 			grouped[supertype] = []
+		var existing := -1
+		for idx in range(grouped[supertype].size()):
+			if grouped[supertype][idx]["card_id"] == card_id:
+				existing = idx
+				break
+		if existing >= 0:
+			grouped[supertype][existing]["count"] += int(row.get("count", 0))
+			continue
 		(grouped[supertype] as Array).append({
 			"card_id": card_id,
 			"count": int(row.get("count", 0)),
@@ -176,6 +188,12 @@ func _add_category(supertype: String, rows: Array, total_count: int) -> void:
 	for row_value in rows:
 		var row: Dictionary = row_value
 		var card_id := str(row.get("card_id", ""))
+		if SurfacePalette.is_frontend(self):
+			var tile := FrontendCardTile.new()
+			tile.configure(catalog, card_id, int(row.get("count", 0)))
+			tile.pressed.connect(_on_list_card_pressed.bind(card_id, supertype))
+			grid.add_child(tile)
+			continue
 		var item := Button.new()
 		item.custom_minimum_size = Vector2(0, 58)
 		item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -212,6 +230,8 @@ func _apply_responsive_columns() -> void:
 		return
 	core_grid.columns = clampi(int(floor(available / 116.0)), 1, 4)
 	var list_columns := 3 if available >= 1080.0 else 2 if available >= 620.0 else 1
+	if SurfacePalette.is_frontend(self):
+		list_columns = clampi(int((available - 30) / 162.0), 2, 6)
 	for grid in _category_grids:
 		if is_instance_valid(grid):
 			grid.columns = list_columns

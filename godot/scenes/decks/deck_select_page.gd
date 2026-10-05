@@ -13,7 +13,7 @@ signal start_requested(
 
 const DECK_TILE_SCENE := preload("res://ui/frontend/deck_gallery_tile.tscn")
 const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
-const MAX_CONTENT_WIDTH := 1480.0
+const MAX_CONTENT_WIDTH := 1440.0
 const MODE_LOCAL := "local"
 const MODE_CHALLENGE := "challenge"
 
@@ -44,6 +44,7 @@ var mode := MODE_LOCAL
 @onready var detail_counts: Label = %DetailCounts
 @onready var detail_card_grid: GridContainer = %DetailCardGrid
 @onready var assign_deck_button: Button = %AssignDeckButton
+@onready var assign_player_two_button: Button = %AssignPlayerTwoButton
 @onready var details_button: Button = %DetailsButton
 @onready var action_content: BoxContainer = %ActionContent
 @onready var matchup_toggle: CheckButton = %TypeMatchupToggle
@@ -114,6 +115,7 @@ func _resolve_nodes() -> void:
 	detail_counts = %DetailCounts
 	detail_card_grid = %DetailCardGrid
 	assign_deck_button = %AssignDeckButton
+	assign_player_two_button = %AssignPlayerTwoButton
 	details_button = %DetailsButton
 	action_content = %ActionContent
 	matchup_toggle = %TypeMatchupToggle
@@ -122,6 +124,8 @@ func _resolve_nodes() -> void:
 	action_margin = %ActionMargin
 	master_detail = %MasterDetail
 	matchup_toggle.accessibility_name = "弱点与抗性规则"
+	slot_margin.get_parent().add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	action_margin.get_parent().add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	FrontendPalette.style_scrollbar(gallery_scroll.get_v_scroll_bar())
 	FrontendPalette.style_scrollbar(%DetailScroll.get_v_scroll_bar())
 
@@ -141,8 +145,10 @@ func _ensure_connections() -> void:
 		details_button.pressed.connect(_emit_active_deck_details)
 	if not start_button.pressed.is_connected(_emit_start_requested):
 		start_button.pressed.connect(_emit_start_requested)
-	if not assign_deck_button.pressed.is_connected(_assign_preview):
-		assign_deck_button.pressed.connect(_assign_preview)
+	if not assign_deck_button.pressed.is_connected(_assign_preview_to.bind(0)):
+		assign_deck_button.pressed.connect(_assign_preview_to.bind(0))
+	if not assign_player_two_button.pressed.is_connected(_assign_preview_to.bind(1)):
+		assign_player_two_button.pressed.connect(_assign_preview_to.bind(1))
 	if not matchup_toggle.toggled.is_connected(_on_matchup_toggled):
 		matchup_toggle.toggled.connect(_on_matchup_toggled)
 	if not resized.is_connected(_apply_responsive_layout):
@@ -264,6 +270,10 @@ func _on_deck_tile_pressed(deck_key: String) -> void:
 	_refresh_detail()
 
 
+func _assign_preview_to(player_idx: int) -> void:
+	select_deck(player_idx, _preview_deck_key)
+
+
 func _assign_preview() -> void:
 	select_deck(_active_player_idx, _preview_deck_key)
 
@@ -290,13 +300,13 @@ func _refresh_slot_buttons() -> void:
 		second_slot_name,
 		_deck_display_name(_selected_keys[1]),
 	]
-	var active_slot := player_one_slot_button if _active_player_idx == 0 else player_two_slot_button
-	active_slot.text = "当前 · " + active_slot.text
-	player_one_slot_button.set_pressed_no_signal(_active_player_idx == 0)
-	player_two_slot_button.set_pressed_no_signal(_active_player_idx == 1)
-	slot_hint.text = "分配目标 · %s" % (
-		"玩家 1" if _active_player_idx == 0 else second_slot_name
-	)
+	DesignTokens.preserve_art_icon(player_one_slot_button)
+	DesignTokens.preserve_art_icon(player_two_slot_button)
+	player_one_slot_button.icon = FrontendAttributes.card_texture(catalog, DeckVisualCatalog.representative_card(catalog, _selected_keys[0]))
+	player_two_slot_button.icon = FrontendAttributes.card_texture(catalog, DeckVisualCatalog.representative_card(catalog, _selected_keys[1]))
+	player_one_slot_button.set_pressed_no_signal(false)
+	player_two_slot_button.set_pressed_no_signal(false)
+	slot_hint.text = "对战准备"
 
 
 func _refresh_tiles() -> void:
@@ -323,11 +333,13 @@ func _refresh_detail() -> void:
 		assign_deck_button.disabled = true
 		details_button.disabled = true
 		return
-	var slot_name := "玩家 1" if _active_player_idx == 0 else _second_slot_name()
-	var assigned := selected_deck_key(_active_player_idx) == deck_key
 	detail_assignment.text = "正在浏览"
-	assign_deck_button.text = ("✓ 已分配给 %s" if assigned else "分配给 %s") % slot_name
-	assign_deck_button.disabled = assigned
+	for idx in range(2):
+		var button := assign_deck_button if idx == 0 else assign_player_two_button
+		var assigned := selected_deck_key(idx) == deck_key
+		var label := "玩家 1" if idx == 0 else ("玩家 2" if mode == MODE_LOCAL else "AI")
+		button.text = ("✓ %s 已选用" if assigned else "%s 使用") % label
+		button.disabled = assigned
 	detail_title.text = str(deck.get("name", deck_key))
 	detail_tagline.text = ""
 	var energy_type := str(deck.get("energy_type", "Colorless"))
@@ -439,28 +451,31 @@ func _apply_responsive_layout() -> void:
 	page_content.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 8, 12))
 	top_bar.custom_minimum_size.y = UILayoutPolicy.fit(size, 48, 54)
 	for slot_button in [player_one_slot_button, player_two_slot_button]:
-		slot_button.custom_minimum_size = Vector2(0, UILayoutPolicy.fit(size, 54, 58))
+		slot_button.custom_minimum_size = Vector2(0, 84)
 		slot_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for edge in ["top", "bottom"]:
-		slot_margin.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 4, 10))
-		action_margin.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 4, 10))
-	start_button.custom_minimum_size = Vector2(UILayoutPolicy.fit(size, 176, 208), 56)
-	action_content.vertical = false
-	slot_hint.visible = true
+		slot_margin.add_theme_constant_override("margin_" + edge, 0)
+		action_margin.add_theme_constant_override("margin_" + edge, 0)
+	start_button.custom_minimum_size = Vector2(0, 56)
+	action_content.vertical = true
+	slot_hint.visible = false
 	heading.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 26, 32))
 	mode_description.max_lines_visible = 2
 	mode_description.visible = false
-	action_summary.visible = true
+	action_summary.visible = false
 	master_detail.add_theme_constant_override("separation", UILayoutPolicy.fit_int(size, 12, 24))
-	gallery_grid.columns = 2
+	gallery_grid.columns = 3 if size.x >= 1380.0 else 2
 	for tile in _tiles.values():
-		tile.custom_minimum_size = Vector2(180, UILayoutPolicy.fit(size, 274, 290))
-		tile.artwork_frame.custom_minimum_size.y = UILayoutPolicy.fit(size, 154, 178)
-		(tile.card_count_label as Label).custom_minimum_size.x = 54
+		tile.custom_minimum_size = Vector2(180, 330)
+		tile.artwork_frame.custom_minimum_size.y = 216.0
+		(tile.card_count_label as Label).custom_minimum_size.x = 70
 	for panel in [gallery_panel, detail_panel]:
 		var inset := panel.get_child(0) as MarginContainer
 		for edge in ["left", "right"]:
 			inset.add_theme_constant_override("margin_" + edge, UILayoutPolicy.fit_int(size, 10, 22 if panel == detail_panel else 16))
+	for inset in [slot_margin, action_margin]:
+		for edge in ["left", "right"]:
+			inset.add_theme_constant_override("margin_" + edge, 0)
 	_apply_master_detail_visibility()
 	_refresh_detail_columns()
 
@@ -475,7 +490,7 @@ func _refresh_detail_columns() -> void:
 	var margin := UILayoutPolicy.content_margin(size, MAX_CONTENT_WIDTH, 10, 24)
 	var available := (size.x - margin * 2.0 - UILayoutPolicy.fit(size, 12, 24)) * 0.4
 	%DetailActions.vertical = false
-	for button in [assign_deck_button, details_button]:
+	for button in [assign_deck_button, assign_player_two_button]:
 		button.custom_minimum_size = Vector2(0, 56)
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.add_theme_font_size_override("font_size", UILayoutPolicy.fit_int(size, 16, 18))

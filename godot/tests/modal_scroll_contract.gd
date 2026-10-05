@@ -64,8 +64,9 @@ func run() -> void:
 		main.modal_scroll.scroll_vertical = 0
 		await settle()
 		check_scroll_tree(main.modal_scroll)
-		check(inspector._detail_text.size.y + 2 >= inspector._detail_text.get_content_height(),
-			"Inspector text was clipped at %s" % dimensions)
+		for text in inspector.find_children("*", "RichTextLabel", true, false):
+			if (text as Control).is_visible_in_tree():
+				check(text.size.y + 2 >= text.get_content_height(), "Inspector text was clipped at %s" % dimensions)
 		check(inspector._image_button.size.y <= inspector._image_button.custom_minimum_size.y + 2,
 			"Long text stretched the card artwork at %s" % dimensions)
 		var confirm_rect: Rect2 = main.modal_confirm.get_global_rect()
@@ -80,7 +81,12 @@ func run() -> void:
 	root.size = SIZES[0]
 	main.modal_scroll.scroll_vertical = 0
 	await settle()
-	var text_rect := inspector._detail_text.get_global_rect().intersection(main.modal_scroll.get_global_rect())
+	var text_target: Control = inspector._detail_text
+	for candidate in inspector.find_children("*", "RichTextLabel", true, false):
+		if (candidate as Control).is_visible_in_tree():
+			text_target = candidate
+			break
+	var text_rect := text_target.get_global_rect().intersection(main.modal_scroll.get_global_rect())
 	var pointer := root.get_final_transform() * text_rect.get_center()
 	var wheel := InputEventMouseButton.new()
 	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN

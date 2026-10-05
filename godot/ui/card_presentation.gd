@@ -63,6 +63,14 @@ static func detail_bbcode(
 	if detail_level == DetailLevel.COMPACT:
 		return _compact_rule_bbcode(card)
 	var sections: Array[String] = []
+	for group in detail_groups(card, catalog, pokemon):
+		sections.append(str(group["bbcode"]))
+	return "\n\n".join(sections)
+
+
+## Structured sections share the same rule text as the legacy battle inspector.
+static func detail_groups(card: Dictionary, catalog: CardCatalog = null, pokemon: PokemonState = null) -> Array[Dictionary]:
+	var sections: Array[Dictionary] = []
 	var maximum_hp := int(card.get("hp", 0))
 	var card_rows: Array[String] = []
 	if maximum_hp > 0:
@@ -70,10 +78,9 @@ static func detail_bbcode(
 	var evolves_from := str(card.get("evolves_from", "")).strip_edges()
 	if not evolves_from.is_empty():
 		card_rows.append(DesignTokens.rich_text("[color=#{muted}]进化自[/color]  %s") % _safe_text(evolves_from))
-	if detail_level == DetailLevel.FULL and not card_rows.is_empty():
-		sections.append(DesignTokens.rich_text("[color=#{muted}][b]卡面信息[/b][/color]\n%s") % "\n".join(card_rows))
-	elif not card_rows.is_empty():
-		sections.append("　·　".join(card_rows))
+	if not card_rows.is_empty():
+		sections.append({"kind": "basic", "title": "卡面信息", "bbcode": DesignTokens.rich_text("[color=#{muted}][b]卡面信息[/b][/color]\n%s") % "\n".join(card_rows)})
+
 
 	for ability_value in card.get("abilities", []):
 		var ability := Dictionary(ability_value)
@@ -83,7 +90,7 @@ static func detail_bbcode(
 		)]
 		if not ability_text.is_empty():
 			rows.append(_safe_text(ability_text))
-		sections.append("\n".join(rows))
+		sections.append({"kind": "ability", "title": str(ability.get("name", "")), "bbcode": "\n".join(rows)})
 
 	for attack_value in card.get("attacks", []):
 		var attack := Dictionary(attack_value)
@@ -100,11 +107,11 @@ static func detail_bbcode(
 		var attack_text := str(attack.get("text", "")).strip_edges()
 		if not attack_text.is_empty():
 			attack_rows.append(_safe_text(attack_text))
-		sections.append("\n".join(attack_rows))
+		sections.append({"kind": "attack", "title": heading, "bbcode": "\n".join(attack_rows)})
 
 	var provides := energy_cost_text(card.get("provides_energy", []))
 	if not provides.is_empty():
-		sections.append(DesignTokens.rich_text("[color=#{success}][b]提供能量[/b][/color]\n%s") % provides)
+		sections.append({"kind": "energy", "title": "提供能量", "bbcode": DesignTokens.rich_text("[color=#{success}][b]提供能量[/b][/color]\n%s") % provides})
 
 	var rules: Array[String] = []
 	var seen_rules: Dictionary = {}
@@ -119,10 +126,10 @@ static func detail_bbcode(
 		seen_rules[rule] = true
 		rules.append(_safe_text(rule))
 	if not rules.is_empty():
-		sections.append(DesignTokens.rich_text("[color=#{target}][b]%s[/b][/color]\n%s") % [
+		sections.append({"kind": "rules", "title": _rule_section_title(str(card.get("supertype", ""))), "bbcode": DesignTokens.rich_text("[color=#{target}][b]%s[/b][/color]\n%s") % [
 			_rule_section_title(str(card.get("supertype", ""))),
 			"\n".join(rules),
-		])
+		]})
 
 	if maximum_hp > 0:
 		var footer: Array[String] = ["撤退费用：%d" % int(card.get("retreat_cost", 0))]
@@ -130,13 +137,13 @@ static func detail_bbcode(
 		footer.append("弱点：%s" % (weakness if not weakness.is_empty() else "无"))
 		var resistance := matchup_text(card.get("resistances", []))
 		footer.append("抗性：%s" % (resistance if not resistance.is_empty() else "无"))
-		sections.append(DesignTokens.rich_text("[color=#{muted}]%s[/color]") % "　·　".join(footer))
+		sections.append({"kind": "matchup", "title": "弱点 / 抗性 / 撤退", "bbcode": DesignTokens.rich_text("[color=#{muted}]%s[/color]") % "　·　".join(footer)})
 
 	if pokemon != null:
-		sections.append(_current_state_bbcode(pokemon, catalog, maximum_hp))
+		sections.append({"kind": "state", "title": "当前状态", "bbcode": _current_state_bbcode(pokemon, catalog, maximum_hp)})
 	if sections.is_empty():
-		sections.append(DesignTokens.rich_text("[color=#{muted}]这张卡没有额外说明。[/color]"))
-	return "\n\n".join(sections)
+		sections.append({"kind": "rules", "title": "规则", "bbcode": DesignTokens.rich_text("[color=#{muted}]这张卡没有额外说明。[/color]")})
+	return sections
 
 
 static func battle_state_bbcode(

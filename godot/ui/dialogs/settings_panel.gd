@@ -180,6 +180,8 @@ func _update_percent_label(value: float, label: Label) -> void:
 func _setup_categories() -> void:
 	if not SurfacePalette.is_frontend(self):
 		return
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	FrontendReadingPane.wrap(%CategoryContent)
 	%CategoryLayout.show()
 	$Divider.hide()
 	%AdvancedButton.hide()
@@ -199,3 +201,6 @@ func show_category(index: int) -> void:
 	for i in range(sections.size()):
 		(sections[i] as Control).visible = i == index
 		(buttons[i] as Button).set_pressed_no_signal(i == index)
+	var scroll := %CategoryContent.get_parent() as ScrollContainer
+	if scroll:
+		scroll.scroll_vertical = 0

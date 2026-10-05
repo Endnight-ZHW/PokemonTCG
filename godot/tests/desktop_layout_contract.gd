@@ -70,7 +70,7 @@ func run() -> void:
 					inside(page.gallery_panel, "Gallery")
 					inside(page.detail_panel, "Deck details")
 					inside(page.start_button, "Start")
-					check(page.gallery_grid.columns == 2, "Gallery changed columns")
+					check(page.gallery_grid.columns == (3 if page.size.x >= 1380 else 2), "Gallery changed columns")
 					check(not page.back_to_gallery_button.visible, "Deck introduced a second page")
 					var assigned: String = page.selected_deck_key(0)
 					page._on_deck_tile_pressed("water")
@@ -83,7 +83,7 @@ func run() -> void:
 								card.get_global_rect(), card.custom_minimum_size,
 								page.detail_card_grid.size, page.detail_panel.size])
 				"network":
-					check(page.intro_panel.visible and page.deck_option.visible and page.rule_row.visible
+					check(page.get_node("%ChangeDeckButton").visible and not page.deck_option.visible and page.rule_row.visible
 						and page.address_input.get_parent().visible, "Network split its form into steps")
 					inside(page.connect_button, "Connect")
 					inside(page.status_panel, "Connection state")

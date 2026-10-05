@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=13 format=3]
 [ext_resource type="Script" path="res://scenes/title/title_page.gd" id="1"]
 [ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2"]
 [ext_resource type="PackedScene" path="res://ui/frontend/frontend_backdrop.tscn" id="3"]
@@ -11,6 +11,8 @@
 [ext_resource type="Texture2D" path="res://assets/ui/frontend/help.svg" id="10"]
 
 [ext_resource type="Texture2D" path="res://assets/ui/frontend/club_mark.svg" id="11"]
+
+[ext_resource type="Script" path="res://ui/frontend/home_title_decoration.gd" id="12"]
 
 [node name="TitlePage" type="Control"]
 layout_mode = 3
@@ -39,6 +41,33 @@ grow_vertical = 2
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 24
+
+[node name="UtilityRow" type="HBoxContainer" parent="SafeContent/PageFrame"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="UtilitySpacer" type="Control" parent="SafeContent/PageFrame/UtilityRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="SettingsButton" type="Button" parent="SafeContent/PageFrame/UtilityRow"]
+focus_mode = 0
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 52)
+layout_mode = 2
+theme_type_variation = &"FrontSecondaryButton"
+text = "设置"
+icon = ExtResource("9")
+
+[node name="HelpButton" type="Button" parent="SafeContent/PageFrame/UtilityRow"]
+focus_mode = 0
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 52)
+layout_mode = 2
+theme_type_variation = &"FrontSecondaryButton"
+text = "玩法帮助"
+icon = ExtResource("10")
 
 [node name="BodyGrid" type="HBoxContainer" parent="SafeContent/PageFrame"]
 unique_name_in_owner = true
@@ -75,6 +104,15 @@ layout_mode = 2
 theme_type_variation = &"TitleLogoLabel"
 text = "宝可梦\n卡牌对战"
 
+[node name="TitleUnderline" type="Control" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/HeaderPanel/TitleLabel"]
+show_behind_parent = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("12")
+
 [node name="ModeStack" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -88,6 +126,7 @@ script = ExtResource("4")
 title_text = "本地对战"
 subtitle_text = "同一设备，双人对战"
 mode_icon = ExtResource("6")
+accent_color = Color(0.875, 0.4, 0.333, 1)
 
 [node name="AIButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeStack"]
 unique_name_in_owner = true
@@ -97,6 +136,7 @@ script = ExtResource("4")
 title_text = "挑战 AI"
 subtitle_text = "与电脑对手练习"
 mode_icon = ExtResource("7")
+accent_color = Color(0.278, 0.498, 0.741, 1)
 
 [node name="NetworkButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeStack"]
 unique_name_in_owner = true
@@ -106,6 +146,7 @@ script = ExtResource("4")
 title_text = "联机对战"
 subtitle_text = "局域网或互联网对战"
 mode_icon = ExtResource("8")
+accent_color = Color(0.761, 0.604, 0.212, 1)
 
 [node name="HeroPanel" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid"]
 unique_name_in_owner = true
@@ -128,24 +169,6 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="SettingsButton" type="Button" parent="SafeContent/PageFrame/FooterRow"]
-focus_mode = 0
-unique_name_in_owner = true
-custom_minimum_size = Vector2(120, 52)
-layout_mode = 2
-theme_type_variation = &"FrontSecondaryButton"
-text = "设置"
-icon = ExtResource("9")
-
-[node name="HelpButton" type="Button" parent="SafeContent/PageFrame/FooterRow"]
-focus_mode = 0
-unique_name_in_owner = true
-custom_minimum_size = Vector2(120, 52)
-layout_mode = 2
-theme_type_variation = &"FrontSecondaryButton"
-text = "玩法帮助"
-icon = ExtResource("10")
-
 [node name="FooterSpacer" type="Control" parent="SafeContent/PageFrame/FooterRow"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -159,4 +182,4 @@ text = "v0.8.0"
 
 [node name="ShowcaseTimer" type="Timer" parent="."]
 unique_name_in_owner = true
-wait_time = 8.0
+wait_time = 12.0

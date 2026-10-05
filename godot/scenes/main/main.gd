@@ -2340,6 +2340,10 @@ func _show_help(resume_ai_on_close: bool = false, resume_choice_context: Diction
 	auxiliary_panels._show_help(resume_ai_on_close,
 		_suspended_choice_context(resume_choice_context))
 
+func _show_home_card_art(card_id: String) -> void:
+	_prepare_auxiliary_panels()
+	auxiliary_panels.show_home_card_art(card_id)
+
 func _show_card_inspector(context: Dictionary, return_action: Callable = Callable(),
 		return_label: String = "", resume_choice_context: Dictionary = {}) -> void:
 	if str(context.get("card_id", "")).is_empty():

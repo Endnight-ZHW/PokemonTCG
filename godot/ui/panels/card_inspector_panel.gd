@@ -83,6 +83,25 @@ func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
 		context.get("pokemon") as PokemonState,
 	)
 	_content_grid.add_child(detail)
+	if SurfacePalette.is_frontend(self):
+		# Keep the legacy text available to accessibility and battle consumers.
+		detail.hide()
+		var groups := VBoxContainer.new()
+		groups.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		groups.add_theme_constant_override("separation", 12)
+		_content_grid.add_child(groups)
+		groups.add_child(DesignTokens.label(CardPresentation.meta_text(card), 16, FrontendPalette.MUTED))
+		for group in CardPresentation.detail_groups(card, catalog, context.get("pokemon") as PokemonState):
+			var panel := PanelContainer.new()
+			panel.add_theme_stylebox_override("panel", FrontendPalette.panel(Color("f3f5f8"), 16, Color.TRANSPARENT, 0, 16))
+			var text := RichTextLabel.new()
+			text.bbcode_enabled = true
+			text.fit_content = true
+			text.scroll_active = false
+			text.add_theme_font_size_override("normal_font_size", 18)
+			text.text = SurfacePalette.format_card_text(self, str(group["bbcode"]))
+			panel.add_child(text)
+			groups.add_child(panel)
 	var pokemon := context.get("pokemon") as PokemonState
 	if pokemon:
 		_add_card_grid_section("进化链", _pokemon_evolution_cards(pokemon), false)
@@ -108,7 +127,7 @@ func _apply_responsive_layout() -> void:
 			break
 		ancestor = ancestor.get_parent()
 	_content_grid.columns = 2
-	var image_width := clampf(available_width * 0.34, 120.0, 260.0)
+	var image_width := clampf(available_width * 0.34, 120.0, 340.0 if SurfacePalette.is_frontend(self) else 260.0)
 	if _image_button:
 		_image_button.custom_minimum_size = Vector2(image_width, image_width * 1.4 + (36 if SurfacePalette.is_frontend(self) else 0))
 	if _detail_text:
@@ -121,7 +140,7 @@ func _style_frontend_art_button() -> void:
 	for state in [&"normal", &"hover", &"pressed", &"hover_pressed"]:
 		var normal: bool = state == &"normal"
 		var fill := Color.WHITE if normal else Color("f9ece8")
-		var style := FrontendPalette.panel(fill, 8, FrontendPalette.CONTROL_BORDER if normal else FrontendPalette.GOLD, 2, 6)
+		var style := FrontendPalette.panel(fill, 16, FrontendPalette.CONTROL_BORDER if normal else FrontendPalette.GOLD, 2, 6)
 		style.content_margin_bottom = 36
 		_image_button.add_theme_stylebox_override(state, style)
 	var footer := HBoxContainer.new()

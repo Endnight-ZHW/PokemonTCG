@@ -2,12 +2,12 @@ class_name FrontendPalette
 extends RefCounted
 
 ## Front-end-only colors. The battle table keeps DesignTokens.
-const BACKGROUND := Color("f7f5ef")
+const BACKGROUND := Color("faf7f0")
 const PANEL := Color.WHITE
 const RAISED := Color.WHITE
 const INSET := Color("eceef2")
-const TEXT := Color("202e49")
-const MUTED := Color("596579")
+const TEXT := Color("213653")
+const MUTED := Color("56677e")
 const GOLD := Color("c83b35") # Existing semantic accent API.
 const BORDER := Color("8490a1")
 const BORDER_SOFT := Color("d7dce3")
