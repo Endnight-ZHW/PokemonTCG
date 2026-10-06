@@ -184,9 +184,6 @@ vertical_alignment = 1
 autowrap_mode = 2
 text_overrun_behavior = 3
 
-[node name="UISound" type="AudioStreamPlayer" parent="." unique_id=445180272]
-unique_name_in_owner = true
-
 [node name="AudioDirector" type="Node" parent="." unique_id=1115438506]
 unique_name_in_owner = true
 script = ExtResource("3_audio")

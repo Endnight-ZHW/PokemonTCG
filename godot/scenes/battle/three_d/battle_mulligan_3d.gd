@@ -55,6 +55,8 @@ func play(event: Dictionary, duration: float) -> MotionHandle:
 	elif bool(row.get("public", false)) and kind == "card_moved":
 		duration = maxf(duration, MotionPolicy.duration("return") if MotionPolicy.reduced() else MotionPolicy.PROFILE.mulligan_return)
 	row.phase = kind
+	row.audio_event_id = str(event.get("event_id", ""))
+	row.audio_departed = {}
 	row.progress = 0.0
 	row.duration = maxf(0.01, duration)
 	row.starts = []
@@ -107,6 +109,10 @@ func sync() -> void:
 				var flight_duration := float(row.duration) - fade_delay
 				var delay := minf(0.09, maxf(0.0, flight_duration - 0.24) / maxi(1, cards.size() - 1))
 				progress = clampf((progress * float(row.duration) - fade_delay - index * delay) / maxf(0.12, flight_duration - (cards.size() - 1) * delay), 0.0, 1.0)
+				if progress > 0.0 and not row.audio_departed.has(index):
+					row.audio_departed[index] = true
+					if not MotionPolicy.reduced() or index == 0:
+						presenter.table.card_motion_layer._emit_motion_audio(phase, str(row.audio_event_id), index, "departure")
 				if public: pose = BattleCardPath3D.transfer(presenter.world.projection, pose, row.deck_pose, progress, 12.0)
 				else:
 					pose = BattleCardPath3D.travel(row.deck_pose, pose, progress, "cards_drawn", index) if phase == "cards_drawn" else BattleCardPath3D.travel(pose, row.deck_pose, progress, "card_moved", index)

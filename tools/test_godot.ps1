@@ -5,6 +5,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot '.tools'
 
+& (Join-Path $PSScriptRoot 'build_audio.ps1') -Check
+
 . (Join-Path $PSScriptRoot 'godot_test_common.ps1')
 $godotPaths = Initialize-GodotTestEnvironment -RepoRoot $repoRoot
 $godot = $godotPaths.Console
@@ -49,6 +51,7 @@ if ($joinedImportOutput -match $fatalGodotErrorPattern) {
 }
 
 $contracts = @(
+    @('audio_system_contract', 'AUDIO_SYSTEM_CONTRACT_OK', 'Audio assets, variations, scoped voices, music lifecycle and settings'),
     @('happy4_contract', 'HAPPY4_CONTRACT_OK', 'Happy Set 4 deck lists, real card effects and choice privacy'),
     @('card_catalog_contract', 'CARD_CATALOG_CONTRACT_OK', 'Card catalog contract'),
     @('card_presentation_contract', 'CARD_PRESENTATION_CONTRACT_OK', 'Card audit, shared presentation and player-facing notification text'),

@@ -76,6 +76,8 @@ func open(
 	opaque_shade: bool = false,
 	spec: ModalSpec = null,
 ) -> void:
+	if main.audio_director:
+		main.audio_director.play_ui("modal_open")
 	PointerGesture.cancel_all()
 	_shade_tap.gesture.clear()
 	if main.battle_screen:
@@ -145,6 +147,8 @@ func open(
 
 
 func close(completion: Callable = Callable()) -> void:
+	if main.audio_director:
+		main.audio_director.play_ui("modal_close")
 	PointerGesture.cancel_all()
 	# Treat close as a transaction so repeated back/button signals cannot replace
 	# the completion that submits or cancels an authoritative choice.

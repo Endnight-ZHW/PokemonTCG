@@ -1,0 +1,87 @@
+[
+  {
+    "id": "title",
+    "title": "未白镇 · 红宝石／蓝宝石",
+    "album": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-ruby-sapphire-music-super-complete",
+    "page": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-ruby-sapphire-music-super-complete/1-05.%2520Littleroot%2520Town.mp3",
+    "url": "https://jetta.vgmtreasurechest.com/soundtracks/pokemon-ruby-sapphire-music-super-complete/dqrnohub/1-05.%20Littleroot%20Town.flac",
+    "sha256": "6dd98fe820177d5bf224a56d15560484ae0cd09d485959b544ae9020c1317d75",
+    "rights": "Original Pokémon soundtrack. Nintendo / Creatures / GAME FREAK; not CC0.",
+    "loop_start": 4.0,
+    "loop_end": 57.553288,
+    "loop_processing": "Trim to matching repeated phrase; 40 ms end-to-loop pre-roll crossfade; -20 LUFS, -2 dBTP, stereo 48 kHz Vorbis q5.",
+    "source_file": "littleroot.flac"
+  },
+  {
+    "id": "preparation",
+    "title": "满金市 · 心金／魂银",
+    "album": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete",
+    "page": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete/1-41.%2520Goldenrod%2520City.mp3",
+    "url": "https://jetta.vgmtreasurechest.com/soundtracks/pokemon-heartgold-and-soulsilver-music-super-complete/elsgecas/1-41.%20Goldenrod%20City.flac",
+    "sha256": "45ed929b3b47903cf9d854ada110e1f5f92ace747c96caef9c13cd70966a305f",
+    "rights": "Original Pokémon soundtrack. Nintendo / Creatures / GAME FREAK; not CC0.",
+    "loop_start": 1.0,
+    "loop_end": 36.31093,
+    "loop_processing": "Trim to matching repeated phrase; 40 ms end-to-loop pre-roll crossfade; -20 LUFS, -2 dBTP, stereo 48 kHz Vorbis q5."
+  },
+  {
+    "id": "battle_kanto",
+    "title": "训练家战斗 · 火红／叶绿",
+    "album": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-firered-leafgreen-music-super-complete",
+    "page": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-firered-leafgreen-music-super-complete/1-11.%2520Battle%2521%2520%2528Trainer%2529.mp3",
+    "url": "https://vgmtreasurechest.com/soundtracks/pokemon-firered-leafgreen-music-super-complete/rveidrzx/1-11.%20Battle%21%20%28Trainer%29.flac",
+    "sha256": "21a7fc867a0a9d15025c893c06a12f3f9995bebdd6f7f86d643b1659137274d7",
+    "rights": "Original Pokémon soundtrack. Nintendo / Creatures / GAME FREAK; not CC0.",
+    "loop_start": 12.0,
+    "loop_end": 94.670204,
+    "loop_processing": "Trim to matching repeated phrase; 40 ms end-to-loop pre-roll crossfade; -20 LUFS, -2 dBTP, stereo 48 kHz Vorbis q5."
+  },
+  {
+    "id": "battle_johto",
+    "title": "城都训练家战斗 · 心金／魂银",
+    "album": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete",
+    "page": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete/1-18.%2520Battle%2521%2520%2528Trainer%25E2%2580%2594Johto%2520Version%2529.mp3",
+    "url": "https://jetta.vgmtreasurechest.com/soundtracks/pokemon-heartgold-and-soulsilver-music-super-complete/dygkjnof/1-18.%20Battle%21%20%28Trainer%E2%80%94Johto%20Version%29.flac",
+    "sha256": "6933f35b44f1188e25ac6dcb424ef2551574ae89af603a6ae0e01a0e98507f5d",
+    "rights": "Original Pokémon soundtrack. Nintendo / Creatures / GAME FREAK; not CC0.",
+    "loop_start": 12.0,
+    "loop_end": 113.3783,
+    "loop_processing": "Trim to matching repeated phrase; 40 ms end-to-loop pre-roll crossfade; -20 LUFS, -2 dBTP, stereo 48 kHz Vorbis q5."
+  },
+  {
+    "id": "climax",
+    "title": "冠军战斗 · 心金／魂银",
+    "album": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete",
+    "page": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete/2-78.%2520Battle%2521%2520%2528Champion%2529.mp3",
+    "url": "https://jetta.vgmtreasurechest.com/soundtracks/pokemon-heartgold-and-soulsilver-music-super-complete/flonybor/2-78.%20Battle%21%20%28Champion%29.flac",
+    "sha256": "a11bb84bee5e508638b0f0bf5d05f22cef87d7bae1d2b2b5a795c3ac7e3e79e3",
+    "rights": "Original Pokémon soundtrack. Nintendo / Creatures / GAME FREAK; not CC0.",
+    "loop_start": 12.0,
+    "loop_end": 56.37941,
+    "loop_processing": "Trim to matching repeated phrase; 40 ms end-to-loop pre-roll crossfade; -20 LUFS, -2 dBTP, stereo 48 kHz Vorbis q5."
+  },
+  {
+    "id": "victory",
+    "title": "训练家战胜 · 心金／魂银",
+    "album": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete",
+    "page": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete/1-19.%2520Victory%2521%2520%2528Trainer%2520Battle%2529.mp3",
+    "url": "https://jetta.vgmtreasurechest.com/soundtracks/pokemon-heartgold-and-soulsilver-music-super-complete/izbgbpuc/1-19.%20Victory%21%20%28Trainer%20Battle%29.flac",
+    "sha256": "6b32313e9c262587a40f018ffec2954e0ef488d75f0ed599eb00cae42216da46",
+    "rights": "Original Pokémon soundtrack. Nintendo / Creatures / GAME FREAK; not CC0.",
+    "loop_start": 2.0,
+    "loop_end": 14.004717,
+    "loop_processing": "Trim to matching repeated phrase; 40 ms end-to-loop pre-roll crossfade; -20 LUFS, -2 dBTP, stereo 48 kHz Vorbis q5."
+  },
+  {
+    "id": "reflection",
+    "title": "若叶镇 · 心金／魂银",
+    "album": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete",
+    "page": "https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete/1-04.%2520New%2520Bark%2520Town.mp3",
+    "url": "https://jetta.vgmtreasurechest.com/soundtracks/pokemon-heartgold-and-soulsilver-music-super-complete/nyebsipy/1-04.%20New%20Bark%20Town.flac",
+    "sha256": "51465e9aa6df0cc026bb9c7b9460086b776917d8f1bf4c1c2b317a00976d3a35",
+    "rights": "Original Pokémon soundtrack. Nintendo / Creatures / GAME FREAK; not CC0.",
+    "loop_start": 8.0,
+    "loop_end": 60.520726,
+    "loop_processing": "Trim to matching repeated phrase; 40 ms end-to-loop pre-roll crossfade; -20 LUFS, -2 dBTP, stereo 48 kHz Vorbis q5."
+  }
+]

@@ -70,10 +70,7 @@ var safe_margin: MarginContainer
 var screen_host: Control
 var title_full_bleed_backdrop: Control
 var toast_label: Label
-var sound_player: AudioStreamPlayer
 var audio_director: AudioDirector
-var click_stream: AudioStreamWAV
-var success_stream: AudioStreamWAV
 var loading_layer: Control
 var loading_label: Label
 var shell_animations: AnimationPlayer
@@ -185,8 +182,6 @@ func initialize_ui() -> void:
 	shell_view.configure(self)
 	shell_view.configure_responsive_canvas()
 	ui_initialized = true
-	click_stream = UISound.make_tone(620.0, 0.055, 0.12)
-	success_stream = UISound.make_tone(880.0, 0.11, 0.14)
 	_build_shell()
 	if not AppSettings.changed.is_connected(_apply_runtime_settings):
 		AppSettings.changed.connect(_apply_runtime_settings)
@@ -207,7 +202,6 @@ func _build_shell() -> void:
 	toast_label.theme = FRONTEND_THEME
 	toast_label.theme_type_variation = &"FrontToastLabel"
 	toast_label.set("accessibility_live", 1)
-	sound_player = get_node("UISound") as AudioStreamPlayer
 	audio_director = get_node("AudioDirector") as AudioDirector
 	modal_layer = get_node("ModalLayer") as Control
 	modal_shade = get_node("ModalLayer/ModalShade") as ColorRect
@@ -376,6 +370,7 @@ func _poll_network() -> void:
 					str(event.get("room_id", "")),
 				)
 			"connected":
+				audio_director.play_ui("connect")
 				network_player_idx = int(event.get("player_idx", network_player_idx))
 				if (
 					current_network_page != null
@@ -430,6 +425,7 @@ func _poll_network() -> void:
 				if event_type in ["connection_failed", "transport_error"]:
 					_stop_network()
 			"reconnecting":
+				audio_director.play_ui("disconnect")
 				_network_recovery_phase = "reconnecting"
 				if current_screen == SCREEN_GAME and battle_screen != null:
 					battle_screen.cancel_presentations("network_reconnecting")
@@ -437,6 +433,7 @@ func _poll_network() -> void:
 					_refresh_game()
 				shell_view.show_toast("连接中断，正在尝试恢复对局…", true)
 			"reconnected":
+				audio_director.play_ui("connect")
 				_network_recovery_phase = "resync"
 				if current_screen == SCREEN_GAME and battle_screen != null:
 					battle_screen.set_recovery_blocked(true)
@@ -451,6 +448,7 @@ func _poll_network() -> void:
 				shell_view.show_toast("动作确认超时，正在重新同步局面。", true)
 
 func _handle_network_disconnected(reason: String = "") -> void:
+	audio_director.play_ui("disconnect")
 	var was_lobby := current_screen == SCREEN_NETWORK
 	var was_game := current_screen == SCREEN_GAME
 	var lobby_already_showing_error := (
@@ -2207,26 +2205,12 @@ func _stop_ai() -> void:
 func _play_click() -> void:
 	if audio_director:
 		audio_director.play_ui("click")
-		return
-	if sound_player == null or not sound_player.is_inside_tree():
-		return
-	sound_player.stream = click_stream
-	sound_player.play()
 
 func _play_success() -> void:
 	if audio_director:
 		audio_director.play_ui("success")
-		return
-	if sound_player == null or not sound_player.is_inside_tree():
-		return
-	sound_player.stream = success_stream
-	sound_player.play()
 
 func _apply_runtime_settings() -> void:
-	if sound_player:
-		sound_player.volume_db = AppSettings.volume_db()
-	if audio_director:
-		audio_director.apply_settings()
 	Engine.max_fps = AppSettings.target_fps()
 
 func _notification(what: int) -> void:

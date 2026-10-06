@@ -101,6 +101,8 @@ func _spawn_flying_card(
 			flying.set_meta("physical_start_pose", retained_pose)
 			(flying as CardMotionEntity).world_pose = retained_pose
 			(flying as CardMotionEntity).has_world_pose = true
+	flying.set_meta("audio_departed", false)
+	flying.set_meta("audio_ordinal", index)
 	flying.set_meta("motion_kind", event_type)
 	flying.set_meta("motion_ordinal", index)
 	flying.set_meta("motion_start", motion_start)
@@ -191,6 +193,9 @@ func _update_flyer(
 	var flying := flying_value as CardMotionEntity
 	if flying == null:
 		return
+	if progress > 0.0 and not bool(flying.get_meta("audio_departed", false)):
+		flying.set_meta("audio_departed", true)
+		table.card_motion_layer._emit_motion_audio(str(flying.get_meta("motion_kind", "")), str(flying.get_meta("motion_event_id", "")), int(flying.get_meta("audio_ordinal", 0)), "departure")
 	if not table.render3d.is_projection_ready():
 		flying.visible = false
 		return
@@ -277,6 +282,7 @@ func _finish_flyer(
 	if flying is CardMotionEntity:
 		if flying.has_meta("physical_flip_progress"):
 			flying.remove_meta("physical_flip_progress")
+	table.card_motion_layer._emit_motion_audio(event_type, str(flying.get_meta("motion_event_id", "")), int(flying.get_meta("audio_ordinal", 0)), "landing")
 	finish = table.card_motion_layer._motion_entity_finish(flying, finish)
 	table.card_motion_layer.tweens.erase(flying.get_instance_id())
 	flying.set_meta("motion_completed", true)

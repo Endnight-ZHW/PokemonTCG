@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="AudioCueDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://audio/audio_cue_definition.gd" id="script"]
+[ext_resource type="AudioStream" path="res://assets/audio/sfx/attack_hit_dragon_00.wav" id="v0"]
+[ext_resource type="AudioStream" path="res://assets/audio/sfx/attack_hit_dragon_01.wav" id="v1"]
+[ext_resource type="AudioStream" path="res://assets/audio/sfx/attack_hit_dragon_02.wav" id="v2"]
+
+[resource]
+script = ExtResource("script")
+id = &"attack_hit_dragon"
+category = "impact"
+variants = Array[AudioStream]([ExtResource("v0"), ExtResource("v1"), ExtResource("v2")])
+bus = "SFX"
+gain_db = -2
+priority = 3
+max_instances = 4
+cooldown_ms = 0
+duck_db = -2.5
+stack_group = &"impact"
+stack_step_db = -2

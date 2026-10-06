@@ -384,6 +384,9 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		"target": target,
 	}, true), duration)
 	if table._settings_reduced_motion():
+		_emit_motion_audio(event_type, motion_event_id, 0, "departure")
+		if event_type == "prize_taken":
+			_emit_motion_audio(event_type, motion_event_id, 0, "landing")
 		for proxy in staged_source_proxies:
 			table.hand_presentation._dispose_snapshot_hand_source(proxy)
 		for proxy in staged_attachment_proxies:
@@ -672,6 +675,7 @@ func _spawn_card_motion_spec(
 		int(spec.get("opponent_hand_stage_count_delta", 0)),
 	)
 	if flying != null:
+		flying.set_meta("audio_ordinal", int(spec.get("ordinal", 0)))
 		flying.set_meta("motion_kind", str(spec.get("path_kind", spec.get("event_type", ""))))
 		flying.set_meta("departing_hand", bool(spec.get("departing_hand", false)))
 		flying.set_meta("paper_desaturation", 0.85 if str(flying.get_meta("motion_kind")) == "ko_leave_play" else 0.0)
@@ -963,6 +967,7 @@ func _spawn_slot_transition(
 	var bench_slot := geometry._bench_slot_from_event(event)
 	if bench_slot.is_empty():
 		return false
+	_emit_motion_audio(event_type, motion_event_id, 0, "departure")
 	var movements: Array[Dictionary] = []
 	if event_type == "promoted":
 		movements.append({
@@ -1470,11 +1475,6 @@ func _spawn_coin_motion(
 	return true
 
 
-func _on_coin_showcase_audio_requested(cue: String) -> void:
-	if table.director != null:
-		table.director.audio_requested.emit(cue)
-
-
 func _spawn_reveal_motion(
 	event: Dictionary,
 	duration: float,
@@ -1508,6 +1508,8 @@ func _spawn_reveal_motion(
 		else {}
 	)
 	if str(event.get("event_type", "")) == "cards_selected":
+		if not rows.is_empty():
+			table.emit_audio(AudioCueRequest.make(&"card_reveal", &"battle", motion_event_id, "reveal"))
 		summary["kind"] = "public_selection"
 		summary["matched_count"] = rows.size()
 		summary["title"] = (
@@ -1726,3 +1728,14 @@ func _clear_transient_visuals() -> void:
 		table.announcement_layer.clear()
 	motion_entities._clear_effect_child_controls()
 	table.presentation_runtime._clear_all_presentation_nodes()
+
+
+func _emit_motion_audio(event_type: String, event_id: String, ordinal: int, phase: String) -> void:
+	var sound := ""
+	if phase == "departure":
+		sound = str({"cards_drawn": "card_draw", "cards_discarded": "card_discard", "card_moved": "card_recover", "cards_selected": "card_move", "prize_taken": "card_move", "retreat": "retreat", "switched": "switch", "promoted": "promote"}.get(event_type, ""))
+	elif phase == "landing":
+		if event_type == "prize_taken": sound = "prize"
+		elif event_type in ["cards_discarded", "card_moved"]: sound = "card_place"
+	if not sound.is_empty():
+		table.emit_audio(AudioCueRequest.make(StringName(sound), &"battle", event_id, phase, ordinal))

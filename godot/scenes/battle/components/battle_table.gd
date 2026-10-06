@@ -17,7 +17,10 @@ signal choice_cancel_requested
 signal transition_started(handle: PresentationHandle)
 signal transition_finished(handle: PresentationHandle)
 signal presentation_busy_changed(busy: bool)
-signal audio_requested(cue: String)
+signal audio_requested(cue: String) # Observability for previews; playback uses the typed request.
+signal audio_event_requested(request: AudioCueRequest)
+signal audio_scope_cancel_requested(scope_id: StringName)
+signal music_context_changed(setup_complete: bool, terminal: bool, prize_counts: Array[int])
 signal audio_cancel_requested
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
@@ -236,7 +239,28 @@ func register_3d_surface(surface: Control) -> void:
 
 
 func _on_director_audio_requested(cue: String) -> void:
-	audio_requested.emit(cue)
+	emit_audio(AudioCueRequest.make(StringName(cue), &"battle", director.audio_event_id, "event"))
+
+
+func emit_audio(request: AudioCueRequest) -> void:
+	if not is_visible_in_tree():
+		return
+	audio_requested.emit(str(request.resolved_cue()))
+	audio_event_requested.emit(request)
+
+
+func _on_audio_presentation_busy_changed(busy: bool) -> void:
+	if not busy:
+		_emit_music_context()
+
+
+func _emit_music_context() -> void:
+	if state_ref == null or is_presentation_busy():
+		return
+	var counts: Array[int] = []
+	for player in state_ref.players:
+		counts.append(player.prizes.size())
+	music_context_changed.emit(state_ref.setup_stage == GameState.SETUP_COMPLETE, state_ref.is_terminal(), counts)
 
 
 func set_task_hint(message: String) -> void:
@@ -340,6 +364,7 @@ func _ensure_presentation_coordinator() -> void:
 	presentation_coordinator.transition_started.connect(transition_started.emit)
 	presentation_coordinator.transition_finished.connect(transition_finished.emit)
 	presentation_coordinator.busy_changed.connect(presentation_busy_changed.emit)
+	presentation_busy_changed.connect(_on_audio_presentation_busy_changed)
 
 
 func _ensure_presentation_runtime() -> void:
@@ -598,6 +623,7 @@ func update_view(
 		_sync_visible_card_detail()
 		if action_popover and action_popover.visible:
 			board_view._reposition_action_popover()
+	_emit_music_context()
 
 
 func set_choice_targets(options_by_source: Dictionary, prompt: String) -> void:
@@ -1307,7 +1333,8 @@ func _bind_scene_nodes() -> void:
 		coin_showcase.render_in_table = true
 		coin_showcase.z_index = 95
 		coin_showcase.visible = false
-		coin_showcase.audio_requested.connect(card_motion_layer._on_coin_showcase_audio_requested)
+		coin_showcase.audio_event_requested.connect(emit_audio)
+		coin_showcase.audio_scope_cancel_requested.connect(audio_scope_cancel_requested.emit)
 		add_child(coin_showcase)
 	opponent_hand_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	opponent_hand_surface.z_index = 6

@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="MusicTrackDefinition" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://audio/music_track_definition.gd" id="script"]
+[ext_resource type="AudioStreamOggVorbis" path="res://assets/audio/music/battle_kanto.ogg" id="stream"]
+
+[resource]
+script = ExtResource("script")
+id = &"battle_kanto"
+title = "训练家战斗 · 火红／叶绿"
+stream = ExtResource("stream")
+loop_offset = 12

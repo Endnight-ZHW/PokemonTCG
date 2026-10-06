@@ -2,6 +2,8 @@ class_name CoinShowcase
 extends Control
 
 signal audio_requested(cue: String)
+signal audio_event_requested(request: AudioCueRequest)
+signal audio_scope_cancel_requested(scope_id: StringName)
 
 const COIN_SIZE := 104.0
 
@@ -93,6 +95,7 @@ func play(
 
 
 func clear() -> void:
+	audio_scope_cancel_requested.emit(_audio_scope())
 	_generation += 1
 	var handle := _active_handle
 	_active_handle = null
@@ -184,7 +187,7 @@ func _coin_center() -> Vector2:
 func _begin_toss(index: int) -> void:
 	_current_index = index
 	_toss_progress = 0.0
-	audio_requested.emit("coin_toss")
+	_emit_audio("coin_toss", index)
 	_update_text()
 	_layout_nodes()
 	queue_redraw()
@@ -213,7 +216,7 @@ func _land_toss(index: int) -> void:
 	if _history_count > index:
 		return
 	_history_count = index + 1
-	audio_requested.emit("coin_land")
+	_emit_audio("coin_land", _current_index)
 	_update_text()
 
 
@@ -221,7 +224,7 @@ func _show_reduced_result() -> void:
 	_history_count = results.size()
 	_current_index = results.size() - 1
 	_toss_progress = 1.0
-	audio_requested.emit("coin_land")
+	_emit_audio("coin_land", _current_index)
 	_update_text()
 	_layout_nodes()
 	queue_redraw()
@@ -319,3 +322,14 @@ func _showcase_style() -> StyleBoxFlat:
 	style.shadow_size = 6
 	style.shadow_offset = Vector2(0, 3)
 	return style
+
+
+func _audio_scope() -> StringName:
+	return StringName("coin:%d" % get_instance_id())
+
+
+func _emit_audio(cue: String, ordinal: int) -> void:
+	if not is_visible_in_tree():
+		return
+	audio_requested.emit(cue)
+	audio_event_requested.emit(AudioCueRequest.make(StringName(cue), _audio_scope(), str(_generation), cue, ordinal))

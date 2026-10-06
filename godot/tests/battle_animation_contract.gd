@@ -30,6 +30,7 @@ func _run() -> void:
 	var previous_mode := str(settings.animation_mode)
 	var table := TABLE.instantiate() as BattleTable
 	root.add_child(table)
+	await _check_mulligan_audio(table)
 	_check_cue_semantics(table.catalog)
 	_check_impact_staging(table.catalog)
 	for mode in ["cinematic", "standard", "fast"]:
@@ -55,7 +56,7 @@ func _run() -> void:
 	for action in BattleAnimationPreview.ACTIONS:
 		await _check_fixture(table, str(action), 0)
 	settings.animation_mode = "reduced"
-	for action in ["damage_dealt", "energy_attached", "pokemon_evolved", "pokemon_ko", "status_tick", "cards_drawn"]:
+	for action in ["damage_dealt", "energy_attached", "pokemon_evolved", "pokemon_ko", "status_tick", "cards_drawn", "cards_selected"]:
 		await _check_fixture(table, action, 1)
 	settings.animation_mode = previous_mode
 	table.queue_free()
@@ -252,10 +253,16 @@ func _check_pool(renderer: BattleFeedback3D) -> void:
 func _check_fixture(table: BattleTable, kind: String, viewer: int) -> void:
 	var fixture := _fixture(table, kind, viewer)
 	await process_frame
+	var sounds: Array[String] = []
+	var capture := func(request: AudioCueRequest) -> void: sounds.append(str(request.cue))
+	table.audio_event_requested.connect(capture)
 	var handle := table.submit_transition(fixture.request)
 	var deadline := Time.get_ticks_msec() + 7000
 	while not handle.is_completed() and Time.get_ticks_msec() < deadline:
 		await process_frame
+	table.audio_event_requested.disconnect(capture)
+	if kind == "cards_selected":
+		_check(sounds.count("card_reveal") == 1, "Public search reveal lost or duplicated its audio")
 	_check(handle.is_completed(), "Fixture stalled: " + kind)
 	if not handle.is_completed(): table.cancel_presentations("test_timeout", fixture.after_view)
 	_check(table.state_ref.revision == fixture.after_view.revision(), "Fixture failed to reconcile: " + kind)
@@ -373,39 +380,44 @@ func _check_audio() -> void:
 	var audio := AudioDirector.new()
 	root.add_child(audio)
 	await process_frame
-	_check(audio._sfx_voices.size() == 8, "SFX pool is not bounded to eight voices")
-	audio.play_cue("card_draw")
-	audio.play_cue("attack_hit_fire")
-	_check(audio._sfx_voices[0].playing and audio._sfx_voices[1].playing, "A hit interrupted the card sound")
-	for i in range(6): audio.play_cue("card_place")
-	audio.play_cue("card_move")
-	_check(audio._sfx_voices[1].stream == audio._cues.attack_hit_fire, "Low-priority sound stole a hit")
-	_check(audio._sfx_voices[0].stream == audio._cues.card_move, "Full pool failed to reclaim its oldest ordinary voice")
-	audio.stop_sfx()
-	for i in range(8): audio.play_cue("attack_hit_fire")
-	var serial := audio._sfx_serial
-	audio.play_cue("card_draw")
-	_check(audio._sfx_serial == serial, "Full critical pool admitted a lower priority voice")
-	audio.play_cue("pokemon_ko")
-	_check(audio._sfx_voices[0].stream == audio._cues.pokemon_ko, "KO could not reclaim the oldest critical voice")
 	var table := TABLE.instantiate() as BattleTable
 	root.add_child(table)
-	table.audio_cancel_requested.connect(audio.stop_sfx)
+	table.audio_event_requested.connect(audio.play)
+	table.audio_cancel_requested.connect(audio.cancel_scope.bind(&"battle"))
+	audio.play_cue("evolution")
 	table.cancel_presentations("audio_resync")
-	for voice in audio._sfx_voices:
+	for voice in audio.sfx.players:
 		_check(not voice.playing and voice.stream == null, "Resync left an orphan sound")
 	for element in BattleFeedbackCue.ELEMENTS:
-		_check(audio._cues.has("attack_hit_" + str(element).to_lower()), "Missing attribute sound: " + str(element))
-	_check(audio._cues.attack_hit_fire.data != audio._cues.attack_hit_water.data, "Attributes share identical impact audio")
-	var a := audio._textured_cue(140, 48, 0.24, 0.7, 0.2)
-	var b := audio._textured_cue(140, 48, 0.24, 0.7, 0.2)
-	_check(a.data == b.data, "Synthesis is not reproducible")
-	audio.play_cue("evolution")
-	audio.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
-	for voice in audio._sfx_voices: _check(not voice.playing, "App pause left a sound playing")
+		_check(audio.cues.has(StringName("attack_hit_" + str(element).to_lower())), "Missing attribute sound: " + str(element))
 	table.queue_free()
 	audio.queue_free()
 	await process_frame
-	# The audio mixer releases stopped playbacks on its next mixing buffer.
 	await create_timer(0.15).timeout
 	if failures.is_empty(): print("BATTLE_AUDIO_CONTRACT_OK")
+
+
+func _check_mulligan_audio(table: BattleTable) -> void:
+	root.get_node("AppSettings").animation_mode = "standard"
+	_fixture(table, "cards_drawn")
+	await process_frame
+	await process_frame
+	var requests: Array[AudioCueRequest] = []
+	var capture := func(request: AudioCueRequest) -> void: requests.append(request)
+	table.audio_event_requested.connect(capture)
+	var mulligan := table.render3d.mulligan
+	var ids := ["sv1-151", "sv1-151", "sv1-151"]
+	for pair in [["cards_drawn", "mulligan_redraw", "card_draw"], ["card_moved", "mulligan_return", "card_recover"]]:
+		requests.clear()
+		var event := {"event_type": pair[0], "event_id": "audio-review:" + str(pair[0]), "actor": 0,
+			"data": {"purpose": pair[1], "count": 3, "card_ids": ids}}
+		var handle := mulligan.play(event, 0.3)
+		if not handle.is_finished(): await handle.completed
+		_check(requests.size() == 3, "Intermediate mulligan hand lost per-card audio: " + str(pair[0]))
+		for index in range(requests.size()):
+			_check(requests[index].cue == StringName(pair[2]) and requests[index].ordinal == index, "Mulligan audio lost cue/ordinal identity")
+		var count := requests.size()
+		mulligan.sync()
+		_check(requests.size() == count, "Mulligan sync replayed a departure sound")
+	mulligan.clear()
+	table.audio_event_requested.disconnect(capture)

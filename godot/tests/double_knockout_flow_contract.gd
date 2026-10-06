@@ -115,7 +115,7 @@ func _check_double_knockout(mode: String) -> void:
 		main.ai_coordinator.poll_result()
 		await process_frame
 	var playbacks: Array[WeakRef] = []
-	for player in [main.audio_director.ui_player, main.audio_director.sfx_player, main.audio_director.music_player]:
+	for player in main.audio_director.music.players + main.audio_director.sfx.players + main.audio_director.ui.players:
 		if player.playing:
 			playbacks.append(weakref(player.get_stream_playback()))
 	var scene_reference: WeakRef = weakref(main)

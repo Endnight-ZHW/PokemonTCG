@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="MusicTrackDefinition" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://audio/music_track_definition.gd" id="script"]
+[ext_resource type="AudioStreamOggVorbis" path="res://assets/audio/music/battle_johto.ogg" id="stream"]
+
+[resource]
+script = ExtResource("script")
+id = &"battle_johto"
+title = "城都训练家战斗 · 心金／魂银"
+stream = ExtResource("stream")
+loop_offset = 12

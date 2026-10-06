@@ -353,7 +353,7 @@ func _toggle_case() -> void:
 	_lid_target = 0.0 if _lid_target > 0 else 90.0
 	if _lid_tween and _lid_tween.is_valid():
 		_lid_tween.kill()
-	sound_requested.emit("click")
+	sound_requested.emit("box_open" if _lid_target > 0.0 else "box_close")
 	if not FrontendMotion.decorative_motion_enabled():
 		_set_case_open(_lid_target)
 	else:
@@ -392,6 +392,7 @@ func _activate(target: String) -> void:
 		"coin": _toss_coin()
 		"card":
 			if not card_ids.is_empty():
+				sound_requested.emit("card_inspect")
 				card_activated.emit(card_ids[0])
 
 func _pointer_begin(point: Vector2, index: int) -> void:

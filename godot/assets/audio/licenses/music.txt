@@ -1,0 +1,20 @@
+Pokémon original soundtrack recordings
+
+Pokémon Ruby / Sapphire: Music Super Complete (2003)
+Pokémon FireRed / LeafGreen: Super Music Collection (2004)
+Nintendo DS Pokémon HeartGold / SoulSilver Music Super Complete (2009)
+
+Original works and recordings: Nintendo / Creatures / GAME FREAK and their
+respective composers, performers and publishers. These recordings are NOT CC0.
+This notice is attribution and source documentation, not a grant of rights.
+
+Source albums:
+https://downloads.khinsider.com/game-soundtracks/album/pokemon-ruby-sapphire-music-super-complete
+https://downloads.khinsider.com/game-soundtracks/album/pokemon-firered-leafgreen-music-super-complete
+https://downloads.khinsider.com/game-soundtracks/album/pokemon-heartgold-and-soulsilver-music-super-complete
+
+Exact tracks, source URLs, SHA-256 checksums and loop points:
+tools/audio/music.json in the project source.
+
+Processing: trim to musical cycle, 40 ms tail-to-loop seam, fixed loudness gain,
+48 kHz stereo Ogg Vorbis. The project does not stream or download music at runtime.

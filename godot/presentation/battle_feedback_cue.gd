@@ -164,4 +164,21 @@ static func from_event(event: Dictionary, source_card_id: String, catalog: CardC
 		"trainer_played", "pokemon_played":
 			cue.kind = "trainer" if type == "trainer_played" else "land"
 			cue.audio = "card_place"
+	# Audio follows semantic effects, independently of visual shape or quality.
+	match cue.kind:
+		"attack": cue.audio = "attack_hit"
+		"recoil": cue.audio = "recoil"
+		"counters": cue.audio = "counters"
+		"status_damage": cue.audio = "status_damage"
+		"cleanse": cue.audio = "cleanse"
+		"shield": cue.audio = "shield"
+		"direct_ko": cue.audio = "direct_ko"
+		"stadium": cue.audio = "stadium"
+		"tool": cue.audio = "tool"
+		"trainer": cue.audio = "trainer"
+		"land": cue.audio = "pokemon_play"
+		"status": cue.audio = "status_" + cue.status.to_lower() if cue.status in STATUS_NAMES else "status"
+		"victory": cue.audio = "" # The result screen owns the sole outcome cue.
+	if type in ["confusion_failed", "dazzled_failed"]:
+		cue.audio = "attack_failed"
 	return cue

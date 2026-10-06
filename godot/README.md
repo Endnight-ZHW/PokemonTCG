@@ -53,6 +53,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   从仓库根目录运行 `./tools/build_animation_review.ps1` 可生成支持修改前后对照、慢放和时间轴的本地播放器
   `build/battle-animation-upgrade/review.html`。基线放在 `build/battle-animation-upgrade/before/animation-review/`，没有基线时仍可回放当前版本。
   实验台提供普通命中、重击和「击倒 → 离场 → 奖励」连续演出，支持实时音效试听。
+- Workbench 侧栏新增「声音实验台」：87 类声音、261 个变体和 7 首经典配乐可独立试听，支持固定变体与连续对战。音频制作、来源与前后录音见 [`../tools/audio/README.md`](../tools/audio/README.md)。
 - 主要页面和组件现在都包含完整可编辑场景树；动态手牌和动作按钮仍由实时数据生成。
 - 前台 Theme 位于 `res://ui/frontend/front_end_theme.tres`，只挂到标题、牌组、网络、
   设置、帮助、详情和胜利等前台 surface；战斗仍为 `res://ui/game_theme.tres`，

@@ -66,6 +66,7 @@ signal event_ignored(event: Dictionary)
 
 const FEEDBACK_CHANNEL_KEY := "feedback_channel"
 const FEEDBACK_CHANNEL_ANNOUNCEMENT := "announcement"
+var audio_event_id := ""
 var _queue: Array[Dictionary] = []
 var _seen_event_ids: Dictionary = {}
 var _playing := false
@@ -128,6 +129,7 @@ func play(events: Array[Dictionary]) -> void:
 
 
 func clear_for_resync() -> void:
+	audio_event_id = ""
 	_generation += 1
 	_cancelled = true
 	_queue.clear()
@@ -195,6 +197,7 @@ func _run_queue() -> void:
 
 
 func _dispatch(event: Dictionary) -> void:
+	audio_event_id = str(event.get("event_id", ""))
 	var event_type := str(event.get("event_type", ""))
 	var target: Dictionary = event.get("target", {})
 	if (
@@ -211,13 +214,11 @@ func _dispatch(event: Dictionary) -> void:
 		return
 	match event_type:
 		"cards_drawn":
-			audio_requested.emit("card_draw")
 			card_motion_requested.emit(event, _duration_for(event))
 		"cards_revealed":
 			audio_requested.emit("card_reveal")
 			card_motion_requested.emit(event, _duration_for(event))
 		"cards_discarded":
-			audio_requested.emit("card_discard")
 			if not str(source.get("attachment_type", "")).is_empty():
 				burst_requested.emit(
 					"attachment_release",
@@ -226,11 +227,9 @@ func _dispatch(event: Dictionary) -> void:
 				)
 			card_motion_requested.emit(event, _duration_for(event))
 		"card_moved":
-			audio_requested.emit("card_move")
 			card_motion_requested.emit(event, _duration_for(event))
 		"cards_selected":
 			if int(event.get("amount", 0)) > 0:
-				audio_requested.emit("card_move")
 				card_motion_requested.emit(event, _duration_for(event))
 		"pokemon_played", "trainer_played", "stadium_changed", "tool_attached", "energy_attached", "pokemon_evolved":
 			if event_type == "energy_attached" and not str(source.get("slot", "")).is_empty():
@@ -238,10 +237,8 @@ func _dispatch(event: Dictionary) -> void:
 			_schedule_card_landing_feedback(event)
 			card_motion_requested.emit(event, _duration_for(event))
 		"retreat", "switched", "promoted":
-			audio_requested.emit("card_move")
 			card_motion_requested.emit(event, _duration_for(event))
 		"prize_taken":
-			audio_requested.emit("prize")
 			card_motion_requested.emit(event, _duration_for(event))
 		"coin_flip":
 			card_motion_requested.emit(event, _duration_for(event))
@@ -249,7 +246,7 @@ func _dispatch(event: Dictionary) -> void:
 			audio_requested.emit("shuffle")
 			card_motion_requested.emit(event, _duration_for(event))
 		"deck_exhausted":
-			audio_requested.emit("status")
+			audio_requested.emit("deck_exhausted")
 			floating_text_requested.emit(
 				"牌库耗尽",
 				_feedback_target(source, FEEDBACK_CHANNEL_ANNOUNCEMENT),
@@ -282,20 +279,21 @@ func _dispatch(event: Dictionary) -> void:
 			)
 			_emit_setup_reveal_feedback(data)
 		"turn_start":
-			audio_requested.emit("turn_change")
+			audio_requested.emit("turn_start")
 			floating_text_requested.emit(
 				"第 %d 回合" % int(data.get("turn", 0)),
 				_feedback_target(target, FEEDBACK_CHANNEL_ANNOUNCEMENT),
 				DesignTokens.GOLD,
 			)
 		"turn_end":
+			audio_requested.emit("turn_end")
 			floating_text_requested.emit(
 				"回合结束",
 				_feedback_target(target, FEEDBACK_CHANNEL_ANNOUNCEMENT),
 				DesignTokens.BLUE,
 			)
 		"checkup":
-			audio_requested.emit("status")
+			audio_requested.emit("checkup")
 			floating_text_requested.emit(
 				"宝可梦检查",
 				_feedback_target(target, FEEDBACK_CHANNEL_ANNOUNCEMENT),

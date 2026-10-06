@@ -209,6 +209,17 @@ func _check_player_facing_text() -> void:
 	choice.show_blocked_reason("invalid_choice")
 	_check(choice.blocked_reason_label.text == "该选项当前不可用，请重新选择。", "Choice error still displays its internal key")
 	choice.queue_free()
+	# Let coalesced UI feedback enter the pool before observing its lifetime.
+	await process_frame
+	var playbacks: Array[WeakRef] = []
+	for player in main.audio_director.ui.players + main.audio_director.sfx.players + main.audio_director.music.players:
+		if player.playing:
+			playbacks.append(weakref(player.get_stream_playback()))
 	main.queue_free()
 	await process_frame
+	# Mixing runs on another thread; a fixed delay is unreliable under CI load.
+	var deadline := Time.get_ticks_msec() + 1000
+	while playbacks.any(func(reference: WeakRef) -> bool: return reference.get_ref() != null) and Time.get_ticks_msec() < deadline:
+		await process_frame
+	_check(not playbacks.any(func(reference: WeakRef) -> bool: return reference.get_ref() != null), "Notification audio playback was not released")
 	if failures.is_empty(): print("PLAYER_FACING_TEXT_OK")

@@ -1,1 +1,3 @@
 godot/data/*.json text eol=lf
+godot/assets/audio/**/*.tres text eol=lf
+godot/assets/audio/licenses/*.txt text eol=lf

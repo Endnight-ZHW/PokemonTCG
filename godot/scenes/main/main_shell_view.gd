@@ -71,6 +71,9 @@ func _exit_tree() -> void:
 
 
 func clear_screen() -> void:
+	if main and main.audio_director:
+		for scope in [&"battle", &"home", &"result"]:
+			main.audio_director.cancel_scope(scope)
 	_toast_generation += 1
 	if _toast_tween and _toast_tween.is_valid():
 		_toast_tween.kill()
@@ -123,6 +126,8 @@ func show_toast(message: String, is_error: bool = false) -> void:
 	# an additional notification while playing.
 	if main.current_screen == SCREEN_GAME and not is_error:
 		return
+	if is_error and main.audio_director:
+		main.audio_director.play_ui("error")
 	message = PlayerFacingText.message(message, is_error)
 	if message.strip_edges().is_empty():
 		return
@@ -553,7 +558,7 @@ func show_title() -> void:
 	page.settings_requested.connect(main._show_settings)
 	page.help_requested.connect(main._show_help)
 	page.card_art_requested.connect(main._show_home_card_art)
-	page.showcase_sound_requested.connect(main.audio_director.play_cue)
+	page.showcase_sound_requested.connect(main.audio_director.play_home)
 	if title_backdrop:
 		title_backdrop.call("set_accent", page.featured_accent())
 		page.showcase_changed.connect(Callable(title_backdrop, "set_accent"))
@@ -564,6 +569,7 @@ func show_network_setup(kind: String) -> void:
 	main.network_kind = kind if kind in ["lan", "relay"] else "lan"
 	main.game_mode = MODE_NETWORK
 	main.current_screen = SCREEN_NETWORK
+	main.audio_director.play_music("preparation")
 	var page := mount(NETWORK_LOBBY_SCENE) as NetworkLobbyPage
 	main.current_network_page = page
 	page.configure(main.catalog, main.network_kind, AppSettings.relay_url)
@@ -579,6 +585,7 @@ func show_deck_select(mode: String = MODE_LOCAL) -> void:
 	main._play_click()
 	main.game_mode = mode
 	main.current_screen = SCREEN_DECKS
+	main.audio_director.play_music("preparation")
 	var page := mount(DECK_SELECT_SCENE) as DeckSelectPage
 	page.configure(main.catalog, main.game_mode)
 	page.back_requested.connect(show_title)
@@ -609,8 +616,10 @@ func build_game_screen() -> void:
 	# and the pass-device gate can both outlive the synchronous table mount.
 	main.battle_screen.set_local_hand_privacy_hidden(main.game_mode == MODE_LOCAL)
 	if main.audio_director:
-		main.battle_screen.audio_requested.connect(main.audio_director.play_cue)
-		main.battle_screen.audio_cancel_requested.connect(main.audio_director.stop_sfx)
+		main.battle_screen.audio_event_requested.connect(main.audio_director.play)
+		main.battle_screen.audio_scope_cancel_requested.connect(main.audio_director.cancel_scope)
+		main.battle_screen.audio_cancel_requested.connect(main.audio_director.cancel_scope.bind(&"battle"))
+		main.battle_screen.music_context_changed.connect(main.audio_director.update_battle_music)
 	if main.audio_director:
 		main.audio_director.play_music("battle")
 	main._refresh_game()
@@ -672,5 +681,9 @@ func show_end_screen() -> void:
 		show_title()
 	)
 	if main.audio_director:
-		main.audio_director.play_music("victory")
-	main._play_success()
+		var result := "draw" if is_draw else "victory"
+		if not is_draw and main.game_mode != MODE_LOCAL:
+			var listener: int = main.network_player_idx if main.game_mode == MODE_NETWORK else 0
+			if main.state.winner != listener:
+				result = "defeat"
+		main.audio_director.play_result(result)

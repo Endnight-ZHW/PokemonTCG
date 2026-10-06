@@ -31,6 +31,7 @@ var animation_element := "Fire"
 var animation_viewer := 0
 var animation_action := "attack"
 var preview_audio: AudioDirector
+var _audio_sequence_generation := 0
 
 @onready var preview_host: Control = %PreviewHost
 @onready var preview_caption: Label = %PreviewCaption
@@ -412,6 +413,12 @@ func _bind_toolbar() -> void:
 		var percent := float(button.get_meta("checkpoint"))
 		button.pressed.connect(set_presentation_checkpoint.bind(percent, ""))
 	_bind_animation_toolbar()
+	var audio_panel := AudioWorkbench.new()
+	audio_panel.name = "AudioWorkbench"
+	get_node("Layout/Sidebar/Scroll/Buttons").add_child(audio_panel)
+	audio_panel.configure(preview_audio)
+	audio_panel.sequence_requested.connect(_play_audio_sequence)
+	audio_panel.stop_requested.connect(_stop_audio_sequence)
 
 
 func _bind_animation_toolbar() -> void:
@@ -732,7 +739,8 @@ func _show_battle() -> void:
 	current_battle = BATTLE_SCENE.instantiate() as BattleTable
 	preview_host.add_child(current_battle)
 	if preview_audio != null:
-		current_battle.audio_requested.connect(preview_audio.play_cue)
+		current_battle.audio_event_requested.connect(preview_audio.play)
+		current_battle.audio_scope_cancel_requested.connect(preview_audio.cancel_scope)
 		current_battle.audio_cancel_requested.connect(preview_audio.stop_sfx)
 	current_battle.initialize_ui()
 	current_battle.update_view(
@@ -1147,7 +1155,8 @@ func _centered_panel(min_size: Vector2, surface: ModalSpec.Surface = ModalSpec.S
 
 
 func _clear_preview() -> void:
-	if preview_audio != null: preview_audio.stop_sfx()
+	_audio_sequence_generation += 1
+	if preview_audio != null: preview_audio.stop_all_short_sounds()
 	_checkpoint_generation += 1
 	if current_battle != null and is_instance_valid(current_battle):
 		current_battle.process_mode = Node.PROCESS_MODE_INHERIT
@@ -1167,3 +1176,34 @@ func _resolve_nodes() -> void:
 	checkpoint_status = get_node(
 		"Layout/Sidebar/Scroll/Buttons/CheckpointStatus"
 	) as Label
+
+
+func _stop_audio_sequence() -> void:
+	_audio_sequence_generation += 1
+	if is_instance_valid(current_battle):
+		current_battle.cancel_presentations("audio_audition_stopped")
+
+
+func _play_audio_sequence() -> void:
+	_stop_audio_sequence()
+	if not is_instance_valid(current_battle):
+		show_preview("battle")
+	var generation := _audio_sequence_generation
+	preview_audio.play_music("battle")
+	preview_audio.update_battle_music(true, false, [6, 6])
+	for action in ["opening_draw", "coin_flip", "energy_attached", "pokemon_evolved", "attack", "status_POISONED", "healed", "heavy_attack", "knockout_prize"]:
+		if generation != _audio_sequence_generation or not is_inside_tree():
+			return
+		var handle := trigger_presentation("fx:" + action)
+		var checkpoint := _checkpoint_generation
+		if handle != null and not handle.is_completed():
+			await handle.completed
+		if checkpoint != _checkpoint_generation or generation != _audio_sequence_generation:
+			return
+		await get_tree().create_timer(0.25).timeout
+		if generation != _audio_sequence_generation or checkpoint != _checkpoint_generation or not is_inside_tree():
+			return
+		if action == "heavy_attack":
+			preview_audio.update_battle_music(true, false, [2, 4])
+	if generation == _audio_sequence_generation:
+		preview_audio.play_result("victory")

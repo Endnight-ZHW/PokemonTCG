@@ -86,8 +86,6 @@ func play_feedback(event: Dictionary, duration: float, moving_card: Control = nu
 	var target_card := _feedback_card(cue.target_endpoint)
 	if cue.lunge and target_card != null and not target_card.is_hidden_card and target_card.pokemon != null:
 		cue.set_damage_weight(int(event.get("amount", 0)), target_card.pokemon.max_hp(table.catalog))
-		if not cue.element.is_empty():
-			cue.audio = "attack_hit_" + cue.element.to_lower()
 	if moving_card != null:
 		cue.motion_driven = true
 		cue.impact_fraction = contact_fraction
@@ -216,7 +214,11 @@ func _on_feedback_impact(event_id: String) -> void:
 			layer.floating_text(cue.text, _world_feedback_point(table.resolve_endpoint_center(cue.target_endpoint)),
 				cue.text_color, cue.spatial, maxf(0.0, cue.duration * (1.0 - cue.sample_progress) - 0.04), text_size, target_rect)
 	if not cue.audio.is_empty():
-		table.audio_requested.emit(cue.audio)
+		var request := AudioCueRequest.make(StringName(cue.audio), &"battle", cue.event_id, "impact")
+		request.element = cue.element
+		request.heavy = cue.heavy
+		request.intensity = cue.intensity
+		table.emit_audio(request)
 	if cue.spatial and table.camera_rig != null:
 		var pixels := 0.0
 		if cue.kind == "ko" and not ko_camera_played:

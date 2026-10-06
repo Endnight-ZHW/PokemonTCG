@@ -53,6 +53,7 @@ func _run_release_runtime(services: Dictionary) -> Dictionary:
 		and card_cache_size > 0
 		and texture_cache != null
 		and _load_release_ui_resources()
+		and _load_release_audio_resources()
 		and not DirAccess.dir_exists_absolute("res://authoring")
 		and not DirAccess.dir_exists_absolute("res://tests")
 		and not DirAccess.dir_exists_absolute("res://tools")
@@ -62,7 +63,7 @@ func _run_release_runtime(services: Dictionary) -> Dictionary:
 		return _failure(4, "PHASE6_EXPORT_RELEASE_FAILED")
 	return _success(
 		("PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 "
-		+ "challenge=native onnx_assets=0") % app_version)
+		+ "challenge=native onnx_assets=0 audio_cues=87 music_tracks=7") % app_version)
 
 
 func _release_catalog_matches(release_decks: Array) -> bool:
@@ -90,6 +91,22 @@ func _load_release_ui_resources() -> bool:
 		"res://scenes/end/victory_screen.tscn",
 	]:
 		if load(path) == null:
+			return false
+	return true
+
+
+func _load_release_audio_resources() -> bool:
+	var library := load(AudioDirector.CATALOG_PATH) as AudioCatalog
+	if library == null or library.cues.size() != 87 or library.tracks.size() != 7:
+		return false
+	for cue in library.cues:
+		if cue.variants.size() < 3:
+			return false
+		for stream in cue.variants:
+			if stream == null or stream.get_length() <= 0.03:
+				return false
+	for track in library.tracks:
+		if track.stream == null or track.stream.get_length() <= track.loop_offset + 5.0:
 			return false
 	return true
 

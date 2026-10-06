@@ -194,7 +194,8 @@ func _show_coin_flip_choice(request: ChoiceView) -> void:
 	showcase.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	showcase.custom_minimum_size = Vector2(260, 286)
 	if audio_director:
-		showcase.audio_requested.connect(audio_director.play_cue)
+		showcase.audio_event_requested.connect(audio_director.play)
+		showcase.audio_scope_cancel_requested.connect(audio_director.cancel_scope)
 	host.modal_body.add_child(showcase)
 	active_coin_showcase = showcase
 	var reveal_generation := host.generation
