@@ -9,7 +9,9 @@ const DEFAULT_MUSIC_VOLUME := 0.55
 const DEFAULT_SFX_VOLUME := 0.8
 const DEFAULT_MUTED := false
 const DEFAULT_CARD_CACHE_SIZE := 24
-const DEFAULT_RELAY_URL := "ws://127.0.0.1:8766"
+const DEFAULT_RELAY_URL := "ws+srv://relay.114600.xyz"
+const LEGACY_RELAY_URL := "ws://127.0.0.1:8766"
+const LEGACY_PUBLIC_RELAY_URLS := ["ws://39.190.56.238:50750", "ws://39.190.56.21:65361"]
 const DEFAULT_ANIMATION_MODE := "standard"
 const DEFAULT_QUALITY_PROFILE := "auto"
 
@@ -92,7 +94,7 @@ func load_settings(path: String = SETTINGS_PATH) -> bool:
 	relay_url = str(
 		config.get_value("network", "relay_url", DEFAULT_RELAY_URL)
 	).strip_edges()
-	if relay_url.is_empty():
+	if relay_url.is_empty() or relay_url == LEGACY_RELAY_URL or relay_url in LEGACY_PUBLIC_RELAY_URLS:
 		relay_url = DEFAULT_RELAY_URL
 	changed.emit()
 	return true

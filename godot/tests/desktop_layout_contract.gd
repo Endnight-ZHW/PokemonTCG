@@ -1,7 +1,8 @@
 extends SceneTree
 
 const SIZES := [Vector2i(1600, 900), Vector2i(1024, 768), Vector2i(1280, 720),
-	Vector2i(1280, 800), Vector2i(1920, 1080), Vector2i(2560, 1600), Vector2i(2000, 900)]
+	Vector2i(1280, 800), Vector2i(1920, 1080), Vector2i(2560, 1600), Vector2i(2000, 900),
+	Vector2i(3392, 2400)]
 const OUTPUT := "res://../build/layout-unification/after"
 var failures: Array[String] = []
 var main: Control

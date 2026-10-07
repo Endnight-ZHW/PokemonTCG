@@ -33,3 +33,35 @@ Command: /bin/bash mslx-start.sh
 Port mapping: 8766:8766/tcp
 Stop command: ^c
 ```
+
+## Stable SRV address for STUN deployments
+
+Updated Windows/Android clients accept `ws+srv://relay.114600.xyz`. This is an
+application-specific discovery URL: the client queries
+`_ptcg._tcp.relay.114600.xyz` and opens a plain WebSocket to the SRV target and
+port. Existing `ws://` and `wss://` URLs still connect directly. SRV does not
+provide TLS; `ws+srv://` does not imply `wss://` encryption.
+
+The Lucky DDNS task `PokemonTCG Relay SRV` maintains these DNS-only records with
+a 60-second TTL, using the STUN rule named `PTCGRelay`:
+
+| Record | Name | Content |
+| --- | --- | --- |
+| A | `relay-host.114600.xyz` | `{STUN_PTCGRelay_IP}` |
+| SRV | `_ptcg._tcp.relay.114600.xyz` | `0 0 {STUN_PTCGRelay_PORT} relay-host.114600.xyz` |
+
+The task checks every 36 seconds. IP/port changes therefore still have a DNS
+propagation window and can interrupt an active match. Both the STUN rule and
+DDNS task must remain enabled; keep the STUN rule name unchanged because the
+variables reference it. Do not enable Cloudflare's HTTP proxy on the A record.
+
+`RelaySrvResolver` polls UDP DNS without blocking gameplay and queries again
+on each connection or resume. It tries AliDNS, DNSPod, then Cloudflare DNS, with
+a two-second timeout per resolver. It validates packet bounds, compression
+pointers, transaction IDs, question names and SRV targets before connecting.
+Networks blocking all three DNS servers can still use an explicit `ws://` URL.
+
+Older installed clients do not understand `ws+srv://`; rebuild/update the
+client before using the stable address. Saved addresses matching this
+deployment's old IP endpoints migrate to the SRV default, while custom
+server addresses are preserved.

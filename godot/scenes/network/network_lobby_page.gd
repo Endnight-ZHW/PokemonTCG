@@ -505,9 +505,10 @@ func _validate_form() -> bool:
 	var address_required := kind == "relay" or role == "client"
 	if (address_required and address.is_empty()) or (kind == "relay" and not (
 		address.begins_with("ws://") or address.begins_with("wss://")
+		or not RelaySrvResolver.parse_url(address).is_empty()
 	)):
 		address_error.text = (
-			"服务器地址 必须以 ws:// 或 wss:// 开头。"
+			"服务器地址必须以 ws://、wss:// 或 ws+srv:// 开头。"
 			if kind == "relay"
 			else "加入局域网房间时必须填写主机地址。"
 		)

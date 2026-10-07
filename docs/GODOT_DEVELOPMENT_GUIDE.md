@@ -269,7 +269,24 @@ Challenge 默认使用 `strategic_intent_v3`；`turn_beam_v2` 仍承担比较与
   通过 adb 的显式设备序列号安装并启动，Logcat 中的 ANDROID_TOUCH_REPORT 给出原生渲染、
   完整输入分发、最后一次攻击／领取奖赏／结算返回和实际分辨率下的帧耗时结果。
   ANDROID_TOUCH_ACCEPTANCE_OK 仅代表交互与绘制断言通过，帧耗时另行评估；测试结束卸载该独立诊断包。
-- 统一布局回归覆盖 1024×768、1280×720、1280×800、1600×900、1920×1080、2560×1600、2000×900，
+  可加 `-Configuration debug -OutputDirectory build/tablet-validation -SoakSeconds 600`，
+  使用调试签名并运行带可见倒计时的十分钟采样。报告包含音频混音、帧耗时和资源指标；
+  音频混音断言不代替扬声器主观听感验收。新版脚本使用当前首页对象及设置独立滚动区。
+  `device_network_acceptance.gd` 复用正常图形客户端和网络控制器，自动完成两台设备的整局测试。
+  诊断包读取 `user://device-network-config.json`（`role`、`url`、`room`、`deck`）；
+  Windows 可在启动该诊断场景时传 `-- --device-network-config=<绝对 JSON 路径>`。
+  房间码、完整状态版本序列、胜者和终局确认写入 `device-network-report.json`，测试目录不进入产品包。
+  同一诊断配置也接受 `{"mode":"acceptance","seconds":600}`，无需重导出即可运行长时验收；
+  `{"mode":"home_probe","seconds":1}` 用于单独检查对战返回首页的绘制状态。
+  帧时间报告同时保存各组 P50/P95 与长时采样的整体 P50/P95。
+  Android 系统返回由 Main 分层处理，`application/config/quit_on_go_back` 必须关闭，
+  否则引擎会在弹窗收到返回后直接退出。首页活动中的三维视口主动绘制，避免重建后等待首个 UI 采样而保持透明；
+  页面隐藏、弹窗覆盖或应用进入后台时仍停止该视口。
+  移动端使用 Forward Mobile（Android Vulkan），桌面保持 Compatibility。
+  OPD2413 的 Compatibility 路径在持续对战后重建首页时可复现空白，切换渲染路径后
+  十分钟真机验收通过。对照包可用 `-RenderingMethod gl_compatibility` 或 `-RenderingMethod mobile` 构建。
+  需要同时保留系统 ADB 截图、内部像素检查和实际帧时间，不能只凭场景节点存在判断渲染正常。
+- 统一布局回归覆盖 1024×768、1280×720、1280×800、1600×900、1920×1080、2560×1600、2000×900、3392×2400，
   以及 900×540／640×960 缩放保底、连续缩放、四边安全区、密集手牌、重复卡牌、附件、强制选择及换手。
   `desktop_layout_contract.gd` 同时验证并排页面、自动卡牌说明、区域避让和关闭说明后的几何稳定性；
   `test_godot.ps1` 运行其无图形检查，`test_frontend_club_graphics.ps1` 使用真实渲染生成

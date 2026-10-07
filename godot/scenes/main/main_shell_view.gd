@@ -566,7 +566,7 @@ func show_title() -> void:
 func show_network_setup(kind: String) -> void:
 	main._play_click()
 	main._stop_network()
-	main.network_kind = kind if kind in ["lan", "relay"] else "lan"
+	main.network_kind = kind if kind in ["lan", "relay"] else "relay"
 	main.game_mode = MODE_NETWORK
 	main.current_screen = SCREEN_NETWORK
 	main.audio_director.play_music("preparation")

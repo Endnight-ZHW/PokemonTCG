@@ -86,7 +86,7 @@ func _connect_actions() -> void:
 	for row in [
 		[%LocalTwoPlayerButton, mode_selected.emit.bind("local")],
 		[%AIButton, mode_selected.emit.bind("challenge")],
-		[%NetworkButton, network_selected.emit.bind("lan")],
+		[%NetworkButton, network_selected.emit.bind("relay")],
 		[%SettingsButton, settings_requested.emit],
 		[%HelpButton, help_requested.emit],
 	]:

@@ -63,7 +63,7 @@ var network_controller := NetworkMatchController.new(catalog)
 var network_legal_actions: Array[GameAction] = []
 var network_choice_view: ChoiceView
 var network_wait_context: Dictionary = {}
-var network_kind := "lan"
+var network_kind := "relay"
 var network_player_idx := -1
 
 var safe_margin: MarginContainer
@@ -324,13 +324,15 @@ func _on_network_connect_requested(
 			"无法启动连接：%s" % error_string(error),
 		)
 		return
+	var waiting_for_peer := role == "host" and kind == "lan"
 	_set_network_page_state(
 		(
 			NetworkLobbyPage.ConnectionState.WAITING
-			if role == "host"
+			if waiting_for_peer
 			else NetworkLobbyPage.ConnectionState.CONNECTING
 		),
-		"等待挑战者连接……" if role == "host" else "正在连接房主……",
+		"等待挑战者连接……" if waiting_for_peer else (
+			"正在连接服务器……" if kind == "relay" else "正在连接房主……"),
 	)
 	_refresh_process_state()
 
@@ -351,6 +353,7 @@ func _network_connection_fields_valid(
 		and not (
 			normalized_address.begins_with("ws://")
 			or normalized_address.begins_with("wss://")
+			or not RelaySrvResolver.parse_url(normalized_address).is_empty()
 		)
 	):
 		return false

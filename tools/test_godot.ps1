@@ -56,6 +56,8 @@ $contracts = @(
     @('card_catalog_contract', 'CARD_CATALOG_CONTRACT_OK', 'Card catalog contract'),
     @('card_presentation_contract', 'CARD_PRESENTATION_CONTRACT_OK', 'Card audit, shared presentation and player-facing notification text'),
     @('network_protocol_contract', 'NETWORK_PROTOCOL_CONTRACT_OK', 'Network protocol contract'),
+    @('relay_connection_contract', 'RELAY_CONNECTION_CONTRACT_OK', 'Relay defaults, asynchronous failures, handshake timeout and room waiting'),
+    @('relay_srv_contract', 'RELAY_SRV_CONTRACT_OK', 'SRV discovery, DNS packet validation, changing ports and room handshakes'),
     @('native_rules_session_contract_test', 'NATIVE_RULES_SESSION_CONTRACT_OK', 'Native ABI 2 stateful rules session, privacy, rollback, Snapshot and journal contract'),
     @('vm_descriptor_contract_test', 'VM_DESCRIPTOR_CONTRACT_OK', 'Generated VM IR descriptor and negative-schema contract'),
     @('desktop_layout_contract', 'DESKTOP_LAYOUT_CONTRACT_OK', 'Unified desktop and tablet layout, auto previews and resize stability'),

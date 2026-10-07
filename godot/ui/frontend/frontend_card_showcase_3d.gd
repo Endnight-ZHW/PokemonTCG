@@ -221,7 +221,9 @@ func _request_frame() -> void:
 		# A static pose still needs a live render target. A few global draw
 		# notifications cannot prove this viewport is ready, and freezing it can
 		# retain transparent pixels after delayed drawing or target recreation.
-		viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+		# Android may not mark a recreated transparent texture as visible yet.
+		# The page already owns activation; render even before its first sample.
+		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 		set_process(_animated)
 		if DisplayServer.get_name() == "headless":
 			call_deferred("_prepare_frame")

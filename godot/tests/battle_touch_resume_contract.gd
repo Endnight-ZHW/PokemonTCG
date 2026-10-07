@@ -101,6 +101,15 @@ func check_showcase_render_recovery() -> void:
 	await settle(6)
 	await RenderingServer.frame_post_draw
 	check_showcase_image(stage, "render target recreated")
+	# A recreated Android viewport can precede its TextureRect's first sample.
+	# Exercise that ordering, rather than assuming window draws imply 3D draws.
+	stage._surface.hide()
+	stage.viewport.size = dimensions + Vector2i(2, 2)
+	await settle(6)
+	await RenderingServer.frame_post_draw
+	check_showcase_image(stage, "render target before its first UI sample")
+	stage._surface.show()
+	await settle(6)
 	stage.set_active(false)
 	check(stage.viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED,
 		"Covered homepage did not suspend its viewport")

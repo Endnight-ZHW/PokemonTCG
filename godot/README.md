@@ -1,7 +1,7 @@
 # Godot 4.7 客户端
 
 这是项目当前的发布版本，版本号为 0.8.0。客户端使用 Godot 4.7
-Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
+Windows 使用 Compatibility，移动端使用 Forward Mobile（Android Vulkan），支持 Windows x86_64 和 Android 9+ ARM64。
 
 ## 已实现
 
@@ -96,7 +96,9 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 - `TitlePage`：`configure(version_text)` 继续接收单个版本字符串，并提供
   `set_embedded_backdrop_visible(...)` 切换独立预览背景。主入口节点固定为
   `LocalTwoPlayerButton`、`AIButton`、`NetworkButton`，另保留 `SettingsButton`、`HelpButton`；
-  标题页发出的默认模式分别为 `local`、`challenge` 和 `lan`。
+  标题页发出的默认模式分别为 `local`、`challenge` 和 `relay`。
+  互联网联机默认填入 `ws+srv://relay.114600.xyz`，通过 `_ptcg._tcp` SRV 记录发现实际服务器和端口；允许修改并保留局域网入口。
+  空地址、旧默认回环地址及旧公网地址自动迁移，其他自定义地址保持原值。
 - `DeckSelectPage`：使用 `selected_deck_key(player_idx)`、`select_deck(player_idx, key)` 和
   `deck_count()`；挑战模式固定为 `challenge`，先后攻由开局硬币胜者选择。
   左侧三列／两列画廊和右侧准备区始终并排；点击卡组仅浏览，由两个选用按钮通过 `_assign_preview_to(player_idx)` 更新对应玩家。
@@ -112,6 +114,9 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   `apply_type_matchups`。地址、端口和房间码只有在
   点击或轻触文本框后才接收文字输入，页面不提供 Tab、方向键或手柄焦点导航。房主还会在
   开局前锁定弱点/抗性选项，挑战者只读确认。
+  SRV 地址会先查询 DNS，每个解析服务器最多等待 2 秒，依次尝试三个服务器；
+  解析完成后的 WebSocket 连接及房间握手最多等待 10 秒，失败后可直接修改地址重试；
+  房主取得房间码后才进入等待挑战者状态，此后不会因等待对手而触发握手超时。
 - 页面仍通过 `configure(...)` 接收数据、通过既有信号报告意图；规则权威校验在
   `NativeRulesSession`，网络房主通过同一会话执行动作与玩家视图投影。
 

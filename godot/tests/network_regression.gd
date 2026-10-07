@@ -352,7 +352,7 @@ func _invalid_pokemon_diagnostics(view: Dictionary) -> Array[Dictionary]:
 	return result
 
 
-func _automatic_action(actions: Array[GameAction]) -> GameAction:
+static func _automatic_action(actions: Array[GameAction]) -> GameAction:
 	var priority := [
 		"PROMOTE", "PLAY_BASIC", "EVOLVE", "ATTACH_ENERGY", "DECLARE_ATTACK",
 		"PLAY_TRAINER", "SETUP_DONE", "END_TURN", "USE_ABILITY",
@@ -392,7 +392,7 @@ func _board_contract_diagnostic(host: NetworkMatchController) -> String:
 	return JSON.stringify({"board": board, "pending": pending_rows})
 
 
-func _automatic_choice(request: ChoiceView) -> ChoiceResponse:
+static func _automatic_choice(request: ChoiceView) -> ChoiceResponse:
 	if request.options.is_empty():
 		return ChoiceResponse.new(request.request_id, [])
 	var count := maxi(request.min_select, request.max_select)
@@ -436,7 +436,7 @@ func _automatic_choice(request: ChoiceView) -> ChoiceResponse:
 	return ChoiceResponse.new(request.request_id, selected)
 
 
-func _choice_target_key(option: Dictionary) -> String:
+static func _choice_target_key(option: Dictionary) -> String:
 	var ref_value: Variant = option.get("ref")
 	if ref_value is Dictionary:
 		var ref := Dictionary(ref_value)
@@ -446,7 +446,7 @@ func _choice_target_key(option: Dictionary) -> String:
 	return str(option.get("option_id", ""))
 
 
-func _choice_energy_source_key(request: ChoiceView, option_id: String) -> String:
+static func _choice_energy_source_key(request: ChoiceView, option_id: String) -> String:
 	if request.request_type != "distribute_energy" or not option_id.begins_with("energy:"):
 		return ""
 	var parts := option_id.split(":", false, 2)

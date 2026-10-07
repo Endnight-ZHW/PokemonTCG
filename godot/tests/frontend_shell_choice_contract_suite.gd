@@ -92,11 +92,24 @@ func _check_main_shell_contract() -> void:
 		"Main responsive canvas must prevent UI downsampling on supported compact displays",
 	)
 	main.shell_view.show_network_setup("relay")
+	context._check(not context.tree.quit_on_go_back,
+		"Android system Back must reach Main instead of quitting the application")
 	await context._settle_layout(3)
 	var lobby := main.current_network_page as NetworkLobbyPage
 	context._check(lobby != null and lobby.is_inside_tree(),
 		"Main did not retain a live network-lobby route")
 	if lobby:
+		var previous_relay: String = context._settings_node.relay_url
+		main._on_network_connect_requested("relay", "host", "ws://127.0.0.1:9", 8765, "", "fire", false)
+		context._check(lobby.connection_state == NetworkLobbyPage.ConnectionState.CONNECTING
+			and not lobby.room_code_display.visible,
+			"Relay host must wait for a server-issued room before showing WAITING")
+		main.notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+		context._check(main.current_screen == "title" and main.network_controller.transport == null,
+			"Cancelling a pending connection did not close its transport")
+		context._settings_node.set_relay_url(previous_relay)
+		main.shell_view.show_network_setup("relay")
+		lobby = main.current_network_page
 		lobby.set_connection_state(
 			NetworkLobbyPage.ConnectionState.WAITING,
 			"等待测试连接",
