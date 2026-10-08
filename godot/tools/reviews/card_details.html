@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>卡牌详情 · 实机验收</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f2eb;color:#213653;font:16px/1.65 "Microsoft YaHei",sans-serif}header,main{padding:24px 4vw}header{background:#fff;border-bottom:1px solid #d9dfe5}h1{margin:3px 0;font-size:27px}p{margin:5px 0}small{color:#80503b}a{color:#315c87}button,select{font:inherit;border:1px solid #b6bdc5;border-radius:8px;background:#fff;color:inherit;padding:10px 14px;min-height:48px}button{cursor:pointer}button:disabled{opacity:.4}.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:18px}.frames{display:grid;grid-template-columns:1fr;gap:18px}.frames.compare{grid-template-columns:1fr 1fr}.frame{min-width:0}.frame img{display:block;width:100%;height:auto;border-radius:10px;box-shadow:0 4px 24px #21365318}.caption{margin:0 0 8px;color:#687989}.note{margin-top:18px;color:#596b7f}[hidden]{display:none!important}@media(max-width:1000px){.frames.compare{grid-template-columns:1fr}}
+</style>
+<header><small>CARD DETAILS · GAME REVIEW</small><h1 id="title"></h1><p id="summary"></p><p id="description"></p><a href="../card-detail-integration/review.html">完整详情与战斗左栏</a> · <a href="../choice-detail-integration/review.html">选卡等其他界面</a> · <a href="../card-text-audit/review.html">卡牌信息审核</a></header>
+<main><div class="controls"><select id="picker" aria-label="选择实机截图"></select><button id="prev">上一张</button><button id="next">下一张</button><label><input id="compare" type="checkbox"> <span id="compare-label"></span></label><span id="counter"></span></div>
+<div id="frames" class="frames"><section class="frame"><p class="caption" id="caption"></p><a id="original" target="_blank"><img id="actual" alt="正式游戏截图"></a></section><section class="frame" id="reference-frame" hidden><p class="caption" id="reference-caption"></p><a id="reference-link" target="_blank"><img id="reference" alt="改造前的对照图"></a></section></div><p class="note">真实 Godot 场景截图。查看卡图、卡文及返回不会提交选择。点击截图可以查看原尺寸。</p></main>
+<script>
+const report=__REPORT__,view='__VIEW__',inspector=view==='inspector';
+const $=id=>document.getElementById(id),files=report.captures;let index=0;
+const titles={
+ '01-front-1600':'对战外完整详情 · 1600×900','05-battle-full-1600':'对战内完整详情 · 1600×900','02-attachments-bottom':'进化链与附着卡 · 阅读底部',
+ '03-svi-maus-':'长卡文 · ','03-sv1-189-':'训练家 · ','03-svg2-lume-':'特殊能量 · ','04-long-missing-art':'长效果与缺图适配','04-long-name-multiple-attacks':'长名称与多招式',
+ '06-sidebar-':'战斗左栏 · ','07-prize-owner-0-':'我方连续拿取奖励卡 · ','07-prize-owner-1-':'对手拿取奖励卡 · ',
+ '01-search-':'搜寻卡牌 · ','02-artwork-':'查看卡图 · ','03-discard-trainer':'弃牌区选卡 · 训练家','04-discard-special-energy':'弃牌区选卡 · 特殊能量',
+ '05-revealed-cards':'公开卡牌预览','06-distribution-energy-detail':'能量分配 · 卡牌说明','07-distribution-return':'返回能量分配 · 草稿保留',
+ '08-confirm-svi-chiy':'攻击确认 · 古玉鱼','08-confirm-svd-absol':'攻击确认 · 阿勃梭鲁'};
+function title(file){let value=file.replace('.png','');for(const [key,label]of Object.entries(titles))value=value.replace(key,label);return value.replaceAll('x','×')}
+function show(){const file=files[index];if(!file)return;const reference=report.references?.[file]||'';$('actual').src=file;$('actual').alt=title(file);$('original').href=file;$('caption').textContent=title(file);$('counter').textContent=`${index+1} / ${files.length}`;$('picker').value=String(index);$('prev').disabled=index===0;$('next').disabled=index===files.length-1;$('compare').disabled=!reference;const comparing=$('compare').checked&&!!reference;$('reference-frame').hidden=!comparing;$('frames').classList.toggle('compare',comparing);if(reference){$('reference').src=reference;$('reference-link').href=reference}else{$('reference').removeAttribute('src');$('reference-link').removeAttribute('href')}}
+$('title').textContent=inspector?'卡牌详情与战斗左栏':'选卡时，也能直接读到完整卡文';document.title=$('title').textContent+' · 实机验收';
+$('description').textContent=inspector?'固定卡图与右栏滚动、完整招式与规则、紧凑附着卡、名字右侧 HP 和属性图标。奖励卡保持原位，拿取时隐藏左栏。':'小卡图与身份信息固定在顶部，特性、招式、能量费用及规则集中展示。查看大图后返回，保留选择、分配草稿和阅读位置。';
+$('compare-label').textContent=inspector?'与审核草图并排对照':'对照原选卡界面';$('reference-caption').textContent=inspector?'审核通过的草图':'更新前 · 用户提供的选卡界面';
+$('summary').textContent=`${report.failures.length?'检查未通过':'检查通过'} · ${inspector?report.catalog.cards:report.cards} 张卡适配 · ${files.length} 张实机截图`+(inspector?` · 最长左栏 ${report.catalog.longest_height}px`:'');
+$('picker').replaceChildren(...files.map((file,i)=>new Option(title(file),String(i))));$('picker').onchange=()=>{index=Number($('picker').value);show()};$('prev').onclick=()=>{index--;show()};$('next').onclick=()=>{index++;show()};$('compare').onchange=show;if(inspector)index=Math.max(0,files.indexOf('06-sidebar-1600x900.png'));show();
+</script></html>

@@ -185,7 +185,10 @@
   ],
   "corrected_cards": {
     "sv1-114": [
-      "attack_cost"
+      "attack_cost",
+      "attacks.0.text",
+      "attacks.1.text",
+      "attacks.1.switch_required"
     ],
     "sv2-delib": [
       "hp",
@@ -193,10 +196,14 @@
       "attack_cost"
     ],
     "sv2-grex": [
-      "attack_name"
+      "attack_name",
+      "attacks.0.text",
+      "attacks.1.text",
+      "rules"
     ],
     "svd-absol": [
-      "weakness"
+      "weakness",
+      "attacks.0.damage_text"
     ],
     "svd-darkrai": [
       "weakness"
@@ -210,7 +217,8 @@
       "resistance"
     ],
     "svd-mabosstiff-ex": [
-      "weakness"
+      "weakness",
+      "rules"
     ],
     "svd-maschiff": [
       "weakness"
@@ -232,7 +240,8 @@
       "resistance"
     ],
     "svg2-gard": [
-      "rule_text"
+      "rule_text",
+      "rules"
     ],
     "svg2-grot": [
       "ability_text"
@@ -253,7 +262,8 @@
       "rule_text"
     ],
     "svi-maus": [
-      "ability_text"
+      "ability_text",
+      "rules"
     ],
     "svi-mirc": [
       "rule_text"
@@ -285,7 +295,8 @@
       "resistance"
     ],
     "svm-marnie-pride": [
-      "name"
+      "name",
+      "rules"
     ],
     "svm-orthworm": [
       "ability_text",
@@ -306,9 +317,737 @@
     "svm-zamazenta": [
       "weakness",
       "resistance"
+    ],
+    "sv1-109": [
+      "attacks.0.text"
+    ],
+    "sv1-150": [
+      "rules"
+    ],
+    "sv1-151": [
+      "rules"
+    ],
+    "sv1-152": [
+      "rules"
+    ],
+    "sv1-153": [
+      "rules"
+    ],
+    "sv1-170": [
+      "rules"
+    ],
+    "sv1-171": [
+      "rules"
+    ],
+    "sv1-176": [
+      "rules"
+    ],
+    "sv1-180": [
+      "rules"
+    ],
+    "sv1-189": [
+      "rules"
+    ],
+    "sv1-201": [
+      "rules"
+    ],
+    "sv1-202": [
+      "rules"
+    ],
+    "sv1-203": [
+      "rules"
+    ],
+    "sv1-204": [
+      "rules"
+    ],
+    "sv1-49": [
+      "weaknesses"
+    ],
+    "sv1-ener-1": [
+      "name"
+    ],
+    "sv1-ener-2": [
+      "name"
+    ],
+    "sv1-ener-3": [
+      "name"
+    ],
+    "sv1-ener-4": [
+      "name"
+    ],
+    "sv1-ener-5": [
+      "name"
+    ],
+    "sv1-ener-6": [
+      "name"
+    ],
+    "sv1-ener-7": [
+      "name"
+    ],
+    "sv1-ener-8": [
+      "name"
+    ],
+    "sv2-cand": [
+      "rules"
+    ],
+    "sv2-catch": [
+      "rules"
+    ],
+    "sv2-young": [
+      "rules"
+    ],
+    "sv3-134": [
+      "rules"
+    ],
+    "svd-dark-patch": [
+      "rules"
+    ],
+    "svd-hard-belt": [
+      "rules"
+    ],
+    "svf-ensw2": [
+      "rules"
+    ],
+    "svf-houb": [
+      "rules"
+    ],
+    "svf-luca": [
+      "abilities.0.text"
+    ],
+    "svf-potion": [
+      "rules"
+    ],
+    "svf-rio": [
+      "attacks.1.text"
+    ],
+    "svg-alt": [
+      "rules"
+    ],
+    "svg-beri": [
+      "rules"
+    ],
+    "svg-chef": [
+      "rules"
+    ],
+    "svg-dram": [
+      "weaknesses"
+    ],
+    "svg2-exps": [
+      "rules"
+    ],
+    "svg2-hamm": [
+      "rules"
+    ],
+    "svi-cait": [
+      "rules"
+    ],
+    "svi-enst": [
+      "rules"
+    ],
+    "svi-ente": [
+      "attacks.0.text",
+      "abilities.0.text"
+    ],
+    "svi-erec": [
+      "rules"
+    ],
+    "svi-gree": [
+      "attacks.1.text"
+    ],
+    "svi-infr": [
+      "attacks.0.text"
+    ],
+    "svi-mela": [
+      "rules"
+    ],
+    "svi-nemb": [
+      "rules"
+    ],
+    "svi-popp": [
+      "rules"
+    ],
+    "svl-chat": [
+      "attacks.0.text"
+    ],
+    "svl-ensw": [
+      "rules"
+    ],
+    "svl-flaa2": [
+      "abilities.0.text"
+    ],
+    "svl-pikaex": [
+      "attacks.1.text",
+      "rules"
+    ],
+    "svl-thun": [
+      "attacks.0.text"
+    ],
+    "svl-trks": [
+      "rules"
+    ],
+    "svl-vitb": [
+      "rules"
+    ],
+    "svl-zinn": [
+      "rules"
     ]
   },
   "excluded_fields": [],
   "printing_metadata_source": "res://authoring/card_source_manifest.json",
-  "metadata_policy": "pinned_simplified_chinese_printing"
+  "metadata_policy": "pinned_simplified_chinese_printing",
+  "printed_text_review": {
+    "date": "2026-10-08",
+    "card_count": 177,
+    "source_revision": "ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c",
+    "checked_fields": [
+      "name",
+      "supertype",
+      "subtypes",
+      "hp",
+      "evolves_from",
+      "energy_types",
+      "abilities",
+      "attacks.name",
+      "attacks.cost",
+      "attacks.damage_text",
+      "attacks.text",
+      "rules",
+      "weaknesses",
+      "resistances",
+      "retreat_cost"
+    ],
+    "text_policy": "Preserve printed wording; expand source icon tokens to Chinese names, use full-width parentheses for notes and separate rule paragraphs.",
+    "gameplay_corrections": [
+      "sv1-49:Lightning weakness ×2",
+      "svg-dram:no weakness",
+      "sv1-114:mandatory switch after attack"
+    ],
+    "presentation_corrections": [
+      "svd-absol:blank printed damage, retain mechanical damage 10",
+      "svd-mabosstiff-ex:restore ex prize rule",
+      "basic Energy:restore 基本 name prefix",
+      "Trainer:restore printed usage rules"
+    ],
+    "source_overrides": {
+      "svg2-exps": {
+        "trainerType": "4",
+        "reason": "原始卡图顶部明确标注宝可梦道具；固定数据源误记为物品。",
+        "image_sha256": "07b0a706961a27beeb1a7cc0251cceaa16795eda13ac0b6c5fafabf681c61a2c"
+      }
+    },
+    "corrected_fields": {
+      "sv1-109": [
+        {
+          "field": "attacks.0.text",
+          "before": "将自己的1张手牌放于弃牌区。若这样做，则从自己牌库上方抽取3张卡牌。",
+          "after": "将自己的1张手牌放于弃牌区。然后，从自己牌库上方抽取3张卡牌。"
+        }
+      ],
+      "sv1-114": [
+        {
+          "field": "attacks.0.text",
+          "before": "从自己的牌库中选择最多2张基本能量卡，展示后加入手牌。然后重洗牌库。",
+          "after": "选择自己牌库中最多2张基本能量，在给对手看过之后，加入手牌。并重洗牌库。"
+        },
+        {
+          "field": "attacks.1.text",
+          "before": "若希望，可将这只宝可梦与备战宝可梦互换。",
+          "after": "将这只宝可梦与备战宝可梦互换。"
+        }
+      ],
+      "sv1-150": [
+        {
+          "field": "rules",
+          "before": "将自己的战斗宝可梦与1只备战宝可梦互换。",
+          "after": "将自己的战斗宝可梦与备战宝可梦互换。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "sv1-151": [
+        {
+          "field": "rules",
+          "before": "从自己的牌库中选择1张基础宝可梦卡，放置于备战区。然后重洗牌库。",
+          "after": "选择自己牌库中的1张基础宝可梦，放于备战区。并重洗牌库。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "sv1-152": [
+        {
+          "field": "rules",
+          "before": "选择自己场上的1只基础宝可梦。若手牌中有从那宝可梦进化而来的2阶进化卡，则将其置于该基础宝可梦身上完成进化。此卡无法在自己的第一回合使用，也无法对当回合上场的基础宝可梦使用。",
+          "after": "选择自己手牌中的1张2阶进化宝可梦，放于自己场上能够进化成该宝可梦的基础宝可梦身上，跳过1阶进化进行进化。（在自己最初的回合，以及对这个回合刚出场的宝可梦无法使用。）|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "sv1-153": [
+        {
+          "field": "rules",
+          "before": "从自己的手牌丢弃2张卡。若如此做，从自己的牌库中选择1张宝可梦卡，展示后加入手牌。然后重洗牌库。",
+          "after": "这张卡牌，只有将自己的2张手牌放于弃牌区后才可使用。\n\n选择自己牌库中的1张宝可梦，在给对手看过之后，加入手牌。并重洗牌库。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "sv1-170": [
+        {
+          "field": "rules",
+          "before": "查看自己牌库上方的5张卡，从中选择最多2张基本雷能量卡，以任意方式附于备战区的雷宝可梦身上。将其他卡放回牌库并重洗。",
+          "after": "查看自己牌库上方5张卡牌，选择其中最多2张「基本雷能量」，以任意方式附着于备战区的雷宝可梦身上。将剩余的卡牌放回牌库并重洗牌库。\n\n在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "sv1-171": [
+        {
+          "field": "rules",
+          "before": "从自己的弃牌区中选择最多2张基本能量卡加入手牌。",
+          "after": "选择自己弃牌区中最多2张基本能量，在给对手看过之后，加入手牌。\n\n在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "sv1-176": [
+        {
+          "field": "rules",
+          "before": "双方玩家将所有手牌放回牌库并洗牌。然后，双方玩家各从牌库上方抽取4张卡。",
+          "after": "双方玩家，各将所有手牌放回牌库并重洗牌库。然后，各从牌库上方抽取4张卡牌。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "sv1-180": [
+        {
+          "field": "rules",
+          "before": "从自己的牌库上方抽取3张卡。",
+          "after": "从自己牌库上方抽取3张卡牌。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "sv1-189": [
+        {
+          "field": "rules",
+          "before": "将自己的所有手牌丢弃，然后从牌库上方抽取7张卡。",
+          "after": "将自己的手牌全部放于弃牌区，从牌库上方抽取7张卡牌。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "sv1-201": [
+        {
+          "field": "rules",
+          "before": "如果自己的剩余奖赏卡张数，比对手的剩余奖赏卡张数多的话，则身上放有这张卡牌的宝可梦所使用的招式，给对手的战斗宝可梦造成的伤害「+30」。",
+          "after": "如果自己的剩余奖赏卡张数，比对手的剩余奖赏卡张数多的话，则身上放有这张卡牌的宝可梦所使用的招式，给对手的战斗宝可梦造成的伤害「+30」。|在自己的回合可以将任意张宝可梦道具卡，放于自己的宝可梦身上。每只宝可梦身上只可以放1张宝可梦道具卡，并保持附加状态。"
+        }
+      ],
+      "sv1-202": [
+        {
+          "field": "rules",
+          "before": "身上放有这张卡牌的基础宝可梦的最大HP「+50」。",
+          "after": "身上放有这张卡牌的基础宝可梦的最大HP「+50」。|在自己的回合可以将任意张宝可梦道具卡，放于自己的宝可梦身上。每只宝可梦身上只可以放1张宝可梦道具卡，并保持附加状态。"
+        }
+      ],
+      "sv1-203": [
+        {
+          "field": "rules",
+          "before": "选择自己弃牌区中最多2张宝可梦，和最多2张基本能量，在给对手看过之后，加入手牌。（可只选择宝可梦或只选择基本能量。）",
+          "after": "选择自己弃牌区中最多2张宝可梦，和最多2张基本能量，在给对手看过之后，加入手牌。（可只选择宝可梦或只选择基本能量。）|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "sv1-204": [
+        {
+          "field": "rules",
+          "before": "选择自己牌库中「物品」和「宝可梦道具」各1张，在给对手看过之后，加入手牌。并重洗牌库。",
+          "after": "选择自己牌库中「物品」和「宝可梦道具」各1张，在给对手看过之后，加入手牌。并重洗牌库。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "sv1-49": [
+        {
+          "field": "weaknesses",
+          "before": [
+            {
+              "energy_type": "Metal",
+              "value": "×2"
+            }
+          ],
+          "after": [
+            {
+              "energy_type": "Lightning",
+              "value": "×2"
+            }
+          ]
+        }
+      ],
+      "sv1-ener-1": [
+        {
+          "field": "name",
+          "before": "草能量",
+          "after": "基本草能量"
+        }
+      ],
+      "sv1-ener-2": [
+        {
+          "field": "name",
+          "before": "火能量",
+          "after": "基本火能量"
+        }
+      ],
+      "sv1-ener-3": [
+        {
+          "field": "name",
+          "before": "水能量",
+          "after": "基本水能量"
+        }
+      ],
+      "sv1-ener-4": [
+        {
+          "field": "name",
+          "before": "雷能量",
+          "after": "基本雷能量"
+        }
+      ],
+      "sv1-ener-5": [
+        {
+          "field": "name",
+          "before": "超能量",
+          "after": "基本超能量"
+        }
+      ],
+      "sv1-ener-6": [
+        {
+          "field": "name",
+          "before": "斗能量",
+          "after": "基本斗能量"
+        }
+      ],
+      "sv1-ener-7": [
+        {
+          "field": "name",
+          "before": "恶能量",
+          "after": "基本恶能量"
+        }
+      ],
+      "sv1-ener-8": [
+        {
+          "field": "name",
+          "before": "钢能量",
+          "after": "基本钢能量"
+        }
+      ],
+      "sv2-cand": [
+        {
+          "field": "rules",
+          "before": "查看自己牌库上方7张卡牌，选择其中任意数量的水宝可梦和水能量，在给对手看过之后，加入手牌。将剩余的卡牌放回牌库并重洗牌库。",
+          "after": "查看自己牌库上方7张卡牌，选择其中任意数量的水宝可梦和水能量，在给对手看过之后，加入手牌。将剩余的卡牌放回牌库并重洗牌库。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "sv2-catch": [
+        {
+          "field": "rules",
+          "before": "抛掷1次硬币如果为正面，则选择对手的1只备战宝可梦，将其与战斗宝可梦互换。",
+          "after": "抛掷1次硬币如果为正面，则选择对手的1只备战宝可梦，将其与战斗宝可梦互换。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "sv2-grex": [
+        {
+          "field": "attacks.0.text",
+          "before": "对对手的1只宝可梦造成40点伤害。（对备战宝可梦不计算弱点·抗性）",
+          "after": "给对手的1只宝可梦，造成40伤害。[备战宝可梦不计算弱点、抗性。]"
+        },
+        {
+          "field": "attacks.1.text",
+          "before": "如果对手的战斗宝可梦身上有伤害指示物，则追加造成120点伤害。",
+          "after": "如果对手的战斗宝可梦身上放置有伤害指示物的话，则追加造成120伤害。"
+        },
+        {
+          "field": "rules",
+          "before": "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。",
+          "after": "当宝可梦ex昏厥时，对手将拿取2张奖赏卡。"
+        }
+      ],
+      "sv2-young": [
+        {
+          "field": "rules",
+          "before": "将自己的手牌全部放回牌库并重洗牌库。然后，从牌库上方抽取5张卡牌。",
+          "after": "将自己的手牌全部放回牌库并重洗牌库。然后，从牌库上方抽取5张卡牌。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "sv3-134": [
+        {
+          "field": "rules",
+          "before": "从自己的弃牌区选择宝可梦卡与基本能量卡合计最多3张，放回牌库并重洗。",
+          "after": "选择自己弃牌区中的宝可梦和基本能量合计最多3张，在给对手看过之后，放回牌库并重洗牌库。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "svd-absol": [
+        {
+          "field": "attacks.0.damage_text",
+          "before": "10",
+          "after": ""
+        }
+      ],
+      "svd-dark-patch": [
+        {
+          "field": "rules",
+          "before": "选择自己弃牌区中的1张「基本恶能量」，附着于备战区的恶宝可梦身上。",
+          "after": "选择自己弃牌区中的1张「基本恶能量」，附着于备战区的恶宝可梦身上。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "svd-hard-belt": [
+        {
+          "field": "rules",
+          "before": "身上放有这张卡牌的1阶进化宝可梦，受到对手宝可梦的招式的伤害「-30」。",
+          "after": "身上放有这张卡牌的1阶进化宝可梦，受到对手宝可梦的招式的伤害「-30」。|在自己的回合可以将任意张宝可梦道具卡，放于自己的宝可梦身上。每只宝可梦身上只可以放1张宝可梦道具卡，并保持附加状态。"
+        }
+      ],
+      "svd-mabosstiff-ex": [
+        {
+          "field": "rules",
+          "before": "",
+          "after": "当宝可梦ex昏厥时，对手将拿取2张奖赏卡。"
+        }
+      ],
+      "svf-ensw2": [
+        {
+          "field": "rules",
+          "before": "选择自己场上宝可梦身上附着的1个基本能量，转附于自己其他宝可梦身上。",
+          "after": "选择自己场上宝可梦身上附着的1个基本能量，转附于自己其他宝可梦身上。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "svf-houb": [
+        {
+          "field": "rules",
+          "before": "选择自己的1张手牌，放回牌库下方。然后，从牌库上方抽取卡牌，直到自己的手牌变为5张为止。\n（如果自己的手牌仅有这1张卡牌的话，则无法使用这张卡牌。）",
+          "after": "选择自己的1张手牌，放回牌库下方。然后，从牌库上方抽取卡牌，直到自己的手牌变为5张为止。（如果自己的手牌仅有这1张卡牌的话，则无法使用这张卡牌。）|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "svf-luca": [
+        {
+          "field": "abilities.0.text",
+          "before": "在自己的回合可以使用1次。给这只宝可梦身上放置2个伤害指示物。然后，选择自己牌库中的1张斗能量卡，附着于这只宝可梦身上。并重洗牌库。",
+          "after": "在自己的回合可以使用1次。给这只宝可梦身上放置2个伤害指示物。然后，选择自己牌库中的1张斗能量，附着于这只宝可梦身上。并重洗牌库。"
+        }
+      ],
+      "svf-potion": [
+        {
+          "field": "rules",
+          "before": "选择自己1只宝可梦回复「30」HP。",
+          "after": "回复自己1只宝可梦「30」HP。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "svf-rio": [
+        {
+          "field": "attacks.1.text",
+          "before": "给这只宝可梦也造成20点伤害。",
+          "after": "给这只宝可梦也造成20伤害。"
+        }
+      ],
+      "svg-alt": [
+        {
+          "field": "rules",
+          "before": "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。",
+          "after": "当宝可梦ex昏厥时，对手将拿取2张奖赏卡。"
+        }
+      ],
+      "svg-beri": [
+        {
+          "field": "rules",
+          "before": "从自己的牌库上方抽取卡牌，直到自己的手牌张数比对手的手牌张数多1张为止。",
+          "after": "从自己的牌库上方抽取卡牌，直到自己的手牌张数比对手的手牌张数多1张为止。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "svg-chef": [
+        {
+          "field": "rules",
+          "before": "回复自己的战斗宝可梦「70」点HP。",
+          "after": "回复自己的战斗宝可梦「70」点HP。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "svg-dram": [
+        {
+          "field": "weaknesses",
+          "before": [
+            {
+              "energy_type": "Fighting",
+              "value": "×2"
+            }
+          ],
+          "after": []
+        }
+      ],
+      "svg2-exps": [
+        {
+          "field": "rules",
+          "before": "每当自己的战斗宝可梦，受到对手宝可梦的招式的伤害而昏厥时，可选择该战斗宝可梦身上附着的1张基本能量，转附于身上放有这张卡牌的宝可梦身上。",
+          "after": "每当自己的战斗宝可梦，受到对手宝可梦的招式的伤害而昏厥时，可选择该战斗宝可梦身上附着的1张基本能量，转附于身上放有这张卡牌的宝可梦身上。\n\n在自己的回合可以将任意张宝可梦道具卡，放于自己的宝可梦身上。每只宝可梦身上只可以放1张宝可梦道具卡，并保持附加状态。"
+        }
+      ],
+      "svg2-gard": [
+        {
+          "field": "rules",
+          "before": "从自己牌库上方抽取2张卡牌。然后，选择自己手牌中最多2张草能量，附着于1只备战宝可梦身上。",
+          "after": "从自己牌库上方抽取2张卡牌。然后，选择自己手牌中最多2张草能量，附着于1只备战宝可梦身上。\n\n在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "svg2-hamm": [
+        {
+          "field": "rules",
+          "before": "抛掷1次硬币如果为正面，则选择对手场上宝可梦身上附着的1个能量，放于弃牌区。",
+          "after": "抛掷1次硬币如果为正面，则选择对手场上宝可梦身上附着的1个能量，放于弃牌区。\n\n在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "svi-cait": [
+        {
+          "field": "rules",
+          "before": "选择自己任意数量的手牌，以任意顺序重新排列，放回牌库下方。然后，从牌库上方抽取与放回牌库的卡牌数量相同张数的卡牌。",
+          "after": "选择自己任意数量的手牌，以任意顺序重新排列，放回牌库下方。然后，从牌库上方抽取与放回牌库的卡牌数量相同张数的卡牌。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "svi-enst": [
+        {
+          "field": "rules",
+          "before": "查看自己牌库上方7张卡牌。选择其中1张能量，在给对手看过之后，加入手牌。将剩余的卡牌放回牌库并重洗牌库。",
+          "after": "查看自己牌库上方7张卡牌。选择其中1张能量，在给对手看过之后，加入手牌。将剩余的卡牌放回牌库并重洗牌库。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "svi-ente": [
+        {
+          "field": "attacks.0.text",
+          "before": "追加这只宝可梦身上附着的火能量数量×20伤害。",
+          "after": "追加造成这只宝可梦身上附着的火能量数量×20伤害。"
+        },
+        {
+          "field": "abilities.0.text",
+          "before": "只要这只宝可梦在战斗场上，对手战斗宝可梦使用的招式伤害「-20」。",
+          "after": "只要这只宝可梦在战斗场上，对手战斗宝可梦使用的招式的伤害「-20」。"
+        }
+      ],
+      "svi-erec": [
+        {
+          "field": "rules",
+          "before": "选择自己弃牌区中最多5张基本能量，在给对手看过之后，放回牌库并重洗牌库。",
+          "after": "选择自己弃牌区中最多5张基本能量，在给对手看过之后，放回牌库并重洗牌库。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "svi-gree": [
+        {
+          "field": "attacks.1.text",
+          "before": "将自己的手牌全部放于弃牌区。如果将5张以上放于弃牌区，则追加造成150点伤害。",
+          "after": "将自己的手牌全部放于弃牌区，如果将5张以上（包含5张）卡牌放于弃牌区的话，则追加造成150点伤害。"
+        }
+      ],
+      "svi-infr": [
+        {
+          "field": "attacks.0.text",
+          "before": "将自己牌库上方5张翻到正面。造成其中能量张数×80伤害。正面朝上的能量放于弃牌区，剩余卡牌放回牌库并重洗。",
+          "after": "将自己牌库上方5张卡牌翻到正面。造成其中能量张数×80点伤害。将正面朝上的能量放于弃牌区，剩余的卡牌放回牌库并重洗牌库。"
+        }
+      ],
+      "svi-maus": [
+        {
+          "field": "rules",
+          "before": "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。",
+          "after": "当宝可梦ex昏厥时，对手将拿取2张奖赏卡。"
+        }
+      ],
+      "svi-mela": [
+        {
+          "field": "rules",
+          "before": "这张卡牌，只有在上一个对手的回合，自己的宝可梦昏厥时才可使用。\n选择自己弃牌区中的1张「基本火能量」，附着于自己的宝可梦身上。若这样做，则从牌库上方抽取卡牌，直到自己的手牌变为6张为止。",
+          "after": "这张卡牌，只有在上一个对手的回合，自己的宝可梦昏厥时才可使用。\n\n选择自己弃牌区中的1张「基本火能量」，附着于自己的宝可梦身上。然后，从牌库上方抽取卡牌，直到自己的手牌变为6张为止。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "svi-nemb": [
+        {
+          "field": "rules",
+          "before": "选择自己弃牌区中最多2张「妮莫」，在给对手看过之后，加入手牌。",
+          "after": "选择自己弃牌区中最多2张「妮莫」，在给对手看过之后，加入手牌。|在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "svi-popp": [
+        {
+          "field": "rules",
+          "before": "选择自己场上1只宝可梦身上附着的最多2个能量，转附于自己的1只其他宝可梦身上。",
+          "after": "选择自己场上1只宝可梦身上附着的最多2个能量，转附于自己的1只其他宝可梦身上。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "svl-chat": [
+        {
+          "field": "attacks.0.text",
+          "before": "将自己的1张手牌放于弃牌区。若这样做，则从自己牌库上方抽取2张卡牌。",
+          "after": "将自己的1张手牌放于弃牌区。然后，从自己牌库上方抽取2张卡牌。"
+        }
+      ],
+      "svl-ensw": [
+        {
+          "field": "rules",
+          "before": "选择自己牌库中的1张基本能量，在给对手看过之后，加入手牌。并重洗牌库。",
+          "after": "选择自己牌库中的1张基本能量，在给对手看过之后，加入手牌。并重洗牌库。\n\n在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "svl-flaa2": [
+        {
+          "field": "abilities.0.text",
+          "before": "在自己的回合可使用1次。选择自己弃牌区中的1张雷能量卡，附着于备战宝可梦身上。",
+          "after": "在自己的回合可以使用1次。选择自己弃牌区中的1张雷能量，附着于备战宝可梦身上。"
+        }
+      ],
+      "svl-pikaex": [
+        {
+          "field": "attacks.1.text",
+          "before": "抛掷1次硬币。如果是反面，则将这只宝可梦身上附着的能量全部放于弃牌区。",
+          "after": "抛掷1次硬币如果为反面，则将这只宝可梦身上附着的能量，全部放于弃牌区。"
+        },
+        {
+          "field": "rules",
+          "before": "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。",
+          "after": "当宝可梦ex昏厥时，对手将拿取2张奖赏卡。"
+        }
+      ],
+      "svl-thun": [
+        {
+          "field": "attacks.0.text",
+          "before": "若希望，可选择自己手牌中的1张雷能量卡，附着于备战宝可梦身上。",
+          "after": "若希望，可选择自己手牌中的1张雷能量，附着于备战宝可梦身上。"
+        }
+      ],
+      "svl-trks": [
+        {
+          "field": "rules",
+          "before": "查看自己牌库上方1张卡牌，将那张卡牌加入手牌。或者，将那张卡牌放于弃牌区，从自己牌库上方抽取1张卡牌。",
+          "after": "查看自己牌库上方1张卡牌，将那张卡牌加入手牌。或者，将那张卡牌放于弃牌区，从自己牌库上方抽取1张卡牌。\n\n在自己的回合可以使用任意张物品卡。"
+        }
+      ],
+      "svl-vitb": [
+        {
+          "field": "rules",
+          "before": "身上放有这张卡牌的宝可梦所使用的招式，给对手的战斗宝可梦造成的伤害「+10」。",
+          "after": "身上放有这张卡牌的宝可梦所使用的招式，给对手的战斗宝可梦造成的伤害「+10」。|在自己的回合可以将任意张宝可梦道具卡，放于自己的宝可梦身上。每只宝可梦身上只可以放1张宝可梦道具卡，并保持附加状态。"
+        }
+      ],
+      "svl-zinn": [
+        {
+          "field": "rules",
+          "before": "这张卡牌，只有将自己的2张手牌放于弃牌区后才可使用。\n从自己的牌库上方抽取与对手场上宝可梦数量相同张数的卡牌。",
+          "after": "这张卡牌，只有将自己的2张手牌放于弃牌区后才可使用。\n从自己的牌库上方抽取与对手场上宝可梦数量相同张数的卡牌。\n\n在自己的回合只可以使用1张支援者卡。"
+        }
+      ],
+      "svm-marnie-pride": [
+        {
+          "field": "rules",
+          "before": "选择自己弃牌区中的1张基本能量，附着于备战宝可梦身上。",
+          "after": "选择自己弃牌区中的1张基本能量，附着于备战宝可梦身上。|在自己的回合只可以使用1张支援者卡。"
+        }
+      ]
+    },
+    "format_only_cards": [
+      "csvh4-024",
+      "svi-dtur",
+      "svi-jete",
+      "svi-mirc",
+      "svi-trea",
+      "svi-chiy",
+      "csvh4-002",
+      "csvh4-003",
+      "csvh4-006",
+      "csvh4-017",
+      "csvh4-020",
+      "csvh4-021",
+      "svm-orthworm",
+      "csvh4-010",
+      "sv1-110",
+      "csvh4-034",
+      "csvh4-035",
+      "csvh4-041",
+      "csvh4-044",
+      "csvh4-059",
+      "sv2-tatsu",
+      "svg2-empo"
+    ]
+  }
 }

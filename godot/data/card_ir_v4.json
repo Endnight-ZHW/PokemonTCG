@@ -62,7 +62,7 @@
               "source_path": "godot/authoring/cards/grass.json"
             }
           ],
-          "text": "给对手的1只备战宝可梦，也造成20伤害。[备战宝可梦不计算弱点、抗性。]",
+          "text": "给对手的1只备战宝可梦，也造成20伤害。（备战宝可梦不计算弱点、抗性。）",
           "trigger": ""
         }
       },
@@ -97,7 +97,7 @@
               "source_path": "godot/authoring/cards/grass.json"
             }
           ],
-          "text": "将自己手牌中的1张「基本【草】能量」放于弃牌区。如果无法将卡牌放于弃牌区的话，则这个招式失败。",
+          "text": "将自己手牌中的1张「基本草能量」放于弃牌区。如果无法将卡牌放于弃牌区的话，则这个招式失败。",
           "trigger": ""
         },
         "羽毛贮存": {
@@ -278,7 +278,7 @@
               "source_path": "godot/authoring/cards/lightning.json"
             }
           ],
-          "text": "抛掷1次硬币如果为正面，则令对手的战斗宝可梦陷入【麻痹】状态。",
+          "text": "抛掷1次硬币如果为正面，则令对手的战斗宝可梦陷入麻痹状态。",
           "trigger": ""
         },
         "超合金之手": {
@@ -299,7 +299,7 @@
               "source_path": "godot/authoring/cards/lightning.json"
             }
           ],
-          "text": "如果对手的战斗宝可梦是「宝可梦【ex】・V」的话，则追加造成80伤害。",
+          "text": "如果对手的战斗宝可梦是「宝可梦ex・V」的话，则追加造成80伤害。",
           "trigger": ""
         }
       },
@@ -462,7 +462,7 @@
               "source_path": "godot/authoring/cards/psychic.json"
             }
           ],
-          "text": "给对手的1只备战宝可梦，也造成20伤害。[备战宝可梦不计算弱点、抗性。]",
+          "text": "给对手的1只备战宝可梦，也造成20伤害。（备战宝可梦不计算弱点、抗性。）",
           "trigger": ""
         },
         "意念之刃": {
@@ -786,7 +786,7 @@
               "source_path": "godot/authoring/cards/metal.json"
             }
           ],
-          "text": "在自己的回合可以使用1次。查看自己牌库上方4张卡牌，选择其中任意数量的「基本【钢】能量」，以任意方式附着于自己的宝可梦身上。将剩余的卡牌全部翻到反面重洗，放回牌库下方。",
+          "text": "在自己的回合可以使用1次。查看自己牌库上方4张卡牌，选择其中任意数量的「基本钢能量」，以任意方式附着于自己的宝可梦身上。将剩余的卡牌全部翻到反面重洗，放回牌库下方。",
           "trigger": "on_turn"
         }
       },
@@ -916,7 +916,7 @@
               "source_path": "godot/authoring/cards/metal.json"
             }
           ],
-          "text": "追加造成这只宝可梦身上附着的【钢】能量数量×30伤害。",
+          "text": "追加造成这只宝可梦身上附着的钢能量数量×30伤害。",
           "trigger": ""
         },
         "金属吸收": {
@@ -942,7 +942,7 @@
               "source_path": "godot/authoring/cards/metal.json"
             }
           ],
-          "text": "选择自己牌库中最多2张「基本【钢】能量」，附着于这只宝可梦身上。并重洗牌库。",
+          "text": "选择自己牌库中最多2张「基本钢能量」，附着于这只宝可梦身上。并重洗牌库。",
           "trigger": ""
         }
       },
@@ -997,7 +997,7 @@
               "source_path": "godot/authoring/cards/metal.json"
             }
           ],
-          "text": "选择自己弃牌区中的1张「基本【钢】能量」，附着于备战宝可梦身上。",
+          "text": "选择自己弃牌区中的1张「基本钢能量」，附着于备战宝可梦身上。",
           "trigger": ""
         }
       },
@@ -1952,7 +1952,7 @@
               "source_path": "godot/authoring/cards/psychic.json"
             }
           ],
-          "text": "将自己的1张手牌放于弃牌区。若这样做，则从自己牌库上方抽取3张卡牌。",
+          "text": "将自己的1张手牌放于弃牌区。然后，从自己牌库上方抽取3张卡牌。",
           "trigger": ""
         },
         "月亮强念": {
@@ -2023,7 +2023,7 @@
               "source_path": "godot/authoring/cards/psychic.json"
             }
           ],
-          "text": "如果这只宝可梦身上附着了超能量的话，则这只宝可梦撤退所需能量全部消除。",
+          "text": "如果这只宝可梦身上附着了超能量的话，则这只宝可梦撤退所需能量，全部消除。",
           "trigger": "passive"
         }
       },
@@ -2204,14 +2204,14 @@
               "source_path": "godot/authoring/cards/psychic.json"
             }
           ],
-          "text": "从自己的牌库中选择最多2张基本能量卡，展示后加入手牌。然后重洗牌库。",
+          "text": "选择自己牌库中最多2张基本能量，在给对手看过之后，加入手牌。并重洗牌库。",
           "trigger": ""
         },
         "旋转折返": {
           "commands": [
             {
               "args": {
-                "optional": true,
+                "optional": false,
                 "target": "self"
               },
               "branches": {},
@@ -2225,7 +2225,7 @@
               "source_path": "godot/authoring/cards/psychic.json"
             }
           ],
-          "text": "若希望，可将这只宝可梦与备战宝可梦互换。",
+          "text": "将这只宝可梦与备战宝可梦互换。",
           "trigger": ""
         }
       },
@@ -2991,7 +2991,7 @@
               "source_path": "godot/authoring/cards/water.json"
             }
           ],
-          "text": "如果对手的战斗宝可梦身上有伤害指示物，则追加造成120点伤害。",
+          "text": "如果对手的战斗宝可梦身上放置有伤害指示物的话，则追加造成120伤害。",
           "trigger": ""
         },
         "隐秘手里剑": {
@@ -3013,7 +3013,7 @@
               "source_path": "godot/authoring/cards/water.json"
             }
           ],
-          "text": "对对手的1只宝可梦造成40点伤害。（对备战宝可梦不计算弱点·抗性）",
+          "text": "给对手的1只宝可梦，造成40伤害。（备战宝可梦不计算弱点、抗性。）",
           "trigger": ""
         }
       },
@@ -3198,7 +3198,7 @@
               "source_path": "godot/authoring/cards/water.json"
             }
           ],
-          "text": "选择自己牌库中最多2张「基本水能量」，附着于自己的1只基础宝可梦身上，并重洗牌库。",
+          "text": "选择自己牌库中最多2张「基本水能量」，附着于自己的1只基础宝可梦身上。并重洗牌库。",
           "trigger": ""
         }
       },
@@ -3323,7 +3323,7 @@
               "source_path": "godot/authoring/cards/darkness.json"
             }
           ],
-          "text": "给对手的所有宝可梦，各造成10点伤害。[备战宝可梦不计算弱点、抗性。]",
+          "text": "给对手的所有宝可梦，各造成10点伤害。（备战宝可梦不计算弱点、抗性。）",
           "trigger": ""
         }
       },
@@ -4016,7 +4016,7 @@
               "source_path": "godot/authoring/cards/fighting.json"
             }
           ],
-          "text": "在自己的回合可以使用1次。给这只宝可梦身上放置2个伤害指示物。然后，选择自己牌库中的1张斗能量卡，附着于这只宝可梦身上。并重洗牌库。",
+          "text": "在自己的回合可以使用1次。给这只宝可梦身上放置2个伤害指示物。然后，选择自己牌库中的1张斗能量，附着于这只宝可梦身上。并重洗牌库。",
           "trigger": ""
         }
       },
@@ -4130,7 +4130,7 @@
               "source_path": "godot/authoring/cards/fighting.json"
             }
           ],
-          "text": "给这只宝可梦也造成20点伤害。",
+          "text": "给这只宝可梦也造成20伤害。",
           "trigger": ""
         },
         "重拳": {
@@ -4653,7 +4653,7 @@
               "source_path": "godot/authoring/cards/water.json"
             }
           ],
-          "text": "给对手的1只宝可梦，造成60点伤害。[备战宝可梦不计算弱点、抗性。]",
+          "text": "给对手的1只宝可梦，造成60点伤害。（备战宝可梦不计算弱点、抗性。）",
           "trigger": ""
         }
       },
@@ -5161,7 +5161,7 @@
               "source_path": "godot/authoring/cards/fire.json"
             }
           ],
-          "text": "在上一个对手的回合，如果因为招式的伤害而导致自己的宝可梦昏厥的话，则追加造成90伤害。",
+          "text": "在上一个对手的回合，如果因为招式的伤害，而导致自己的宝可梦昏厥的话，则追加造成90伤害。",
           "trigger": ""
         },
         "闪焰生成": {
@@ -5184,7 +5184,7 @@
               "source_path": "godot/authoring/cards/fire.json"
             }
           ],
-          "text": "选择自己弃牌区中最多2张基本火能量，附着于自己的1只宝可梦身上。",
+          "text": "选择自己弃牌区中最多2张「基本火能量」，附着于自己的1只宝可梦身上。",
           "trigger": ""
         }
       },
@@ -5275,7 +5275,7 @@
               "source_path": "godot/authoring/cards/fire.json"
             }
           ],
-          "text": "只要这只宝可梦在战斗场上，对手战斗宝可梦使用的招式伤害「-20」。",
+          "text": "只要这只宝可梦在战斗场上，对手战斗宝可梦使用的招式的伤害「-20」。",
           "trigger": "passive"
         }
       },
@@ -5317,7 +5317,7 @@
               "source_path": "godot/authoring/cards/fire.json"
             }
           ],
-          "text": "追加这只宝可梦身上附着的火能量数量×20伤害。",
+          "text": "追加造成这只宝可梦身上附着的火能量数量×20伤害。",
           "trigger": ""
         }
       },
@@ -5416,7 +5416,7 @@
               "source_path": "godot/authoring/cards/colorless.json"
             }
           ],
-          "text": "将自己的手牌全部放于弃牌区。如果将5张以上放于弃牌区，则追加造成150点伤害。",
+          "text": "将自己的手牌全部放于弃牌区，如果将5张以上（包含5张）卡牌放于弃牌区的话，则追加造成150点伤害。",
           "trigger": ""
         },
         "招来": {
@@ -5568,7 +5568,7 @@
               "source_path": "godot/authoring/cards/fire.json"
             }
           ],
-          "text": "将附着于这只宝可梦身上的能量全部放于弃牌区。",
+          "text": "将附着于这只宝可梦身上的能量，全部放于弃牌区。",
           "trigger": ""
         },
         "螺旋业火": {
@@ -5589,7 +5589,7 @@
               "source_path": "godot/authoring/cards/fire.json"
             }
           ],
-          "text": "将自己牌库上方5张翻到正面。造成其中能量张数×80伤害。正面朝上的能量放于弃牌区，剩余卡牌放回牌库并重洗。",
+          "text": "将自己牌库上方5张卡牌翻到正面。造成其中能量张数×80点伤害。将正面朝上的能量放于弃牌区，剩余的卡牌放回牌库并重洗牌库。",
           "trigger": ""
         }
       },
@@ -5655,7 +5655,7 @@
               "source_path": "godot/authoring/cards/colorless.json"
             }
           ],
-          "text": "当这只宝可梦在战斗场上受到对手宝可梦的招式的伤害时，将自己场上「一对鼠」和「一家鼠」（包含「宝可梦ex」）的数量×3个伤害指示物，放置于使用了招式的宝可梦身上。",
+          "text": "当这只宝可梦，在战斗场上受到对手宝可梦的招式的伤害时，将自己场上「一对鼠」和「一家鼠（包含『宝可梦ex』）」的数量×3个伤害指示物，放置于使用了招式的宝可梦身上。",
           "trigger": "on_damaged"
         }
       },
@@ -6116,7 +6116,7 @@
               "source_path": "godot/authoring/cards/colorless.json"
             }
           ],
-          "text": "将自己的1张手牌放于弃牌区。若这样做，则从自己牌库上方抽取2张卡牌。",
+          "text": "将自己的1张手牌放于弃牌区。然后，从自己牌库上方抽取2张卡牌。",
           "trigger": ""
         },
         "振翅": {
@@ -6248,7 +6248,7 @@
               "source_path": "godot/authoring/cards/lightning.json"
             }
           ],
-          "text": "在自己的回合可使用1次。选择自己弃牌区中的1张雷能量卡，附着于备战宝可梦身上。",
+          "text": "在自己的回合可以使用1次。选择自己弃牌区中的1张雷能量，附着于备战宝可梦身上。",
           "trigger": ""
         }
       },
@@ -6365,7 +6365,7 @@
               "source_path": "godot/authoring/cards/lightning.json"
             }
           ],
-          "text": "抛掷1次硬币。如果是反面，则将这只宝可梦身上附着的能量全部放于弃牌区。",
+          "text": "抛掷1次硬币如果为反面，则将这只宝可梦身上附着的能量，全部放于弃牌区。",
           "trigger": ""
         },
         "皮卡拳": {
@@ -6428,7 +6428,7 @@
               "source_path": "godot/authoring/cards/lightning.json"
             }
           ],
-          "text": "若希望，可选择自己手牌中的1张雷能量卡，附着于备战宝可梦身上。",
+          "text": "若希望，可选择自己手牌中的1张雷能量，附着于备战宝可梦身上。",
           "trigger": ""
         }
       },
@@ -6874,7 +6874,7 @@
               "source_path": "godot/authoring/cards/metal.json"
             }
           ],
-          "text": "给对手的1只备战宝可梦，也造成30伤害。[备战宝可梦不计算弱点、抗性。]",
+          "text": "给对手的1只备战宝可梦，也造成30伤害。（备战宝可梦不计算弱点、抗性。）",
           "trigger": ""
         }
       },
@@ -7099,7 +7099,7 @@
     }
   },
   "command_count": 218,
-  "content_fingerprint": "f118c9178a01c9ed5c02c51877d3dc2385a14bd67dea5e7eda8a06ecda231285",
+  "content_fingerprint": "7c31d5fb16d004bd198e8db6fdbf526b02182f89634cf2addf79bd15f35c78dd",
   "contract_fingerprint": "4297189b1064d247d20448d38a56a77b357a0e4d216e0b3915247d0eb918a9f1",
   "descriptor_digest": "c29d7ed1fcfcf307c7deda76a90498e94656a331b06fc99cea89087d060ce79b",
   "effect_count": 218,

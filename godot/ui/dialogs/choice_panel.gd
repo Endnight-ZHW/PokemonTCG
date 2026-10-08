@@ -15,7 +15,7 @@ const ENERGY_CARD_SIZE := Vector2(54, 76)
 const REVEALED_CARD_SIZE := Vector2(78, 110)
 const ENERGY_TARGET_TILE_SIZE := Vector2(272, 164)
 const CARD_GRID_GAP := 10.0
-const NARROW_PREVIEW_MIN_WIDTH := 120.0
+const NARROW_PREVIEW_MIN_WIDTH := 220.0
 
 @onready var prompt_label: Label = %PromptLabel
 @onready var metadata_label: Label = %MetadataLabel
@@ -34,14 +34,11 @@ const NARROW_PREVIEW_MIN_WIDTH := 120.0
 @onready var browse_mode_label: Label = %BrowseModeLabel
 @onready var browse_valid_button: Button = %BrowseValidButton
 @onready var browse_all_button: Button = %BrowseAllButton
-@onready var preview_toggle_button: Button = %PreviewToggleButton
 @onready var preview_return_button: Button = %PreviewReturnButton
 @onready var card_grid: HFlowContainer = %CardGrid
 @onready var option_list: VBoxContainer = %OptionList
 @onready var preview_panel: PanelContainer = %PreviewPanel
-@onready var preview_image: TextureRect = %PreviewImage
-@onready var preview_title: Label = %PreviewTitle
-@onready var preview_text: RichTextLabel = %PreviewText
+@onready var preview_reader: CardReadingPane = %PreviewReader
 
 var catalog: CardCatalog
 var energy_distribution: EnergyDistributionPanel
@@ -59,7 +56,6 @@ var _last_selected_ids: Array[String] = []
 var _deck_browse_rows: Array[Dictionary] = []
 var _deck_browse_show_all := false
 var _compact_preview_expanded := false
-var _compact_choice_layout := false
 var _previewed_card_id := ""
 var _selection_max := 0
 var _selection_min := -1
@@ -541,8 +537,6 @@ func _add_preview_cards(
 			card.accessibility_name = _card_name(card_id)
 			card.detail_requested.connect(func(_card_id: String) -> void:
 				_preview_card(preview_card_id)
-				if interactive_distribution and _compact_choice_layout:
-					_open_compact_preview()
 			)
 			card.activated.connect(func(
 				_card_id: String,
@@ -697,14 +691,11 @@ func _resolve_nodes() -> void:
 	browse_mode_label = %BrowseModeLabel
 	browse_valid_button = %BrowseValidButton
 	browse_all_button = %BrowseAllButton
-	preview_toggle_button = %PreviewToggleButton
 	preview_return_button = %PreviewReturnButton
 	card_grid = %CardGrid
 	option_list = %OptionList
 	preview_panel = %PreviewPanel
-	preview_image = %PreviewImage
-	preview_title = %PreviewTitle
-	preview_text = %PreviewText
+	preview_reader = %PreviewReader
 	var outer_scroll := _outer_scroll_container()
 	if outer_scroll and not outer_scroll.resized.is_connected(_queue_responsive_layout):
 		outer_scroll.resized.connect(_queue_responsive_layout)
@@ -725,11 +716,6 @@ func _resolve_nodes() -> void:
 		)
 		%RemoveEnergyButton.pressed.connect(func() -> void: energy_remove_requested.emit())
 		%EnergyDetailButton.pressed.connect(_toggle_compact_preview)
-	if preview_toggle_button and not preview_toggle_button.has_meta(
-		"choice_panel_connected"
-	):
-		preview_toggle_button.set_meta("choice_panel_connected", true)
-		preview_toggle_button.pressed.connect(_toggle_compact_preview)
 	if browse_mode_row and not browse_mode_row.has_meta("choice_panel_connected"):
 		browse_mode_row.set_meta("choice_panel_connected", true)
 		browse_valid_button.pressed.connect(_set_deck_browse_mode.bind(false))
@@ -743,14 +729,6 @@ func _toggle_compact_preview() -> void:
 	_compact_preview_expanded = not _compact_preview_expanded
 	_preview_scroll_generation += 1
 	_restore_preview_scroll.call_deferred(_preview_scroll_generation)
-	_queue_responsive_layout()
-
-
-func _open_compact_preview() -> void:
-	if _compact_preview_expanded:
-		return
-	_preview_return_scroll = _choice_scroll_container().scroll_vertical
-	_compact_preview_expanded = true
 	_queue_responsive_layout()
 
 
@@ -781,21 +759,9 @@ func _restore_preview_scroll(generation: int) -> void:
 
 func _configure_preview_panel() -> void:
 	if preview_panel:
-		preview_panel.add_theme_stylebox_override(
-			"panel",
-			DesignTokens.panel_style(
-				BattleModalPalette.INSET,
-				DesignTokens.RADIUS_SMALL,
-				BattleModalPalette.BORDER,
-				1,
-				8,
-			),
-		)
-	if preview_text:
-		preview_text.bbcode_enabled = true
-		preview_text.focus_mode = Control.FOCUS_NONE
-		preview_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	BattleModalPalette.style_scrollbar(%PreviewScroll.get_v_scroll_bar())
+		var palette := SurfacePalette.for_control(self)
+		preview_panel.add_theme_stylebox_override("panel",
+			DesignTokens.panel_style(palette.PANEL, 12, palette.BORDER, 1, 12))
 
 
 func _preview_card(card_id: String) -> void:
@@ -804,55 +770,24 @@ func _preview_card(card_id: String) -> void:
 	if card_id.is_empty():
 		_hide_preview()
 		return
-	var card := _card_data(card_id)
-	if card_id != _previewed_card_id:
-		%PreviewScroll.scroll_vertical = 0
 	_previewed_card_id = card_id
 	preview_panel.visible = true
-	if card.is_empty():
-		preview_image.texture = null
-		preview_title.text = "卡牌资料暂不可用"
-		preview_text.text = "暂时无法读取这张卡牌的图片和效果说明。"
-		preview_text.scroll_to_line(0)
-		preview_panel.tooltip_text = "卡牌资料暂不可用"
-		_apply_responsive_layout()
-		return
-	preview_panel.tooltip_text = ""
-	preview_image.texture = _texture_for_path(str(card.get("image_path", "")))
-	preview_title.text = str(card.get("name", card_id))
-	preview_text.text = _card_detail_bbcode(card_id)
-	preview_text.scroll_to_line(0)
-	# Resolve the right-hand preview in the same input turn. Deferring this step
-	# briefly leaves the scene's 270 px default minimum in a narrow layout.
+	preview_reader.show_card(catalog, card_id)
+	# Resolve the reading column in the same input turn, including after resize.
 	_apply_responsive_layout()
 
 
 func _hide_preview() -> void:
 	_previewed_card_id = ""
 	if preview_panel:
-		preview_panel.visible = false
-		preview_panel.tooltip_text = ""
-	if preview_image:
-		preview_image.texture = null
-	if preview_title:
-		preview_title.text = "卡牌预览"
-	if preview_text:
-		preview_text.text = "选择卡牌查看效果。"
-		preview_text.scroll_to_line(0)
+		preview_panel.hide()
+	if preview_reader:
+		preview_reader.clear()
 	_queue_responsive_layout()
 
 
-func _card_detail_bbcode(card_id: String) -> String:
-	var card := _card_data(card_id)
-	return DesignTokens.rich_text("[color=#{muted}]%s[/color]\n\n%s") % [
-		CardPresentation.meta_text(card),
-		CardPresentation.detail_bbcode(
-			card,
-			catalog,
-			null,
-			CardPresentation.DetailLevel.FULL,
-		),
-	]
+func handle_preview_back() -> bool:
+	return preview_panel.is_visible_in_tree() and preview_reader.handle_back()
 
 
 func _card_name(card_id: String) -> String:
@@ -866,19 +801,6 @@ func _card_data(card_id: String) -> Dictionary:
 	if database and database.has_method("get_card"):
 		return database.call("get_card", card_id)
 	return {}
-
-
-func _texture_for_path(path: String) -> Texture2D:
-	if path.is_empty():
-		return null
-	var texture_cache := _root_child("CardTextureCache")
-	if texture_cache and texture_cache.has_method("get_texture"):
-		return texture_cache.call("get_texture", path) as Texture2D
-	return (
-		load(path) as Texture2D
-		if ResourceLoader.exists(path)
-		else null
-	)
 
 
 func _root_child(node_name: String) -> Node:
@@ -1245,7 +1167,6 @@ func _apply_responsive_layout() -> void:
 		return
 	var has_preview := not _previewed_card_id.is_empty()
 	var distribution_workspace := _request_type == "distribute_energy" and not energy_distribution._energy_target_models.is_empty()
-	_compact_choice_layout = false
 	if not distribution_workspace:
 		_compact_preview_expanded = false
 	energy_grid.visible = true
@@ -1259,11 +1180,8 @@ func _apply_responsive_layout() -> void:
 	var show_preview := has_preview and (not distribution_workspace or _compact_preview_expanded)
 	%OptionsScroll.visible = not (distribution_workspace and _compact_preview_expanded)
 	preview_return_button.visible = distribution_workspace and _compact_preview_expanded
-	preview_toggle_button.visible = false
 	content_row.vertical = false
-	var preview_width := clampf(available_width * 0.30, 176.0, 270.0)
-	var image_width := clampf(preview_width - 54.0, 122.0, 206.0)
-	var image_size := Vector2(image_width, image_width * 1.4)
+	var preview_width := clampf(available_width * 0.37, NARROW_PREVIEW_MIN_WIDTH, 400.0)
 	energy_distribution._update_energy_action_buttons(_last_selected_ids.size())
 	if preview_panel:
 		# Keep the horizontal minimum compact. BoxContainer allocates the desired
@@ -1274,8 +1192,6 @@ func _apply_responsive_layout() -> void:
 			0.0,
 		)
 		preview_panel.visible = show_preview
-	if preview_image:
-		preview_image.custom_minimum_size = Vector2(88.0, minf(image_size.y, maxf(96.0, content_row.size.y * 0.65)))
 	var row_gap := (
 		float(content_row.get_theme_constant("separation"))
 		if content_row
@@ -1284,6 +1200,8 @@ func _apply_responsive_layout() -> void:
 	var choice_width := available_width
 	if show_preview:
 		choice_width -= preview_width + row_gap
+	if browse_mode_label:
+		browse_mode_label.visible = choice_width >= 360.0
 	var tile_width := (
 		ENERGY_TARGET_TILE_SIZE.x
 		if energy_distribution._energy_distribution_mode and not energy_distribution._energy_target_models.is_empty()

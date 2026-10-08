@@ -4,220 +4,141 @@ extends VBoxContainer
 signal card_requested(context: Dictionary)
 signal art_requested
 
-const CARD_GRID_SECTION := preload("res://ui/panels/card_grid_section.tscn")
-
 var catalog: CardCatalog
+var rule_scroll: ScrollContainer
+var rule_contents: VBoxContainer
+var attachment_buttons: Array[Button] = []
 var _content_grid: GridContainer
+var _art_column: VBoxContainer
 var _image_button: Button
-var _detail_text: RichTextLabel
+var _zoom_button: Button
+var _content := CardDetailContent.new()
+var _generation := 0
+var _reading_revision := 0
+var _identity := ""
 
 
 func _ready() -> void:
 	SurfacePalette.apply(self)
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	resized.connect(_apply_responsive_layout)
-	var window := get_window()
-	if window and not window.size_changed.is_connected(_apply_responsive_layout):
-		window.size_changed.connect(_apply_responsive_layout)
 
 
 func configure(p_catalog: CardCatalog, context: Dictionary) -> void:
-	catalog = p_catalog
-	_clear_children()
-	add_theme_constant_override("separation", 12)
 	var card_id := str(context.get("card_id", ""))
-	if card_id.is_empty():
-		add_child(DesignTokens.label("没有可查看的卡牌。", 16, SurfacePalette.for_control(self).MUTED))
-		return
-	var card := catalog.get_card(card_id)
-	var location := str(context.get("location", ""))
-	if not location.is_empty():
-		add_child(DesignTokens.label(location, 16, SurfacePalette.for_control(self).MUTED))
-	_content_grid = GridContainer.new()
-	_content_grid.columns = 2
-	_content_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_content_grid.add_theme_constant_override("h_separation", 18)
-	_content_grid.add_theme_constant_override("v_separation", 14)
-	add_child(_content_grid)
-	_image_button = Button.new()
-	_image_button.custom_minimum_size = Vector2(260, 363)
-	_image_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_image_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	_image_button.focus_mode = Control.FOCUS_NONE
-	_image_button.flat = true
-	_image_button.expand_icon = true
-	_image_button.icon = _texture_for_path(str(card.get("image_path", "")))
-	DesignTokens.preserve_art_icon(_image_button)
-	_image_button.tooltip_text = ""
-	_image_button.accessibility_name = "放大查看%s卡图" % str(card.get("name", card_id))
-	_image_button.add_theme_stylebox_override(
-		"normal",
-		DesignTokens.panel_style(SurfacePalette.for_control(self).INSET, 6, SurfacePalette.for_control(self).BORDER, 1, 0),
-	)
-	_image_button.add_theme_stylebox_override(
-		"hover",
-		DesignTokens.panel_style(SurfacePalette.for_control(self).RAISED, 6, SurfacePalette.for_control(self).GOLD, 2, 0),
-	)
-	_image_button.pressed.connect(art_requested.emit)
-	_content_grid.add_child(_image_button)
-	if SurfacePalette.is_frontend(self):
-		_style_frontend_art_button()
-	var detail := RichTextLabel.new()
-	_detail_text = detail
-	detail.custom_minimum_size = Vector2.ZERO
-	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# The modal owns scrolling for card text, evolution and attachments together.
-	detail.fit_content = true
-	detail.scroll_active = false
-	detail.mouse_filter = Control.MOUSE_FILTER_PASS
-	detail.bbcode_enabled = true
-	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail.text = DesignTokens.rich_text("[color=#{muted}]%s[/color]\n\n%s") % [
-		CardPresentation.meta_text(card),
-		_card_detail_bbcode(card_id, context.get("pokemon") as PokemonState),
-	]
-	detail.text = SurfacePalette.format_card_text(self, detail.text)
-	detail.tooltip_text = ""
-	detail.accessibility_description = CardPresentation.accessibility_text(
-		card,
-		catalog,
-		context.get("pokemon") as PokemonState,
-	)
-	_content_grid.add_child(detail)
-	if SurfacePalette.is_frontend(self):
-		# Keep the legacy text available to accessibility and battle consumers.
-		detail.hide()
-		var groups := VBoxContainer.new()
-		groups.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		groups.add_theme_constant_override("separation", 12)
-		_content_grid.add_child(groups)
-		groups.add_child(DesignTokens.label(CardPresentation.meta_text(card), 16, FrontendPalette.MUTED))
-		for group in CardPresentation.detail_groups(card, catalog, context.get("pokemon") as PokemonState):
-			var panel := PanelContainer.new()
-			panel.add_theme_stylebox_override("panel", FrontendPalette.panel(Color("f3f5f8"), 16, Color.TRANSPARENT, 0, 16))
-			var text := RichTextLabel.new()
-			text.bbcode_enabled = true
-			text.fit_content = true
-			text.scroll_active = false
-			text.add_theme_font_size_override("normal_font_size", 18)
-			text.text = SurfacePalette.format_card_text(self, str(group["bbcode"]))
-			panel.add_child(text)
-			groups.add_child(panel)
 	var pokemon := context.get("pokemon") as PokemonState
-	if pokemon:
-		_add_card_grid_section("进化链", _pokemon_evolution_cards(pokemon), false)
-		_add_card_grid_section("附着能量", pokemon.energy_card_ids, false)
-		if not pokemon.attached_tool_id.is_empty():
-			_add_card_grid_section("宝可梦道具", [pokemon.attached_tool_id], false)
-	call_deferred("_apply_responsive_layout")
-
-
-func _apply_responsive_layout() -> void:
-	if _content_grid == null or not is_instance_valid(_content_grid):
-		return
-	if not is_inside_tree():
-		return
-	var tree := get_tree()
-	if tree == null or tree.root == null:
-		return
-	var available_width := size.x
-	var ancestor := get_parent()
-	while ancestor != null:
-		if ancestor is ScrollContainer and (ancestor as ScrollContainer).size.x > 1.0:
-			available_width = (ancestor as ScrollContainer).size.x - 14.0
-			break
-		ancestor = ancestor.get_parent()
-	_content_grid.columns = 2
-	var image_width := clampf(available_width * 0.34, 120.0, 340.0 if SurfacePalette.is_frontend(self) else 260.0)
-	if _image_button:
-		_image_button.custom_minimum_size = Vector2(image_width, image_width * 1.4 + (36 if SurfacePalette.is_frontend(self) else 0))
-	if _detail_text:
-		_detail_text.add_theme_font_size_override("normal_font_size", 18)
-
-
-func _style_frontend_art_button() -> void:
-	_image_button.flat = false
-	_image_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	for state in [&"normal", &"hover", &"pressed", &"hover_pressed"]:
-		var normal: bool = state == &"normal"
-		var fill := Color.WHITE if normal else Color("f9ece8")
-		var style := FrontendPalette.panel(fill, 16, FrontendPalette.CONTROL_BORDER if normal else FrontendPalette.GOLD, 2, 6)
-		style.content_margin_bottom = 36
-		_image_button.add_theme_stylebox_override(state, style)
-	var footer := HBoxContainer.new()
-	footer.name = "ArtZoomHint"
-	footer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	footer.alignment = BoxContainer.ALIGNMENT_CENTER
-	footer.add_theme_constant_override("separation", 6)
-	_image_button.add_child(footer)
-	footer.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	footer.offset_top = -32
-	footer.offset_bottom = -4
-	var icon := TextureRect.new()
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	icon.custom_minimum_size = Vector2(18, 18)
-	icon.texture = preload("res://assets/ui/frontend/magnify.svg")
-	icon.self_modulate = FrontendPalette.TEXT
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	footer.add_child(icon)
-	var caption := Label.new()
-	caption.text = "放大卡图"
-	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	caption.add_theme_font_size_override("font_size", 16)
-	caption.add_theme_color_override("font_color", FrontendPalette.TEXT)
-	footer.add_child(caption)
-
-
-func _add_card_grid_section(
-	title_text: String,
-	card_ids: Array,
-	is_hidden: bool,
-) -> void:
-	var section := CARD_GRID_SECTION.instantiate() as CardGridSection
-	add_child(section)
-	section.configure(catalog, title_text, card_ids, is_hidden)
-	section.card_requested.connect(card_requested.emit)
-
-
-func _pokemon_evolution_cards(pokemon: PokemonState) -> Array[String]:
-	var result: Array[String] = []
-	for value in pokemon.evolution_stack_ids:
-		var card_id := str(value)
-		if not card_id.is_empty():
-			result.append(card_id)
-	if not pokemon.card_id.is_empty():
-		result.append(pokemon.card_id)
-	return result
-
-
-func _card_detail_bbcode(card_id: String, pokemon: PokemonState = null) -> String:
-	var card := catalog.get_card(card_id)
-	return CardPresentation.detail_bbcode(
-		card,
-		catalog,
-		pokemon,
-		CardPresentation.DetailLevel.FULL,
-	)
-
-
-func _texture_for_path(path: String) -> Texture2D:
-	if path.is_empty():
-		return null
-	var tree := Engine.get_main_loop() as SceneTree
-	var texture_cache := (
-		tree.root.get_node_or_null("CardTextureCache")
-		if tree and tree.root
-		else null
-	)
-	if texture_cache and texture_cache.has_method("get_texture"):
-		return texture_cache.call("get_texture", path) as Texture2D
-	return load(path) as Texture2D if ResourceLoader.exists(path) else null
-
-
-func _clear_children() -> void:
+	var instance_key := str(context.get("instance_key", ""))
+	if instance_key.is_empty() and str(context.get("slot", "")).is_empty() and not context.has("hand_index") and pokemon != null:
+		instance_key = str(pokemon.get_instance_id())
+	var identity := "%s|%s|%s|%s|%s" % [card_id, context.get("player", ""), context.get("slot", ""), context.get("hand_index", ""), instance_key]
+	var saved := get_reading_position() if identity == _identity else 0
+	_identity = identity
+	_generation += 1
+	catalog = p_catalog
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
 	_content_grid = null
 	_image_button = null
-	_detail_text = null
+	rule_scroll = null
+	attachment_buttons.clear()
+	_content.configure(self, catalog)
+	add_theme_constant_override("separation", 12)
+	if card_id.is_empty():
+		add_child(_content.paragraph("没有可查看的卡牌。", 18, _content.muted))
+		return
+	var card := catalog.get_card(card_id)
+	var location := str(context.get("location", ""))
+	var heading := _content.hbox(10)
+	heading.name = "FixedCardTitle"
+	var titles := _content.vbox(2)
+	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	heading.add_child(titles)
+	titles.add_child(_content.paragraph("卡牌详情" + ("  /  " + location if not location.is_empty() else ""), 13, _content.muted))
+	titles.add_child(_content.paragraph(str(card.get("name", card_id)), 28, _content.ink, true))
+	var badge := _content.badge("对战中" if context.get("pokemon") != null else "卡面规则", _content.green)
+	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	heading.add_child(badge)
+	add_child(heading)
+	add_child(_content.separator())
+	_content_grid = GridContainer.new()
+	_content_grid.name = "TwoColumns"
+	_content_grid.columns = 2
+	_content_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_content_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_content_grid.add_theme_constant_override("h_separation", 28)
+	_content_grid.resized.connect(_apply_responsive_layout)
+	add_child(_content_grid)
+	_art_column = _content.vbox(12)
+	_art_column.name = "FixedArtwork"
+	_content_grid.add_child(_art_column)
+	_image_button = _content.button("")
+	_image_button.name = "CardArtwork"
+	_image_button.custom_minimum_size = Vector2(120, 168)
+	_image_button.expand_icon = true
+	_image_button.icon = FrontendAttributes.card_texture(catalog, card_id)
+	DesignTokens.preserve_art_icon(_image_button)
+	_image_button.add_theme_stylebox_override("normal", _content.style(SurfacePalette.for_control(self).INSET, 12, _content.line, 1, 6))
+	_image_button.accessibility_name = "放大查看%s卡图" % str(card.get("name", card_id))
+	_image_button.pressed.connect(art_requested.emit)
+	_art_column.add_child(_image_button)
+	if _image_button.icon == null:
+		var missing := _content.label("暂无卡图", 18, _content.muted)
+		missing.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		missing.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_image_button.add_child(missing)
+		missing.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_zoom_button = _content.button("放大卡图  ↗")
+	_zoom_button.name = "ZoomArtwork"
+	_zoom_button.pressed.connect(art_requested.emit)
+	_art_column.add_child(_zoom_button)
+	var printing := _content.label(str(card.get("number", "")), 13, _content.muted)
+	printing.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_art_column.add_child(printing)
+	var reading := _content.reading_pane()
+	rule_scroll = reading.scroll
+	rule_contents = reading.contents
+	_content_grid.add_child(rule_scroll)
+	rule_contents.add_child(_content.identity_row(card))
+	var evolution := str(card.get("evolves_from", ""))
+	if not evolution.is_empty():
+		rule_contents.add_child(_content.paragraph("进化自  " + evolution, 15, _content.muted))
+	_content.add_rules(rule_contents, card, false)
+	if pokemon != null:
+		rule_contents.add_child(_content.state_block(pokemon))
+		_content.add_attachments(rule_contents, pokemon)
+	attachment_buttons.assign(_content.attachment_buttons)
+	for button in attachment_buttons:
+		button.pressed.connect(func() -> void:
+			card_requested.emit({"card_id": str(button.get_meta("card_id")), "location": "附着卡／进化链"}))
+	rule_contents.accessibility_description = CardPresentation.accessibility_text(card, catalog, pokemon)
+	add_child(_content.separator())
+	_apply_responsive_layout.call_deferred()
+	restore_reading_position(saved)
+
+
+func get_reading_position() -> int:
+	return rule_scroll.scroll_vertical if is_instance_valid(rule_scroll) else 0
+
+
+func restore_reading_position(value: int) -> void:
+	var generation := _generation
+	_reading_revision += 1
+	var revision := _reading_revision
+	for frame in 3:
+		await get_tree().process_frame
+		if generation != _generation or revision != _reading_revision or not is_instance_valid(rule_scroll):
+			return
+		rule_scroll.scroll_vertical = maxi(0, value)
+
+
+func _apply_responsive_layout() -> void:
+	if not is_instance_valid(_content_grid) or not is_inside_tree():
+		return
+	var width := maxf(1.0, size.x)
+	var reading_height := maxf(1.0, _content_grid.size.y)
+	var image_width := minf(300.0, width * 0.32)
+	image_width = minf(image_width, maxf(60.0, reading_height - 100.0) * 300.0 / 419.0)
+	_image_button.custom_minimum_size = Vector2(image_width, image_width * 419.0 / 300.0 + 12.0)
+	_art_column.custom_minimum_size.x = image_width
+	_content_grid.add_theme_constant_override("h_separation", 18 if width < 760 else 28)

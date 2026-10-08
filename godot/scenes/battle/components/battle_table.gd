@@ -121,10 +121,6 @@ var own_allowance_labels: Dictionary = {}
 var phase_labels: Dictionary = {}
 var phase_advance_button: Button
 var detail_panel: PanelContainer
-var detail_image: TextureRect
-var detail_title: Label
-var detail_text: RichTextLabel
-var detail_close_button: Button
 var log_panel: BattleLogPanel
 var log_label: RichTextLabel
 var action_popover: CardActionPopover
@@ -547,11 +543,6 @@ func _resolve_scene_nodes() -> void:
 		"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseAdvanceButton"
 	) as Button
 	detail_panel = get_node("OverlayPanels/DetailPanel") as PanelContainer
-	var detail_component := detail_panel as BattleDetailPanel
-	detail_image = detail_component.detail_image if detail_component else null
-	detail_title = detail_component.detail_title if detail_component else null
-	detail_text = detail_component.detail_text if detail_component else null
-	detail_close_button = detail_component.close_button if detail_component else null
 	action_popover = get_node("CardActionPopover") as CardActionPopover
 	log_panel = get_node("BattleRoot/Body/BattleHUD/LogPanel") as BattleLogPanel
 	log_label = get_node(
@@ -636,6 +627,9 @@ func update_view(
 func set_choice_targets(options_by_source: Dictionary, prompt: String) -> void:
 	choice_target_options = options_by_source.duplicate(true)
 	choice_target_prompt = prompt
+	if _prize_detail_suppressed():
+		_detail_passthrough_key = ""
+		hide_card_detail()
 	if (
 		attachment_choice_popover != null
 		and attachment_choice_popover.visible
@@ -935,6 +929,9 @@ func clear_presentation_visuals_for_resync() -> void:
 
 
 func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
+	if _prize_detail_suppressed():
+		hide_card_detail()
+		return
 	if board_canvas != null and (board_canvas.size.x < 100.0 or board_canvas.size.y < 100.0):
 		_pending_detail_card_id = card_id
 		_pending_detail_pokemon = pokemon
@@ -977,22 +974,18 @@ func release_read_only_card_detail() -> void:
 
 
 func _show_card_detail_content(card_id: String, pokemon: PokemonState = null) -> void:
-	if card_id.is_empty():
+	if card_id.is_empty() or _prize_detail_suppressed():
 		hide_card_detail()
 		return
 	var component := detail_panel as BattleDetailPanel
 	if component == null:
 		return
-	component.show_card(card_id, pokemon, catalog)
+	component.show_card(card_id, pokemon, _card_detail_context())
 	_detail_content_signature = (
 		_detail_signature(card_id, pokemon)
 		if component.is_showing_card()
 		else ""
 	)
-	detail_image = component.detail_image
-	detail_title = component.detail_title
-	detail_text = component.detail_text
-	detail_close_button = component.close_button
 	board_view._layout_detail_panel()
 	if action_popover and action_popover.visible:
 		board_view._reposition_action_popover()
@@ -1021,6 +1014,9 @@ func _on_detail_close_requested() -> void:
 
 
 func _sync_visible_card_detail(force_show := false) -> void:
+	if _prize_detail_suppressed():
+		hide_card_detail()
+		return
 	var component := detail_panel as BattleDetailPanel
 	if component == null or (not component.visible and not force_show) or state_ref == null:
 		return
@@ -1053,8 +1049,9 @@ func _sync_visible_card_detail(force_show := false) -> void:
 	if (
 		component.current_card_id != card_id
 		or next_signature != _detail_content_signature
+		or str(component.current_context.get("instance_key", "")) != str(_card_detail_context().instance_key)
 	):
-		component.show_card(card_id, pokemon, catalog)
+		component.show_card(card_id, pokemon, _card_detail_context())
 		_detail_content_signature = (
 			next_signature if component.is_showing_card() else ""
 		)
@@ -1086,6 +1083,19 @@ func _selected_entity_identity() -> String:
 	if selected_entity_key == "stadium":
 		return "stadium:%s" % state_ref.stadium_card_id
 	return selected_entity_key
+
+
+func _card_detail_context() -> Dictionary:
+	return {"catalog": catalog, "instance_key": _read_only_detail_key if not _read_only_detail_key.is_empty() else _selected_entity_identity()}
+
+
+func _prize_detail_suppressed() -> bool:
+	if active_choice != null and active_choice.request_type == "select_prize":
+		return true
+	for key in choice_target_options:
+		if str(key).begins_with("prize:"):
+			return true
+	return false
 
 
 func _detail_signature(card_id: String, pokemon: PokemonState) -> String:
@@ -1314,6 +1324,8 @@ func _bind_scene_nodes() -> void:
 	var detail_component := detail_panel as BattleDetailPanel
 	if detail_component:
 		detail_component.hide_card()
+		if not detail_component.height_changed.is_connected(board_view._layout_detail_panel):
+			detail_component.height_changed.connect(board_view._layout_detail_panel)
 		if not detail_component.close_requested.is_connected(_on_detail_close_requested):
 			detail_component.close_requested.connect(_on_detail_close_requested)
 	if (
@@ -1975,6 +1987,9 @@ func set_submission_pending(value: bool) -> void:
 func set_choice_guidance(request: ChoiceView, selected_count: int = 0) -> void:
 	active_choice = request
 	choice_selected_count = selected_count
+	if _prize_detail_suppressed():
+		_detail_passthrough_key = ""
+		hide_card_detail()
 	if _initialized:
 		board_view._refresh_actions()
 		board_view._refresh_target_hints()

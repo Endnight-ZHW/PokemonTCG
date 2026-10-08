@@ -691,8 +691,19 @@ func _layout_detail_panel() -> void:
 	var rect := _detail_layout_rect()
 	if not rect.has_area():
 		return
-	component.fit_available_size(rect.size)
-	component.position = rect.position
+	var reading_center_y := rect.get_center().y
+	var expanded := table.render3d != null and table.render3d.size.x >= 1500.0 and table.render3d.size.y >= 850.0
+	if expanded:
+		# Prize anchors never move. Long card text may cover their capacity area;
+		# BattleTable hides this panel before any prize-selection input begins.
+		var inverse := table.get_global_transform_with_canvas().affine_inverse()
+		var opponent_bottom := inverse * table.opponent_info.get_global_rect().end
+		var board_bottom := inverse * table.board_panel.get_global_rect().end
+		rect.position.y = opponent_bottom.y + 16.0
+		rect.size.y = minf(600.0, board_bottom.y - 24.0 - rect.position.y)
+	component.fit_available_size(rect.size, expanded)
+	component.position = Vector2(rect.position.x, clampf(reading_center_y - component.size.y * 0.5,
+		rect.position.y, maxf(rect.position.y, rect.end.y - component.size.y)))
 	component.scale = Vector2.ONE
 	component.pivot_offset = Vector2.ZERO
 
@@ -869,9 +880,7 @@ func _attack_popover_metadata(action: GameAction, row: Dictionary) -> Dictionary
 			"Metal": "钢", "Colorless": "无",
 		}.get(str(value), str(value).left(1)))
 	var name := str(attack.get("name", fallback))
-	var damage := str(attack.get("damage_text", ""))
-	if damage.is_empty() and int(attack.get("damage", 0)) > 0:
-		damage = str(attack.get("damage", 0))
+	var damage := CardPresentation.attack_damage_text(attack)
 	result["label"] = "%s%s%s\n攻击后结束回合" % [
 		("[%s] " % "".join(cost_labels)) if not cost_labels.is_empty() else "",
 		name,

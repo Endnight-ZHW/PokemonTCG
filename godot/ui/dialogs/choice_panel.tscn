@@ -1,8 +1,10 @@
 
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://ui/dialogs/choice_panel.gd" id="1_panel"]
 [ext_resource type="Script" path="res://ui/dialogs/energy_distribution_panel.gd" id="2_energy"]
+
+[ext_resource type="PackedScene" path="res://ui/panels/card_reading_pane.tscn" id="3_reader"]
 
 [node name="ChoicePanel" type="VBoxContainer"]
 theme_override_constants/separation = 10
@@ -139,16 +141,6 @@ focus_mode = 0
 toggle_mode = true
 text = "全部（0）"
 
-[node name="PreviewToggleButton" type="Button" parent="ContentRow/OptionsScroll/ChoiceColumn"]
-unique_name_in_owner = true
-visible = false
-focus_mode = 0
-custom_minimum_size = Vector2(0, 48)
-layout_mode = 2
-text = "查看卡牌说明"
-tooltip_text = "展开当前卡牌的图片与规则说明"
-accessibility_name = "查看当前卡牌说明"
-
 [node name="CardGrid" type="HFlowContainer" parent="ContentRow/OptionsScroll/ChoiceColumn"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -164,50 +156,14 @@ theme_override_constants/separation = 6
 [node name="PreviewPanel" type="PanelContainer" parent="ContentRow"]
 unique_name_in_owner = true
 visible = false
-custom_minimum_size = Vector2(120, 260)
+custom_minimum_size = Vector2(220, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="PreviewScroll" type="ScrollContainer" parent="ContentRow/PreviewPanel"]
+[node name="PreviewReader" parent="ContentRow/PreviewPanel" instance=ExtResource("3_reader")]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-horizontal_scroll_mode = 0
-
-[node name="PreviewContent" type="VBoxContainer" parent="ContentRow/PreviewPanel/PreviewScroll"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 8
-
-[node name="PreviewImage" type="TextureRect" parent="ContentRow/PreviewPanel/PreviewScroll/PreviewContent"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(88, 123)
-layout_mode = 2
-size_flags_horizontal = 3
-expand_mode = 1
-stretch_mode = 5
-
-[node name="PreviewTitle" type="Label" parent="ContentRow/PreviewPanel/PreviewScroll/PreviewContent"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.474510, 0.403922, 0.341176, 1)
-theme_override_font_sizes/font_size = 16
-text = "卡牌预览"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="PreviewText" type="RichTextLabel" parent="ContentRow/PreviewPanel/PreviewScroll/PreviewContent"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_font_sizes/normal_font_size = 16
-bbcode_enabled = true
-fit_content = true
-scroll_active = false
-autowrap_mode = 3
-text = "选择卡牌查看效果。"
 
 [node name="EnergyActions" type="HBoxContainer" parent="."]
 unique_name_in_owner = true

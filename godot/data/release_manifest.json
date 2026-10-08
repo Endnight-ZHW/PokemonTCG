@@ -11,7 +11,7 @@
   },
   "native_rules": {
     "action_schema_version": 4,
-    "card_ir_content_fingerprint": "f118c9178a01c9ed5c02c51877d3dc2385a14bd67dea5e7eda8a06ecda231285",
+    "card_ir_content_fingerprint": "7c31d5fb16d004bd198e8db6fdbf526b02182f89634cf2addf79bd15f35c78dd",
     "card_ir_contract_fingerprint": "4297189b1064d247d20448d38a56a77b357a0e4d216e0b3915247d0eb918a9f1",
     "card_ir_source_fingerprint": "19a98bb9d04fd46989bd5d44438e6659c18b49bcedbbac512db04f1c5de5ad72",
     "card_ir_version": 4,

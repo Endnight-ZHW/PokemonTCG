@@ -2,12 +2,8 @@ extends SceneTree
 ## Import printing metadata and original pixels; gameplay stays in author JSON.
 
 const Sources = preload("res://tools/card_source_registry.gd")
+const PrintingAudit = preload("res://tools/card_printing_audit.gd")
 const CARD_ROOT := "res://authoring/cards"
-const ENERGY_TYPES := {
-	"1": "Grass", "2": "Fire", "3": "Water", "4": "Lightning", "5": "Psychic",
-	"6": "Fighting", "7": "Darkness", "8": "Metal", "9": "Fairy", "10": "Dragon",
-	"11": "Colorless",
-}
 
 
 func _init() -> void:
@@ -27,6 +23,8 @@ func _run() -> String:
 	if not manifest_value is Dictionary:
 		return "manifest_missing"
 	var manifest: Dictionary = manifest_value
+	var review: Dictionary = Sources.read_json("res://authoring/card_review_manifest.json")
+	var overrides: Dictionary = review.get("printed_text_review", {}).get("source_overrides", {})
 	var documents: Dictionary = {}
 	var cards: Dictionary = {}
 	for filename in DirAccess.get_files_at(CARD_ROOT):
@@ -67,7 +65,10 @@ func _run() -> String:
 				break
 		if row.is_empty() or str(row.get("image", "")) != str(source["image"]):
 			return "printing_not_found:%s" % card_id
-		error = _identity_error(card, row)
+		var override: Dictionary = overrides.get(card_id, {})
+		if not override.is_empty() and override.get("image_sha256") != source["image_sha256"]:
+			return "stale_printing_override:%s" % card_id
+		error = ",".join(PrintingAudit.mismatches(card, row, override))
 		if not error.is_empty():
 			return "printing_mismatch:%s:%s" % [card_id, error]
 		var printed_set: Dictionary = printed_sets.get(str(row["details"]["commodityCode"]), {})
@@ -125,35 +126,4 @@ func _run() -> String:
 	print("CARD_SOURCE_%s_OK cards=%d format=lossless_webp revision=%s" % [
 		"CHECK" if checking else "IMPORT", cards.size(), str(manifest["source"]["revision"]),
 	])
-	return ""
-
-
-func _identity_error(card: Dictionary, row: Dictionary) -> String:
-	var source: Dictionary = row["details"]
-	var source_name := str(row["name"]).replace(" ", "")
-	if str(card["supertype"]) == "Energy" and "Basic" in card.get("subtypes", []):
-		source_name = source_name.trim_prefix("基本")
-	if source_name != str(card["name"]).replace(" ", "") \
-			or int(source.get("hp", 0)) != int(card.get("hp", 0)):
-		return "name_or_hp"
-	var attacks: Array = card.get("attacks", [])
-	var source_attacks: Array = source.get("abilityItemList", [])
-	if attacks.size() != source_attacks.size():
-		return "attack_count"
-	for index in range(attacks.size()):
-		var attack: Dictionary = attacks[index]
-		var source_attack: Dictionary = source_attacks[index]
-		var cost: Array = []
-		for type_id in str(source_attack.get("abilityCost", "")).split(",", false):
-			cost.append(ENERGY_TYPES.get(type_id, "unknown"))
-		cost.sort()
-		var authored_cost: Array = Array(attack.get("cost", [])).duplicate()
-		authored_cost.sort()
-		if str(attack.get("name", "")) != str(source_attack.get("abilityName", "")) \
-				or cost != authored_cost:
-			return "attack_name_or_cost"
-	if str(card["supertype"]) == "Pokémon":
-		if card.get("energy_types", []) != [ENERGY_TYPES.get(str(source.get("attribute", "")))] \
-				or int(card.get("retreat_cost", 0)) != int(source.get("retreatCost", 0)):
-			return "type_or_retreat"
 	return ""

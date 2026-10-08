@@ -460,11 +460,8 @@ func _check_battle_theme_isolation() -> void:
 	context._check(inspector.theme == SurfacePalette.BATTLE_THEME
 		and (inspector._image_button.get_theme_stylebox("normal") as StyleBoxFlat).bg_color == DesignTokens.PANEL_INSET,
 		"Shared card inspector leaked frontend colors into battle")
-	inspector._add_card_grid_section("进化链", [], false)
-	var section: CardGridSection = inspector.get_child(inspector.get_child_count() - 1)
-	context._check((section.get_child(0) as Label).get_theme_color("font_color") == DesignTokens.GOLD
-		and (section.get_child(1).get_child(0) as Label).get_theme_color("font_color") == DesignTokens.TEXT_MUTED,
-		"Nested battle card section resolved its palette before mounting")
+	context._check(inspector.rule_scroll != null and inspector.rule_contents != null,
+		"Battle inspector lost its independent reading pane")
 	var zone: Variant = load("res://ui/panels/zone_inspector_panel.tscn").instantiate()
 	battle_host.add_child(zone)
 	zone.catalog = CardCatalog.shared()

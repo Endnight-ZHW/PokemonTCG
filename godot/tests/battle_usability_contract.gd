@@ -334,7 +334,7 @@ func _check_hand_effect_previews() -> void:
 				"Hand effect preview visibility is incorrect: " + label)
 			if not table.is_compact_layout():
 				check(detail.current_card_id == card_id and detail.detail_image.texture != null
-					and not detail.detail_text.get_parsed_text().strip_edges().is_empty(),
+					and not detail.rule_contents.accessibility_description.strip_edges().is_empty(),
 					"Hand preview retained stale or empty content: " + label)
 				var preview_rect := detail.get_global_rect()
 				for view in table.slot_views.values():

@@ -56,6 +56,10 @@
 
 卡牌详情左侧展示完整卡图和放大入口，右侧使用 `CardPresentation.detail_groups()` 分组。原 `detail_bbcode()` 由同一分组拼接，战斗文字保持兼容。牌组详情按宝可梦／训练家／能量显示合并后的卡图网格，名称与数量位于卡面外，赏卡、卡牌详情和牌组详情按原阅读位置逐层返回。
 
+`CardDetailContent` 是完整详情、战斗左栏、选卡预览和攻击确认的共享规则组件。`CardReadingPane` 负责选卡时的小卡图、独立阅读区和卡图返回；`CardPresentation.battle_state()` 统一卡面 HP、实际 HP 与异常状态，附着能量按卡 ID 合并。大屏左栏可覆盖奖励卡，拿取奖励卡时隐藏；牌桌与奖励卡位置固定。已退役的独立草图场景不再随源码维护。
+
+卡牌界面的图形验证统一使用 `tools/verify_card_details.ps1`（默认全部；可选 `-View inspector` 或 `-View choice`）。`-ReportOnly` 只用已有验证结果重建查看器。两类截图及报告分别保存在 `build/card-detail-integration/`、`build/choice-detail-integration/`，共用 `godot/tools/reviews/card_details.html`。已审核草图只作为可选的静态对照保留在 `build/card-detail-design/`；缺少本地对照图片时自动禁用对应的对照入口。卡图与卡文审核使用 `tools/review_card_printings.ps1`，报告在 `build/card-text-audit/`；固定来源清单、卡图哈希与审核修正记录保留在 `godot/authoring/`。
+
 结算展示胜者标题、完整代表卡和模式／牌组／回合摘要。`ResultCelebration` 只播放一次约 1 秒的少量纸屑，导航始终可用；低画质和减少动画不运行装饰循环。平局采用中性颜色，缺少卡图时使用原创中性 SVG，不增加战绩记录。
 
 首页样式独立使用 `HomePalette`，其余前台颜色来自 `FrontendPalette`。`DesignTokens` 与 `game_theme.tres` 保留原有战斗配色。

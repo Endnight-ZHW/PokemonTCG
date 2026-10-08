@@ -181,8 +181,10 @@ func _check_confirmations() -> void:
 	await settle()
 	main._execute_action(attack)
 	check(main.modal_layer.visible and main.modal_title.text == "确认攻击" and main.modal_confirm.size.y >= 56, "Attack skipped its accessible confirmation")
-	var confirmation := main.modal_body.get_child(0) as Label
-	check(confirmation != null and "卡面伤害：100" in confirmation.text and "结束本回合" in confirmation.text,
+	var confirmation := main.modal_body.get_child(0) as VBoxContainer
+	var attack_rule := confirmation.get_node_or_null("AttackRule") as VBoxContainer
+	check(attack_rule != null and "100" in attack_rule.accessibility_description
+		and "结束本回合" in (confirmation.get_child(confirmation.get_child_count() - 1) as Label).text,
 		"Attack confirmation lost its printed damage or turn consequence")
 	var revision := state.revision
 	main.modal_cancel.pressed.emit()

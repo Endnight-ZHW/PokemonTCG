@@ -20,7 +20,11 @@ static func apply(control: Control) -> void:
 	control.theme = FRONT_THEME if is_frontend(control) else BATTLE_THEME
 
 static func format_card_text(control: Node, text: String) -> String:
-	if not is_frontend(control):
+	return card_text_for_surface(text, is_frontend(control))
+
+
+static func card_text_for_surface(text: String, frontend: bool) -> String:
+	if not frontend:
 		return text
 	for pair in [[DesignTokens.TEXT, FrontendPalette.TEXT],
 		[DesignTokens.TEXT_MUTED, FrontendPalette.MUTED],

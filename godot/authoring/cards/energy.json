@@ -14,7 +14,7 @@
       "hp": 0,
       "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/175.png",
       "image_url_small": "",
-      "name": "草能量",
+      "name": "基本草能量",
       "number": "GRA",
       "prize_value": 0,
       "provides_energy": [
@@ -50,7 +50,7 @@
       "hp": 0,
       "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/172.png",
       "image_url_small": "",
-      "name": "火能量",
+      "name": "基本火能量",
       "number": "FIR",
       "prize_value": 0,
       "provides_energy": [
@@ -86,7 +86,7 @@
       "hp": 0,
       "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/185.png",
       "image_url_small": "",
-      "name": "水能量",
+      "name": "基本水能量",
       "number": "WAT",
       "prize_value": 0,
       "provides_energy": [
@@ -122,7 +122,7 @@
       "hp": 0,
       "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/178.png",
       "image_url_small": "",
-      "name": "雷能量",
+      "name": "基本雷能量",
       "number": "LIG",
       "prize_value": 0,
       "provides_energy": [
@@ -158,7 +158,7 @@
       "hp": 0,
       "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/184.png",
       "image_url_small": "",
-      "name": "超能量",
+      "name": "基本超能量",
       "number": "PSY",
       "prize_value": 0,
       "provides_energy": [
@@ -194,7 +194,7 @@
       "hp": 0,
       "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/171.png",
       "image_url_small": "",
-      "name": "斗能量",
+      "name": "基本斗能量",
       "number": "FIG",
       "prize_value": 0,
       "provides_energy": [
@@ -230,7 +230,7 @@
       "hp": 0,
       "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/170.png",
       "image_url_small": "",
-      "name": "恶能量",
+      "name": "基本恶能量",
       "number": "DAR",
       "prize_value": 0,
       "provides_energy": [
@@ -266,7 +266,7 @@
       "hp": 0,
       "image_url_large": "https://raw.githubusercontent.com/duanxr/PTCG-CHS-Datasets/ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c/img/242/181.png",
       "image_url_small": "",
-      "name": "钢能量",
+      "name": "基本钢能量",
       "number": "MET",
       "prize_value": 0,
       "provides_energy": [
@@ -378,7 +378,7 @@
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
-        "只要这张卡牌被附着于宝可梦身上，就被视作2个无色能量。",
+        "只要这张卡牌，被附着于宝可梦身上，就被视作2个无色能量。",
         "身上附有这张卡牌的宝可梦所使用的招式，给对手的宝可梦造成的伤害「-20」。"
       ],
       "set_id": "CSVH3C",
@@ -436,7 +436,7 @@
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
-        "只要这张卡牌被附着于宝可梦身上，就被视作1个无色能量。",
+        "只要这张卡牌，被附着于宝可梦身上，就被视作1个无色能量。",
         "当将这张卡牌从手牌附着于备战宝可梦身上时，将该宝可梦与战斗宝可梦互换。"
       ],
       "set_id": "CSVH3C",
@@ -495,7 +495,7 @@
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
-        "只要这张卡牌被附着于宝可梦身上，就被视作1个无色能量。",
+        "只要这张卡牌，被附着于宝可梦身上，就被视作1个无色能量。",
         "身上附有这张卡牌的宝可梦，在战斗场上受到对手宝可梦的招式的伤害时，从自己的牌库上方抽取1张卡牌。"
       ],
       "set_id": "CSVH3C",
@@ -564,7 +564,7 @@
       "resistances": [],
       "retreat_cost": 0,
       "rules": [
-        "只要这张卡牌被附着于宝可梦身上，就被视作1个无色能量。",
+        "只要这张卡牌，被附着于宝可梦身上，就被视作1个无色能量。",
         "在自己的回合，当从反面朝上的自己的奖赏卡中拿取了这张卡牌时，在加入手牌前，可将这张卡牌附着于自己的宝可梦身上。"
       ],
       "set_id": "CSVH3C",

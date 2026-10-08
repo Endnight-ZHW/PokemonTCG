@@ -89,20 +89,25 @@ func _show_card_inspector(
 	var card := catalog.get_card(card_id)
 	var title := str(card.get("name", card_id))
 	var card_spec := (
-		ModalSpec.battle(Vector2(860, 700), in_battle)
+		ModalSpec.battle(Vector2(860, 700))
 		if in_battle
 		else ModalSpec.frontend(Vector2(1080, 740))
 	)
+	card_spec.with_reading_pane()
+	card_spec.body_owns_title = true
+	card_spec.compact_footer = true
+	card_spec.confirm_role = ModalSpec.ButtonRole.SECONDARY
+	card_spec.shade_alpha = 0.65 if in_battle else 0.48
 	if return_action.is_valid():
 		card_spec.stack_behavior = ModalSpec.StackBehavior.RESTORE_PARENT
-	host.open(title, "关闭", "", in_battle, card_spec)
+	host.open(title, "关闭", "", false, card_spec)
 	var panel := CARD_INSPECTOR_PANEL_SCENE.instantiate() as CardInspectorPanel
 	host.modal_body.add_child(panel)
 	panel.configure(catalog, context)
 	panel.art_requested.connect(_show_card_art.bind(
-		context.duplicate(true), return_action, return_label, field_choice_context))
+		context.duplicate(true), return_action, return_label, field_choice_context, panel))
 	panel.card_requested.connect(_show_nested_card_inspector.bind(
-		context.duplicate(true), return_action, return_label, field_choice_context))
+		context.duplicate(true), return_action, return_label, field_choice_context, panel))
 	host.back_action = return_action
 	if return_action.is_valid():
 		host.modal_confirm.text = return_label if not return_label.is_empty() else "返回上一界面"
@@ -121,15 +126,15 @@ func _show_card_inspector(
 		host.modal_confirm.pressed.connect(host.close, CONNECT_ONE_SHOT)
 
 func _show_nested_card_inspector(next_context: Dictionary, previous_context: Dictionary,
-		return_action: Callable, return_label: String, choice_context: Dictionary) -> void:
+		return_action: Callable, return_label: String, choice_context: Dictionary, panel: CardInspectorPanel) -> void:
 	var restore := _restore_card_inspector.bind(previous_context, return_action, return_label,
-		choice_context, host.modal_scroll.scroll_vertical)
+		choice_context, panel.get_reading_position())
 	_show_card_inspector(next_context, restore, "返回卡牌详情", choice_context)
 
 
 func _show_card_art(context: Dictionary, return_action: Callable, return_label: String,
-		choice_context: Dictionary) -> void:
-	var scroll_position := host.modal_scroll.scroll_vertical
+		choice_context: Dictionary, panel: CardInspectorPanel) -> void:
+	var scroll_position := panel.get_reading_position()
 	var card := catalog.get_card(str(context.get("card_id", "")))
 	var spec := ModalSpec.battle(Vector2(720, 850), in_battle) if in_battle else ModalSpec.frontend(Vector2(720, 850))
 	spec.stack_behavior = ModalSpec.StackBehavior.RESTORE_PARENT
@@ -148,7 +153,8 @@ func _show_card_art(context: Dictionary, return_action: Callable, return_label: 
 func _restore_card_inspector(context: Dictionary, return_action: Callable, return_label: String,
 		choice_context: Dictionary, scroll_position: int) -> void:
 	_show_card_inspector(context, return_action, return_label, choice_context)
-	_restore_modal_scroll(host.generation, scroll_position)
+	var panel := host.modal_body.get_child(0) as CardInspectorPanel
+	panel.restore_reading_position(scroll_position)
 
 
 func _show_zone_inspector(

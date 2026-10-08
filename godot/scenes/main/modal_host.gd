@@ -214,6 +214,8 @@ func handle_back() -> bool:
 		return false
 	if closing:
 		return true
+	if is_instance_valid(main.active_choice_panel) and main.active_choice_panel.handle_preview_back():
+		return true
 	if main.active_choice_panel != null and main.active_choice_panel._request_type == "distribute_energy" and main.active_choice_panel._compact_preview_expanded:
 		main.active_choice_panel._toggle_compact_preview()
 		return true
@@ -262,10 +264,11 @@ func _free_children_immediate(parent: Node) -> void:
 func begin(spec: ModalSpec, available_size: Vector2) -> void:
 	active_spec = spec
 	var frontend := spec.surface == ModalSpec.Surface.FRONTEND
-	(modal_confirm.get_parent() as BoxContainer).alignment = BoxContainer.ALIGNMENT_END if frontend else BoxContainer.ALIGNMENT_BEGIN
+	modal_title.visible = not spec.body_owns_title
+	(modal_confirm.get_parent() as BoxContainer).alignment = BoxContainer.ALIGNMENT_END if frontend or spec.compact_footer else BoxContainer.ALIGNMENT_BEGIN
 	for button in [modal_confirm, modal_cancel]:
-		button.size_flags_horizontal = Control.SIZE_FILL if frontend else Control.SIZE_EXPAND_FILL
-		button.custom_minimum_size.x = 160 if frontend else 0
+		button.size_flags_horizontal = Control.SIZE_FILL if frontend or spec.compact_footer else Control.SIZE_EXPAND_FILL
+		button.custom_minimum_size.x = 144 if spec.compact_footer else 160 if frontend else 0
 	set_meta("ui_surface", spec.surface)
 	if modal_shade:
 		var alpha := modal_shade.color.a
@@ -309,7 +312,11 @@ func _apply_layout(spec: ModalSpec, available_size: Vector2) -> void:
 	var margin := modal_panel.get_node("Margin") as MarginContainer
 	var vertical_margin := UILayoutPolicy.fit_int(available_size, 16, 24)
 	for button in [modal_confirm, modal_cancel]:
-		button.custom_minimum_size.y = 56
+		button.custom_minimum_size.y = 48 if spec.compact_footer else 56
+		if spec.compact_footer:
+			button.add_theme_font_size_override("font_size", 16)
+		else:
+			button.remove_theme_font_size_override("font_size")
 	for side in ["left", "right"]:
 		margin.add_theme_constant_override("margin_" + side, UILayoutPolicy.fit_int(available_size, 16, 24))
 	margin.add_theme_constant_override("margin_top", vertical_margin)
@@ -396,7 +403,7 @@ func choice_size(has_preview: bool, compact_empty: bool = false) -> Vector2:
 	var target := (
 		Vector2(640, 360)
 		if compact_empty
-		else Vector2(980, 660) if has_preview else Vector2(720, 620)
+		else Vector2(1120, 720) if has_preview else Vector2(720, 620)
 	)
 	var inset := UILayoutPolicy.modal_inset(viewport_size)
 	var available := Vector2(

@@ -297,7 +297,7 @@
       "resistances": [],
       "retreat_cost": 1,
       "rules": [
-        "当宝可梦ex【昏厥】时，对手将拿取2张奖赏卡。"
+        "当宝可梦ex昏厥时，对手将拿取2张奖赏卡。"
       ],
       "set_id": "CSVH4C",
       "set_name": "嗨皮卡组 狙射树枭&美录梅塔&故勒顿&密勒顿",
@@ -386,7 +386,7 @@
       "resistances": [],
       "retreat_cost": 1,
       "rules": [
-        "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
+        "当宝可梦ex昏厥时，对手将拿取2张奖赏卡。"
       ],
       "set_id": "CSVH3C",
       "set_name": "嗨皮卡组 七夕青鸟&拉帝欧斯&烈焰猴&一家鼠",
@@ -483,12 +483,7 @@
       "trainer_effects": [],
       "trainer_text": "",
       "trainer_type": "",
-      "weaknesses": [
-        {
-          "energy_type": "Fighting",
-          "value": "×2"
-        }
-      ]
+      "weaknesses": []
     },
     "svg-tatsu": {
       "abilities": [],

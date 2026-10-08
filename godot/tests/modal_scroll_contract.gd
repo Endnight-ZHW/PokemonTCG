@@ -61,9 +61,10 @@ func run() -> void:
 	var inspector := main.modal_body.get_child(0) as CardInspectorPanel
 	for dimensions in SIZES:
 		root.size = dimensions
-		main.modal_scroll.scroll_vertical = 0
+		inspector.rule_scroll.scroll_vertical = 0
 		await settle()
 		check_scroll_tree(main.modal_scroll)
+		check(main.modal_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Inspector has two scroll owners")
 		for text in inspector.find_children("*", "RichTextLabel", true, false):
 			if (text as Control).is_visible_in_tree():
 				check(text.size.y + 2 >= text.get_content_height(), "Inspector text was clipped at %s" % dimensions)
@@ -71,22 +72,22 @@ func run() -> void:
 			"Long text stretched the card artwork at %s" % dimensions)
 		var confirm_rect: Rect2 = main.modal_confirm.get_global_rect()
 		capture("inspector")
-		main.modal_scroll.scroll_vertical = int(main.modal_scroll.get_v_scroll_bar().max_value)
+		inspector.rule_scroll.scroll_vertical = int(inspector.rule_scroll.get_v_scroll_bar().max_value)
 		await settle()
-		var last_section := inspector.get_child(inspector.get_child_count() - 1) as Control
-		check(last_section.get_global_rect().end.y <= main.modal_scroll.get_global_rect().end.y + 2,
+		var last_section := inspector.rule_contents.get_child(inspector.rule_contents.get_child_count() - 1) as Control
+		check(last_section.get_global_rect().end.y <= inspector.rule_scroll.get_global_rect().end.y + 2,
 			"Last attachment cannot be reached at %s" % dimensions)
 		check(main.modal_confirm.get_global_rect().is_equal_approx(confirm_rect), "Scrolling moved the footer")
 		capture("inspector-bottom")
 	root.size = SIZES[0]
-	main.modal_scroll.scroll_vertical = 0
+	inspector.rule_scroll.scroll_vertical = 0
 	await settle()
-	var text_target: Control = inspector._detail_text
+	var text_target: Control = inspector.rule_scroll
 	for candidate in inspector.find_children("*", "RichTextLabel", true, false):
 		if (candidate as Control).is_visible_in_tree():
 			text_target = candidate
 			break
-	var text_rect := text_target.get_global_rect().intersection(main.modal_scroll.get_global_rect())
+	var text_rect := text_target.get_global_rect().intersection(inspector.rule_scroll.get_global_rect())
 	var pointer := root.get_final_transform() * text_rect.get_center()
 	var wheel := InputEventMouseButton.new()
 	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
@@ -95,19 +96,21 @@ func run() -> void:
 	wheel.global_position = pointer
 	Input.parse_input_event(wheel)
 	await settle()
-	check(main.modal_scroll.scroll_vertical > 0, "Scrolling over card text did not move the reading page")
-	var saved_scroll: int = main.modal_scroll.scroll_vertical
+	check(inspector.rule_scroll.scroll_vertical > 0, "Scrolling over card text did not move the reading page")
+	var saved_scroll: int = inspector.rule_scroll.scroll_vertical
 	inspector.art_requested.emit()
 	await settle()
 	main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
 	await settle()
-	check(abs(main.modal_scroll.scroll_vertical - saved_scroll) <= 2, "Art zoom lost the reading position")
+	inspector = main.modal_body.get_child(0) as CardInspectorPanel
+	check(abs(inspector.rule_scroll.scroll_vertical - saved_scroll) <= 2, "Art zoom lost the reading position")
 	inspector = main.modal_body.get_child(0) as CardInspectorPanel
 	inspector.card_requested.emit({"card_id": "svi-jete", "location": "附着能量"})
 	await settle()
 	main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
 	await settle()
-	check(abs(main.modal_scroll.scroll_vertical - saved_scroll) <= 2, "Nested inspection lost the reading position")
+	inspector = main.modal_body.get_child(0) as CardInspectorPanel
+	check(abs(inspector.rule_scroll.scroll_vertical - saved_scroll) <= 2, "Nested inspection lost the reading position")
 	await check_choices()
 	for kind in ["settings", "help", "deck", "zone"]:
 		match kind:
@@ -151,9 +154,9 @@ func check_choices() -> void:
 		check(not panel.content_row.vertical and panel.preview_panel.visible
 			and (panel.get_node("%OptionsScroll") as Control).visible,
 			"Choice options and explanation must stay side by side")
-		check(not panel.preview_toggle_button.visible and not panel.preview_return_button.visible,
+		check(not panel.preview_return_button.visible,
 			"Choice must not introduce a separate preview page")
-		var preview_scroll := panel.get_node("%PreviewScroll") as ScrollContainer
+		var preview_scroll := panel.preview_reader.rule_scroll
 		var options_scroll := panel._choice_scroll_container()
 		options_scroll.scroll_vertical = 100
 		await settle()

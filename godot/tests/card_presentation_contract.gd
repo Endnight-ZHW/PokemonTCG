@@ -70,7 +70,7 @@ func _run_contract() -> void:
 	_check(Array(dedenne_first_attack.get("cost", [])) == ["Psychic"], "Dedenne's first attack must use its printed Psychic cost")
 	var delibird_first_attack := Dictionary(Array(Dictionary(cards["sv2-delib"]).get("attacks", []))[0])
 	_check(Array(delibird_first_attack.get("cost", [])) == ["Colorless"] and int(delibird_first_attack.get("converted_energy_cost", 0)) == 1, "Delibird's first attack must use its printed Colorless cost")
-	_check("包含「宝可梦ex」" in str(Dictionary(Array(Dictionary(cards["svi-maus"]).get("abilities", []))[0]).get("text", "")), "Maushold ex ability copy must include Pokemon ex as printed")
+	_check("包含『宝可梦ex』" in str(Dictionary(Array(Dictionary(cards["svi-maus"]).get("abilities", []))[0]).get("text", "")), "Maushold ex ability copy must include Pokemon ex as printed")
 	_check("普通能量" not in JSON.stringify(cards) and "无色能量" in str(Array(Dictionary(cards["svg2-lume"]).get("rules", []))[1]), "Luminous Energy must use the localized Colorless Energy term")
 	_check(_matchup_value(Dictionary(cards["svd-absol"]), "weaknesses", "Grass") == "×2", "Darkness Pokemon must retain printed Grass weakness")
 	_check(_matchup_value(Dictionary(cards["svd-doduo"]), "weaknesses", "Lightning") == "×2", "Doduo must retain printed Lightning weakness")
@@ -160,6 +160,17 @@ func _run_contract() -> void:
 	_check("特殊规则" in ex_text, "Pokemon ex must expose its prize rule as a special rule")
 	var free_retreat_text := CardPresentation.detail_bbcode(catalog.get_card("svl-chat"), catalog)
 	_check("撤退费用：0" in free_retreat_text, "zero retreat cost must remain visible")
+	var reinforced := PokemonState.new("svm-orthworm")
+	reinforced.energy_card_ids.assign(["sv1-ener-8", "sv1-ener-8", "sv1-ener-8"])
+	reinforced.damage_counters = 4
+	var state := CardPresentation.battle_state(reinforced, catalog, 130)
+	_check(int(state.printed_hp) == 130 and int(state.maximum_hp) == 230 and int(state.current_hp) == 190,
+		"Structured state must distinguish printed HP from effective maximum and damage")
+	var absol_groups := CardPresentation.detail_groups(catalog.get_card("svd-absol"), catalog)
+	for group in absol_groups:
+		if group.kind == "attack" and group.name == "漩涡灾祸":
+			_check(group.cost == ["Darkness"] and group.damage_text == "" and "各造成10点伤害" in group.text,
+				"Structured attacks must preserve cost, effect and blank printed damage")
 
 
 func _load_json(path: String) -> Dictionary:

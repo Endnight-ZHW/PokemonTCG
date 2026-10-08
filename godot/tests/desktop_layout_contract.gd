@@ -146,14 +146,14 @@ func _check_battle() -> void:
 	var table: BattleTable = main.battle_screen
 	var detail := table.detail_panel as BattleDetailPanel
 	inside(detail, "Battle details")
-	check(detail.size.x >= 220 and detail.detail_text.size.y >= 48,
-		"Details lost their reading area: %s text=%s" % [detail.size, detail.detail_text.size])
+	check(detail.size.x >= 220 and detail.rule_scroll.size.y >= 48,
+		"Details lost their reading area: %s text=%s" % [detail.size, detail.rule_scroll.size])
 	var detail_rect := detail.get_global_rect()
 	geometries.append({"window": str(root.size), "main": str(main.size), "table": str(table.size), "detail": str(detail_rect), "planned": str(table.board_view._detail_layout_rect()), "own_prizes": str(table.render3d.layout.prize_capacity_rect(table.zones["own_prizes"])), "opponent_prizes": str(table.render3d.layout.prize_capacity_rect(table.zones["opponent_prizes"]))})
 	check(detail_rect.end.x < table.own_active.visual_global_bounds().position.x, "Details moved out of the left corridor")
 	check(not detail_rect.intersects(table.own_info.get_global_rect()), "Details cover player counters")
 	check(not detail_rect.intersects(table.own_allowance_row.get_global_rect()), "Details cover turn allowances")
-	for key in ["own_prizes", "opponent_prizes", "stadium"]:
+	for key in ["stadium"]:
 		var bounds := table.render3d.global_bounds(table.zones[key])
 		check(not detail_rect.grow(4).intersects(bounds), "Details cover " + key)
 	for view in table.slot_views.values():

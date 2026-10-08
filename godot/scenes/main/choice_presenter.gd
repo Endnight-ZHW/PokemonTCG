@@ -59,8 +59,10 @@ func submit_response(cancelled: bool = false) -> void:
 	_submitted_energy_draft = choice_model.energy_draft if not cancelled else null
 	_submitted_battle_id = battle_screen.get_instance_id() if is_instance_valid(battle_screen) else 0
 	var request := active_request
-	var response := ChoiceResponse.new(request.request_id,
-		[] if cancelled else selected_choice_ids.duplicate(), cancelled)
+	var response_ids: Array[String] = []
+	if not cancelled:
+		response_ids.assign(selected_choice_ids)
+	var response := ChoiceResponse.new(request.request_id, response_ids, cancelled)
 	if is_instance_valid(battle_screen):
 		battle_screen.clear_choice_targets()
 	host.close(response_ready.emit.bind(request, response))
@@ -524,18 +526,27 @@ func show_attack_confirmation(action: GameAction, state: GameState, p_catalog: C
 	var attacks: Array = p_catalog.get_card(active.card_id).get("attacks", [])
 	if action.attack_index() < 0 or action.attack_index() >= attacks.size():
 		return
-	var attack: Dictionary = attacks[action.attack_index()]
+	var card := p_catalog.get_card(active.card_id)
+	var groups := CardPresentation.detail_groups(card, p_catalog).filter(func(group: Dictionary) -> bool: return group.kind == "attack")
+	var attack: Dictionary = groups[action.attack_index()]
 	click_requested.emit()
 	host.open("确认攻击", "确认攻击并结束回合", "返回操作", false,
-		ModalSpec.battle(Vector2(640, 420), false, ModalSpec.SizeMode.FIT_CONTENT))
-	var body := Label.new()
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.add_theme_font_size_override("font_size", 18)
-	var damage := str(attack.get("damage_text", ""))
-	if damage.is_empty() and int(attack.get("damage", 0)) > 0:
-		damage = str(attack.get("damage", 0))
-	body.text = "%s 将使用「%s」。\n卡面伤害：%s\n%s\n\n攻击结算后将结束本回合。" % [p_catalog.card_name(active.card_id), str(attack.get("name", "招式")), damage if not damage.is_empty() else "见招式说明", str(attack.get("text", ""))]
+		ModalSpec.battle(Vector2(680, 500), false, ModalSpec.SizeMode.FIT_CONTENT))
+	var content := CardDetailContent.new()
+	content.configure(host.modal_body, p_catalog)
+	var body := content.vbox(16)
 	host.modal_body.add_child(body)
+	var identity := content.hbox(12)
+	identity.add_child(content.texture(FrontendAttributes.card_texture(p_catalog, active.card_id), Vector2(48, 67)))
+	var name_label := content.paragraph(p_catalog.card_name(active.card_id), 22, content.ink, true)
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	identity.add_child(name_label)
+	identity.add_child(content.attribute_icons(card, 24))
+	body.add_child(identity)
+	body.add_child(content.separator())
+	body.add_child(content.label("卡面招式", 13, content.muted))
+	body.add_child(content.attack_block(attack, false))
+	body.add_child(content.paragraph("攻击结算后将结束本回合。", 16, content.muted))
 	host.back_action = host.close.bind(on_cancel)
 	host.modal_cancel.pressed.connect(host.close.bind(on_cancel), CONNECT_ONE_SHOT)
 	host.modal_confirm.pressed.connect(func() -> void:

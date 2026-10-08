@@ -35,6 +35,11 @@ const STATUS_NAMES := {
 	"PARALYZED": "麻痹",
 	"CONFUSED": "混乱",
 }
+const TRAINER_USAGE_RULES := [
+	"在自己的回合可以使用任意张物品卡。",
+	"在自己的回合只可以使用1张支援者卡。",
+	"在自己的回合可以将任意张宝可梦道具卡，放于自己的宝可梦身上。每只宝可梦身上只可以放1张宝可梦道具卡，并保持附加状态。",
+]
 
 
 static func meta_text(card: Dictionary) -> String:
@@ -90,13 +95,11 @@ static func detail_groups(card: Dictionary, catalog: CardCatalog = null, pokemon
 		)]
 		if not ability_text.is_empty():
 			rows.append(_safe_text(ability_text))
-		sections.append({"kind": "ability", "title": str(ability.get("name", "")), "bbcode": "\n".join(rows)})
+		sections.append({"kind": "ability", "title": str(ability.get("name", "")), "text": ability_text, "bbcode": "\n".join(rows)})
 
 	for attack_value in card.get("attacks", []):
 		var attack := Dictionary(attack_value)
-		var damage_text := str(attack.get("damage_text", "")).strip_edges()
-		if damage_text.is_empty() and int(attack.get("damage", 0)) > 0:
-			damage_text = str(attack.get("damage", 0))
+		var damage_text := attack_damage_text(attack)
 		var heading := "招式 · %s" % _safe_text(str(attack.get("name", "")))
 		if not damage_text.is_empty():
 			heading += "　%s" % _safe_text(damage_text)
@@ -107,28 +110,18 @@ static func detail_groups(card: Dictionary, catalog: CardCatalog = null, pokemon
 		var attack_text := str(attack.get("text", "")).strip_edges()
 		if not attack_text.is_empty():
 			attack_rows.append(_safe_text(attack_text))
-		sections.append({"kind": "attack", "title": heading, "bbcode": "\n".join(attack_rows)})
+		sections.append({"kind": "attack", "title": heading, "name": str(attack.get("name", "")),
+			"cost": Array(attack.get("cost", [])).duplicate(), "damage_text": damage_text,
+			"text": attack_text, "bbcode": "\n".join(attack_rows)})
 
 	var provides := energy_cost_text(card.get("provides_energy", []))
 	if not provides.is_empty():
 		sections.append({"kind": "energy", "title": "提供能量", "bbcode": DesignTokens.rich_text("[color=#{success}][b]提供能量[/b][/color]\n%s") % provides})
 
-	var rules: Array[String] = []
-	var seen_rules: Dictionary = {}
-	var trainer_text := str(card.get("trainer_text", "")).strip_edges()
-	if not trainer_text.is_empty():
-		seen_rules[trainer_text] = true
-		rules.append(_safe_text(trainer_text))
-	for rule_value in card.get("rules", []):
-		var rule := str(rule_value).strip_edges()
-		if rule.is_empty() or seen_rules.has(rule):
-			continue
-		seen_rules[rule] = true
-		rules.append(_safe_text(rule))
-	if not rules.is_empty():
-		sections.append({"kind": "rules", "title": _rule_section_title(str(card.get("supertype", ""))), "bbcode": DesignTokens.rich_text("[color=#{target}][b]%s[/b][/color]\n%s") % [
-			_rule_section_title(str(card.get("supertype", ""))),
-			"\n".join(rules),
+	for rule_group in _printed_rule_groups(card):
+		sections.append({"kind": "rules", "title": rule_group.title, "bbcode": DesignTokens.rich_text("[color=#{target}][b]%s[/b][/color]\n%s") % [
+			rule_group.title,
+			_safe_text(str(rule_group.text)),
 		]})
 
 	if maximum_hp > 0:
@@ -146,18 +139,9 @@ static func detail_groups(card: Dictionary, catalog: CardCatalog = null, pokemon
 	return sections
 
 
-static func battle_state_bbcode(
-	pokemon: PokemonState,
-	catalog: CardCatalog,
-	printed_maximum: int,
-) -> String:
+static func battle_state(pokemon: PokemonState, catalog: CardCatalog, printed_hp: int) -> Dictionary:
 	if pokemon == null:
-		return ""
-	var effective_maximum := maxi(1, printed_maximum)
-	var current_hp := maxi(0, printed_maximum - pokemon.damage_counters * 10)
-	if catalog != null:
-		effective_maximum = maxi(1, pokemon.max_hp(catalog))
-		current_hp = pokemon.current_hp(catalog)
+		return {}
 	var states: Array[String] = []
 	for status in pokemon.status_conditions:
 		states.append(str(STATUS_NAMES.get(str(status).to_upper(), status)))
@@ -165,6 +149,51 @@ static func battle_state_bbcode(
 		states.append("无法攻击")
 	if pokemon.has_attack_gate("dazzled"):
 		states.append("受幻惑影响")
+	return {"printed_hp": printed_hp,
+		"maximum_hp": pokemon.max_hp(catalog) if catalog != null else printed_hp,
+		"current_hp": pokemon.current_hp(catalog) if catalog != null else maxi(0, printed_hp - pokemon.damage_counters * 10),
+		"damage": pokemon.damage_counters * 10, "statuses": states,
+		"used_abilities": pokemon.used_abilities.duplicate()}
+
+
+static func attachment_groups(pokemon: PokemonState) -> Array[Dictionary]:
+	var groups: Array[Dictionary] = []
+	if pokemon == null:
+		return groups
+	if not pokemon.evolution_stack_ids.is_empty():
+		var chain: Array[Dictionary] = []
+		for id in pokemon.evolution_stack_ids:
+			chain.append({"card_id": id, "count": 1, "hint": "进化前"})
+		chain.append({"card_id": pokemon.card_id, "count": 1, "hint": "当前"})
+		groups.append({"kind": "evolution", "title": "进化链", "rows": chain})
+	if not pokemon.energy_card_ids.is_empty():
+		var counts := energy_card_counts(pokemon.energy_card_ids)
+		var energies: Array[Dictionary] = []
+		for id in counts:
+			energies.append({"card_id": id, "count": counts[id], "hint": ""})
+		groups.append({"kind": "energy", "title": "附着能量  ·  %d 张" % pokemon.energy_card_ids.size(), "rows": energies})
+	if not pokemon.attached_tool_id.is_empty():
+		groups.append({"kind": "tool", "title": "宝可梦道具", "rows": [
+			{"card_id": pokemon.attached_tool_id, "count": 1, "hint": "已附着"}]})
+	return groups
+
+
+static func energy_card_counts(ids: Array) -> Dictionary:
+	var counts: Dictionary = {}
+	for id in ids:
+		counts[id] = int(counts.get(id, 0)) + 1
+	return counts
+
+
+static func battle_state_bbcode(
+	pokemon: PokemonState,
+	catalog: CardCatalog,
+	printed_maximum: int,
+) -> String:
+	if pokemon == null:
+		return ""
+	var state := battle_state(pokemon, catalog, printed_maximum)
+	var states: Array = state.statuses
 	var tool_name := "无"
 	if not pokemon.attached_tool_id.is_empty():
 		tool_name = (
@@ -175,8 +204,8 @@ static func battle_state_bbcode(
 	return (
 		DesignTokens.rich_text("[font_size=12][color=#{success}][b]当前状态[/b][/color][/font_size]  ")
 		+ DesignTokens.rich_text("[color=#{text}][b]HP %d／%d[/b][/color]  ") % [
-			current_hp,
-			effective_maximum,
+			state.current_hp,
+			maxi(1, int(state.maximum_hp)),
 		]
 		+ DesignTokens.rich_text("[color=#{muted}]伤害 %d[/color]\n") % (pokemon.damage_counters * 10)
 		+ DesignTokens.rich_text("[color=#{muted}]状态[/color] %s　") % (
@@ -214,9 +243,7 @@ static func _compact_rule_bbcode(card: Dictionary) -> String:
 
 	for attack_value in card.get("attacks", []):
 		var attack := Dictionary(attack_value)
-		var damage_text := str(attack.get("damage_text", "")).strip_edges()
-		if damage_text.is_empty() and int(attack.get("damage", 0)) > 0:
-			damage_text = str(attack.get("damage", 0))
+		var damage_text := attack_damage_text(attack)
 		var heading := DesignTokens.rich_text("[color=#{accent}][font_size=16][b]%s[/b][/font_size][/color]") % _safe_text(
 			str(attack.get("name", ""))
 		)
@@ -237,22 +264,10 @@ static func _compact_rule_bbcode(card: Dictionary) -> String:
 	if not provides.is_empty():
 		sections.append(DesignTokens.rich_text("[color=#{success}][font_size=15][b]提供能量[/b][/font_size][/color]\n%s") % provides)
 
-	var rules: Array[String] = []
-	var seen_rules: Dictionary = {}
-	var trainer_text := str(card.get("trainer_text", "")).strip_edges()
-	if not trainer_text.is_empty():
-		seen_rules[trainer_text] = true
-		rules.append(_safe_text(trainer_text))
-	for rule_value in card.get("rules", []):
-		var rule := str(rule_value).strip_edges()
-		if rule.is_empty() or seen_rules.has(rule):
-			continue
-		seen_rules[rule] = true
-		rules.append(_safe_text(rule))
-	if not rules.is_empty():
+	for rule_group in _printed_rule_groups(card):
 		sections.append(DesignTokens.rich_text("[color=#{target}][font_size=14][b]%s[/b][/font_size][/color]\n%s") % [
-			_rule_section_title(str(card.get("supertype", ""))),
-			"\n".join(rules),
+			rule_group.title,
+			_safe_text(str(rule_group.text)),
 		])
 
 	if maximum_hp > 0:
@@ -288,6 +303,15 @@ static func accessibility_text(
 	return tags.sub(value, "", true).replace("\n", "；")
 
 
+## An explicit blank is printed without a number, even if the engine uses base
+## damage for its effect (e.g. Absol's damage to every opposing Pokemon).
+static func attack_damage_text(attack: Dictionary) -> String:
+	if attack.has("damage_text"):
+		return str(attack["damage_text"]).strip_edges()
+	var damage := int(attack.get("damage", 0))
+	return str(damage) if damage > 0 else ""
+
+
 static func energy_cost_text(values: Array) -> String:
 	var counts: Dictionary = {}
 	var order: Array[String] = []
@@ -321,23 +345,13 @@ static func _current_state_bbcode(
 	printed_maximum: int,
 ) -> String:
 	var rows: Array[String] = []
-	var effective_maximum := printed_maximum
-	var current_hp := maxi(0, printed_maximum - pokemon.damage_counters * 10)
-	if catalog != null:
-		effective_maximum = maxi(1, pokemon.max_hp(catalog))
-		current_hp = pokemon.current_hp(catalog)
+	var state := battle_state(pokemon, catalog, printed_maximum)
 	rows.append("HP %d／%d　·　伤害 %d" % [
-		current_hp,
-		effective_maximum,
-		pokemon.damage_counters * 10,
+		state.current_hp,
+		maxi(1, int(state.maximum_hp)) if catalog != null else printed_maximum,
+		state.damage,
 	])
-	var states: Array[String] = []
-	for status in pokemon.status_conditions:
-		states.append(str(STATUS_NAMES.get(str(status).to_upper(), status)))
-	if pokemon.attack_is_locked():
-		states.append("无法攻击")
-	if pokemon.has_attack_gate("dazzled"):
-		states.append("受幻惑影响")
+	var states: Array = state.statuses
 	rows.append("特殊状态：%s" % ("、".join(states) if not states.is_empty() else "无"))
 
 	var energy_counts: Dictionary = {}
@@ -368,6 +382,28 @@ static func _current_state_bbcode(
 	if not pokemon.used_abilities.is_empty():
 		rows.append("本回合已使用特性：%s" % "、".join(pokemon.used_abilities))
 	return DesignTokens.rich_text("[color=#{success}][b]当前对战状态[/b][/color]\n%s") % "\n".join(rows)
+
+
+static func _printed_rule_groups(card: Dictionary) -> Array[Dictionary]:
+	var groups: Array[Dictionary] = []
+	var effects: Array[String] = []
+	var usage: Array[String] = []
+	var seen: Dictionary = {}
+	var is_trainer := str(card.get("supertype", "")).to_lower() == "trainer"
+	for value in [card.get("trainer_text", "")] + Array(card.get("rules", [])):
+		var rule := str(value).strip_edges()
+		if rule.is_empty() or seen.has(rule):
+			continue
+		seen[rule] = true
+		if is_trainer and rule in TRAINER_USAGE_RULES:
+			usage.append(rule)
+		else:
+			effects.append(rule)
+	if not effects.is_empty():
+		groups.append({"title": _rule_section_title(str(card.get("supertype", ""))), "text": "\n".join(effects)})
+	if not usage.is_empty():
+		groups.append({"title": "使用规则", "text": "\n".join(usage)})
+	return groups
 
 
 static func _rule_section_title(supertype: String) -> String:

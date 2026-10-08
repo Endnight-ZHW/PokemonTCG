@@ -49,7 +49,7 @@ func run(ui: Control) -> void:
 					push_error("Preview or player information covers physical Prizes at %s: %s" % [dimensions, overlay.name])
 					harness._finish(1)
 					return
-		if table.detail_panel.visible and dimensions.x >= 1280 and (table.detail_panel as BattleDetailPanel).detail_text.size.y < 48.0:
+		if table.detail_panel.visible and dimensions.x >= 1280 and (table.detail_panel as BattleDetailPanel).rule_scroll.size.y < 48.0:
 			push_error("The detail corridor must retain readable card text")
 			harness._finish(1)
 			return
