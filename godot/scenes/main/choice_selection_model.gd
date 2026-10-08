@@ -7,6 +7,7 @@ var state: GameState
 var catalog: CardCatalog
 var view_player := 0
 var selected_ids: Array[String] = []
+var energy_draft: EnergyDistributionModel
 
 func _init(p_catalog: CardCatalog = null) -> void:
 	catalog = p_catalog if p_catalog != null else CardCatalog.shared()
@@ -22,14 +23,32 @@ func configure(
 	catalog = p_catalog
 	view_player = p_view_player
 	selected_ids.clear()
+	energy_draft = null
+	if request != null and request.request_type == "distribute_energy":
+		var view := _choice_energy_distribution_view(request, _choice_energy_cards(request))
+		if not view.is_empty():
+			energy_draft = EnergyDistributionModel.new()
+			energy_draft.configure(request, view)
 
 
 func clear() -> void:
 	selected_ids.clear()
+	energy_draft = null
 
 
 func replace(values: Array[String]) -> void:
 	selected_ids.assign(values)
+	sync_energy_draft()
+
+
+func sync_energy_draft() -> void:
+	if energy_draft != null and energy_draft.response_ids() != selected_ids:
+		energy_draft.import_ids(selected_ids)
+
+
+func refresh_energy_ids() -> void:
+	if energy_draft != null:
+		selected_ids.assign(energy_draft.response_ids())
 
 
 func response(cancelled: bool = false) -> ChoiceResponse:
@@ -41,6 +60,11 @@ func response(cancelled: bool = false) -> ChoiceResponse:
 func toggle(option_id: String, blocked_reason: String = "") -> String:
 	if request == null:
 		return "当前选择请求已失效"
+	if energy_draft != null:
+		sync_energy_draft()
+		var reason := energy_draft.assign(option_id)
+		refresh_energy_ids()
+		return reason
 	var existing := selected_ids.find(option_id)
 	if not request.allow_duplicates and existing >= 0:
 		selected_ids.remove_at(existing)
@@ -56,15 +80,11 @@ func toggle(option_id: String, blocked_reason: String = "") -> String:
 	return ""
 
 
-func rewind(index: int) -> bool:
-	if index < 0 or index >= selected_ids.size():
-		return false
-	while selected_ids.size() > index:
-		selected_ids.pop_back()
-	return true
-
-
 func undo() -> bool:
+	if energy_draft != null:
+		var changed := energy_draft.undo()
+		refresh_energy_ids()
+		return changed
 	if selected_ids.is_empty():
 		return false
 	selected_ids.pop_back()
@@ -227,7 +247,7 @@ func _choice_energy_distribution_view(
 	if request == null or request.request_type != "distribute_energy":
 		return {}
 	var source_card_ids: Array[String] = []
-	source_card_ids.assign(presentation_card_ids)
+	var source_card_ids_by_index: Dictionary = {}
 	var targets_by_key: Dictionary = {}
 	var target_order: Array[String] = []
 	for option_value in request.options:
@@ -245,6 +265,12 @@ func _choice_energy_distribution_view(
 			continue
 		var pokemon := state.get_player(player_idx).get_pokemon(slot)
 		if pokemon == null:
+			continue
+		if not str(ref.get("card_id", "")).is_empty() and str(ref.card_id) != pokemon.card_id:
+			continue
+		var energy_index := _choice_distribution_energy_index(option)
+		var source_card_id := _choice_distribution_energy_card_id(option)
+		if option_id.begins_with("energy:") and (energy_index < 0 or source_card_id.is_empty()):
 			continue
 		var target_key := "%d:%s" % [player_idx, slot]
 		if not targets_by_key.has(target_key):
@@ -276,13 +302,8 @@ func _choice_energy_distribution_view(
 			}
 			target_order.append(target_key)
 		var model: Dictionary = targets_by_key[target_key]
-		var energy_index := _choice_distribution_energy_index(option)
 		if energy_index >= 0:
-			var source_card_id := _choice_distribution_energy_card_id(option)
-			while source_card_ids.size() <= energy_index:
-				source_card_ids.append("")
-			if source_card_ids[energy_index].is_empty():
-				source_card_ids[energy_index] = source_card_id
+			source_card_ids_by_index[energy_index] = source_card_id
 			var option_ids: Dictionary = model.get(
 				"option_ids_by_energy_index", {})
 			option_ids[energy_index] = option_id
@@ -292,11 +313,29 @@ func _choice_energy_distribution_view(
 		targets_by_key[target_key] = model
 	if target_order.is_empty():
 		return {}
-	while source_card_ids.size() < request.max_select:
-		source_card_ids.append("")
+	# Native source IDs are identities, not positions in presentation.card_ids.
+	# Search effects cap duplicate card types and can expose indices 0,1,3,4.
+	# Build a dense visible list from real options, retaining their original IDs.
+	var source_indices: Array = source_card_ids_by_index.keys()
+	source_indices.sort()
+	var display_index_by_source: Dictionary = {}
+	for source_index in source_indices:
+		display_index_by_source[source_index] = source_card_ids.size()
+		source_card_ids.append(str(source_card_ids_by_index[source_index]))
+	if source_indices.is_empty():
+		# Older target-only requests have no per-card identity to decode.
+		source_card_ids.assign(presentation_card_ids)
+		while source_card_ids.size() < request.max_select:
+			source_card_ids.append("")
 	var targets: Array[Dictionary] = []
 	for target_key in target_order:
-		targets.append(Dictionary(targets_by_key[target_key]))
+		var target := Dictionary(targets_by_key[target_key])
+		var indexed: Dictionary = target.option_ids_by_energy_index
+		var display_options: Dictionary = {}
+		for source_index in indexed:
+			display_options[display_index_by_source[source_index]] = indexed[source_index]
+		target.option_ids_by_energy_index = display_options
+		targets.append(target)
 	return {
 		"card_ids": source_card_ids,
 		"targets": targets,
@@ -585,7 +624,7 @@ func _choice_has_cancel_action_checkpoint(request: ChoiceView = null) -> bool:
 func _choice_cancel_cta(request: ChoiceView) -> String:
 	if request == null or not request.can_cancel:
 		return ""
-	return "取消使用此卡" if _choice_has_cancel_action_checkpoint(request) else "取消"
+	return "取消使用此卡" if _choice_has_cancel_action_checkpoint(request) else "取消选择"
 
 func _choice_confirm_cta(request: ChoiceView, selected_count: int) -> String:
 	if request == null:
@@ -597,7 +636,7 @@ func _choice_confirm_cta(request: ChoiceView, selected_count: int) -> String:
 			else "继续结算"
 		)
 	if request.min_select == 0 and selected_count == 0:
-		return "不选择并继续"
+		return "跳过可选效果"
 	if request.request_type == "select_retreat_payment":
 		var required_units := int(_choice_presentation(request).get(
 			"required_units", 0))
@@ -731,6 +770,9 @@ func _choice_selection_is_complete(
 ) -> bool:
 	if request == null:
 		return false
+	if energy_draft != null and request == self.request:
+		sync_energy_draft()
+		return selected_ids.size() == energy_draft.assignments.size() and energy_draft.is_complete()
 	if (
 		selected_ids.size() < request.min_select
 		or selected_ids.size() > request.max_select
@@ -749,6 +791,8 @@ func _choice_category_label(category: String) -> String:
 	}.get(category, category))
 
 func _choice_addition_blocked_reason(request: ChoiceView, option_id: String) -> String:
+	if energy_draft != null and request == self.request:
+		return energy_draft.blocked_reason(option_id)
 	var option := _choice_option_by_id(request, option_id)
 	if option.is_empty():
 		return "该选择项已失效，请重新选择"
@@ -849,6 +893,13 @@ func _choice_addition_blocked_reason(request: ChoiceView, option_id: String) -> 
 func _choice_option_disabled_reasons(request: ChoiceView) -> Dictionary:
 	var reasons: Dictionary = {}
 	if request == null:
+		return reasons
+	if energy_draft != null and request == self.request:
+		for option in request.options:
+			var id := str(option.get("option_id", ""))
+			var reason := energy_draft.blocked_reason(id)
+			if not reason.is_empty():
+				reasons[id] = reason
 		return reasons
 	for option_value in request.options:
 		var option: Dictionary = option_value

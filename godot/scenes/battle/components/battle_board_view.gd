@@ -143,10 +143,10 @@ func _refresh_actions() -> void:
 	if table.hud:
 		table.hud.update_phase(table.state_ref, table.view_player, table.ai_thinking, table.game_mode, table.action_rows)
 	table.phase_advance_button = table.hud.phase_advance_button if table.hud else null
-	if table.phase_advance_button and (table.is_interaction_locked() or table.active_choice != null or not table.choice_target_options.is_empty()):
+	if table.phase_advance_button and (table.is_interaction_locked() or table.active_choice != null or not table.choice_target_options.is_empty() or not table._selected_action_group_key.is_empty()):
 		table.phase_advance_button.disabled = true
 		table.phase_advance_button.set_meta("action", null)
-		table.phase_advance_button.text = "完成当前选择" if table.active_choice != null else "请稍候"
+		table.phase_advance_button.text = "完成当前选择" if table.active_choice != null or not table._selected_action_group_key.is_empty() else "请稍候"
 
 	# CardView only receives read-only legality state. It never creates action
 	# buttons and never derives rules from card data.
@@ -1112,12 +1112,17 @@ func _guidance() -> Dictionary:
 	if not table.choice_target_options.is_empty() and table.active_choice == null and table.interaction_wait_message().is_empty():
 		return {"text": table.choice_target_prompt, "tone": "required", "can_cancel": false, "can_back": false}
 	var groups := table.interaction_router.action_groups_for_source(table.selected_entity_key)
-	return BattleGuidanceModel.resolve(
+	var guidance := BattleGuidanceModel.resolve(
 		table.state_ref, table.view_player, table.selected_entity_key, groups,
 		table._selected_action_group_key, table.active_choice, table.choice_selected_count,
 		table.interaction_wait_message(), _disabled_reason_for_source(table.selected_entity_key), table.ai_thinking,
 		table.choice_target_prompt,
 	)
+	if str(guidance.get("tone", "")) == "target":
+		var source := _source_control_for_key(table.selected_entity_key) as CardView
+		if source != null and not source.card_id.is_empty():
+			guidance.text = "%s：%s" % [table.catalog.card_name(source.card_id), guidance.text]
+	return guidance
 
 
 func _current_task_hint() -> String:
@@ -1254,13 +1259,13 @@ func _target_hint_for_action(action: GameAction) -> String:
 		return "选择"
 	match action.kind:
 		"PLAY_BASIC":
-			return "放置"
+			return "放置到这里"
 		"EVOLVE":
-			return "进化"
+			return "进化这只"
 		"ATTACH_ENERGY":
-			return "赋能"
+			return "附着到这里"
 		"RETREAT":
-			return "撤退"
+			return "替换上场"
 		"PLAY_TRAINER":
 			var hand_index := action.hand_index()
 			if table.state_ref and hand_index >= 0:
@@ -1355,7 +1360,6 @@ func _present_popover_rows(
 		var source_card := source_control as CardView
 		if not source_card.card_id.is_empty():
 			title = str(table.catalog.get_card(source_card.card_id).get("name", title))
-	table.action_popover.set_compact_preferred(false)
 	table.action_popover.show_for_control(
 		display_rows,
 		source_control,
@@ -1473,7 +1477,6 @@ func _reposition_action_popover() -> void:
 	if source_control == null:
 		table.action_popover.dismiss(false)
 		return
-	table.action_popover.set_compact_preferred(false)
 	var avoidance_rows := table.interaction_router.rows_for_source(table._popover_source_key)
 	if table._forced_popover_source_key == table._popover_source_key:
 		avoidance_rows = table._forced_popover_rows
@@ -1516,8 +1519,9 @@ func _on_popover_action_chosen(action: GameAction) -> void:
 		table.set_task_hint("操作已更新，请重新选择卡牌按钮")
 		return
 	if bool(group.get("requires_target", false)):
-		table._selected_action_group_key = str(group.get("key", ""))
-		table._popover_source_key = ""
+		table.interaction_state.begin_target(str(group.get("key", "")))
+		table.hide_card_detail()
+		_refresh_actions()
 		_refresh_target_hints()
 		_refresh_header()
 		return
@@ -1537,11 +1541,7 @@ func _on_popover_dismissed() -> void:
 
 func _reset_action_interaction_state(dismiss_popover := true) -> void:
 	table.clear_task_hint()
-	table._selected_action_group_key = ""
-	table._popover_dismissed_source_key = ""
-	table._popover_source_key = ""
-	table._forced_popover_rows.clear()
-	table._forced_popover_source_key = ""
+	table.interaction_state.reset_operation()
 	if dismiss_popover and table.action_popover and table.action_popover.visible:
 		table.action_popover.dismiss(false)
 
@@ -1737,6 +1737,6 @@ func return_to_action_menu() -> void:
 	if table.active_choice != null or table.is_interaction_locked():
 		return
 	_reset_action_interaction_state()
-	_refresh_action_popover()
+	_refresh_actions()
 	_refresh_target_hints()
 	_refresh_header()

@@ -10,9 +10,9 @@ const _TWEEN_META := &"frontend_motion_tween"
 static func animation_mode() -> String:
 	var settings := _settings()
 	if settings == null:
-		return "standard"
+		return MotionPolicy.DEFAULT_MODE
 	var value := str(settings.get("animation_mode"))
-	return value if value in ["cinematic", "standard", "fast", "reduced"] else "standard"
+	return value if value in ["cinematic", "standard", "fast", "reduced"] else MotionPolicy.DEFAULT_MODE
 
 
 static func is_reduced() -> bool:

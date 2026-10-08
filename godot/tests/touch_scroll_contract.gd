@@ -358,6 +358,10 @@ func check_choices() -> void:
 func check_energy(main: Control) -> void:
 	root.size = Vector2i(900, 540)
 	var state := UIPreviewStateFactory.battle_state()
+	# The wider distribution workspace fits the old two-target fixture without
+	# scrolling. Fill the bench to exercise a real scrollable target list.
+	for index in range(5):
+		state.players[0].bench[index] = state.players[0].active.clone_state()
 	main.state = state
 	main.current_view_player = 0
 	var energies: Array[String] = ["svi-jete", "svi-dtur"]
@@ -365,11 +369,12 @@ func check_energy(main: Control) -> void:
 	var options: Array[Dictionary] = []
 	for slot_value in targets:
 		var slot := str(slot_value)
+		var target_id := state.players[0].get_pokemon(slot).card_id
 		for index in range(2):
 			options.append({
-				"option_id": "energy:%d:%s->pokemon:0:%s:svi-chim" % [index, energies[index], slot],
-				"label": "小火焰猴",
-				"ref": EntityRef.new("pokemon", 0, "", slot, -1, "", "svi-chim").to_dict(),
+				"option_id": "energy:%d:%s->pokemon:0:%s:%s" % [index, energies[index], slot, target_id],
+				"label": main.catalog.card_name(target_id),
+				"ref": EntityRef.new("pokemon", 0, "", slot, -1, "", target_id).to_dict(),
 			})
 	var choice := ChoiceView.new("touch-energy", state.revision, "distribute_energy", 0,
 		"为每张能量选择目标。", options, 0, 2, false, false,

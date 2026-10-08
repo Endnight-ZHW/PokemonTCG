@@ -11,7 +11,8 @@ Windows 使用 Compatibility，移动端使用 Forward Mobile（Android Vulkan�
 - Native ABI 2 `ptcg_core` 是唯一规则引擎；GDScript 只负责会话绑定、UI、网络和表现，
   同一 C++ 核心通过研究目录中的显式 pybind 服务离线实验。
 - 响应式三维实体牌桌、卡牌正反面与厚度、空间动画、三维硬币、音频和移动端自动画质分档。
-- 战斗统一通过选卡后的按钮使用卡牌；顶部任务条、合法目标及可用卡光边引导操作，攻击和撤退提供确认。手牌滑动仅用于浏览。
+- 战斗统一通过选卡后的按钮使用卡牌；顶部任务条说明来源和下一步，目标以光边和文字标记。选目标时提供返回操作／取消操作并暂停结束回合；攻击和撤退提供确认。手牌滑动仅用于浏览。所有卡牌操作菜单统一纵向排列，内容超出可见高度时只上下滚动。
+- 能量分配支持任意顺序选能量、独立改派、移除及撤销清空；共同目标同步调整，最后一次确认。目标列表优先展示，卡牌详情按需打开，操作工具固定在底部。
 - 首页使用独立 `HomePalette`：暖白底、深蓝标题、红／蓝／金色图标徽章与柔和立体按钮，设置和帮助位于右上角。
   右侧保留收窄的皮质翻盖牌盒、主卡、镂空卡架和两张卡背，并增加展示硬币。盒身无文字，以素色皮革为主，十种属性各有右下角小面积同色压纹；盒盖和侧面不铺花纹。
   点击牌盒开合、主卡直接放大、硬币翻转，拖动转动视角；右侧不设文字提示、浮动图标或手动切换按钮。
@@ -40,7 +41,7 @@ Windows 使用 Compatibility，移动端使用 Forward Mobile（Android Vulkan�
 ### 可视化编辑与学习入口
 
 - 三维对战的结构、资源边界、画质策略和验证命令见
-  [`../docs/GODOT_DEVELOPMENT_GUIDE.md`](../docs/GODOT_DEVELOPMENT_GUIDE.md)。新安装默认标准动画；
+  [`../docs/GODOT_DEVELOPMENT_GUIDE.md`](../docs/GODOT_DEVELOPMENT_GUIDE.md)。新安装默认电影化动画；
   Android 对局自动从中画质 60 FPS 开始，持续性能不足时在动作完成后降至低画质 30 FPS。
 
 - 打开 `res://tools/ui_workbench.tscn` 后按 `F6`，可安全预览标题、选牌、
@@ -164,7 +165,7 @@ LAN 与 Relay 另有完整实战回归；研究模型不参与产品门禁。
 `title-hover.png` 检查鼠标悬停，`title-rotated.png` 检查三维展示卡替换，
 `title-low-reduced.png` 检查静态降级；目录还包含 LAN/Relay 概览、网络状态、设置滚动、加载和
 Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
-`choice-energy-compact.png` 的逐张能量分配基线，用于人工检查全屏背景、视觉层级、目标状态、
+`choice-energy-compact.png` 的能量分配工作区基线，用于人工检查全屏背景、视觉层级、目标状态、
 溢出和长文案。`choice-switch-confirm.png`、`choice-treasure-energy.png`、
 `choice-treasure-energy-compact.png` 与 `choice-exp-share-confirm.png` 额外覆盖换位、宝藏能量和
 学习装置的真实语义选择；`choice-deck-search-valid.png`、`choice-deck-search-all.png` 与
@@ -225,3 +226,5 @@ Toast，以及 `choice-energy.png`、`choice-energy-1280x720.png`、
 龙属性角标采用标准矢量轮廓与 256px 金色球面处理，来源见 `assets/ui/frontend/README.md`；`res://tests/home_badge_style_review.gd` 输出水／草／钢／龙的同尺寸与同灯光对照。
 使用图形 Godot 并加 `-- --capture`，可生成 `build/home-redesign/after/` 的首页、全部牌组、按钮状态、开盒、赏卡和翻币截图。前台图形验收另采集三档画质的空闲与动作期间 P95 帧时间。
 `ui_preview.gd -- --home-review-only` 可输出三套牌组和对应侧视角截图。
+
+自动化测试通过 `Initialize-GodotTestEnvironment` 将用户数据隔离到 `.test_tmp/godot-userdata/`，测试保存设置不会覆盖 `.tools/appdata/` 的便携客户端设置或系统用户设置。

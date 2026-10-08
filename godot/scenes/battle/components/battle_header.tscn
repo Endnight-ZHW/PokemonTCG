@@ -141,4 +141,4 @@ custom_minimum_size = Vector2(52, 48)
 focus_mode = 0
 theme_type_variation = &"BattleCompactButton"
 theme_override_font_sizes/font_size = 14
-text = "取消"
+text = "取消操作"

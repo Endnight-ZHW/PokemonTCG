@@ -605,7 +605,7 @@ func _show_choice() -> void:
 
 
 func _show_energy_choice() -> void:
-	preview_caption.text = "能量分配选择 · 逐张目标、已有能量与分配后预览"
+	preview_caption.text = "能量分配 · 任意选中、独立改派与撤销"
 	var center := _centered_panel(Vector2(980, 660), ModalSpec.Surface.BATTLE)
 	var panel := CHOICE_SCENE.instantiate() as ChoicePanel
 	center.add_child(panel)
@@ -657,28 +657,43 @@ func _show_energy_choice() -> void:
 			},
 		},
 	]
+	var request := ChoiceView.new("workbench-energy", 0, "distribute_energy", 0, "", [], 2, 2, false, false, {"max_per_target": 2})
+	var draft := EnergyDistributionModel.new()
+	draft.configure(request, {"card_ids": ["svi-jete", "svi-dtur"], "targets": models})
+	panel.energy_distribution.draft = draft
 	panel.configure_energy_distribution(["svi-jete", "svi-dtur"], models, catalog)
-	var selected: Array[String] = []
+	var refresh := func() -> void:
+		panel.refresh_selection(draft.response_ids(), 2, false)
+		var reasons: Dictionary = {}
+		for model in models:
+			for id in Dictionary(model.option_ids_by_energy_index).values():
+				var reason := draft.blocked_reason(str(id))
+				if not reason.is_empty():
+					reasons[str(id)] = reason
+		panel.set_option_disabled_reasons(reasons)
 	panel.option_toggled.connect(func(option_id: String) -> void:
-		if selected.size() < 2:
-			selected.append(option_id)
-		panel.refresh_selection(selected, 2, false)
+		var reason := draft.assign(option_id)
+		refresh.call()
+		if not reason.is_empty():
+			panel.show_blocked_reason(reason)
 	)
 	panel.undo_requested.connect(func() -> void:
-		if not selected.is_empty():
-			selected.pop_back()
-		panel.refresh_selection(selected, 2, false)
+		draft.undo()
+		refresh.call()
 	)
 	panel.clear_requested.connect(func() -> void:
-		selected.clear()
-		panel.refresh_selection(selected, 2, false)
+		draft.clear_assignments()
+		refresh.call()
+	)
+	panel.energy_remove_requested.connect(func() -> void:
+		draft.remove_current()
+		refresh.call()
 	)
 	panel.energy_index_requested.connect(func(index: int) -> void:
-		while selected.size() > index:
-			selected.pop_back()
-		panel.refresh_selection(selected, 2, false)
+		draft.select_energy(index)
+		refresh.call()
 	)
-	panel.refresh_selection(selected, 2, false)
+	refresh.call()
 
 
 func _show_help() -> void:

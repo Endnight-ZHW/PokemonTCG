@@ -100,7 +100,10 @@ const ZERO_CARD_SEMANTIC_MOTION_TYPES: Array[String] = [
 var state_ref: GameState
 var catalog: CardCatalog = CardCatalog.shared()
 var view_player := 0
-var selected_entity_key := ""
+var interaction_state := BattleInteractionState.new()
+var selected_entity_key: String:
+	get: return interaction_state.source_key
+	set(value): interaction_state.source_key = value
 var action_rows: Array[Dictionary] = []
 var game_mode := "local"
 var ai_thinking := false
@@ -155,17 +158,24 @@ var hand_views: Array[CardView] = []
 var opponent_hand_views: Array[CardView] = []
 var zones: Dictionary = {}
 var slot_views: Dictionary = {}
-var _selected_action_group_key := ""
-var _last_selected_source_key := ""
-var _popover_dismissed_source_key := ""
-var _popover_source_key := ""
-var _forced_popover_rows: Array[Dictionary] = []
-var _forced_popover_source_key := ""
+var _selected_action_group_key: String:
+	get: return interaction_state.group_key
+	set(value): interaction_state.group_key = value
+var _popover_dismissed_source_key: String:
+	get: return interaction_state.dismissed_source
+	set(value): interaction_state.dismissed_source = value
+var _popover_source_key: String:
+	get: return interaction_state.popover_source
+	set(value): interaction_state.popover_source = value
+var _forced_popover_rows: Array[Dictionary]:
+	get: return interaction_state.forced_rows
+	set(value): interaction_state.forced_rows = value
+var _forced_popover_source_key: String:
+	get: return interaction_state.forced_source
+	set(value): interaction_state.forced_source = value
 var _attachment_popover_source_key := ""
 var _hand_layout_geometry_signature := ""
 var _hand_scroll_center_generation := 0
-var _last_action_rows_signature := ""
-var _last_selected_entity_identity := ""
 var _detail_content_signature := ""
 var _pending_detail_card_id := ""
 var _pending_detail_pokemon: PokemonState
@@ -298,6 +308,9 @@ func cancel_action_selection() -> void:
 		return
 	cancel_pointer_gestures()
 	board_view._reset_action_interaction_state()
+	hide_card_detail()
+	if attachment_choice_popover:
+		attachment_choice_popover.dismiss()
 	selection_clear_requested.emit(selected_entity_key)
 
 
@@ -310,6 +323,12 @@ func handle_back() -> bool:
 		return true
 	if attachment_choice_popover and attachment_choice_popover.visible:
 		attachment_choice_popover.dismiss()
+		return true
+	if active_choice != null:
+		if active_choice.player == view_player and active_choice.can_cancel:
+			cancel_action_selection()
+		else:
+			set_task_hint("请完成当前必选步骤后继续" if active_choice.player == view_player else "等待对手完成选择")
 		return true
 	if is_presentation_busy():
 		return false
@@ -582,24 +601,12 @@ func update_view(
 		and selected_entity_key != _detail_passthrough_key
 	):
 		_detail_passthrough_key = ""
-	var next_action_rows_signature := board_view._action_rows_semantic_signature(action_rows)
-	var next_selected_entity_identity := _selected_entity_identity()
-	var interaction_context_changed := (
-		selected_entity_key != _last_selected_source_key
-		or next_action_rows_signature != _last_action_rows_signature
-		or next_selected_entity_identity != _last_selected_entity_identity
-	)
-	if interaction_context_changed:
-		var target_selection_invalidated := (
-			not _selected_action_group_key.is_empty()
-			and selected_entity_key == _last_selected_source_key
-		)
+	var context_change := interaction_state.reconcile(
+		_selected_entity_identity(), board_view._action_rows_semantic_signature(action_rows))
+	if context_change.changed:
 		board_view._reset_action_interaction_state()
-		if target_selection_invalidated:
+		if context_change.invalidated:
 			interaction_invalidated.emit()
-	_last_selected_source_key = selected_entity_key
-	_last_action_rows_signature = next_action_rows_signature
-	_last_selected_entity_identity = next_selected_entity_identity
 	interaction_router.rebuild(board_view._routed_action_rows())
 	_update_ai_thinking_clock(p_ai_thinking)
 	ai_thinking = p_ai_thinking

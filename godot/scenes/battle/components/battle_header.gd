@@ -63,6 +63,7 @@ func update_header(state: GameState, view_player: int, ai_thinking: bool, task_h
 func apply_guidance(value: Dictionary) -> void:
 	_guidance = value
 	get_node("RightInset/CancelSelectionButton").visible = bool(value.get("can_cancel", false))
+	get_node("RightInset/CancelSelectionButton").text = "取消操作"
 	get_node("RightInset/BackActionButton").visible = bool(value.get("can_back", false))
 	get_node("RightInset/DetailButton").visible = _selection_active and str(value.get("tone", "")) != "waiting"
 	_render_guidance()
@@ -135,7 +136,7 @@ func _apply_responsive_layout() -> void:
 		if not button.visible:
 			continue
 		button.position = Vector2(width, (row_height - 48.0) * 0.5)
-		button.size = Vector2(88 if name == "BackActionButton" else 52, 48)
+		button.size = Vector2(96 if name == "CancelSelectionButton" else 88 if name == "BackActionButton" else 52, 48)
 		width += button.size.x + 6.0
 	actions.position = Vector2(size.x - 20.0 - width, 6)
 	actions.size = Vector2(width, row_height)

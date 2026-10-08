@@ -71,7 +71,7 @@ var _queue: Array[Dictionary] = []
 var _seen_event_ids: Dictionary = {}
 var _playing := false
 var _cancelled := false
-var _speed_mode := "standard"
+var _speed_mode := MotionPolicy.DEFAULT_MODE
 var _generation := 0
 var _active_completion: EventCompletion
 var _active_feedback_group: MotionGroup
@@ -145,7 +145,7 @@ func clear_for_resync() -> void:
 
 
 func set_speed_mode(mode: String) -> void:
-	_speed_mode = mode if mode in MotionPolicy.PROFILE.mode_scales else "standard"
+	_speed_mode = mode if mode in MotionPolicy.PROFILE.mode_scales else MotionPolicy.DEFAULT_MODE
 
 
 func _run_queue() -> void:

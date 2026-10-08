@@ -106,6 +106,9 @@ var is_hidden_card := false
 var empty := true
 var selected := false
 var targetable := false
+var interaction_badge: Label
+var _badge_color := Color.TRANSPARENT
+var _badge_font_size := 0
 var actionable := false
 var compact := false
 var pokemon: PokemonState
@@ -211,6 +214,14 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_NONE
 	_resolve_scene_nodes()
 	_normalize_interaction_overlay_z_order()
+	interaction_badge = Label.new()
+	interaction_badge.name = "InteractionBadge"
+	interaction_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	interaction_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	interaction_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	interaction_badge.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	interaction_badge.z_index = 4
+	add_child(interaction_badge)
 	battle_overlay._ensure_overlay_nodes()
 	_make_card_content_input_transparent()
 	resized.connect(_on_resized)
@@ -1003,18 +1014,17 @@ func _make_control_branch_input_transparent(node: Node) -> void:
 
 func _refresh_interaction_visuals() -> void:
 	_resolve_scene_nodes()
-	# Only one card-outline state is shown at a time. A selected source stays gold,
-	# a legal target uses the stronger cyan target treatment, and an otherwise
-	# actionable card gets the quiet outer ring below.
+	# Targets keep the stronger border even when they are also the selected
+	# source. The badge preserves the source marker without hiding target intent.
 	if selection_ring:
 		selection_ring.visible = selected and _content_is_visible()
 	if target_glow:
-		target_glow.visible = targetable and not selected
+		target_glow.visible = targetable
 		var target_style := DesignTokens.panel_style(
 			Color.TRANSPARENT,
 			_outline_corner_radius(),
 			_target_accent,
-			3,
+			5,
 			0,
 		)
 		target_style.draw_center = false
@@ -1036,19 +1046,47 @@ func _refresh_interaction_visuals() -> void:
 		var actionable_style := DesignTokens.panel_style(
 			Color.TRANSPARENT,
 			_outline_corner_radius(),
-			DesignTokens.STATE_TARGET,
+			DesignTokens.STATE_SUCCESS,
 			3,
 			0,
 		)
 		# The marker sits above the whole CardView so it must never paint its
 		# center. Even a very low-alpha fill noticeably veils detailed card art.
 		actionable_style.draw_center = false
-		actionable_style.shadow_color = Color(DesignTokens.STATE_TARGET, 0.16)
+		actionable_style.shadow_color = Color(DesignTokens.STATE_SUCCESS, 0.30)
 		actionable_style.shadow_size = 5
 		actionable_style.shadow_offset = Vector2.ZERO
 		actionable_marker.add_theme_stylebox_override("panel", actionable_style)
 
 	battle_overlay._refresh_accessibility_summary()
+	refresh_interaction_badge(Rect2(Vector2.ZERO, size))
+
+
+func refresh_interaction_badge(bounds: Rect2) -> void:
+	if interaction_badge == null:
+		return
+	interaction_badge.visible = (targetable or selected) and (hand_index >= 0 or not slot.is_empty()) and not is_hidden_card and not is_presentation_hidden()
+	if not interaction_badge.visible:
+		return
+	var text := _legal_target_hint if targetable else "使用中"
+	if text.is_empty():
+		text = "选择这里"
+	if bounds.size.x < 90.0:
+		text = text.replace("到这里", "").replace("这只", "").replace("替换上场", "上场")
+	interaction_badge.text = ("◆ " if selected else "") + text
+	var font_size := 12 if bounds.size.x < 90.0 else 14
+	if _badge_font_size != font_size:
+		_badge_font_size = font_size
+		interaction_badge.add_theme_font_size_override("font_size", font_size)
+	var color := _target_accent if targetable else DesignTokens.STATE_SELECTED
+	if _badge_color != color:
+		_badge_color = color
+		interaction_badge.add_theme_color_override("font_color", DesignTokens.TEXT_ON_ACCENT)
+		interaction_badge.add_theme_stylebox_override("normal", DesignTokens.panel_style(
+			color, 5, DesignTokens.PANEL, 1, 2))
+	var width := maxf(48.0, bounds.size.x)
+	interaction_badge.position = Vector2(bounds.get_center().x - width * 0.5, bounds.end.y + 2.0)
+	interaction_badge.size = Vector2(width, 22.0)
 
 
 func _is_field_empty_slot() -> bool:

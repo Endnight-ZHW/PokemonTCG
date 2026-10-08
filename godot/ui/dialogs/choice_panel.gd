@@ -3,6 +3,7 @@ extends VBoxContainer
 
 signal option_toggled(option_id: String)
 signal energy_index_requested(index: int)
+signal energy_remove_requested
 signal undo_requested
 signal clear_requested
 
@@ -12,7 +13,7 @@ const CARD_TILE_SIZE := Vector2(136, 214)
 const CHOICE_CARD_SIZE := Vector2(112, 156)
 const ENERGY_CARD_SIZE := Vector2(54, 76)
 const REVEALED_CARD_SIZE := Vector2(78, 110)
-const ENERGY_TARGET_TILE_SIZE := Vector2(272, 196)
+const ENERGY_TARGET_TILE_SIZE := Vector2(272, 164)
 const CARD_GRID_GAP := 10.0
 const NARROW_PREVIEW_MIN_WIDTH := 120.0
 
@@ -137,6 +138,7 @@ func clear_options() -> void:
 	energy_distribution._energy_preview_cards.clear()
 	energy_distribution._energy_assignment_labels.clear()
 	energy_distribution._energy_distribution_mode = false
+	energy_distribution.draft = null
 	energy_distribution._energy_target_models.clear()
 	energy_distribution._energy_target_tiles.clear()
 	energy_distribution._energy_target_cards.clear()
@@ -489,7 +491,7 @@ func _add_preview_cards(
 		var preview_index := index
 		var card_id := card_ids[index]
 		var preview_card_id := card_id
-		var tile := VBoxContainer.new()
+		var tile: BoxContainer = HBoxContainer.new() if _request_type == "distribute_energy" else VBoxContainer.new()
 		tile.mouse_filter = Control.MOUSE_FILTER_PASS
 		tile.alignment = BoxContainer.ALIGNMENT_CENTER
 		tile.add_theme_constant_override("separation", 3)
@@ -530,6 +532,9 @@ func _add_preview_cards(
 			card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			card.selected_lift = 0.0
 			card.selected_scale = 1.0
+			if _request_type == "distribute_energy":
+				card.hover_lift = 0.0
+				card.hover_scale = 1.0
 			card.set_catalog(self.catalog)
 			card.configure(card_id, null, false, -1, -1, "", true)
 			card.tooltip_text = ""
@@ -554,9 +559,10 @@ func _add_preview_cards(
 			tile.add_child(card)
 		energy_distribution._energy_preview_cards.append(card)
 		var assignment := Label.new()
-		assignment.custom_minimum_size = Vector2(130, 20)
+		assignment.custom_minimum_size = Vector2(180 if _request_type == "distribute_energy" else 130, 20)
 		assignment.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		assignment.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		assignment.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		assignment.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		assignment.tooltip_text = ""
 		assignment.accessibility_description = "尚未分配"
 		assignment.add_theme_font_size_override("font_size", 16)
@@ -704,6 +710,8 @@ func _resolve_nodes() -> void:
 		outer_scroll.resized.connect(_queue_responsive_layout)
 	if not content_row.resized.is_connected(_queue_responsive_layout):
 		content_row.resized.connect(_queue_responsive_layout)
+	if not card_grid.resized.is_connected(_queue_responsive_layout):
+		card_grid.resized.connect(_queue_responsive_layout)
 	if not preview_return_button.pressed.is_connected(_toggle_compact_preview):
 		preview_return_button.pressed.connect(_toggle_compact_preview)
 	BattleModalPalette.style_scrollbar(%OptionsScroll.get_v_scroll_bar())
@@ -715,6 +723,8 @@ func _resolve_nodes() -> void:
 		clear_button.pressed.connect(func() -> void:
 			clear_requested.emit()
 		)
+		%RemoveEnergyButton.pressed.connect(func() -> void: energy_remove_requested.emit())
+		%EnergyDetailButton.pressed.connect(_toggle_compact_preview)
 	if preview_toggle_button and not preview_toggle_button.has_meta(
 		"choice_panel_connected"
 	):
@@ -1234,19 +1244,21 @@ func _apply_responsive_layout() -> void:
 	if available_width <= 1.0:
 		return
 	var has_preview := not _previewed_card_id.is_empty()
+	var distribution_workspace := _request_type == "distribute_energy" and not energy_distribution._energy_target_models.is_empty()
 	_compact_choice_layout = false
-	_compact_preview_expanded = false
+	if not distribution_workspace:
+		_compact_preview_expanded = false
 	energy_grid.visible = true
 	if browse_mode_label:
 		browse_mode_label.visible = true
 	for button in [browse_valid_button, browse_all_button]:
 		if button:
 			button.custom_minimum_size = Vector2(118, UILayoutPolicy.TOUCH_MIN)
-	prompt_label.visible = not prompt_label.text.is_empty()
+	prompt_label.visible = not distribution_workspace and not prompt_label.text.is_empty()
 	energy_preview_label.visible = true
-	var show_preview := has_preview
-	%OptionsScroll.visible = true
-	preview_return_button.visible = false
+	var show_preview := has_preview and (not distribution_workspace or _compact_preview_expanded)
+	%OptionsScroll.visible = not (distribution_workspace and _compact_preview_expanded)
+	preview_return_button.visible = distribution_workspace and _compact_preview_expanded
 	preview_toggle_button.visible = false
 	content_row.vertical = false
 	var preview_width := clampf(available_width * 0.30, 176.0, 270.0)
@@ -1281,6 +1293,16 @@ func _apply_responsive_layout() -> void:
 		(maxf(tile_width, choice_width) + CARD_GRID_GAP)
 		/ (tile_width + CARD_GRID_GAP)
 	)
+	if distribution_workspace:
+		# Use the actual inner scroll width: the outer modal also includes the
+		# scrollbar and margins. Rounding up here silently wraps a third tile.
+		var inner_width := minf(choice_width, card_grid.size.x) if card_grid.size.x > 0.0 else choice_width
+		var columns := clampi(floori((inner_width + CARD_GRID_GAP) / (ENERGY_TARGET_TILE_SIZE.x + CARD_GRID_GAP)), 1, 3)
+		var width := maxf(ENERGY_TARGET_TILE_SIZE.x, floorf((inner_width - CARD_GRID_GAP * (columns - 1) - 2.0) / columns))
+		for tile in energy_distribution._energy_target_tiles.values():
+			var minimum := Vector2(width, ENERGY_TARGET_TILE_SIZE.y)
+			if (tile as Control).custom_minimum_size != minimum:
+				(tile as Control).custom_minimum_size = minimum
 	# HFlowContainer wraps without contributing the width of every configured
 	# column to its minimum size. Match its allocation to the target preview
 	# width while retaining one compact tile as the grid's stable minimum.

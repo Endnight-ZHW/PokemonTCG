@@ -10,7 +10,6 @@ signal outside_pressed(global_position: Vector2)
 @export_range(200.0, 260.0, 1.0) var minimum_width := 200.0
 @export_range(200.0, 260.0, 1.0) var maximum_width := 260.0
 @export var action_button_height := 48.0
-@export_range(1, 8, 1) var maximum_visible_actions := 4
 @export var anchor_gap := 10.0
 @export var pointer_max_length := 34.0
 
@@ -20,8 +19,6 @@ signal outside_pressed(global_position: Vector2)
 @onready var hint_label: Label = %HintLabel
 @onready var action_scroll: ScrollContainer = %ActionScroll
 @onready var action_buttons: VBoxContainer = %ActionButtons
-@onready var compact_scroll: ScrollContainer = %CompactScroll
-@onready var compact_action_buttons: HBoxContainer = %CompactActionButtons
 
 var current_placement := ""
 
@@ -32,8 +29,7 @@ var _avoid_rects: Array[Rect2] = []
 var _source_control_ref: WeakRef
 var _avoid_control_refs: Array[WeakRef] = []
 var _uses_viewport_safe_rect := false
-var _compact_layout := false
-var _compact_preferred := false
+var _layout_queued := false
 var _hand_anchor := false
 var _last_tracked_source_rect := Rect2()
 var _icon_thumbnail_cache: Dictionary[int, Texture2D] = {}
@@ -42,12 +38,13 @@ var _visibility_tween: Tween
 const SOURCE_OVERLAP_BASE_PENALTY := 1_000_000_000.0
 const SOURCE_OVERLAP_AREA_WEIGHT := 1000.0
 const PANEL_CONTENT_HORIZONTAL_MARGIN := 20.0
-const COMPACT_ACTION_WIDTH := 172.0
-const COMPACT_ACTION_GAP := 4.0
+const HAND_ACTION_WIDTH := 172.0
 
 
 func _ready() -> void:
 	_resolve_nodes()
+	action_scroll.resized.connect(_queue_layout)
+	hint_label.minimum_size_changed.connect(_queue_layout)
 	get_node("Panel/Margin/Content/TitleRow/DetailButton").pressed.connect(detail_requested.emit)
 	# Only the visible Panel should participate in GUI hit testing. A full-screen
 	# STOP root steals clicks from the battle menu before BattleTable can dismiss
@@ -164,18 +161,6 @@ func panel_global_rect() -> Rect2:
 	return panel.get_global_rect() if panel else Rect2()
 
 
-func is_compact_layout() -> bool:
-	return _compact_layout
-
-
-func set_compact_preferred(value: bool) -> void:
-	if _compact_preferred == value:
-		return
-	_compact_preferred = value
-	if visible:
-		_layout_popover()
-
-
 func button_count() -> int:
 	return _rows.size()
 
@@ -240,7 +225,6 @@ func _present(
 	if not has_enabled_action():
 		dismiss(false)
 		_clear_buttons(action_buttons)
-		_clear_buttons(compact_action_buttons)
 		return
 	_source_rect = source_rect
 	_uses_viewport_safe_rect = safe_rect.size.x <= 0.0 or safe_rect.size.y <= 0.0
@@ -274,14 +258,10 @@ func _kill_visibility_tween() -> void:
 
 
 func _build_content(title: String, hint: String) -> void:
-	# Reconcile the physical button container, scroll visibility and button size
-	# flags through the same transition used by live relayout. A direct flag
-	# assignment bypasses those compact-layout invariants during instance reuse.
-	_set_compact_layout(false)
 	_clear_buttons(action_buttons)
-	_clear_buttons(compact_action_buttons)
-	action_scroll.visible = true
-	compact_scroll.visible = false
+	action_scroll.scroll_vertical = 0
+	action_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	action_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 
 	title_label.text = title
 	title_label.visible = not title.is_empty()
@@ -291,19 +271,6 @@ func _build_content(title: String, hint: String) -> void:
 
 	for row in _rows:
 		action_buttons.add_child(_action_button(row))
-
-	var visible_count := mini(maximum_visible_actions, maxi(1, _rows.size()))
-	var actions_height := (
-		float(visible_count) * action_button_height
-		+ float(maxi(0, visible_count - 1)) * 4.0
-	)
-	action_scroll.custom_minimum_size.y = actions_height
-	action_scroll.vertical_scroll_mode = (
-		ScrollContainer.SCROLL_MODE_AUTO
-		if _rows.size() > maximum_visible_actions
-		else ScrollContainer.SCROLL_MODE_DISABLED
-	)
-	compact_scroll.custom_minimum_size.y = action_button_height
 
 
 func _action_button(row: Dictionary) -> Button:
@@ -324,6 +291,7 @@ func _action_button(row: Dictionary) -> Button:
 	button.add_theme_font_size_override("font_size", 14)
 	button.theme_type_variation = &"BattleCompactButton"
 	button.disabled = action == null or bool(row.get("disabled", false))
+	button.minimum_size_changed.connect(_queue_layout)
 	button.set_meta("row", row.duplicate())
 	button.set_meta("hint", row.get("hint", ""))
 	button.set_meta("icon", row.get("icon"))
@@ -364,70 +332,75 @@ func _thumbnail_icon(texture: Texture2D) -> Texture2D:
 	return result
 
 
+func _queue_layout() -> void:
+	if _layout_queued or not visible:
+		return
+	_layout_queued = true
+	_flush_layout.call_deferred()
+
+
+func _flush_layout() -> void:
+	_layout_queued = false
+	if visible:
+		_layout_popover()
+
+
 func _layout_popover() -> void:
 	if panel == null or _safe_rect.size.x <= 0.0 or _safe_rect.size.y <= 0.0:
 		return
-	_set_compact_layout(_compact_preferred or _hand_anchor)
-	# Hand actions stay in one predictable toolbar above the selected card.
-	# Full details remain available from the header and the card's long press.
+	# Every action menu uses the same vertical list. Crowded boards reduce the
+	# number of visible rows, never change reading or scrolling direction.
 	title_label.get_parent().visible = not _hand_anchor
-	var panel_size := _desired_panel_size(_compact_layout)
-	var placement := _hand_placement(panel_size) if _hand_anchor else _preferred_placement(panel_size)
-	if not bool(placement.get("valid", false)) and _compact_layout:
-		_set_compact_layout(false)
-		panel_size = _desired_panel_size(false)
-		placement = _preferred_placement(panel_size)
-	if not bool(placement.get("valid", false)) and not _compact_layout and not _compact_preferred:
-		_set_compact_layout(true)
-		panel_size = _desired_panel_size(true)
-		placement = _preferred_placement(panel_size)
+	var row_gap := float(action_buttons.get_theme_constant("separation"))
+	var available_rows := maxi(1, floori((_safe_rect.size.y - _fixed_content_height() + row_gap) / (action_button_height + row_gap)))
+	var visible_count := mini(available_rows, maxi(1, _rows.size()))
+	var panel_size := Vector2.ZERO
+	var placement: Dictionary = {}
+	for count in range(visible_count, 0, -1):
+		panel_size = _desired_panel_size(count)
+		placement = _hand_placement(panel_size) if _hand_anchor else _preferred_placement(panel_size)
+		if bool(placement.get("valid", false)):
+			break
 	if not bool(placement.get("valid", false)):
 		placement = _nearest_free_placement(panel_size)
 
+	action_scroll.custom_minimum_size.y = maxf(0.0, panel_size.y - _fixed_content_height())
 	panel.custom_minimum_size = panel_size
 	panel.size = panel_size
-	_sync_action_content_width(panel_size.x)
 	panel.global_position = placement.get("position", _safe_rect.position)
-	current_placement = str(placement.get("direction", "compact"))
-	if _compact_layout and not current_placement.begins_with("compact_"):
-		current_placement = "compact_" + current_placement
+	current_placement = str(placement.get("direction", "right"))
 	_update_pointer()
 
 
-func _desired_panel_size(compact_layout: bool) -> Vector2:
-	var width := COMPACT_ACTION_WIDTH + PANEL_CONTENT_HORIZONTAL_MARGIN if _hand_anchor else clampf(preferred_width, minimum_width, maximum_width)
-	if compact_layout and not _rows.is_empty():
-		var visible_columns := mini(2, _rows.size())
-		width = maxf(
-			width,
-			PANEL_CONTENT_HORIZONTAL_MARGIN
-			+ float(visible_columns) * COMPACT_ACTION_WIDTH
-			+ float(maxi(0, visible_columns - 1)) * COMPACT_ACTION_GAP,
-		)
-	width = minf(width, _safe_rect.size.x)
-	var content_height := action_button_height
-	if not _rows.is_empty() and not compact_layout:
-		var visible_count := mini(maximum_visible_actions, _rows.size())
-		content_height = (
-			float(visible_count) * action_button_height
-			+ float(maxi(0, visible_count - 1)) * 4.0
-		)
-	var height := 20.0 + content_height
-	if not _hand_anchor: height += 48.0
+func _fixed_content_height() -> float:
+	var height := 20.0
+	if not _hand_anchor:
+		height += 48.0 + 6.0
 	if hint_label.visible:
-		height += 34.0
-	if (title_label.visible and not _hand_anchor) or hint_label.visible:
-		height += 6.0
-	height = minf(height, _safe_rect.size.y)
-	return Vector2(width, height)
+		height += maxf(34.0, hint_label.get_combined_minimum_size().y) + 6.0
+	return height
+
+
+func _desired_panel_size(visible_count: int) -> Vector2:
+	var width := HAND_ACTION_WIDTH + PANEL_CONTENT_HORIZONTAL_MARGIN if _hand_anchor else clampf(preferred_width, minimum_width, maximum_width)
+	width = minf(width, _safe_rect.size.x)
+	var content_height := 0.0
+	var buttons := action_buttons.get_children()
+	for index in range(mini(visible_count, buttons.size())):
+		content_height += maxf(action_button_height, (buttons[index] as Control).get_combined_minimum_size().y)
+		if index > 0:
+			content_height += action_buttons.get_theme_constant("separation")
+	return Vector2(width, minf(_fixed_content_height() + content_height, _safe_rect.size.y))
 
 
 func _hand_placement(panel_size: Vector2) -> Dictionary:
 	# Board occupancy must not flip this toolbar to another side. Clamp only
 	# to the safe area, which already excludes the header and turn controls.
-	return {"valid": true, "direction": "above", "position": _clamp_to_safe_rect(
+	var position := _clamp_to_safe_rect(
 		Vector2(_source_rect.get_center().x - panel_size.x * 0.5,
-			_source_rect.position.y - anchor_gap - panel_size.y), panel_size)}
+			_source_rect.position.y - anchor_gap - panel_size.y), panel_size)
+	return {"valid": position.y + panel_size.y <= _source_rect.position.y - anchor_gap + 0.5,
+		"direction": "above", "position": position}
 
 
 ## Try the four adjacent anchors, reserving the selected card and visible board
@@ -452,15 +425,9 @@ func _anchored_placement_candidates(panel_size: Vector2) -> Array[Dictionary]:
 		_safe_rect.position.x,
 		maxf(_safe_rect.position.x, _safe_rect.end.x - panel_size.x),
 	)
-	return [
-		{
-			"direction": "right",
-			"position": Vector2(_source_rect.end.x + anchor_gap, clampf(center.y - panel_size.y * 0.5, _safe_rect.position.y, maxf(_safe_rect.position.y, _safe_rect.end.y - panel_size.y))),
-		},
-		{
-			"direction": "left",
-			"position": Vector2(_source_rect.position.x - anchor_gap - panel_size.x, clampf(center.y - panel_size.y * 0.5, _safe_rect.position.y, maxf(_safe_rect.position.y, _safe_rect.end.y - panel_size.y))),
-		},
+	var candidates := _side_placement_candidates(panel_size, _source_rect.end.x + anchor_gap, "right")
+	candidates.append_array(_side_placement_candidates(panel_size, _source_rect.position.x - anchor_gap - panel_size.x, "left"))
+	candidates.append_array([
 		{
 			"direction": "above",
 			"position": Vector2(
@@ -475,7 +442,33 @@ func _anchored_placement_candidates(panel_size: Vector2) -> Array[Dictionary]:
 				_source_rect.end.y + anchor_gap,
 			),
 		},
-	]
+	])
+	return candidates
+
+
+func _side_placement_candidates(panel_size: Vector2, x: float, direction: String) -> Array[Dictionary]:
+	var top := _safe_rect.position.y
+	var bottom := maxf(top, _safe_rect.end.y - panel_size.y)
+	var centered_y := clampf(_source_rect.get_center().y - panel_size.y * 0.5, top, bottom)
+	var positions: Array[float] = [centered_y, top, clampf(_source_rect.end.y - panel_size.y, top, bottom)]
+	for obstacle in _avoid_rects:
+		if obstacle.end.x <= x or obstacle.position.x >= x + panel_size.x:
+			continue
+		for y in [obstacle.position.y - anchor_gap - panel_size.y, obstacle.end.y + anchor_gap]:
+			var clamped_y := clampf(y, top, bottom)
+			if clamped_y not in positions:
+				positions.append(clamped_y)
+	# Try lifting the full list above lower obstacles before considering a
+	# shorter scroll viewport. Downward shifts are a last placement alternative.
+	positions.sort_custom(func(left: float, right: float) -> bool:
+		if (left > centered_y) != (right > centered_y):
+			return left <= centered_y
+		return absf(left - centered_y) < absf(right - centered_y)
+	)
+	var result: Array[Dictionary] = []
+	for y in positions:
+		result.append({"direction": direction, "position": Vector2(x, y)})
+	return result
 
 
 func _nearest_free_placement(panel_size: Vector2) -> Dictionary:
@@ -524,49 +517,6 @@ func _intersection_area(first: Rect2, second: Rect2) -> float:
 	if not first.intersects(second):
 		return 0.0
 	return first.intersection(second).get_area()
-
-
-func _set_compact_layout(value: bool) -> void:
-	if _compact_layout == value:
-		return
-	_compact_layout = value
-	# Keep the source name and explicit details control in either orientation.
-	title_label.visible = not title_label.text.is_empty()
-	var from_container: Container = (
-		action_buttons if value else compact_action_buttons
-	)
-	var to_container: Container = (
-		compact_action_buttons if value else action_buttons
-	)
-	var children := from_container.get_children()
-	for child in children:
-		from_container.remove_child(child)
-		to_container.add_child(child)
-		if child is Button:
-			(child as Button).size_flags_horizontal = (
-				Control.SIZE_SHRINK_CENTER
-				if value
-				else Control.SIZE_EXPAND_FILL
-			)
-			(child as Button).custom_minimum_size = Vector2(
-				COMPACT_ACTION_WIDTH if value else 0.0,
-				action_button_height,
-			)
-	action_scroll.visible = not value and not _rows.is_empty()
-	compact_scroll.visible = value and not _rows.is_empty()
-
-
-func _sync_action_content_width(panel_width: float) -> void:
-	var content_width := maxf(0.0, panel_width - PANEL_CONTENT_HORIZONTAL_MARGIN)
-	action_buttons.custom_minimum_size.x = content_width
-	compact_action_buttons.custom_minimum_size.x = content_width
-	# In the normal vertical layout every action occupies the panel's full inner
-	# width. The compact horizontal layout deliberately keeps touch-sized rows and
-	# scrolls them instead of shrinking their labels.
-	for child_value in action_buttons.get_children():
-		var button := child_value as Button
-		if button:
-			button.custom_minimum_size.x = content_width
 
 
 func _update_pointer() -> void:
@@ -719,7 +669,3 @@ func _resolve_nodes() -> void:
 	action_buttons = get_node_or_null(
 		"Panel/Margin/Content/ActionScroll/ActionButtons"
 	) as VBoxContainer
-	compact_scroll = get_node_or_null("Panel/Margin/Content/CompactScroll") as ScrollContainer
-	compact_action_buttons = get_node_or_null(
-		"Panel/Margin/Content/CompactScroll/CompactActionButtons"
-	) as HBoxContainer

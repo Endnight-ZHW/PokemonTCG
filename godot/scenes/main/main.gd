@@ -575,6 +575,7 @@ func _continue_after_network_transition() -> void:
 		and (
 			active_request == null
 			or active_request.request_id != network_choice_view.request_id
+			or active_request.to_dict() != network_choice_view.to_dict()
 		)
 	):
 		_show_choice_overlay(network_choice_view)
@@ -1225,7 +1226,8 @@ func _execute_action(action: GameAction) -> StepResult:
 		return StepResult.new(false, locked_message)
 	if action.kind == "DECLARE_ATTACK":
 		var confirmed_action := _versioned_confirmation_action(action)
-		choice_presenter.show_attack_confirmation(confirmed_action, state, catalog, _restore_confirmation_selection.bind(state, confirmed_action))
+		var context := battle_screen.interaction_state.confirmation_context() if battle_screen else {}
+		choice_presenter.show_attack_confirmation(confirmed_action, state, catalog, _restore_confirmation_selection.bind(state, confirmed_action, context))
 		return StepResult.new(true, "等待确认攻击。")
 	if action.kind == "RETREAT":
 		_show_retreat_confirmation(action)
@@ -2305,7 +2307,8 @@ func _refresh_choice_buttons() -> void:
 
 func _show_retreat_confirmation(action: GameAction) -> void:
 	var captured := _versioned_confirmation_action(action)
-	choice_presenter.show_retreat_confirmation(captured, state, catalog, _restore_confirmation_selection.bind(state, captured))
+	var context := battle_screen.interaction_state.confirmation_context() if battle_screen else {}
+	choice_presenter.show_retreat_confirmation(captured, state, catalog, _restore_confirmation_selection.bind(state, captured, context))
 
 func _versioned_confirmation_action(action: GameAction) -> GameAction:
 	var captured := GameAction.from_dict(action.to_dict())
@@ -2354,7 +2357,7 @@ func _show_card_inspector(context: Dictionary, return_action: Callable = Callabl
 				selected_entity_identity = identity
 				_refresh_game()
 				if battle_screen and not action_group.is_empty():
-					battle_screen._selected_action_group_key = action_group
+					battle_screen.interaction_state.begin_target(action_group)
 					battle_screen.board_view._refresh_actions()
 					battle_screen.board_view._refresh_target_hints()
 					battle_screen.board_view._refresh_header()
@@ -2378,12 +2381,22 @@ func _suspended_choice_context(context: Dictionary) -> Dictionary:
 	return _suspend_field_choice_for_auxiliary_modal() if context.is_empty() else context
 
 
-func _restore_confirmation_selection(expected_state: GameState, action: GameAction) -> void:
+func _restore_confirmation_selection(expected_state: GameState, action: GameAction, context: Dictionary = {}) -> void:
 	if state != expected_state or state == null or state.revision != action.base_revision or current_screen != SCREEN_GAME:
 		return
 	var pokemon := state.get_player(action.actor).active
 	if pokemon == null:
 		return
 	selected_entity_key = "pokemon:%d:active" % action.actor
+	if not str(context.get("source", "")).is_empty():
+		selected_entity_key = str(context.source)
 	selected_entity_identity = _entity_identity_for_key(selected_entity_key)
 	_refresh_game()
+	if battle_screen and not str(context.get("group", "")).is_empty():
+		for group in battle_screen.interaction_router.action_groups_for_source(selected_entity_key):
+			if str(group.get("key", "")) == str(context.group):
+				battle_screen.interaction_state.begin_target(str(context.group))
+				battle_screen.board_view._refresh_actions()
+				battle_screen.board_view._refresh_target_hints()
+				battle_screen.board_view._refresh_header()
+				break

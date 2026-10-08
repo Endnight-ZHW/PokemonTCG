@@ -229,11 +229,11 @@ static func _hand_actions(tree: SceneTree, table: BattleTable, check: Callable, 
 			var card := table.hand_views[index]
 			var bounds := card.visual_global_bounds()
 			var panel := popover.panel_global_rect()
-			check.call(popover.visible and popover.current_placement == "compact_above", "Hand actions moved to the side of the selected card")
+			check.call(popover.visible and popover.current_placement == "above", "Hand actions moved to the side of the selected card")
 			check.call(absf(panel.end.y + popover.anchor_gap - bounds.position.y) < 1.0, "Hand actions do not follow the selected card's top edge")
 			check.call(popover._safe_rect.encloses(panel), "Hand actions are clipped at the safe-area edge")
 			check.call(not panel.intersects(bounds) and panel.size.y <= 72, "Hand toolbar covers the card or includes the old oversized title block")
-			var button := popover.compact_action_buttons.get_child(0) as Button
+			var button := popover.action_buttons.get_child(0) as Button
 			check.call(button != null and button.size.y >= 48 and button.size.x >= 48, "Hand use button is smaller than the touch target")
 			var expected_x := clampf(bounds.get_center().x - panel.size.x * 0.5, popover._safe_rect.position.x, popover._safe_rect.end.x - panel.size.x)
 			check.call(absf(panel.position.x - expected_x) < 1.0, "Hand action anchor drifts as occupied bench slots change")

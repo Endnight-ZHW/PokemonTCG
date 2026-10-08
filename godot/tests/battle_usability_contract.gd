@@ -370,15 +370,15 @@ func _check_hand_effect_previews() -> void:
 			"A completed hand action left a stale effect preview")
 		state.players[0].hand.append("svg2-zaru")
 		main._refresh_game()
-		# Entering target mode from a multi-action field menu must preserve the
-		# same wide preview policy as directly selecting a targeted hand card.
+		# Entering target mode closes the automatic source preview so it cannot
+		# obscure targets. Explicit inspection below must still restore the step.
 		table.own_active.activated.emit(state.players[0].active.card_id, -1, 0, "active")
 		await settle()
 		table.action_popover._on_action_button_pressed(retreat)
 		await settle()
 		check(table.board_view.is_selecting_action_target()
-			and detail.visible == (not table.is_compact_layout()),
-			"Choosing a targeted action unexpectedly closed the source preview")
+			and not detail.visible,
+			"Choosing a targeted action left the automatic preview over the targets")
 		main._clear_battle_selection()
 		await _check_unavailable_card_hints(main, state)
 	# Explicit compact inspection still returns to the pending target choice.

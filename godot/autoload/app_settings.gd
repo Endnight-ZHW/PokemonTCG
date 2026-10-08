@@ -12,7 +12,7 @@ const DEFAULT_CARD_CACHE_SIZE := 24
 const DEFAULT_RELAY_URL := "ws+srv://relay.114600.xyz"
 const LEGACY_RELAY_URL := "ws://127.0.0.1:8766"
 const LEGACY_PUBLIC_RELAY_URLS := ["ws://39.190.56.238:50750", "ws://39.190.56.21:65361"]
-const DEFAULT_ANIMATION_MODE := "standard"
+const DEFAULT_ANIMATION_MODE := "cinematic"
 const DEFAULT_QUALITY_PROFILE := "auto"
 
 var master_volume := DEFAULT_MASTER_VOLUME

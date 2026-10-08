@@ -139,7 +139,7 @@ func set_highlight(selected: bool, targetable: bool, hovered: bool, empty: bool 
 	body.visible = not empty
 	var thinking := thinking_tint.a > 0.0 and not empty
 	outline.visible = selected or targetable or actionable or hovered or empty or thinking
-	var tint := DesignTokens.STATE_SELECTED if selected else target_tint if targetable else DesignTokens.STATE_SUCCESS if actionable else DesignTokens.STATE_INFO
+	var tint := target_tint if targetable else DesignTokens.STATE_SELECTED if selected else DesignTokens.STATE_SUCCESS if actionable else DesignTokens.STATE_INFO
 	if thinking and not selected and not targetable and not actionable and not hovered:
 		tint = thinking_tint
 	if empty and not selected and not targetable and not hovered:
@@ -151,7 +151,7 @@ func set_highlight(selected: bool, targetable: bool, hovered: bool, empty: bool 
 	if _outline_pulse != pulse:
 		_outline_pulse = pulse
 		_outline_material.set_shader_parameter("pulse_enabled", pulse)
-	var ring_scale := 1.018 if selected or targetable else 1.0
+	var ring_scale := 1.07 if targetable else 1.035 if selected else 1.02 if actionable else 1.0
 	if not is_equal_approx(_outline_scale, ring_scale):
 		_outline_scale = ring_scale
 		outline.scale = Vector3(ring_scale, 1.0, ring_scale)

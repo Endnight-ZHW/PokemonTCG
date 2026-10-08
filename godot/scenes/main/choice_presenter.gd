@@ -19,6 +19,9 @@ var audio_director: AudioDirector
 var active_request: ChoiceView
 var active_choice_panel: ChoicePanel
 var active_coin_showcase: CoinShowcase
+var _response_submitted := false
+var _submitted_energy_draft: EnergyDistributionModel
+var _submitted_battle_id := 0
 var selected_choice_ids: Array[String]:
 	get: return choice_model.selected_ids
 
@@ -44,10 +47,17 @@ func _confirm_choice() -> void:
 	confirm_requested.emit()
 
 func submit_response(cancelled: bool = false) -> void:
-	if active_request == null:
+	if active_request == null or _response_submitted:
+		return
+	if cancelled and not active_request.can_cancel:
+		return
+	if not cancelled and not choice_model._choice_selection_is_complete(active_request, selected_choice_ids) and active_request.request_type != "coin_flip":
 		return
 	if is_instance_valid(active_coin_showcase) and active_coin_showcase.is_playing():
 		return
+	_response_submitted = true
+	_submitted_energy_draft = choice_model.energy_draft if not cancelled else null
+	_submitted_battle_id = battle_screen.get_instance_id() if is_instance_valid(battle_screen) else 0
 	var request := active_request
 	var response := ChoiceResponse.new(request.request_id,
 		[] if cancelled else selected_choice_ids.duplicate(), cancelled)
@@ -57,13 +67,25 @@ func submit_response(cancelled: bool = false) -> void:
 
 func show_choice(request: ChoiceView, state: GameState, p_catalog: CardCatalog,
 		current_view_player: int, table: BattleTable, audio: AudioDirector) -> void:
+	# A repeated public snapshot does not discard an unfinished draft or its
+	# scroll position. Changed revisions/options must build a fresh workspace.
+	if choice_model.energy_draft != null and active_request != null and is_instance_valid(active_choice_panel) and host.visible and table == battle_screen and request.base_revision == state.revision and request.to_dict() == active_request.to_dict():
+		refresh_selection()
+		return
 	_clear_coin_playback()
 	catalog = p_catalog
 	battle_screen = table
 	audio_director = audio
 	active_request = request
+	_response_submitted = false
 	active_choice_panel = null
 	choice_model.configure(request, state, catalog, current_view_player)
+	if _submitted_energy_draft != null and is_instance_valid(table) and table.get_instance_id() == _submitted_battle_id and state.revision == request.base_revision and _submitted_energy_draft.request.to_dict() == request.to_dict():
+		choice_model.energy_draft = _submitted_energy_draft
+		choice_model.energy_draft.request = request
+		choice_model.refresh_energy_ids()
+	_submitted_energy_draft = null
+	_submitted_battle_id = 0
 	if battle_screen:
 		battle_screen.clear_choice_targets()
 		battle_screen.set_choice_guidance(request)
@@ -112,6 +134,8 @@ func show_choice(request: ChoiceView, state: GameState, p_catalog: CardCatalog,
 			else ModalSpec.SizeMode.PREFERRED
 		),
 	)
+	if choice_model.energy_draft != null:
+		choice_spec.preferred_size = Vector2(1120, 760)
 	var display_prompt := BattleGuidanceModel.choice_prompt(request, 0, choice_model._choice_prompt_text(request))
 	host.open(
 		display_prompt,
@@ -139,10 +163,12 @@ func show_choice(request: ChoiceView, state: GameState, p_catalog: CardCatalog,
 		},
 	)
 	panel.option_toggled.connect(toggle_choice)
-	panel.energy_index_requested.connect(_rewind_energy_distribution)
+	panel.energy_index_requested.connect(_select_distribution_energy)
+	panel.energy_remove_requested.connect(_remove_energy_distribution)
 	panel.undo_requested.connect(_undo_energy_distribution)
 	panel.clear_requested.connect(_clear_energy_distribution)
 	if not energy_target_models.is_empty():
+		panel.energy_distribution.draft = choice_model.energy_draft
 		panel.configure_energy_distribution(
 			energy_cards,
 			energy_target_models,
@@ -277,11 +303,21 @@ func toggle_choice(option_id: String) -> void:
 		return
 	refresh_selection()
 
-func _rewind_energy_distribution(index: int) -> void:
+func _select_distribution_energy(index: int) -> void:
 	if active_request == null or active_request.request_type != "distribute_energy":
 		return
-	if not choice_model.rewind(index):
+	if choice_model.energy_draft == null or not choice_model.energy_draft.select_energy(index):
 		return
+	if is_instance_valid(active_choice_panel):
+		active_choice_panel._clear_blocked_reason()
+	click_requested.emit()
+	refresh_selection()
+
+
+func _remove_energy_distribution() -> void:
+	if choice_model.energy_draft == null or not choice_model.energy_draft.remove_current():
+		return
+	choice_model.refresh_energy_ids()
 	click_requested.emit()
 	refresh_selection()
 
@@ -299,12 +335,17 @@ func _clear_energy_distribution() -> void:
 	if selected_choice_ids.is_empty():
 		return
 	click_requested.emit()
-	selected_choice_ids.clear()
+	if choice_model.energy_draft != null:
+		choice_model.energy_draft.clear_assignments()
+		choice_model.refresh_energy_ids()
+	else:
+		selected_choice_ids.clear()
 	refresh_selection()
 
 func refresh_selection() -> void:
 	if active_request == null:
 		return
+	choice_model.sync_energy_draft()
 	if active_request.request_type == "coin_flip":
 		host.modal_confirm.disabled = is_instance_valid(active_coin_showcase) and active_coin_showcase.is_playing()
 		return

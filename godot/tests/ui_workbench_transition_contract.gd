@@ -335,8 +335,27 @@ func _run() -> void:
 			"One-card deck shuffle did not cap its proxy count to one",
 		)
 		battle.motion_entities.call("_clear_active_flyers")
+	_stage = "energy_workspace"
+	workbench.show_preview("energy_choice")
+	await process_frame
+	var energy_panel := workbench.preview_host.find_child("ChoicePanel", true, false) as ChoicePanel
+	_check(energy_panel != null and energy_panel.energy_distribution.draft != null,
+		"Workbench energy preview did not use the shared distribution model")
+	if energy_panel != null:
+		var draft := energy_panel.energy_distribution.draft
+		energy_panel.option_toggled.emit(draft.option_for(0, "0:active"))
+		energy_panel.option_toggled.emit(draft.option_for(1, "0:active"))
+		energy_panel.energy_index_requested.emit(0)
+		energy_panel.option_toggled.emit(draft.option_for(0, "0:bench_0"))
+		_check(draft.assignments.size() == 2 and draft.assignments[1] == draft.option_for(1, "0:active"),
+			"Workbench reassignment discarded the other energy")
+		energy_panel.clear_requested.emit()
+		energy_panel.undo_requested.emit()
+		_check(draft.assignments.size() == 2, "Workbench cannot undo clear")
 	workbench.queue_free()
 	await process_frame
+	# Give the audio mixing thread time to release the cancelled audition voices.
+	await create_timer(0.05).timeout
 	_finish()
 
 

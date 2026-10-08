@@ -2,6 +2,7 @@ class_name EnergyDistributionPanel
 extends Node
 
 var panel: ChoicePanel
+var draft: EnergyDistributionModel
 var _energy_preview_cards: Array[CardView] = []
 var _energy_assignment_labels: Array[Label] = []
 var _energy_distribution_mode := false
@@ -34,7 +35,9 @@ func configure_energy_distribution(
 	_energy_distribution_mode = true
 	_energy_target_models.assign(target_models)
 	_energy_source_card_ids.assign(card_ids)
-	panel._add_preview_cards(card_ids, p_catalog, "逐张分配", true)
+	panel._add_preview_cards(card_ids, p_catalog, "① 选择能量　② 点击目标　③ 确认分配", true)
+	if draft != null and bool(draft.request.presentation.get("same_target", false)):
+		panel.metadata_label.text += "\n共同目标：改派任意一张，会同步更换已分配能量的目标。"
 	panel._clear_children(panel.card_grid)
 	panel.card_grid.visible = not target_models.is_empty()
 	panel.option_list.visible = false
@@ -70,10 +73,6 @@ func _on_energy_preview_card_activated(
 ) -> void:
 	panel._preview_card(card_id)
 	if not interactive_distribution:
-		return
-	if panel._compact_choice_layout and energy_index >= panel._last_selected_ids.size():
-		panel._open_compact_preview()
-		panel._queue_responsive_layout()
 		return
 	panel.energy_index_requested.emit(energy_index)
 
@@ -156,7 +155,7 @@ func _add_energy_target_tile(model: Dictionary) -> void:
 	title.text = str(model.get("name", model.get("label", "宝可梦")))
 	title.tooltip_text = ""
 	title.accessibility_name = title.text
-	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", BattleModalPalette.TEXT)
 	summary.add_child(title)
@@ -226,7 +225,7 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 		if target_key.is_empty():
 			continue
 		selected_by_target[target_key] = int(selected_by_target.get(target_key, 0)) + 1
-	var current_index := selected_ids.size()
+	var current_index := draft.current_index if draft != null else selected_ids.size()
 	for model_value in _energy_target_models:
 		var model := Dictionary(model_value)
 		var target_key := str(model.get("target_key", ""))
@@ -236,9 +235,11 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 		var option_id := _energy_option_id_for_target(model, current_index)
 		var blocked_reason := (
 			""
-			if current_index >= panel._selection_max
+			if current_index < 0 or current_index >= _energy_source_card_ids.size()
 			else str(panel._option_disabled_reasons.get(option_id, ""))
 		)
+		if current_index >= 0 and current_index < _energy_source_card_ids.size() and option_id.is_empty():
+			blocked_reason = "这张能量不能附着于此目标"
 		var assigned_count := int(selected_by_target.get(target_key, 0))
 		var hovered := bool(tile.get_meta("choice_hovered", false))
 		_apply_energy_target_style(
@@ -251,8 +252,9 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 		var projected := base_pokemon.clone_state() if base_pokemon != null else null
 		var pending_ids: Array[String] = []
 		if projected != null:
-			for selected_position in range(selected_ids.size()):
-				var selected_id := str(selected_ids[selected_position])
+			var indices: Array = draft.assignments.keys() if draft != null else range(selected_ids.size())
+			for selected_position in indices:
+				var selected_id := str(draft.assignments[selected_position]) if draft != null else str(selected_ids[selected_position])
 				if str(_energy_target_key_by_option_id.get(selected_id, "")) != target_key:
 					continue
 				var energy_index := int(_energy_index_by_option_id.get(
@@ -285,8 +287,8 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 		)
 		_populate_energy_summary(
 			projected_row,
-			"分配后",
-			projected.energy_card_ids if projected != null else [],
+			"本次新增",
+			pending_ids,
 			pending_ids,
 		)
 		var status := _energy_target_status_labels.get(target_key) as Label
@@ -296,7 +298,7 @@ func _refresh_energy_target_tiles(selected_ids: Array[String]) -> void:
 				status.tooltip_text = ""
 				status.accessibility_description = blocked_reason
 				status.add_theme_color_override("font_color", BattleModalPalette.DANGER)
-			elif current_index >= panel._selection_max:
+			elif current_index < 0 or current_index >= _energy_source_card_ids.size():
 				status.text = (
 					"✓ 本次分配 +%d 张" % assigned_count
 					if assigned_count > 0
@@ -411,9 +413,7 @@ func _energy_summary_chip(
 	count.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var provided_count := descriptor.provided_unit_count()
 	count.text = (
-		"%d张·%d能" % [descriptor.count, provided_count]
-		if descriptor.is_special_energy or provided_count != descriptor.count
-		else "×%d" % descriptor.count
+		"%d张·%d点" % [descriptor.count, provided_count]
 	)
 	count.add_theme_font_size_override("font_size", 16)
 	count.add_theme_color_override(
@@ -426,7 +426,6 @@ func _energy_summary_chip(
 		provided_count,
 		"，本次新增" if highlighted else "",
 	]
-	chip.accessibility_name = chip.tooltip_text
 	return chip
 
 func _energy_option_id_for_target(model: Dictionary, energy_index: int) -> String:
@@ -449,12 +448,13 @@ func _on_energy_target_gui_input(event: InputEvent, target_key: String) -> void:
 	if not tap.handle(tile, event):
 		return
 	var model := _energy_target_model(target_key)
-	var current_index := panel._last_selected_ids.size()
-	if model.is_empty() or current_index >= panel._selection_max:
+	var current_index := draft.current_index if draft != null else panel._last_selected_ids.size()
+	if model.is_empty() or current_index < 0 or current_index >= _energy_source_card_ids.size():
+		panel.show_blocked_reason("点击上方能量可改派；完成后点击确认分配")
 		return
 	var option_id := _energy_option_id_for_target(model, current_index)
 	if option_id.is_empty():
-		panel.show_blocked_reason("当前能量没有可用的目标响应，请重新选择")
+		panel.show_blocked_reason("这张能量不能附着于此目标，请选择其他目标")
 		return
 	var blocked_reason := str(panel._option_disabled_reasons.get(option_id, ""))
 	if not blocked_reason.is_empty():
@@ -484,12 +484,12 @@ func _apply_energy_target_style(
 	blocked: bool,
 ) -> void:
 	var background := BattleModalPalette.PANEL
-	var border := BattleModalPalette.BORDER
-	var width := 1
+	var border := DesignTokens.STATE_TARGET
+	var width := 2
 	if selected:
 		background = BattleModalPalette.PANEL
 		border = BattleModalPalette.GOLD
-		width = 2
+		width = 3
 	elif blocked:
 		background = BattleModalPalette.INSET
 		border = Color(BattleModalPalette.DANGER, 0.62 if hovered else 0.38)
@@ -507,86 +507,55 @@ func _apply_energy_target_style(
 	tile.add_theme_stylebox_override("panel", style)
 
 func _refresh_energy_assignment_labels(selected_ids: Array[String]) -> void:
-	if _energy_assignment_labels.is_empty():
-		return
 	if not _energy_distribution_mode:
 		return
-	var assigned_by_index: Dictionary = {}
-	for selected_position in range(selected_ids.size()):
-		var selected_id := str(selected_ids[selected_position])
-		var energy_index := int(_energy_index_by_option_id.get(
-			selected_id, selected_position))
-		if energy_index >= 0:
-			assigned_by_index[energy_index] = selected_id
+	var assigned_by_index: Dictionary = draft.assignments if draft != null else {}
+	if draft == null:
+		for position in range(selected_ids.size()):
+			var id := selected_ids[position]
+			assigned_by_index[int(_energy_index_by_option_id.get(id, position))] = id
+	var current := draft.current_index if draft != null else selected_ids.size()
 	for index in range(_energy_assignment_labels.size()):
 		var label := _energy_assignment_labels[index]
 		var card := _energy_preview_cards[index] if index < _energy_preview_cards.size() else null
-		if assigned_by_index.has(index):
-			var option_id := str(assigned_by_index[index])
-			var target_label := str(panel._option_labels.get(option_id, option_id))
-			label.text = "第 %d 张 → %s" % [index + 1, target_label]
-			label.tooltip_text = "第 %d 张能量已分配给%s" % [index + 1, target_label]
-			label.accessibility_name = label.tooltip_text
-			label.add_theme_color_override("font_color", BattleModalPalette.GOLD)
-			if card:
-				card.set_selected(true)
-		elif index == selected_ids.size():
-			label.text = "第 %d 张 · 待分配" % (index + 1)
-			label.tooltip_text = "现在为第 %d 张能量选择目标" % (index + 1)
-			label.accessibility_name = label.tooltip_text
-			label.add_theme_color_override("font_color", BattleModalPalette.GOLD)
-			if card:
-				card.set_selected(true)
-		else:
-			label.text = "第 %d 张 · 等待" % (index + 1)
-			label.tooltip_text = "第 %d 张能量尚未分配" % (index + 1)
-			label.accessibility_name = label.tooltip_text
-			label.add_theme_color_override("font_color", BattleModalPalette.MUTED)
-			if card:
-				card.set_selected(false)
-	var preview_index := mini(selected_ids.size(), _energy_source_card_ids.size() - 1)
+		var name := panel.catalog.card_name(_energy_source_card_ids[index]) if index < _energy_source_card_ids.size() and not _energy_source_card_ids[index].is_empty() else "能量"
+		var destination := str(panel._option_labels.get(str(assigned_by_index.get(index, "")), "待分配"))
+		label.text = "%s第 %d 张 · %s\n%s%s" % ["▶ " if index == current else "", index + 1, name, "→ " if assigned_by_index.has(index) else "", destination]
+		label.accessibility_name = label.text
+		label.add_theme_color_override("font_color", BattleModalPalette.GOLD if index == current else BattleModalPalette.TEXT)
+		if card:
+			card.set_selected(index == current)
+	var preview_index := current
 	if preview_index >= 0 and preview_index < _energy_source_card_ids.size():
-		var next_preview_id := _energy_source_card_ids[preview_index]
-		if not next_preview_id.is_empty() and next_preview_id != panel._previewed_card_id:
-			panel._preview_card(next_preview_id)
+		var id := _energy_source_card_ids[preview_index]
+		if not id.is_empty() and id != panel._previewed_card_id:
+			panel._preview_card(id)
+
 
 func _update_energy_action_buttons(selected_count: int) -> void:
 	if panel.energy_actions:
-		panel.energy_actions.visible = (
-			_energy_distribution_mode
-			and (not panel._compact_choice_layout or selected_count > 0)
-		)
+		panel.energy_actions.visible = _energy_distribution_mode and panel._request_type == "distribute_energy"
 	if panel.undo_button:
-		panel.undo_button.disabled = not _energy_distribution_mode or selected_count <= 0
-		panel.undo_button.tooltip_text = (
-			"撤销最近一张能量的目标"
-			if not panel.undo_button.disabled
-			else "当前没有可撤销的分配"
-		)
+		panel.undo_button.disabled = not draft.can_undo() if draft != null else selected_count <= 0
+		panel.undo_button.tooltip_text = "恢复上一次分配、改派、移除或清空之前的状态"
 	if panel.clear_button:
-		panel.clear_button.disabled = not _energy_distribution_mode or selected_count <= 0
-		panel.clear_button.tooltip_text = (
-			"清空所有能量分配"
-			if not panel.clear_button.disabled
-			else "当前没有可清空的分配"
-		)
+		panel.clear_button.disabled = selected_count <= 0
+	var remove := panel.get_node_or_null("EnergyActions/RemoveEnergyButton") as Button
+	if remove:
+		remove.disabled = draft == null or not draft.assignments.has(draft.current_index)
+	var detail := panel.get_node_or_null("EnergyActions/EnergyDetailButton") as Button
+	if detail:
+		detail.disabled = panel._previewed_card_id.is_empty()
+		detail.text = "返回分配" if panel._compact_preview_expanded else "查看详情"
+
 
 func _update_energy_selection_hint(selected_count: int) -> void:
 	var minimum := panel._effective_min_select()
-	if selected_count >= panel._selection_max:
-		panel.selection_hint_label.text = "已完成 %d / %d 张能量分配 · 可以确认" % [
-			selected_count,
-			panel._selection_max,
-		]
-	elif selected_count >= minimum:
-		panel.selection_hint_label.text = (
-			"正在分配第 %d / %d 张能量 · 已满足最低要求，可继续或确认"
-			% [selected_count + 1, panel._selection_max]
-		)
-	else:
-		panel.selection_hint_label.text = "正在分配第 %d / %d 张能量 · 还需分配 %d 张" % [
-			selected_count + 1,
-			panel._selection_max,
-			minimum - selected_count,
-		]
+	var current := draft.current_index if draft != null else selected_count
+	var progress := "已分配 %d / %d 张" % [selected_count, panel._selection_max]
+	var remaining := maxi(0, minimum - selected_count)
+	if current >= 0 and current < _energy_source_card_ids.size():
+		progress += " · 正在%s第 %d 张" % ["改派" if draft != null and draft.assignments.has(current) else "分配", current + 1]
+	progress += " · 还需 %d 张" % remaining if remaining > 0 else " · 可以确认，或点选能量继续修改"
+	panel.selection_hint_label.text = progress
 	panel.selection_hint_label.visible = true

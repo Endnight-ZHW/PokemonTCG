@@ -13,8 +13,8 @@ $godot = $godotPaths.Console
 
 function Clear-StaleGodotImportArtifacts {
     $binRoot = Join-Path $repoRoot 'godot\bin\windows'
-    $userRoot = Join-Path $toolsRoot 'appdata\Godot\app_userdata\PokemonTCG'
-    $editorRoot = Join-Path $toolsRoot 'appdata\Godot'
+    $userRoot = Join-Path $env:APPDATA 'Godot\app_userdata\PokemonTCG'
+    $editorRoot = Join-Path $env:APPDATA 'Godot'
     if (Test-Path -LiteralPath $binRoot) {
         Get-ChildItem -LiteralPath $binRoot -Force -File |
             Where-Object { $_.Name -like '~libpokemon_ai.windows.*' } |
@@ -79,6 +79,9 @@ $contracts = @(
     @('card_view_layers_contract', 'CARD_VIEW_LAYERS_OK', 'Card view layers contract'),
     @('view_model_ownership_contract', 'VIEW_MODEL_OWNERSHIP_OK', 'Player view privacy and queued snapshot ownership'),
     @('battle_button_interaction_contract', 'BATTLE_BUTTON_INTERACTION_OK', 'Explicit card actions, target guidance, highlights, cancellation and stale confirmation'),
+    @('card_action_popover_layout_contract', 'CARD_ACTION_POPOVER_LAYOUT_OK', 'Vertical action menus, constrained placement, scroll reachability and pointer activation'),
+    @('battle_interaction_redesign_contract', 'BATTLE_INTERACTION_REDESIGN_OK', 'Real pointer cancellation, distribution drafts, reassignment, undo and system Back'),
+    @('energy_sparse_source_contract', 'ENERGY_SPARSE_SOURCE_OK', 'Real Miraidon source identity, sparse indices, physical duplicates and cinematic pointer submission'),
     @('battle_card_effect_hand_contract', 'BATTLE_CARD_EFFECT_HAND_OK', 'Native card effects, pending choices, hand identity, duplicate packets and hidden-hand rendering'),
     @('battle_3d_contract', 'BATTLE_3D_CONTRACT_OK', 'Physical cards, hand layout, projection, privacy, motion, pooling and adaptive quality'),
     @('battle_usability_contract', 'BATTLE_USABILITY_CONTRACT_OK', 'Pointer gestures, cancellation, browsing anchors and safe confirmations'),

@@ -2,11 +2,12 @@ class_name MotionPolicy
 extends RefCounted
 
 const PROFILE: BattleAnimationProfile = preload("res://presentation/default_battle_animation.tres")
+const DEFAULT_MODE: String = preload("res://autoload/app_settings.gd").DEFAULT_ANIMATION_MODE
 
 
 static func mode() -> String:
 	var settings := _settings()
-	return str(settings.get("animation_mode")) if settings != null else "standard"
+	return str(settings.get("animation_mode")) if settings != null else DEFAULT_MODE
 
 
 static func duration(kind: String, speed_mode: String = "") -> float:

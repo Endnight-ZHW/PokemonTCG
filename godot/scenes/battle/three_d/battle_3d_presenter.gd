@@ -488,6 +488,10 @@ func _sync_card(card: CardView) -> void:
 		var to_content := card.content_root.get_global_transform_with_canvas().affine_inverse() * table.get_global_transform_with_canvas()
 		card.battle_overlay.set_physical_rect(to_content * world.projection.project_bounds(entity))
 	entity.visual_id = card.local_visual_id if not card.local_visual_id.is_empty() else "pokemon:%d:%s" % [card.owner_player, card.slot]
+	var badge_transform := card.get_global_transform_with_canvas().affine_inverse() * table.get_global_transform_with_canvas()
+	card.refresh_interaction_badge(badge_transform * world.projection.project_bounds(entity))
+	if card.interaction_badge != null:
+		card.interaction_badge.visible = card.interaction_badge.visible and shown
 	# A masked destination still owns its landing geometry, including a newly
 	# allocated hand card that has never been drawn. Only its surface is hidden.
 	if not shown:

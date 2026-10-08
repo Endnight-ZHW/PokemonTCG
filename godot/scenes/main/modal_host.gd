@@ -214,6 +214,9 @@ func handle_back() -> bool:
 		return false
 	if closing:
 		return true
+	if main.active_choice_panel != null and main.active_choice_panel._request_type == "distribute_energy" and main.active_choice_panel._compact_preview_expanded:
+		main.active_choice_panel._toggle_compact_preview()
+		return true
 	if main.active_request:
 		if main.active_request.can_cancel:
 			main._cancel_choice()
