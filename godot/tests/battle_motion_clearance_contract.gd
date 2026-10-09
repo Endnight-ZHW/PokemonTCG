@@ -1,5 +1,7 @@
 extends SceneTree
 
+const REPORT_PATH := "res://../build/battle-animation-polish/clearance.json"
+
 var failures: Array[String] = []
 var report: Array[Dictionary] = []
 var done := false
@@ -18,6 +20,19 @@ func _watchdog() -> void:
 
 
 func _run() -> void:
+	var output_path := ProjectSettings.globalize_path(REPORT_PATH)
+	var directory_error := DirAccess.make_dir_recursive_absolute(output_path.get_base_dir())
+	if directory_error != OK:
+		push_error("Cannot create motion clearance report directory: %s (%s)" % [output_path.get_base_dir(), error_string(directory_error)])
+		done = true
+		quit(1)
+		return
+	var file := FileAccess.open(output_path, FileAccess.WRITE)
+	if file == null:
+		push_error("Cannot open motion clearance report: %s (%s)" % [output_path, error_string(FileAccess.get_open_error())])
+		done = true
+		quit(1)
+		return
 	Engine.max_fps = 120
 	var settings := root.get_node("AppSettings")
 	settings.animation_mode = "standard"
@@ -30,7 +45,6 @@ func _run() -> void:
 			for kind in ["cards_drawn", "opening_draw", "prize_taken", "pokemon_evolved", "energy_attached", "cards_discarded", "switched", "retreat"]:
 				await _inspect(table, kind, viewer, size_value)
 			await _inspect(table, "opening_draw", viewer, size_value, 40)
-	var file := FileAccess.open("res://../build/battle-animation-polish/clearance.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify(report, "\t"))
 	file.close()
 	table.queue_free()
