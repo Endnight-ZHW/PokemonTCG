@@ -232,9 +232,13 @@ func check_distribution() -> void:
 
 
 func check_attack() -> void:
-	for id in ["svi-chiy", "svd-absol"]:
-		state.players[0].active = PokemonState.new(id)
-		var index := 1 if id == "svi-chiy" else 0
+	for id in ["svi-chiy", "svd-absol", "csv5-119", "csv5-120"]:
+		var tool_attack: bool = id.begins_with("csv5-")
+		var pokemon_id: String = "sv1-108" if tool_attack else id
+		state.players[0].active = PokemonState.new(pokemon_id)
+		if tool_attack:
+			state.players[0].active.attached_tool_id = id
+		var index := 1 if id == "svi-chiy" or tool_attack else 0
 		var action := GameAction.create("DECLARE_ATTACK", {"attack_index": index}, 0)
 		main.choice_presenter.show_attack_confirmation(action, state, main.catalog, func() -> void: pass)
 		await settle()
@@ -242,6 +246,13 @@ func check_attack() -> void:
 		check(block != null, "Attack confirmation lacks the shared attack component")
 		if id == "svd-absol":
 			check(block.find_child("PrintedDamage", true, false) == null, "Attack confirmation invented Absol's printed damage")
+		if tool_attack and block != null:
+			var tool_definition: Dictionary = main.catalog.get_card(id).attacks[0]
+			var attack_name := block.find_child("AttackName", true, false) as Label
+			var cost := block.find_child("EnergyCost", true, false) as HBoxContainer
+			check(attack_name != null and attack_name.text == tool_definition.name
+				and cost != null and cost.get_child_count() == 1,
+				"Tool attack confirmation lost its appended attack name or Energy cost")
 		check(main.modal_confirm.get_global_rect().end.y <= main.get_global_rect().end.y + 1, "Attack confirmation footer overflow")
 		check(not main.modal_scroll.get_v_scroll_bar().visible, "Normal attack confirmation requires scrolling")
 		await capture("08-confirm-" + id)

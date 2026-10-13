@@ -8,6 +8,8 @@
 #include "planning/strategic_types.hpp"
 #include "planning/strategic_facts.hpp"
 #include "ptcg_rules_session.hpp"
+#include "ptcg_card_runtime.hpp"
+#include "card_evaluation_detail.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -28,6 +30,30 @@ namespace {
 
 void require(bool condition, const char *message) {
     if (!condition) throw std::runtime_error(message);
+}
+
+void check_attack_catalog_representations(const Value &cards) {
+    const Value wrapped(Object{{"cards", cards}});
+    for (const Value *input : {&cards, &wrapped}) {
+        Value pokemon(Object{
+            {"card_id", Value("sv1-108")},
+            {"attached_tool_id", Value("")},
+            {"energy_card_ids", Value(Array(3, Value("sv1-ener-5")))},
+        });
+        require(ptcg::ai::card_evaluation::best_missing(*input, &pokemon) == 0,
+                "A funded Xatu must be ready with either catalog representation");
+        require(ptcg::ai::card_evaluation::printed_best_damage(*input, &pokemon) == 80,
+                "Catalog wrapping must not erase Xatu's winning attack");
+        pokemon["attached_tool_id"] = Value("csv5-119");
+        const auto attacks = ptcg::ai::card_runtime::attacks(*input, pokemon);
+        require(attacks.as_array().size() == 2 &&
+                    attacks.as_array()[0].find("damage")->as_integer() == 80 &&
+                    attacks.as_array()[1].find("name")->string_or() == "进化",
+                "Body and Tool attack indices must agree across catalog representations");
+        pokemon["energy_card_ids"] = Value::make_array();
+        require(ptcg::ai::card_evaluation::best_missing(*input, &pokemon) == 1,
+                "Tool attack evaluation must preserve its printed Energy cost");
+    }
 }
 
 bool value_array_contains(
@@ -613,6 +639,7 @@ int main(int argc, char **argv) {
             ptcg::json_adapter::to_value(cards_json)
         );
         if (!catalog.valid()) throw std::runtime_error("strategy_catalog_invalid");
+        check_attack_catalog_representations(ptcg::json_adapter::to_value(cards_json));
         check_normalized_deck_plans(strategies_json, cards_json, catalog);
         check_known_hand_determinization(cards_json);
         check_owner_deck_inspection_determinization(cards_json);

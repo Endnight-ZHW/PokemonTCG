@@ -526,7 +526,8 @@ func show_attack_confirmation(action: GameAction, state: GameState, p_catalog: C
 	var attacks: Array = p_catalog.effective_attacks(active)
 	if action.attack_index() < 0 or action.attack_index() >= attacks.size():
 		return
-	var card := p_catalog.get_card(active.card_id)
+	var card := p_catalog.get_card(active.card_id).duplicate()
+	card["attacks"] = attacks
 	var groups := CardPresentation.detail_groups(card, p_catalog).filter(func(group: Dictionary) -> bool: return group.kind == "attack")
 	var attack: Dictionary = groups[action.attack_index()]
 	click_requested.emit()

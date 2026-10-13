@@ -29,9 +29,13 @@ const Value *rule(const Value &cards, const std::string &id, const std::string &
 }
 
 Value attacks(const Value &cards, const Value &pokemon_value) {
+    // AI evaluation accepts both the card map and the complete rules catalog.
+    // Preserve the same body/tool attack indices for either representation.
+    const Value *wrapped_cards = cards.find("cards");
+    const Value &definitions = wrapped_cards && wrapped_cards->is_object() ? *wrapped_cards : cards;
     Value::Array result;
     for (const char *key : {"card_id", "attached_tool_id"}) {
-        const Value *definition = cards.find(string_arg(pokemon_value, key));
+        const Value *definition = definitions.find(string_arg(pokemon_value, key));
         const Value *rows = definition ? definition->find("attacks") : nullptr;
         if (rows && rows->is_array()) result.insert(result.end(), rows->as_array().begin(), rows->as_array().end());
     }
