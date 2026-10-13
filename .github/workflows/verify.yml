@@ -118,12 +118,15 @@ jobs:
 
   fast:
     runs-on: windows-latest
-    timeout-minutes: 60
+    # A cold editor build takes about 53 minutes on the hosted Windows runner.
+    # Keep enough time for the complete fast suite after that one-time build.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
-      - name: Cache pinned Godot editor
-        uses: actions/cache@v6
+      - name: Restore pinned Godot editor
+        id: godot-cache
+        uses: actions/cache/restore@v6
         with:
           path: .tools/godot-4.7
           key: ${{ runner.os }}-godot-editor-v1-${{ hashFiles('tools/toolchain.lock.json', 'tools/build_godot_editor.ps1', 'tools/godot_patches/*.patch') }}
@@ -141,6 +144,13 @@ jobs:
         run: |
           .\tools\setup_native_ai_deps.ps1
           .\tools\setup_godot_toolchain.ps1 -SkipExportTemplates
+
+      - name: Save verified Godot editor
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .tools/godot-4.7
+          key: ${{ steps.godot-cache.outputs.cache-primary-key }}
 
       - name: Run fast verification
         shell: pwsh
