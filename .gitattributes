@@ -1,3 +1,7 @@
 godot/data/*.json text eol=lf
 godot/assets/audio/**/*.tres text eol=lf
 godot/assets/audio/licenses/*.txt text eol=lf
+
+# Upstream backports are verified byte-for-byte on Windows and in CI.
+# Unified-diff context intentionally contains space-prefixed blank/tab lines.
+/tools/godot_patches/*.patch -text -whitespace

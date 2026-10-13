@@ -118,9 +118,15 @@ jobs:
 
   fast:
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+
+      - name: Cache pinned Godot editor
+        uses: actions/cache@v6
+        with:
+          path: .tools/godot-4.7
+          key: ${{ runner.os }}-godot-editor-v1-${{ hashFiles('tools/toolchain.lock.json', 'tools/build_godot_editor.ps1', 'tools/godot_patches/*.patch') }}
 
       - uses: actions/setup-python@v7
         with:
@@ -159,6 +165,12 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+
+      - name: Cache pinned Godot editor
+        uses: actions/cache@v6
+        with:
+          path: .tools/godot-4.7
+          key: ${{ runner.os }}-godot-editor-v1-${{ hashFiles('tools/toolchain.lock.json', 'tools/build_godot_editor.ps1', 'tools/godot_patches/*.patch') }}
 
       - uses: actions/setup-python@v7
         with:
@@ -210,6 +222,12 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
+
+      - name: Cache pinned Godot editor
+        uses: actions/cache@v6
+        with:
+          path: .tools/godot-4.7
+          key: ${{ runner.os }}-godot-editor-v1-${{ hashFiles('tools/toolchain.lock.json', 'tools/build_godot_editor.ps1', 'tools/godot_patches/*.patch') }}
 
       - uses: actions/setup-python@v7
         with:

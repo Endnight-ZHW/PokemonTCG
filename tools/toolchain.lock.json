@@ -5,7 +5,18 @@
     "editor_url": "https://github.com/godotengine/godot-builds/releases/download/4.7-stable/Godot_v4.7-stable_win64.exe.zip",
     "editor_sha256": "02a5312236f4e0209c78bcb2f52135b1963e6b8888c873c9cee81459e60bcd71",
     "templates_url": "https://github.com/godotengine/godot-builds/releases/download/4.7-stable/Godot_v4.7-stable_export_templates.tpz",
-    "templates_sha256": "9714459dc071907c0f3d5f17d608faf69e7cda21331fc5d39c4503ffa4e99eec"
+    "templates_sha256": "9714459dc071907c0f3d5f17d608faf69e7cda21331fc5d39c4503ffa4e99eec",
+    "editor_build": {
+      "source_url": "https://github.com/godotengine/godot/archive/refs/tags/4.7-stable.zip",
+      "source_sha256": "c1a3329bd79c38fd2a65e261a6744f96914e5cc6ec3ff56c886a8c10656feb1b",
+      "archive_directory": "godot-4.7-stable",
+      "patch": "tools/godot_patches/gdscript_shutdown.patch",
+      "patch_sha256": "dc1cfdfe2fc4803007a40515a3e7c235ac97dbfadcbfc70e52ad658fdab025e1",
+      "upstream_fixes": [
+        "https://github.com/godotengine/godot/pull/117991",
+        "https://github.com/godotengine/godot/pull/120976"
+      ]
+    }
   },
   "java": {
     "version": "17.0.19+10",

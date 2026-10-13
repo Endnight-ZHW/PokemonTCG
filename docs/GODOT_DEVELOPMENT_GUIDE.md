@@ -15,6 +15,10 @@
 
 工具链与下载缓存位于 `.tools/`。保留其中的 Android SDK、JDK、Godot 导出模板、Python、签名材料和用户设置。版本以工具链锁文件为准。
 
+Windows 开发编辑器从锁定的 Godot 4.7 源码构建，并回补上游 [#117991](https://github.com/godotengine/godot/pull/117991) 和 [#120976](https://github.com/godotengine/godot/pull/120976) 的脚本关闭修复。官方 4.7 编辑器可能在测试已输出成功后发生原生访问违规；这些退出仍按失败处理。`setup_godot_toolchain.ps1` 会调用 `build_godot_editor.ps1`，首次需要 Python、SCons 4.10.1 和 Visual C++ Build Tools。源码、补丁与生成文件均校验 SHA-256，命中本地或 CI 缓存后不再编译。
+
+补丁及 MIT 许可证位于 `tools/godot_patches/`，编辑器构建凭据写入 `.tools/godot-4.7/BUILD_PATCHES.json`。开发编辑器使用项目所需的 Compatibility／Vulkan 渲染器，关闭需要额外 SDK 的 Direct3D 12 和 AccessKit 驱动；客户端导出模板仍使用独立校验的官方发布模板。
+
 - F5 从 `main.tscn` 启动完整游戏，F6 运行当前场景，F8 停止。
 - `res://` 对应仓库的 `godot/`。`.tscn` 保存场景结构，`.tres` 保存主题等资源，`.gd` 保存脚本。
 - Container 决定子节点排版；在 Inspector 调整导出参数。修改 `%NodeName` 前检查唯一节点标记和引用。

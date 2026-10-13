@@ -19,12 +19,15 @@ $godotConsole = $godotPaths.Console
 Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 New-Item -ItemType Directory -Force -Path $downloads, $godotRoot | Out-Null
 
-$godotZip = Join-Path $downloads "Godot_v$($lock.godot.version)_win64.exe.zip"
-Get-VerifiedDownload -Uri $lock.godot.editor_url -Destination $godotZip `
-    -Sha256 $lock.godot.editor_sha256 -Force:$Force
-
-if ($Force -or -not (Test-Path -LiteralPath $godotExe)) {
-    Expand-Archive -LiteralPath $godotZip -DestinationPath $godotRoot -Force
+if ($null -ne $lock.godot.editor_build) {
+    & (Join-Path $PSScriptRoot 'build_godot_editor.ps1') -Force:$Force
+} else {
+    $godotZip = Join-Path $downloads "Godot_v$($lock.godot.version)_win64.exe.zip"
+    Get-VerifiedDownload -Uri $lock.godot.editor_url -Destination $godotZip `
+        -Sha256 $lock.godot.editor_sha256 -Force:$Force
+    if ($Force -or -not (Test-Path -LiteralPath $godotExe)) {
+        Expand-Archive -LiteralPath $godotZip -DestinationPath $godotRoot -Force
+    }
 }
 
 if ($IncludeAndroid -and $SkipExportTemplates) {
