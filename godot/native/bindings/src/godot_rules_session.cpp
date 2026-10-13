@@ -7,6 +7,7 @@
 
 #include <exception>
 #include <string>
+#include <cstdio>
 
 namespace godot {
 
@@ -55,6 +56,8 @@ NativeRulesSession::NativeRulesSession()
     : session_(std::make_unique<ptcg::ai::RulesSession>()) {}
 
 void NativeRulesSession::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("get_catalog_error"), &NativeRulesSession::get_catalog_error);
+    ClassDB::bind_method(D_METHOD("validate_deck", "entries"), &NativeRulesSession::validate_deck);
     ClassDB::bind_method(
         D_METHOD("set_catalog", "catalog"),
         &NativeRulesSession::set_catalog
@@ -150,14 +153,20 @@ void NativeRulesSession::_bind_methods() {
 
 bool NativeRulesSession::set_catalog(const Dictionary &catalog) {
     try {
+        catalog_error_.clear();
         session_->set_cards(ptcg::ai::value_from_godot(catalog));
         return true;
     } catch (const std::exception &error) {
-        (void)error;
+        catalog_error_ = error.what();
         return false;
     } catch (...) {
+        catalog_error_ = "card_catalog_initialization_failed";
         return false;
     }
+}
+
+Dictionary NativeRulesSession::validate_deck(const Array &entries) const {
+    return dictionary_from_value(session_->validate_deck(ptcg::ai::value_from_godot(entries)));
 }
 
 Dictionary NativeRulesSession::create(

@@ -16,6 +16,9 @@ func _initialize() -> void:
 		summaries.append(_play_network_game("lan", "", deck))
 		if not relay_url.is_empty():
 			summaries.append(_play_network_game("relay", relay_url, deck))
+	for custom_mode in ["custom_preset", "custom_mirror", "custom_duel"]:
+		summaries.append(_play_network_game("lan", "", custom_mode))
+		if not relay_url.is_empty(): summaries.append(_play_network_game("relay", relay_url, custom_mode))
 	for summary in summaries:
 		if not bool(summary.get("success", false)):
 			failures.append("%s: %s" % [
@@ -38,12 +41,30 @@ func _play_network_game(transport_kind: String, relay_url: String, requested_dec
 	var error := OK
 	var deck_key := "fire" if transport_kind == "lan" else "steel"
 	if not requested_deck.is_empty(): deck_key = requested_deck
+	var host_key := deck_key
+	var client_key := deck_key
+	var expected_keys := [deck_key, deck_key]
+	if requested_deck.begins_with("custom_"):
+		var definition := {"name": "私密构筑名称", "profile": "casual60", "cards": [
+			{"card_id": "csv5-049", "count": 4}, {"card_id": "sv1-ener-4", "count": 56}]}
+		var host_library := DeckLibrary.new("user://network-regression-unused-host.json")
+		var client_library := DeckLibrary.new("user://network-regression-unused-client.json")
+		host_key = "custom:host-private-id"
+		client_key = "fire" if requested_deck == "custom_preset" else "custom:client-private-id"
+		host_library._custom = {host_key: definition.duplicate(true)}
+		client_library._custom = {} if requested_deck == "custom_preset" else {client_key: definition.duplicate(true)}
+		if requested_deck == "custom_duel": client_library._custom[client_key].cards[0].card_id = "csv5-112"
+		host_library._refresh_index()
+		client_library._refresh_index()
+		host = NetworkMatchController.new(host_library)
+		client = NetworkMatchController.new(client_library)
+		expected_keys = ["custom", "fire" if requested_deck == "custom_preset" else "custom"]
 	if transport_kind == "lan":
-		error = host.host_lan(port, deck_key, 20260621)
+		error = host.host_lan(port, host_key, 20260621)
 		if error == OK:
-			error = client.join_lan("127.0.0.1", port, deck_key)
+			error = client.join_lan("127.0.0.1", port, client_key)
 	else:
-		error = host.host_relay(relay_url, deck_key, 20260621, true)
+		error = host.host_relay(relay_url, host_key, 20260621, true)
 		if error == OK:
 			var room_id := ""
 			for _poll in range(10000):
@@ -61,7 +82,7 @@ func _play_network_game(transport_kind: String, relay_url: String, requested_dec
 			if room_id.is_empty():
 				host.close()
 				return _failed(transport_kind, "relay room was not created")
-			error = client.join_relay(relay_url, room_id, deck_key)
+			error = client.join_relay(relay_url, room_id, client_key)
 	if error != OK:
 		host.close()
 		client.close()
@@ -89,7 +110,7 @@ func _play_network_game(transport_kind: String, relay_url: String, requested_dec
 				])
 			if event.get("type", "") == "state" and not same_deck_verified:
 				var state_view: Dictionary = event.get("view", {}).get("state", {})
-				if state_view.get("public_deck_keys", []) != [deck_key, deck_key]:
+				if state_view.get("public_deck_keys", []) != expected_keys:
 					host.close()
 					client.close()
 					return _failed(transport_kind, "equal deck keys were not preserved")
@@ -131,6 +152,9 @@ func _play_network_game(transport_kind: String, relay_url: String, requested_dec
 			if view.is_empty():
 				continue
 			var state_payload: Dictionary = view.get("state", {})
+			var wire := JSON.stringify(view)
+			if "private_deck_definitions" in wire or "custom:host-private-id" in wire or "custom:client-private-id" in wire or "私密构筑名称" in wire:
+				return {"error": "private custom deck configuration leaked"}
 			var winner := int(state_payload.get("winner", -1))
 			var result_status := str(state_payload.get("result_status", "ONGOING"))
 			if result_status != "ONGOING":
@@ -281,11 +305,11 @@ func _capture_event(
 	match str(event.get("type", "")):
 		"state":
 			var view: Dictionary = event.get("view", {})
-			var protocol_validation := ProtocolV6.validate_payload(
-				ProtocolV6.STATE_UPDATE, view
+			var protocol_validation := ProtocolV7.validate_payload(
+				ProtocolV7.STATE_UPDATE, view
 			)
 			if not bool(protocol_validation.get("ok", false)):
-				return {"error": "received a state outside the protocol v6 contract: %s groups=%s events=%s pokemon=%s" % [
+				return {"error": "received a state outside the protocol v7 contract: %s groups=%s events=%s pokemon=%s" % [
 					JSON.stringify(protocol_validation),
 					JSON.stringify(view.get("legal_action_groups", [])),
 					JSON.stringify(view.get("presentation_events", [])),
@@ -334,7 +358,7 @@ func _invalid_pokemon_diagnostics(view: Dictionary) -> Array[Dictionary]:
 			var pokemon_value: Variant = row.get("pokemon")
 			if pokemon_value == null or pokemon_value == {"hidden": true}:
 				continue
-			if ProtocolV6._validate_pokemon(pokemon_value):
+			if ProtocolV7._validate_pokemon(pokemon_value):
 				continue
 			var modifier_errors: Array[Dictionary] = []
 			if pokemon_value is Dictionary:

@@ -1,3 +1,4 @@
+#include "ptcg_card_runtime.hpp"
 #include "card_evaluation_detail.hpp"
 
 namespace ptcg::ai::card_evaluation {
@@ -447,7 +448,8 @@ bool has_energy_target(const Value &state, std::int32_t actor, const Value &card
         const Value *definition = card(cards, string_field(*pokemon, "card_id"));
         if (definition == nullptr)
             continue;
-        for (const Value &attack : array_field(*definition, "attacks")) {
+        const auto effective_attacks = card_runtime::attacks(cards, *pokemon).as_array();
+        for (const Value &attack : effective_attacks) {
             const auto missing = missing_energy(cards, *pokemon, array_field(attack, "cost"));
             if (missing > 0 && missing <= 2)
                 return true;
@@ -626,7 +628,8 @@ bool energy_improves_attack_readiness(const Value &state, std::int32_t actor,
         if (definition == nullptr)
             continue;
         const Value probe = pokemon_with_extra_energy(*pokemon, energy_card_id);
-        for (const Value &attack : array_field(*definition, "attacks")) {
+        const auto effective_attacks = card_runtime::attacks(cards, *pokemon).as_array();
+        for (const Value &attack : effective_attacks) {
             const auto &cost = array_field(attack, "cost");
             const std::int64_t before = missing_energy(cards, *pokemon, cost);
             if (before > 0 && missing_energy(cards, probe, cost) < before)

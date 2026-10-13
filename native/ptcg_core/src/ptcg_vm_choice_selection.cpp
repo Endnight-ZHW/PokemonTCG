@@ -1,5 +1,6 @@
 #include "ptcg_rules.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -542,6 +543,9 @@ bool resume_vm_choices(
             }
             const std::int64_t amount = integer_arg(
                 args, "counters", 2) * 10;
+            const bool protected_effect=string_arg(continuation,"context_mode")=="attack"
+                && (prevents_attack_effects(*target) || card_runtime::protects_effect(cards,result.state,1-actor,target_slot,true));
+            if (!protected_effect) {
             add_damage(*target, amount);
             const std::int64_t maximum_hp = pokemon_hp(cards, *target);
             if (
@@ -562,6 +566,7 @@ bool resume_vm_choices(
                 target_slot,
                 amount
             );
+            }
             discard_pokemon(self, source_slot);
             if (
                 source_slot == "active"

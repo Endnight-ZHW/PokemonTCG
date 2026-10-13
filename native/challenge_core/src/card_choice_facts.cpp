@@ -1,3 +1,4 @@
+#include "ptcg_card_runtime.hpp"
 #include "card_evaluation_detail.hpp"
 
 namespace ptcg::ai::card_evaluation {
@@ -484,10 +485,6 @@ double energy_attack_plan_for_card(const RulesSession &position, const Value &st
                                    const std::string &card_id, std::int64_t opponent_hp,
                                    std::int64_t opponent_prizes, const Value &cards) {
     const Value *definition = card(cards, card_id);
-    const auto &attacks =
-        definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
-    if (attacks.empty())
-        return -99.0;
     Value probe = source;
     if (card_id != string_field(source, "card_id")) {
         Value *stack = probe.find("evolution_stack_ids");
@@ -498,6 +495,8 @@ double energy_attack_plan_for_card(const RulesSession &position, const Value &st
         stack->as_array().emplace_back(string_field(source, "card_id"));
         probe["card_id"] = Value(card_id);
     }
+    const auto attacks=card_runtime::attacks(cards,probe).as_array();
+    if (attacks.empty()) return -99.0;
     double best = -std::numeric_limits<double>::infinity();
     for (std::size_t index = 0; index < attacks.size(); ++index) {
         const std::int64_t missing =
@@ -556,8 +555,7 @@ double public_energy_distribution_board_utility(const RulesSession &position, co
     for (std::size_t board_index = 0; board_index < rows.size(); ++board_index) {
         const Value *pokemon = rows[board_index];
         const Value *definition = card(cards, string_field(*pokemon, "card_id"));
-        const auto &attacks =
-            definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+        const auto attacks = card_runtime::attacks(cards, *pokemon).as_array();
         double best = -std::numeric_limits<double>::infinity();
         for (const Value &attack : attacks) {
             const std::int64_t missing =

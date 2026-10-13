@@ -61,7 +61,14 @@ function Get-GuardOpOwners {
             'if\s*\(!\((?<body>[\s\S]*?)\)\)\s*return false;'
         )
         if (-not $guard.Success) {
-            throw "VM dispatch guard is missing: $path"
+            $registry = [regex]::Match($text, 'std::set<std::string> (?:extended_ops|ops)\s*\{(?<body>[\s\S]*?)\};')
+            if (-not $registry.Success) { throw "VM dispatch guard is missing: $path" }
+            foreach ($match in [regex]::Matches($registry.Groups['body'].Value, '"([^"]+)"')) {
+                $op = $match.Groups[1].Value
+                if (-not $owners.ContainsKey($op)) { $owners[$op] = [Collections.Generic.List[string]]::new() }
+                $owners[$op].Add([IO.Path]::GetFileName($path))
+            }
+            continue
         }
         foreach ($match in [regex]::Matches(
             $guard.Groups['body'].Value, 'op\s*==\s*"([^"]+)"')) {
@@ -92,8 +99,8 @@ function Assert-VmDispatchOwnership {
             ForEach-Object { $_.Groups[1].Value } |
             Sort-Object -Unique
     )
-    if ($implemented.Count -ne 80) {
-        throw "Native VM registry must contain exactly 80 ops, found $($implemented.Count)."
+    if ($implemented.Count -ne 99) {
+        throw "Native VM registry must contain exactly 99 ops, found $($implemented.Count)."
     }
 
     $executeOwners = Get-GuardOpOwners -Paths @(
@@ -101,6 +108,7 @@ function Assert-VmDispatchOwnership {
         Join-Path $sourceRoot 'ptcg_vm_damage_pipeline.cpp'
         Join-Path $sourceRoot 'ptcg_vm_card_pipeline.cpp'
         Join-Path $sourceRoot 'ptcg_vm_trigger_pipeline.cpp'
+        Join-Path $sourceRoot 'ptcg_vm_extended.cpp'
     )
     $duplicate = $executeOwners.GetEnumerator() |
         Where-Object { $_.Value.Count -ne 1 } | Select-Object -First 1
@@ -118,6 +126,7 @@ function Assert-VmDispatchOwnership {
         Join-Path $sourceRoot 'ptcg_vm_choice_damage.cpp'
         Join-Path $sourceRoot 'ptcg_vm_choice_selection.cpp'
         Join-Path $sourceRoot 'ptcg_vm_choice_triggers.cpp'
+        Join-Path $sourceRoot 'ptcg_vm_extended_choice.cpp'
     )
     $duplicateResume = $resumeOwners.GetEnumerator() |
         Where-Object { $_.Value.Count -ne 1 } | Select-Object -First 1
@@ -155,4 +164,4 @@ foreach ($source in Get-ChildItem -LiteralPath $challengeRoot -Recurse -File -Fi
     }
 }
 
-Write-Host 'SOURCE_BOUNDARIES_OK manifests=2 vm_ops=80'
+Write-Host 'SOURCE_BOUNDARIES_OK manifests=2 vm_ops=99'

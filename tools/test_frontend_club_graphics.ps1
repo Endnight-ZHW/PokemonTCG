@@ -8,6 +8,7 @@ $frontendGodot = (Initialize-GodotTestEnvironment -RepoRoot $frontendRepoRoot).C
 $frontendOutput = Join-Path $frontendRepoRoot 'build/frontend-club'
 New-Item -ItemType Directory -Force -Path $frontendOutput | Out-Null
 $frontendContracts = @(
+    @{ Script = 'deck_editor_visual_contract'; Marker = 'DECK_EDITOR_VISUAL_CONTRACT_OK'; Log = 'deck-editor.log' },
     @{ Script = 'desktop_layout_contract'; Marker = 'DESKTOP_LAYOUT_CONTRACT_OK'; Log = 'desktop-layout.log' },
     @{ Script = 'frontend_club_visual_contract'; Marker = 'FRONTEND_CLUB_VISUAL_OK'; Log = 'club-visual.log' },
     @{ Script = 'frontend_redesign_contract'; Marker = 'FRONTEND_REDESIGN_OK'; Log = 'redesign-states.log' },
@@ -31,5 +32,5 @@ foreach ($frontendContract in $frontendContracts) {
         $frontendCapture | Select-Object -Last 30 | Write-Host
         throw "Frontend graphics validation failed: $($frontendContract.Script)"
     }
-    $frontendCapture | Where-Object { $_ -match '^(FRONTEND_|COMPLETED_MATCH_RETURN|BATTLE_TOUCH_RESUME_)' } | Write-Host
+    $frontendCapture | Where-Object { $_ -match '^(DECK_EDITOR_|FRONTEND_|COMPLETED_MATCH_RETURN|BATTLE_TOUCH_RESUME_)' } | Write-Host
 }

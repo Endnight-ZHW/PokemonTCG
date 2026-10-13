@@ -1,3 +1,4 @@
+#include "ptcg_card_runtime.hpp"
 #include "card_evaluation_detail.hpp"
 #include "ptcg_game_internal.hpp"
 #include "ptcg_rules_internal.hpp"
@@ -513,8 +514,7 @@ std::int64_t estimated_attack_damage(const RulesSession &position, const Value &
     if (attacker == nullptr)
         return 0;
     const Value *definition = card(cards, string_field(*attacker, "card_id"));
-    const auto &attacks =
-        definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+    const auto attacks = card_runtime::attacks(cards, *attacker).as_array();
     if (attack_index >= attacks.size())
         return 0;
     const Value &attack = attacks[attack_index];
@@ -607,8 +607,7 @@ std::int64_t best_available_damage(const RulesSession &position, const Value &st
     if (pokemon == nullptr)
         return 0;
     const Value *definition = card(cards, string_field(*pokemon, "card_id"));
-    const auto &attacks =
-        definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+    const auto attacks = card_runtime::attacks(cards, *pokemon).as_array();
     std::int64_t best = 0;
     for (std::size_t index = 0; index < attacks.size(); ++index) {
         if (missing_energy(cards, *pokemon, array_field(attacks[index], "cost")) <= 0) {
@@ -648,7 +647,7 @@ std::int64_t best_ready_damage_for_pokemon(const RulesSession &position, const V
     if (definition == nullptr)
         return 0;
     std::int64_t best = 0;
-    const auto &attacks = array_field(*definition, "attacks");
+    const auto attacks = card_runtime::attacks(cards, pokemon).as_array();
     for (std::size_t index = 0; index < attacks.size(); ++index) {
         if (missing_energy(cards, pokemon, array_field(attacks[index], "cost")) <= 0) {
             best =
@@ -662,8 +661,7 @@ std::int64_t best_missing(const Value &cards, const Value *pokemon) {
     if (pokemon == nullptr)
         return 99;
     const Value *definition = card(cards, string_field(*pokemon, "card_id"));
-    const auto &attacks =
-        definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+    const auto attacks = card_runtime::attacks(cards, *pokemon).as_array();
     if (attacks.empty())
         return 99;
     std::int64_t result = 99;
@@ -677,8 +675,7 @@ std::int64_t printed_best_damage(const Value &cards, const Value *pokemon) {
     if (pokemon == nullptr)
         return 0;
     const Value *definition = card(cards, string_field(*pokemon, "card_id"));
-    const auto &attacks =
-        definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+    const auto attacks = card_runtime::attacks(cards, *pokemon).as_array();
     std::int64_t best = 0;
     for (const Value &attack : attacks) {
         std::int64_t damage = integer_field(attack, "damage");
@@ -961,8 +958,7 @@ std::int64_t pokemon_attack_damage_ceiling(const RulesSession &position, const V
                                            const std::string &slot, std::size_t attack_index,
                                            const Value &cards) {
     const Value *definition = card(cards, string_field(pokemon, "card_id"));
-    const auto &attacks =
-        definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+    const auto attacks = card_runtime::attacks(cards, pokemon).as_array();
     if (attack_index >= attacks.size())
         return 0;
     const Value &attack = attacks[attack_index];
@@ -984,8 +980,7 @@ std::int64_t best_pokemon_damage_for_state(const RulesSession &position, const V
                                            std::int32_t actor, const Value &pokemon,
                                            const std::string &slot, const Value &cards) {
     const Value *definition = card(cards, string_field(pokemon, "card_id"));
-    const auto &attacks =
-        definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+    const auto attacks = card_runtime::attacks(cards, pokemon).as_array();
     std::int64_t best = 0;
     for (std::size_t index = 0; index < attacks.size(); ++index) {
         best = std::max(best, pokemon_attack_damage_ceiling(position, state, actor, pokemon, slot,
@@ -1002,8 +997,7 @@ HighImpactPlan high_impact_attack_plan(const RulesSession &position, const Value
                             ? pokemon_with_extra_energy(pokemon, energy_card_id)
                             : pokemon;
     const Value *definition = card(cards, string_field(probe, "card_id"));
-    const auto &attacks =
-        definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+    const auto attacks = card_runtime::attacks(cards, probe).as_array();
     HighImpactPlan best;
     for (std::size_t index = 0; index < attacks.size(); ++index) {
         const std::int64_t missing =
@@ -1062,8 +1056,7 @@ std::int64_t best_deterministic_available_damage(const RulesSession &position, c
         return 0;
     }
     const Value *definition = card(cards, string_field(*pokemon, "card_id"));
-    const auto &attacks =
-        definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+    const auto attacks = card_runtime::attacks(cards, *pokemon).as_array();
     std::int64_t best = 0;
     for (std::size_t index = 0; index < attacks.size(); ++index) {
         if (missing_energy(cards, *pokemon, array_field(attacks[index], "cost")) <= 0 &&

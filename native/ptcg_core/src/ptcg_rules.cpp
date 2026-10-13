@@ -1,5 +1,7 @@
 #include "ptcg_rules.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_vm_extended.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -43,7 +45,7 @@ std::size_t NativeRulesKernel::implemented_op_count() const noexcept {
 }
 
 std::size_t NativeRulesKernel::required_op_count() noexcept {
-    return 80;
+    return 99;
 }
 
 const std::set<std::string> &NativeRulesKernel::implemented_ops() noexcept {
@@ -97,8 +99,22 @@ VmExecutionResult NativeRulesKernel::execute(
     try {
         Value &self = player(result.state, actor);
         Value &opponent = player(result.state, 1 - actor);
+        const bool discard_recovery = (op == "search_cards" && string_arg(args,"from_zone","deck")=="discard"
+            && string_arg(args,"destination","hand")=="hand") || op=="recover_clara";
+        if (discard_recovery && context_mode != "attack"
+            && card_runtime::board_rule(cards_,result.state,1-actor,"block_discard_recovery")) {
+            result.success=true;
+            return result;
+        }
         Value *source = pokemon(self, source_slot);
         Value *opponent_active = pokemon(opponent, "active");
+        const bool active_effect = (op=="discard_energy" && string_arg(args,"from","self")!="self")
+            || (op=="switch_pokemon" && string_arg(args,"target")=="opponent")
+            || op=="apply_attack_lock_basic" || op=="apply_dazzling_beam" || op=="apply_outgoing_damage_reduction";
+        if (context_mode=="attack" && active_effect && opponent_active
+            && (prevents_attack_effects(*opponent_active) || card_runtime::protects_effect(cards_,result.state,1-actor,"active"))) {
+            result.success=true;return result;
+        }
         auto suspend = [&result](Value request, Value continuation) {
             increment_integer(result.state, "choice_sequence");
             result.pending = std::move(request);
@@ -106,7 +122,8 @@ VmExecutionResult NativeRulesKernel::execute(
         };
 
         bool early_return = false;
-        bool handled = execute_vm_modifier_pipeline(
+        bool handled = execute_vm_extended(cards_, command_spec, op, args, actor, source_slot, context_mode, rng, result);
+        if (!handled) handled = execute_vm_modifier_pipeline(
             cards_, command_spec, op, args, actor, source_slot,
             context_mode, rng, result, early_return);
         if (!handled) handled = execute_vm_damage_pipeline(
@@ -118,10 +135,22 @@ VmExecutionResult NativeRulesKernel::execute(
         if (!handled) handled = execute_vm_trigger_pipeline(
             cards_, command_spec, op, args, actor, source_slot,
             context_mode, rng, result, early_return);
-        if (early_return) return result;
+        if (early_return && !result.success) return result;
         if (!handled) throw std::invalid_argument("unsupported_native_vm_op");
+        if (result.pending.as_object().empty()) {
+            const Value trigger=card_runtime::take_hand_attachment_trigger(result.context);
+            if (!trigger.as_object().empty()) execute_vm_extended(cards_,trigger,"optional_effects",required(trigger,"args"),actor,source_slot,"ability",rng,result);
+        }
+        if (result.pending.as_object().empty() && op != "resolve_bench_limit") {
+            const Value barrier(Object{{"op",Value("resolve_bench_limit")},{"args",Value::make_object()},{"branches",Value::make_object()}});
+            execute_vm_extended(cards_,barrier,"resolve_bench_limit",required(barrier,"args"),actor,source_slot,context_mode,rng,result);
+        }
         if (!result.pending.as_object().empty()) {
             result.continuation["context_mode"] = Value(context_mode);
+            if (op=="relocate_energy" && !bool_arg(args,"all_required") && string_arg(result.pending,"request_type")=="select_attachment") {
+                result.pending["presentation"]=Value(Object{{"domain",Value("effect")},{"purpose",Value("energy_relocate_attachments")},
+                    {"selection_mode",Value("energy_units")},{"energy_count",Value(integer_arg(args,"amount",1))}});
+            }
         }
         result.success = true;
     } catch (const std::exception &error) {
@@ -219,7 +248,9 @@ VmExecutionResult NativeRulesKernel::resume(
         }
 
         bool early_return = false;
-        bool handled = resume_vm_cards(
+        bool handled = resume_vm_extended(*this, cards_, continuation, selected_options, cancelled,
+            op, args, actor, source_slot, stage, rng, result);
+        if (!handled) handled = resume_vm_cards(
             *this, cards_, continuation, selected_options, cancelled, op, args,
             actor, source_slot, stage, rng, result, early_return);
         if (!handled) handled = resume_vm_damage(
@@ -231,8 +262,24 @@ VmExecutionResult NativeRulesKernel::resume(
         if (!handled) handled = resume_vm_triggers(
             *this, cards_, continuation, selected_options, cancelled, op, args,
             actor, source_slot, stage, rng, result, early_return);
-        if (early_return) return result;
+        if (early_return && !result.success) return result;
         if (!handled) throw std::invalid_argument("unsupported_native_resume_op");
+        if (!result.pending.as_object().empty() && !result.continuation.find("context_mode"))
+            result.continuation["context_mode"]=Value(string_arg(continuation,"context_mode"));
+        if (!result.pending.as_object().empty() && op=="relocate_energy" && !bool_arg(args,"all_required") && string_arg(result.pending,"request_type")=="select_attachment") {
+            result.pending["presentation"]=Value(Object{{"domain",Value("effect")},{"purpose",Value("energy_relocate_attachments")},
+                {"selection_mode",Value("energy_units")},{"energy_count",Value(integer_arg(args,"amount",1))}});
+        }
+        if (result.pending.as_object().empty()) {
+            const Value trigger=card_runtime::take_hand_attachment_trigger(result.context);
+            if (!trigger.as_object().empty()) execute_vm_extended(cards_,trigger,"optional_effects",required(trigger,"args"),actor,source_slot,"ability",rng,result);
+        }
+
+        if (result.pending.as_object().empty() && op != "resolve_bench_limit") {
+            const Value barrier(Object{{"op",Value("resolve_bench_limit")},{"args",Value::make_object()},{"branches",Value::make_object()}});
+            execute_vm_extended(cards_,barrier,"resolve_bench_limit",required(barrier,"args"),actor,source_slot,
+                string_arg(continuation,"context_mode"),rng,result);
+        }
 
         result.success = true;
     } catch (const std::exception &error) {

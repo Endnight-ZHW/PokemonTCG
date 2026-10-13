@@ -5,10 +5,10 @@ func _handle_message(message: Variant) -> void:
 		not host
 		and room_id.is_empty()
 		and message is Dictionary
-		and str(message.get("message_type", "")) == ProtocolV6.WELCOME
+		and str(message.get("message_type", "")) == ProtocolV7.WELCOME
 	):
 		room_id = str(message.get("room_id", ""))
-	var validation := ProtocolV6.validate(
+	var validation := ProtocolV7.validate(
 		message,
 		room_id,
 		1 if host else 0,
@@ -19,7 +19,7 @@ func _handle_message(message: Variant) -> void:
 		var recoverable_gap := code == "sequence_gap" and message is Dictionary
 		if recoverable_gap:
 			# The envelope has already passed all structural, room and sender
-			# validation before ProtocolV6 reports a gap.  Adopt its sequence as a
+			# validation before ProtocolV7 reports a gap.  Adopt its sequence as a
 			# recovery fence, discard its payload, and request a fresh snapshot.
 			# Otherwise every later RESYNC reply is rejected against the same gap.
 			receive_sequence = int(Dictionary(message).get("sequence", receive_sequence))
@@ -27,8 +27,8 @@ func _handle_message(message: Variant) -> void:
 		var origin_request_id := _envelope_identifier(message, "request_id")
 		if host:
 			_send(
-				ProtocolV6.ERROR,
-				ProtocolV6.error_payload(
+				ProtocolV7.ERROR,
+				ProtocolV7.error_payload(
 					code, str(validation.get("message", "消息无效。"))
 				),
 				get_revision(),
@@ -50,25 +50,25 @@ func _handle_message(message: Variant) -> void:
 	var payload: Dictionary = row["payload"]
 	receive_sequence = int(validation["sequence"])
 	last_receive_msec = Time.get_ticks_msec()
-	var payload_validation := ProtocolV6.validate_payload(message_type, payload)
+	var payload_validation := ProtocolV7.validate_payload(message_type, payload)
 	if not bool(payload_validation.get("ok", false)):
 		var code := str(payload_validation.get("code", "invalid_payload"))
 		var message_text := str(payload_validation.get("message", "消息内容无效。"))
-		if message_type == ProtocolV6.STATE_UPDATE:
+		if message_type == ProtocolV7.STATE_UPDATE:
 			message_text += " groups=%s" % JSON.stringify(
 				payload.get("legal_action_groups", []))
 		var origin_action_id := str(row.get("action_id", ""))
 		var origin_request_id := str(row.get("request_id", ""))
 		if host:
 			_send(
-				ProtocolV6.ERROR,
-				ProtocolV6.error_payload(code, message_text),
+				ProtocolV7.ERROR,
+				ProtocolV7.error_payload(code, message_text),
 				get_revision(),
 				origin_action_id,
 				origin_request_id,
 			)
 		else:
-			if message_type == ProtocolV6.STATE_UPDATE:
+			if message_type == ProtocolV7.STATE_UPDATE:
 				request_resync()
 		events.append({
 			"type": "error",
@@ -79,7 +79,7 @@ func _handle_message(message: Variant) -> void:
 		})
 		return
 	if (
-		message_type == ProtocolV6.STATE_UPDATE
+		message_type == ProtocolV7.STATE_UPDATE
 		and int(row["state_revision"])
 		!= int(Dictionary(payload["state"]).get("revision", -1))
 	):
@@ -105,7 +105,7 @@ func _handle_host_message(
 	payload: Dictionary,
 ) -> void:
 	match message_type:
-		ProtocolV6.DECK_SELECT:
+		ProtocolV7.DECK_SELECT:
 			if connection_phase != ConnectionPhase.LOBBY:
 				_reject("invalid_phase", "牌组只能在大厅阶段选择。")
 				return
@@ -126,14 +126,16 @@ func _handle_host_message(
 				_reject("rules_options_mismatch", "规则选项与房主锁定配置不一致。")
 				return
 			var deck_key := str(payload.get("deck_key", ""))
-			if not catalog.decks.has(deck_key):
-				_send(ProtocolV6.ERROR, ProtocolV6.error_payload(
-					"invalid_deck", "未知牌组。"))
+			var selection := _receive_selection(payload)
+			if selection.is_empty():
+				_send(ProtocolV7.ERROR, ProtocolV7.error_payload(
+					"invalid_deck", "卡组构筑无效或卡表摘要不匹配。"))
 				return
 			var resume_requested := bool(payload.get("resume", false))
 			if session != null and session.state != null:
 				if not resume_requested or (
-					not remote_deck_key.is_empty() and deck_key != remote_deck_key
+					(not remote_deck_key.is_empty() and deck_key != remote_deck_key)
+					or selection.digest != remote_deck_digest
 				):
 					_reject("resume_mismatch", "恢复请求与当前对局不匹配。")
 					return
@@ -164,20 +166,21 @@ func _handle_host_message(
 				_reject("resume_unavailable", "房主已无法恢复该对局。")
 				return
 			remote_deck_key = deck_key
-			var result := session.start_match(
-				local_deck_key,
-				remote_deck_key,
+			remote_deck_digest = selection.digest
+			var result := session.start_frozen_match(
+				local_deck_selection,
+				selection,
 				seed,
 				-1,
 				rules_options,
 			)
 			if not result.success:
-				_send(ProtocolV6.ERROR, ProtocolV6.error_payload(
+				_send(ProtocolV7.ERROR, ProtocolV7.error_payload(
 					result.error_code, result.message))
 				return
 			connection_phase = ConnectionPhase.PLAYING
 			_broadcast_state(result.events)
-		ProtocolV6.ACTION_SUBMIT:
+		ProtocolV7.ACTION_SUBMIT:
 			if not _remote_message_allowed_while_playing(row):
 				return
 			if (
@@ -202,7 +205,7 @@ func _handle_host_message(
 				str(row.get("action_id", "")),
 				str(row.get("request_id", "")),
 			)
-		ProtocolV6.CHOICE_SUBMIT:
+		ProtocolV7.CHOICE_SUBMIT:
 			if not _remote_message_allowed_while_playing(row):
 				return
 			if not _revision_matches(row):
@@ -220,10 +223,10 @@ func _handle_host_message(
 				str(row.get("action_id", "")),
 				str(row.get("request_id", "")),
 			)
-		ProtocolV6.RESYNC_REQUEST:
+		ProtocolV7.RESYNC_REQUEST:
 			if _remote_state_sync_allowed(row):
 				_send_state_to_client()
-		ProtocolV6.SURRENDER:
+		ProtocolV7.SURRENDER:
 			if not _remote_message_allowed_while_playing(row):
 				return
 			var step := session.surrender(1)
@@ -231,9 +234,9 @@ func _handle_host_message(
 				_reject(step.error_code, step.message, row)
 				return
 			_broadcast_state(step.events)
-		ProtocolV6.PING:
-			_send(ProtocolV6.PONG, {}, get_revision())
-		ProtocolV6.PONG:
+		ProtocolV7.PING:
+			_send(ProtocolV7.PONG, {}, get_revision())
+		ProtocolV7.PONG:
 			if (
 				connection_phase == ConnectionPhase.FINISHING
 				and session != null
@@ -252,7 +255,7 @@ func _handle_client_message(
 	payload: Dictionary,
 ) -> void:
 	match message_type:
-		ProtocolV6.WELCOME:
+		ProtocolV7.WELCOME:
 			if (
 				connection_phase != ConnectionPhase.LOBBY
 				or deck_selection_sent
@@ -287,9 +290,11 @@ func _handle_client_message(
 			rules_options = Dictionary(payload.get("rules_options", {})).duplicate(true)
 			player_idx = int(payload.get("player_idx", 1))
 			deck_selection_sent = _send(
-				ProtocolV6.DECK_SELECT,
+				ProtocolV7.DECK_SELECT,
 				{
-					"deck_key": local_deck_key,
+					"deck_key": local_deck_selection.get("deck_key", ""),
+					"deck_definition": local_deck_selection.get("definition", {}).duplicate(true),
+					"deck_digest": local_deck_selection.get("digest", ""),
 					"rules_version": AppState.RULES_SCHEMA_VERSION,
 					"action_version": AppState.ACTION_SCHEMA_VERSION,
 					"core_fingerprint": _core_fingerprint(),
@@ -310,7 +315,7 @@ func _handle_client_message(
 				"room_id": room_id,
 				"rules_options": rules_options.duplicate(true),
 			})
-		ProtocolV6.STATE_UPDATE:
+		ProtocolV7.STATE_UPDATE:
 			if connection_phase not in [
 				ConnectionPhase.LOBBY,
 				ConnectionPhase.PLAYING,
@@ -362,7 +367,7 @@ func _handle_client_message(
 			if connection_phase == ConnectionPhase.FINISHING:
 				_begin_terminal_delivery(next_revision)
 				_clear_pending_submission()
-		ProtocolV6.ERROR:
+		ProtocolV7.ERROR:
 			var origins := _resolve_pending_error(row)
 			events.append({
 				"type": "error",
@@ -376,9 +381,9 @@ func _handle_client_message(
 				"stale_revision", "sequence_gap", "stale_sequence",
 			]:
 				request_resync()
-		ProtocolV6.PING:
-			_send(ProtocolV6.PONG, {}, get_revision())
-		ProtocolV6.PONG:
+		ProtocolV7.PING:
+			_send(ProtocolV7.PONG, {}, get_revision())
+		ProtocolV7.PONG:
 			pass
 		_:
 			events.append({

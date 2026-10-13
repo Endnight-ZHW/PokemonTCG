@@ -1,5 +1,6 @@
 #include "ptcg_rules.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -97,7 +98,7 @@ bool execute_vm_modifier_pipeline(
                     effect_applies = false;
                 }
                 if (effect_applies && op == "apply_attack_lock_basic") {
-                    effect_applies = card_has_subtype(
+                    effect_applies = card_runtime::basic_in_play(cards,*target) || card_has_subtype(
                         cards,
                         card_id(*target),
                         "Basic"
@@ -134,22 +135,29 @@ bool execute_vm_modifier_pipeline(
                     string_arg(args, "condition")
                 );
             }
+            for (int target_owner : {1 - actor, actor}) {
+                const auto target_kind = string_arg(args,"target","opponent");
+                if (target_kind != "both" && target_owner != (target_kind == "self" ? actor : 1 - actor)) continue;
+                Value *target_pokemon = pokemon(player(result.state,target_owner),"active");
             if (
                 applies
-                && opponent_active != nullptr
-                && !tool_effect_applies(cards, *opponent_active, "status_immunity")
+                && target_pokemon != nullptr
+                && !card_runtime::rule(cards, card_id(*target_pokemon), "setup_pokemon")
+                && !tool_effect_applies(cards, *target_pokemon, "status_immunity")
                 && !(
                     context_mode == "attack"
-                    && prevents_attack_effects(*opponent_active)
+                    && target_owner != actor
+                    && (prevents_attack_effects(*target_pokemon)
+                        || card_runtime::protects_effect(cards, result.state, target_owner, "active"))
                 )
             ) {
-                Value *conditions = opponent_active->find(
+                Value *conditions = target_pokemon->find(
                     "status_conditions"
                 );
                 if (conditions == nullptr || !conditions->is_array()) {
-                    (*opponent_active)["status_conditions"] =
+                    (*target_pokemon)["status_conditions"] =
                         Value::make_array();
-                    conditions = opponent_active->find(
+                    conditions = target_pokemon->find(
                         "status_conditions"
                     );
                 }
@@ -195,7 +203,7 @@ bool execute_vm_modifier_pipeline(
                         result,
                         "status_removed",
                         actor,
-                        1 - actor,
+                        target_owner,
                         "active",
                         replaced
                     );
@@ -207,7 +215,7 @@ bool execute_vm_modifier_pipeline(
                         "PARALYZED"
                     ) != replaced_statuses.end()
                 ) {
-                    set_integer(*opponent_active, "paralyzed_since_turn", 0);
+                    set_integer(*target_pokemon, "paralyzed_since_turn", 0);
                 }
                 const auto already = std::find_if(
                     conditions->as_array().begin(),
@@ -221,19 +229,24 @@ bool execute_vm_modifier_pipeline(
                 }
                 if (status == "PARALYZED") {
                     set_integer(
-                        *opponent_active,
+                        *target_pokemon,
                         "paralyzed_since_turn",
                         get_integer(result.state, "turn_number")
                     );
+                }
+                if (status == "POISONED" && source) {
+                    card_runtime::add_temporary_rule(*target_pokemon,"poison_counters",integer_arg(args,"amount",1),
+                        actor,*source,source_slot,2147483647);
                 }
                 append_status_event(
                     result,
                     "status_applied",
                     actor,
-                    1 - actor,
+                    target_owner,
                     "active",
                     status
                 );
+            }
             }
         } else if (op == "attach_energy") {
             const std::string from_zone = string_arg(
@@ -312,7 +325,7 @@ bool execute_vm_modifier_pipeline(
                             targets.begin(),
                             targets.end(),
                             [&cards](const Value &entry) {
-                                return !card_has_subtype(
+                                return !card_runtime::rule(cards,string_arg(entry,"card_id"),"setup_pokemon") && !card_has_subtype(
                                     cards,
                                     string_arg(entry, "card_id"),
                                     "Basic"
@@ -396,6 +409,7 @@ bool execute_vm_modifier_pipeline(
                             ++index;
                             continue;
                         }
+                        const auto attached_id=source_cards[index].string_or();
                         required(
                             *target,
                             "energy_card_ids"
@@ -407,6 +421,7 @@ bool execute_vm_modifier_pipeline(
                                 + static_cast<std::ptrdiff_t>(index)
                         );
                         --remaining;
+                        if (from_zone == "hand") card_runtime::on_hand_attachment(cards,result,actor,string_arg(targets.front(),"slot"),attached_id);
                         result.event_types.emplace_back(
                             "energy_attached"
                         );
@@ -624,12 +639,15 @@ bool execute_vm_modifier_pipeline(
                         ++index;
                         continue;
                     }
+                    const auto attached_id=source_cards[index].string_or();
                     attachments.push_back(std::move(source_cards[index]));
                     source_cards.erase(
                         source_cards.begin()
                             + static_cast<std::ptrdiff_t>(index)
                     );
                     --remaining;
+                    if (from_zone == "hand") card_runtime::on_hand_attachment(cards,result,actor,
+                        target_kind == "self" ? source_slot : target_kind,attached_id);
                     result.event_types.emplace_back("energy_attached");
                 }
             }

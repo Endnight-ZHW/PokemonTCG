@@ -40,6 +40,26 @@ void append_events(
 }
 
 const std::set<std::string> IMPLEMENTED_OPS = {
+    "register_rule",
+    "set_temporary_rule",
+    "mill_cards",
+    "select_opponent_cards",
+    "inspect_cards",
+    "discard_opponent_tool",
+    "return_attached_energy",
+    "discard_field_energy",
+    "place_counters",
+    "attach_named_bench",
+    "knockout_if_damaged",
+    "select_top_outcome",
+    "flip_recover_cards",
+    "require_condition",
+    "evolve_from_deck",
+    "devolve_pokemon",
+    "optional_effects",
+    "discard_from_play",
+    "resolve_bench_limit",
+
     "apply_attack_lock_basic",
     "apply_dazzling_beam",
     "apply_outgoing_damage_reduction",
@@ -701,14 +721,20 @@ void append_card_zone_event(
     const std::int64_t count = static_cast<std::int64_t>(
         card_ids.size());
     result.event_types.emplace_back(event_type);
-    append_event(result, event_type, Object{
+    Object data{
         {"player", Value(owner)},
         {"card_ids", Value(std::move(card_ids))},
         {"count", Value(count)},
-        {"source_zone", Value(source_zone)},
-        {"target_zone", Value(target_zone)},
         {"visibility", Value(visibility)},
-    });
+    };
+    // Board slots are not zones. Preserve that distinction for movement
+    // matching, attachment identities and the renderer's physical anchors.
+    const auto board_slot = [](const std::string &value) {
+        return value == "active" || value.rfind("bench_", 0) == 0;
+    };
+    data[board_slot(source_zone) ? "source_slot" : "source_zone"] = Value(source_zone);
+    data[board_slot(target_zone) ? "target_slot" : "target_zone"] = Value(target_zone);
+    append_event(result, event_type, std::move(data));
 }
 
 void append_energy_attachment_event(
@@ -1116,6 +1142,24 @@ void discard_pokemon(Value &player_value, const std::string &slot) {
         );
         required(player_value, "bench").as_array().at(index) = Value();
     }
+}
+
+void discard_pokemon_with_event(VmExecutionResult &result, std::int32_t owner, const std::string &slot) {
+    Value &owner_state = player(result.state, owner);
+    const Value *target = pokemon(owner_state, slot);
+    if (!target) throw std::invalid_argument("discard_pokemon_missing");
+    Array stack{Value(card_id(*target))};
+    if (const auto *evolutions = target->find("evolution_stack_ids"))
+        stack.insert(stack.end(), evolutions->as_array().begin(), evolutions->as_array().end());
+    const std::string tool = string_arg(*target, "attached_tool_id");
+    const Array energy = required(*target, "energy_card_ids").as_array();
+    discard_pokemon(owner_state, slot);
+    // Remove attachments before the Pokemon leaves. Each board slot owns its
+    // own event, including when several Pokemon are discarded by one choice.
+    append_card_zone_event(result, "cards_discarded", owner, energy, slot, "discard", "public");
+    if (!tool.empty())
+        append_card_zone_event(result, "cards_discarded", owner, Array{Value(tool)}, slot, "discard", "public");
+    append_card_zone_event(result, "card_moved", owner, std::move(stack), slot, "discard", "public");
 }
 
 } // namespace ptcg::ai::rules_detail

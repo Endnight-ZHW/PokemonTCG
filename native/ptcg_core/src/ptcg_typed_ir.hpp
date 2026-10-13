@@ -15,6 +15,26 @@
 namespace ptcg::ai::typed {
 
 enum class VmOp : std::uint8_t {
+    register_rule,
+    set_temporary_rule,
+    mill_cards,
+    select_opponent_cards,
+    inspect_cards,
+    discard_opponent_tool,
+    return_attached_energy,
+    discard_field_energy,
+    place_counters,
+    attach_named_bench,
+    knockout_if_damaged,
+    select_top_outcome,
+    flip_recover_cards,
+    require_condition,
+    evolve_from_deck,
+    devolve_pokemon,
+    optional_effects,
+    discard_from_play,
+    resolve_bench_limit,
+
     invalid,
     apply_attack_lock_basic,
     apply_dazzling_beam,
@@ -102,6 +122,12 @@ VmOp vm_op_from_string(std::string_view value) noexcept;
 std::string_view vm_op_to_string(VmOp value) noexcept;
 
 enum class VmArgKey : std::uint8_t {
+    rest_bottom,
+    progressive_bonus,
+    count_discard_name,
+    all_required,
+    draw_until,
+
     invalid,
     amount,
     target,
@@ -189,6 +215,11 @@ VmArgKey vm_arg_key_from_string(std::string_view value) noexcept;
 std::string_view vm_arg_key_to_string(VmArgKey value) noexcept;
 
 enum class FormulaOp : std::uint8_t {
+    prizes_taken,
+    retreat_cost,
+    energized_bench_count,
+    hand_type_count,
+
     invalid,
     constant,
     damage_counters,
@@ -241,6 +272,8 @@ struct VmArgument {
 };
 
 enum class VmBranchKey : std::uint8_t {
+    on_success,
+    on_failure,
     cost,
     on_pay,
     on_heads,

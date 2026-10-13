@@ -30,6 +30,6 @@ Implementation responsibilities are split by domain:
 tests, product GDExtension and research binding. `product_only` contains the
 content compiler, which must not enter the research runtime closure.
 
-Native ABI 2 preserves Protocol 6, Actions 4, ChoiceView 2, Snapshot 3 and VM
-IR 3. New card behavior must enter through compiled Card IR; production card
+Native ABI 2 supports Protocol 7 while preserving Actions 4, ChoiceView 2,
+Snapshot 3 and VM IR 3. New card behavior must enter through compiled Card IR; production card
 IDs are not valid rule-dispatch keys in this library.

@@ -1,5 +1,5 @@
 {
-  "android_version_code": 9,
+  "android_version_code": 11,
   "format_version": 6,
   "godot_version": "4.7.stable",
   "native_challenge": {
@@ -11,18 +11,18 @@
   },
   "native_rules": {
     "action_schema_version": 4,
-    "card_ir_content_fingerprint": "7c31d5fb16d004bd198e8db6fdbf526b02182f89634cf2addf79bd15f35c78dd",
-    "card_ir_contract_fingerprint": "4297189b1064d247d20448d38a56a77b357a0e4d216e0b3915247d0eb918a9f1",
-    "card_ir_source_fingerprint": "19a98bb9d04fd46989bd5d44438e6659c18b49bcedbbac512db04f1c5de5ad72",
+    "card_ir_content_fingerprint": "3a497f50760a8fe9f49a9413c086d1ae29d7ea7858a608923dbce60f3f8a7375",
+    "card_ir_contract_fingerprint": "8d0fe1a7801e03fa8e3c998d86f3fa535e74f1f7cc562641279b8952a12c6160",
+    "card_ir_source_fingerprint": "a229cdf5ad3f2257c94cf31c24ced9e8bf96fa1abfe6d122cedc2968c1d3ee4d",
     "card_ir_version": 4,
     "choice_view_schema_version": 2,
     "core": "ptcg_core",
-    "core_fingerprint": "80ec2ee0282430c43674d2ab0191aeb338e60f2ba02b614bc64af2950897e96e",
+    "core_fingerprint": "5cd529535350f080c163f0fc077c308374d02ec2a3b8426bf03497e7b86eb073",
     "journal_format_version": 1,
     "native_abi_version": 2,
-    "protocol_version": 6,
+    "protocol_version": 7,
     "snapshot_schema_version": 3,
-    "vm_descriptor_digest": "c29d7ed1fcfcf307c7deda76a90498e94656a331b06fc99cea89087d060ce79b",
+    "vm_descriptor_digest": "60d37185afb36e600860b46745174341d3ae55771d08e0fe8cfd2c0424f7bae3",
     "vm_ir_version": 3
   },
   "product_name": "PokemonTCG",
@@ -52,10 +52,10 @@
     "godot_actions": 4,
     "godot_rules": 6,
     "journal": 1,
-    "protocol": 6,
+    "protocol": 7,
     "rng": 2,
     "snapshot": 3,
     "vm_ir": 3
   },
-  "version": "0.8.0"
+  "version": "0.9.1"
 }

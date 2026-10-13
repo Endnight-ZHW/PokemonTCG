@@ -105,12 +105,12 @@ function Get-ReleaseManifest {
 function Assert-ProductReleaseContract {
     param([Parameter(Mandatory)] $Manifest)
     if (
-        [string]$Manifest.version -ne '0.8.0' -or
-        [int]$Manifest.android_version_code -ne 9 -or
+        [string]$Manifest.version -ne '0.9.1' -or
+        [int]$Manifest.android_version_code -ne 11 -or
         [int]$Manifest.schemas.card_ir -ne 4 -or
         [int]$Manifest.schemas.godot_actions -ne 4 -or
         [int]$Manifest.schemas.choice_view -ne 2 -or
-        [int]$Manifest.schemas.protocol -ne 6 -or
+        [int]$Manifest.schemas.protocol -ne 7 -or
         [int]$Manifest.schemas.snapshot -ne 3 -or
         [int]$Manifest.schemas.journal -ne 1 -or
         [int]$Manifest.schemas.rng -ne 2 -or

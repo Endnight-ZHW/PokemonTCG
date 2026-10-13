@@ -35,8 +35,8 @@ func _run_contract() -> void:
 		var card_id := str(value)
 		_check(not reviewed_set.has(card_id), "audit contains duplicate card id: %s" % card_id)
 		reviewed_set[card_id] = true
-	_check(int(audit.get("card_count", 0)) == 177, "audit card_count must be 177")
-	_check(cards.size() == 177, "runtime catalog must contain all 177 reviewed cards")
+	_check(int(audit.get("card_count", 0)) == 341, "audit card_count must be 341")
+	_check(cards.size() == 341, "runtime catalog must contain all 341 reviewed cards")
 	_check(reviewed.size() == cards.size(), "audit must cover every runtime card exactly once")
 	_check(images.size() == cards.size(), "image mapping must cover every runtime card")
 	_check(hashes.size() == cards.size(), "image hash mapping must cover every runtime card")

@@ -1,0 +1,279 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/decks/deck_editor_page.gd" id="1"]
+[ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2"]
+
+[node name="DeckEditorPage" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2")
+script = ExtResource("1")
+
+[node name="Margin" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Content" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="BackButton" type="Button" parent="Margin/Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 48)
+layout_mode = 2
+focus_mode = 0
+text = "← 返回"
+
+[node name="Heading" type="Label" parent="Margin/Content/Header"]
+layout_mode = 2
+theme_type_variation = &"FrontHeadingLabel"
+text = "我的卡组"
+
+[node name="DeckPicker" type="OptionButton" parent="Margin/Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(230, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+fit_to_longest_item = false
+
+[node name="NewButton" type="Button" parent="Margin/Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 48)
+layout_mode = 2
+focus_mode = 0
+text = "新建"
+
+[node name="CopyButton" type="Button" parent="Margin/Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 48)
+layout_mode = 2
+focus_mode = 0
+text = "复制"
+
+[node name="ImportButton" type="Button" parent="Margin/Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 48)
+layout_mode = 2
+focus_mode = 0
+text = "导入"
+
+[node name="Body" type="HBoxContainer" parent="Margin/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 20
+
+[node name="Pool" type="VBoxContainer" parent="Margin/Content/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.5
+theme_override_constants/separation = 10
+
+[node name="Search" type="LineEdit" parent="Margin/Content/Body/Pool"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 1
+placeholder_text = "搜索卡名、卡文或编号"
+clear_button_enabled = true
+
+[node name="Filters" type="GridContainer" parent="Margin/Content/Body/Pool"]
+unique_name_in_owner = true
+layout_mode = 2
+columns = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+
+[node name="Category" type="OptionButton" parent="Margin/Content/Body/Pool/Filters"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+fit_to_longest_item = false
+
+[node name="Attribute" type="OptionButton" parent="Margin/Content/Body/Pool/Filters"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+fit_to_longest_item = false
+
+[node name="Series" type="OptionButton" parent="Margin/Content/Body/Pool/Filters"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+fit_to_longest_item = false
+
+[node name="Rarity" type="OptionButton" parent="Margin/Content/Body/Pool/Filters"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+fit_to_longest_item = false
+
+[node name="PoolScroll" type="ScrollContainer" parent="Margin/Content/Body/Pool"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PoolResults" type="VBoxContainer" parent="Margin/Content/Body/Pool/PoolScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CardGrid" type="GridContainer" parent="Margin/Content/Body/Pool/PoolScroll/PoolResults"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 4
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 14
+
+[node name="PoolEmpty" type="Label" parent="Margin/Content/Body/Pool/PoolScroll/PoolResults"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 180)
+text = "没有找到匹配的卡牌\n试试其他关键词，或清除筛选条件。"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Pages" type="HBoxContainer" parent="Margin/Content/Body/Pool"]
+layout_mode = 2
+
+[node name="PreviousButton" type="Button" parent="Margin/Content/Body/Pool/Pages"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 48)
+layout_mode = 2
+focus_mode = 0
+text = "上一页"
+
+[node name="PageLabel" type="Label" parent="Margin/Content/Body/Pool/Pages"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 1
+
+[node name="ResetFiltersButton" type="Button" parent="Margin/Content/Body/Pool/Pages"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "清除筛选"
+
+[node name="NextButton" type="Button" parent="Margin/Content/Body/Pool/Pages"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 48)
+layout_mode = 2
+focus_mode = 0
+text = "下一页"
+
+[node name="Deck" type="VBoxContainer" parent="Margin/Content/Body"]
+layout_mode = 2
+custom_minimum_size = Vector2(390, 0)
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="DeckName" type="LineEdit" parent="Margin/Content/Body/Deck"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 1
+placeholder_text = "卡组名称"
+max_length = 80
+
+[node name="DeckStats" type="Label" parent="Margin/Content/Body/Deck"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 2
+
+[node name="StatusRow" type="HBoxContainer" parent="Margin/Content/Body/Deck"]
+layout_mode = 2
+
+[node name="Status" type="Label" parent="Margin/Content/Body/Deck/StatusRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 2
+max_lines_visible = 3
+text_overrun_behavior = 3
+
+[node name="ValidationButton" type="Button" parent="Margin/Content/Body/Deck/StatusRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "查看问题"
+
+[node name="DeckScroll" type="ScrollContainer" parent="Margin/Content/Body/Deck"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="DeckRows" type="VBoxContainer" parent="Margin/Content/Body/Deck/DeckScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="DeckEmpty" type="Label" parent="Margin/Content/Body/Deck/DeckScroll/DeckRows"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 180)
+text = "从左侧添加卡牌，开始构筑\n未完成的卡组也可以保存为草稿。"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Actions" type="HBoxContainer" parent="Margin/Content/Body/Deck"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="SaveButton" type="Button" parent="Margin/Content/Body/Deck/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_type_variation = &"FrontPrimaryButton"
+text = "保存"
+
+[node name="ShareButton" type="Button" parent="Margin/Content/Body/Deck/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "分享"
+
+[node name="DeleteButton" type="Button" parent="Margin/Content/Body/Deck/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 48)
+layout_mode = 2
+focus_mode = 0
+text = "删除"
+
+[node name="Notice" type="Label" parent="Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 2

@@ -315,6 +315,10 @@ bool card_matches_filter(
         return card_is_pokemon(cards, id)
             && card_has_subtype(cards, id, "Basic");
     }
+    if (normalized == "pokemon_no_rule") {
+        const auto *rules = definition ? definition->find("rules") : nullptr;
+        return card_is_pokemon(cards, id) && (!rules || rules->as_array().empty());
+    }
     if (normalized == "stage2") {
         return card_is_pokemon(cards, id)
             && card_has_subtype(cards, id, "Stage 2");

@@ -80,7 +80,8 @@ bool ChallengeSearchProviderImpl::forced_choice_response(const ptcg::ai::Value &
             }
             selected_ids.emplace_back("prize:" +
                                       std::to_string(lowest_prize == 999 ? 0 : lowest_prize));
-        } else if (choice.request_kind == Kind::select_retreat_payment) {
+        } else if (choice.request_kind == Kind::select_retreat_payment
+            || (pending.find("presentation") && pending.find("presentation")->find("required_units"))) {
             return retreat_payment_response(state, pending, response);
         } else if (choice.request_kind == Kind::confirm_trigger) {
             selected_ids.emplace_back(choice.options.front().option_id);

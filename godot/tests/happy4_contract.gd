@@ -91,7 +91,7 @@ func choose(a: NativeRulesSessionAdapter, step: StepResult, slots: Array = [], z
 
 
 func _check_catalog() -> void:
-	check(catalog.cards.size() == 177 and catalog.decks.size() == 14, "Catalog inventory")
+	check(catalog.cards.size() == 341 and catalog.decks.size() == 14, "Catalog inventory")
 	var expected := {
 		"decidueye": {"csvh4-001":4,"csvh4-002":3,"csvh4-003":4,"csvh4-027":1,"csvh4-025":1,"csvh4-004":1,"sv1-153":3,"sv1-152":2,"csvh4-041":2,"sv1-201":1,"csvh4-049":2,"csvh4-056":1,"sv1-ener-1":16},
 		"melmetal": {"csvh4-020":2,"csvh4-015":1,"csvh4-016":2,"csvh4-017":1,"csvh4-018":1,"csvh4-019":3,"csvh4-021":2,"svl-chat":1,"svi-sqwk":1,"sv1-153":4,"csvh4-032":2,"svl-vitb":2,"svf-houb":2,"csvh4-058":1,"sv1-ener-8":16},

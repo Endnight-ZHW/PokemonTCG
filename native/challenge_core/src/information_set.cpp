@@ -22,6 +22,69 @@ using traditional_value::field;
 using traditional_value::integer_field;
 using traditional_value::string_field;
 
+// A closed-list opponent never supplies its private deck to search. Use only
+// the released card catalog and facts already revealed in the observation.
+Array unknown_deck_pool(const Value &cards, const Array &visible, const Array &known,
+                        std::size_t count, std::uint32_t seed) {
+    struct Candidate { std::string id, name, group; std::int64_t limit; Value signature; bool basic; };
+    std::vector<Candidate> candidates;
+    std::map<std::string, std::int64_t> seen, groups;
+    bool has_basic=false;
+    auto has_subtype = [](const Value &card, const char *subtype) {
+        const auto *values = card.find("subtypes");
+        return values && values->is_array() && std::any_of(values->as_array().begin(),
+            values->as_array().end(), [subtype](const Value &v) { return v.string_or() == subtype; });
+    };
+    auto identity = [&](const Value &card, const std::string &id) {
+        const auto name = string_field(card, "deck_name", string_field(card, "name", id));
+        std::string group;
+        if (has_subtype(card, "ACE SPEC")) group = "ACE SPEC";
+        if (has_subtype(card, "Radiant")) group = "Radiant";
+        if (has_subtype(card, "Prism Star")) group = "Prism Star:" + name;
+        return std::make_pair(name, group);
+    };
+    for (const auto *zone : {&visible, &known}) {
+        for (const Value &value : *zone) {
+            const auto *card = cards.find(value.string_or());
+            if (!card) continue;
+            has_basic = has_basic || (string_field(*card,"supertype")=="Pokémon" && has_subtype(*card,"Basic"));
+            const auto [name, group] = identity(*card, value.string_or());
+            ++seen[name];
+            if (!group.empty()) ++groups[group];
+        }
+    }
+    for (const auto &[id, card] : cards.as_object()) {
+        Value signature = Value::make_object();
+        for (const char *key : {"name", "supertype", "subtypes", "hp", "attacks", "abilities",
+                "retreat_cost", "evolves_from", "energy_types", "weaknesses", "resistances",
+                "provides_energy", "trainer_effects", "energy_effects", "prize_value"}) {
+            if (const Value *value = card.find(key)) signature[key] = *value;
+        }
+        if (std::any_of(candidates.begin(), candidates.end(), [&](const Candidate &c) { return c.signature == signature; })) continue;
+        const auto [name, group] = identity(card, id);
+        const bool energy = string_field(card, "supertype") == "Energy" && has_subtype(card, "Basic");
+        candidates.push_back({id, name, group, integer_field(card, "deck_copy_limit", energy ? 60 : 4), std::move(signature),
+            string_field(card,"supertype")=="Pokémon" && has_subtype(card,"Basic")});
+    }
+    XorShift32 rng(seed);
+    Array pool;
+    while (pool.size() < count) {
+        std::vector<std::size_t> eligible;
+        for (std::size_t i = 0; i < candidates.size(); ++i) {
+            const auto &c = candidates[i];
+            if (!has_basic && pool.size()+1==count && !c.basic) continue;
+            if (seen[c.name] < c.limit && (c.group.empty() || groups[c.group] == 0)) eligible.push_back(i);
+        }
+        if (eligible.empty()) throw std::invalid_argument("unknown_deck_prior_exhausted");
+        const auto &c = candidates[eligible[rng.next_u32() % eligible.size()]];
+        pool.emplace_back(c.id);
+        has_basic=has_basic || c.basic;
+        ++seen[c.name];
+        if (!c.group.empty()) ++groups[c.group];
+    }
+    return pool;
+}
+
 Value array_field_or(const Value &value, const char *key, Value fallback) {
     const Value *entry = field(value, key);
     return entry != nullptr && entry->is_array() ? *entry : std::move(fallback);
@@ -575,13 +638,15 @@ bool InformationSet::capture(const Value &public_state, std::int32_t perspective
                 return false;
             }
             if (!known_hand.empty()) {
-                if (!published_deck_valid_[static_cast<std::size_t>(player)]) {
-                    if (error != nullptr)
-                        *error = "invalid_known_hand";
-                    return false;
-                }
                 for (const Value &known_card : known_hand) {
                     const std::string card_id = known_card.string_or();
+                    if (!published_deck_valid_[static_cast<std::size_t>(player)]) {
+                        if (cards.find(card_id) == nullptr) {
+                            if (error != nullptr) *error = "invalid_known_hand";
+                            return false;
+                        }
+                        continue;
+                    }
                     const auto found =
                         std::find_if(pool.begin(), pool.end(), [&card_id](const Value &entry) {
                             return entry.string_or() == card_id;
@@ -597,7 +662,16 @@ bool InformationSet::capture(const Value &public_state, std::int32_t perspective
             const std::size_t hidden_count = hand_count - known_hand.size() +
                                              row.find("deck")->as_array().size() +
                                              row.find("prizes")->as_array().size();
-            if (pool.empty() && hidden_count > 0) {
+            if (!published_deck_valid_[static_cast<std::size_t>(player)] && hidden_count > 0) {
+                Array visible = visible_cards(row, player == perspective);
+                if (integer_field(public_snapshot_, "stadium_owner_idx", -1) == player) {
+                    const auto stadium = string_field(public_snapshot_, "stadium_card_id");
+                    if (!stadium.empty()) visible.emplace_back(stadium);
+                }
+                pool = unknown_deck_pool(cards, visible, known_hand, hidden_count,
+                    static_cast<std::uint32_t>(match_seed) ^ static_cast<std::uint32_t>(player + 1)
+                    ^ static_cast<std::uint32_t>(integer_field(public_snapshot_, "revision")));
+            } else if (pool.empty() && hidden_count > 0) {
                 pool.assign(hidden_count, Value(fallback_card_id_));
             }
             remaining_pools_[static_cast<std::size_t>(player)] = std::move(pool);

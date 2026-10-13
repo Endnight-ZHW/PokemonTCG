@@ -1,5 +1,6 @@
 #include "ptcg_game.hpp"
 #include "ptcg_game_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -111,7 +112,7 @@ Value NativeGameKernel::legal_actions(
         for (std::size_t hand_index = 0; hand_index < hand.size(); ++hand_index) {
             const std::string card_id = hand[hand_index].string_or();
             const Value *card = card_definition(cards_, card_id);
-            if (card == nullptr || !is_basic_pokemon(*card)) {
+            if (card == nullptr || (!is_basic_pokemon(*card) && !card_runtime::rule(cards_,card_id,"setup_pokemon"))) {
                 continue;
             }
             if (
@@ -197,6 +198,7 @@ Value NativeGameKernel::legal_actions(
             empty_bench.push_back("bench_" + std::to_string(index));
         }
     }
+    if (static_cast<std::int64_t>(occupied_bench_count(owner)) >= card_runtime::bench_limit(cards_, state, actor)) empty_bench.clear();
 
     const Array &hand = required(owner, "hand").as_array();
     for (std::size_t hand_index = 0; hand_index < hand.size(); ++hand_index) {
@@ -327,6 +329,10 @@ Value NativeGameKernel::legal_actions(
     }
 
     for (const auto &[slot, target] : pokemon_rows) {
+        if (card_runtime::rule(cards_,string_arg(*target,"card_id"),"setup_pokemon")) {
+            actions.push_back(make_action(state,"USE_ABILITY",actor,pokemon_ref(actor,slot,*target),Value(),
+                Value(Object{{"ability_name",Value("弃置卡比兽娃娃")}})));
+        }
         const Value *definition = card_definition(
             cards_,
             string_arg(*target, "card_id")
@@ -363,6 +369,7 @@ Value NativeGameKernel::legal_actions(
             const std::string trigger = string_arg(ability, "trigger");
             if (
                 trigger == "passive"
+                || trigger == "on_evolve"
                 || trigger == "on_enter_play"
                 || trigger == "on_damaged"
             ) {
@@ -454,7 +461,10 @@ Value NativeGameKernel::legal_actions(
         );
         if (
             !bool_arg(owner, "retreated_this_turn")
+            && !card_runtime::rule(cards_,string_arg(*active,"card_id"),"setup_pokemon")
             && !special_condition_blocks_action
+            && card_runtime::temporary_rule(*active,"retreat_lock",integer_arg(state,"turn_number")) == 0
+            && !card_runtime::rule(cards_,string_arg(*active,"card_id"),"setup_pokemon")
         ) {
             const std::size_t available_units = energy_units(
                 cards_,
@@ -492,9 +502,8 @@ Value NativeGameKernel::legal_actions(
             integer_arg(state, "turn_number") != 1
             && !special_condition_blocks_action
         ) {
-            const Value *attacks = active_card != nullptr
-                ? active_card->find("attacks")
-                : nullptr;
+            const Value attack_list = card_runtime::attacks(cards_, *active);
+            const Value *attacks = &attack_list;
             if (attacks != nullptr && attacks->is_array()) {
                 for (
                     std::size_t attack_index = 0;
@@ -502,8 +511,14 @@ Value NativeGameKernel::legal_actions(
                     ++attack_index
                 ) {
                     const Value &attack = attacks->as_array()[attack_index];
-                    const Value *cost = attack.find("cost");
+                    Value adjusted_cost = attack.find("cost") ? *attack.find("cost") : Value::make_array();
+                    auto extra_cost = card_runtime::temporary_rule(*active,"attack_cost_increase",integer_arg(state,"turn_number"));
+                    if (card_runtime::board_rule(cards_,state,1-actor,"opponent_attack_cost_increase")) ++extra_cost;
+                    for (std::int64_t i=0;i<extra_cost;++i) adjusted_cost.as_array().emplace_back("Colorless");
+                    const Value *cost = &adjusted_cost;
                     if (
+                        card_runtime::temporary_rule(*active,"attack_lock",integer_arg(state,"turn_number")) != 0
+                        ||
                         attack_is_locked(
                             *active,
                             string_arg(attack, "name")

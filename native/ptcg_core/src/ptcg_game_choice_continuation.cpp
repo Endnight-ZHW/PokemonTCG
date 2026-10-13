@@ -1696,6 +1696,13 @@ GameExecutionResult NativeGameKernel::resume_choice(
         } else {
             throw std::invalid_argument("unsupported_game_continuation");
         }
+        if (result.pending.as_object().empty() && string_arg(result.state,"result_status","ONGOING")=="ONGOING") {
+            const Value barrier(Object{{"op",Value("resolve_bench_limit")},{"args",Value::make_object()},{"branches",Value::make_object()}});
+            auto vm=rules_.execute(std::move(result.state),barrier,actor,"active",result.rng_state,"ability");
+            if (!vm.success) throw std::invalid_argument(vm.error_code);
+            result.state=std::move(vm.state);result.rng_state=vm.rng_state;
+            if (!vm.pending.as_object().empty()) attach_game_continuation(result,vm,actor,false,Value::make_array(),"active","ability");
+        }
         result.success = true;
     } catch (const std::exception &error) {
         result.success = false;

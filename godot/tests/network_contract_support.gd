@@ -112,8 +112,8 @@ func _state_envelope(
 	# groups tied to the authoritative revision into those deliberately stale views.
 	view["legal_action_groups"] = []
 	view["legal_action_error"] = ""
-	return ProtocolV6.envelope(
-		ProtocolV6.STATE_UPDATE,
+	return ProtocolV7.envelope(
+		ProtocolV7.STATE_UPDATE,
 		"correlation-contract",
 		0,
 		sequence,
@@ -242,8 +242,8 @@ func _controller_is_reset(controller: NetworkMatchController) -> bool:
 
 func _expect_invalid_state(view: Dictionary, label: String) -> void:
 	_expect(
-		not bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, view
+		not bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, view
 		).get("ok", false)),
 		"state payload accepted %s" % label,
 	)

@@ -76,6 +76,9 @@ func _refresh_field_info(display_state: GameState) -> void:
 		own.deck.size(),
 		own.prizes.size(),
 	]
+	for row in [[table.own_info,table.view_player],[table.opponent_info,1-table.view_player]]:
+		var limit: int = table.catalog.bench_limit(display_state,int(row[1]))
+		if limit < 5: (row[0] as Label).text += " · 备战上限 %d" % limit
 	table.own_info.accessibility_name = "%s，%s" % [own.name, table.own_info.text]
 	table.own_info.tooltip_text = table.own_info.text
 	table.own_info.set_meta("full_caption", table.own_info.text)
@@ -866,7 +869,7 @@ func _attack_popover_metadata(action: GameAction, row: Dictionary) -> Dictionary
 	var active := table.state_ref.get_player(action.actor).active
 	if active == null:
 		return result
-	var attacks: Array = table.catalog.get_card(active.card_id).get("attacks", [])
+	var attacks: Array = table.catalog.effective_attacks(active)
 	var attack_index := action.attack_index()
 	if attack_index < 0 or attack_index >= attacks.size():
 		return result

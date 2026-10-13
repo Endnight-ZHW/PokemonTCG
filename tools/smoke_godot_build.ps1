@@ -76,7 +76,7 @@ $networkSmokeText = $networkSmoke -join "`n"
 if ($LASTEXITCODE -ne 0 -or -not $networkSmokeText.Contains('PHASE6_EXPORT_NETWORK_OK')) {
     throw "Exported Windows network smoke failed.`n$networkSmokeText"
 }
-Write-Host 'WINDOWS_NETWORK_OK protocol=6 transports=enet,websocket'
+Write-Host 'WINDOWS_NETWORK_OK protocol=7 transports=enet,websocket'
 
 $releaseSmoke = & $windowsConsole -- --phase6-release-smoke 2>&1
 $releaseSmokeText = $releaseSmoke -join "`n"

@@ -148,6 +148,14 @@ subtitle_text = "局域网或互联网对战"
 mode_icon = ExtResource("8")
 accent_color = Color(0.761, 0.604, 0.212, 1)
 
+[node name="MyDecksButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeStack"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"FrontSecondaryButton"
+text = "我的卡组 · 自由构筑"
+
 [node name="HeroPanel" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid"]
 unique_name_in_owner = true
 layout_mode = 2

@@ -27,6 +27,8 @@ function Invoke-BattleGraphicsCheck {
 
 Invoke-BattleGraphicsCheck -Script 'res://tests/battle_button_interaction_contract.gd' `
     -Marker 'BATTLE_BUTTON_INTERACTION_OK' -LogName 'battle3d-button-interaction.log'
+Invoke-BattleGraphicsCheck -Script 'res://tests/csv5_animation_contract.gd' `
+    -Marker 'CSV5_ANIMATION_CONTRACT_OK' -LogName 'csv5-animation-graphics.log'
 Invoke-BattleGraphicsCheck -Script 'res://tests/battle_3d_contract.gd' `
     -Marker 'BATTLE_3D_CONTRACT_OK' -LogName 'battle3d-graphics-contract.log'
 Invoke-BattleGraphicsCheck -Script 'res://tests/battle_3d_visual_contract.gd' `

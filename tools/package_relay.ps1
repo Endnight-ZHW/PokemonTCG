@@ -36,7 +36,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'deploy/relay/nginx.conf.example') -
 Copy-Item -LiteralPath (Join-Path $repoRoot 'deploy/relay/THIRD_PARTY_NOTICES.txt') -Destination $packageRoot
 [ordered]@{
     version = $version
-    protocol = 6
+    protocol = 7
     platform = $platform
     architecture = 'x86_64'
     boost = [string]$lock.native.boost.version

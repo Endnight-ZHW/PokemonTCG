@@ -498,7 +498,7 @@ func _sync_card(card: CardView) -> void:
 		entity.set_surface(null, true)
 		_hide_children(card)
 		return
-	entity.set_surface(card.image.texture, card.is_hidden_card)
+	entity.set_surface(card.image.texture, card.is_hidden_card or (card.pokemon != null and table.catalog.is_setup_doll(card.card_id)))
 	var thinking_tint := Color.TRANSPARENT
 	var thinking := table.ai_thinking_overlay
 	if not hand and not card.empty and thinking != null and thinking.active and card.owner_player == thinking.ai_player:

@@ -434,7 +434,11 @@ bool ChallengeSearchProviderImpl::retreat_payment_response(const ptcg::ai::Value
         cancelled = bool_field(pending, "can_cancel");
         return finish();
     }
-    const ptcg::ai::Value &owner = players->as_array()[static_cast<std::size_t>(actor)];
+    const auto *option_rows=pending.find("options");
+    const auto *first_ref=option_rows && !option_rows->as_array().empty()?option_rows->as_array().front().find("ref"):nullptr;
+    const int target_owner=first_ref?static_cast<int>(integer_field(*first_ref,"player",actor)):actor;
+    if (target_owner<0 || target_owner>1) return finish();
+    const ptcg::ai::Value &owner = players->as_array()[static_cast<std::size_t>(target_owner)];
     const ptcg::ai::Value *active = owner.find("active");
     const ptcg::ai::Value *energy_value =
         active != nullptr && active->is_object() ? active->find("energy_card_ids") : nullptr;
@@ -464,7 +468,7 @@ bool ChallengeSearchProviderImpl::retreat_payment_response(const ptcg::ai::Value
         const std::int64_t index = integer_field(*ref, "index", -1);
         if (string_field(*ref, "kind") != "attachment" ||
             string_field(*ref, "attachment_type") != "energy" ||
-            integer_field(*ref, "player", -1) != actor || string_field(*ref, "slot") != "active" ||
+            integer_field(*ref, "player", -1) != target_owner || string_field(*ref, "slot") != "active" ||
             index < 0 || static_cast<std::size_t>(index) >= energy_ids.size() ||
             string_field(*ref, "card_id") !=
                 energy_ids[static_cast<std::size_t>(index)].string_or())

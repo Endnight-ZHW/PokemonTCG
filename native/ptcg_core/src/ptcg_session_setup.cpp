@@ -2,6 +2,7 @@
 #include "ptcg_session_internal.hpp"
 
 #include "ptcg_random.hpp"
+#include "ptcg_deck_validation.hpp"
 
 #include <algorithm>
 #include <array>
@@ -21,6 +22,10 @@
 namespace ptcg::ai {
 
 using namespace session_detail;
+
+Value RulesSession::validate_deck(const Value &entries) const {
+    return ptcg::ai::validate_deck(cards(), entries);
+}
 
 RulesSessionResult RulesSession::create(
     const Value &catalog,
@@ -67,6 +72,12 @@ RulesSessionResult RulesSession::create(
     Array prepared_decks;
     prepared_decks.reserve(2);
     for (const Value &deck_value : decks.as_array()) {
+        const Value validation = validate_deck(deck_value);
+        if (!validation.find("valid")->as_bool()) {
+            const auto &first = validation.find("errors")->as_array().front();
+            const auto code = first.find("code")->string_or();
+            return result(false, code, code);
+        }
         if (!deck_value.is_array() || deck_value.as_array().size() != 60) {
             return result(false, "invalid_deck_size", "invalid_deck_size");
         }
@@ -240,6 +251,9 @@ RulesSessionResult RulesSession::create(
         if (!opening_error.empty()) {
             initialized_ = false;
             return result(false, opening_error, opening_error);
+        }
+        if (opening_doll_choice(cards(),state_,{},pending_,continuation_)) {
+            pending_raw_=pending_;materialize_resolution_stack();
         }
     }
     append_public_event_logs(state_, cards(), state_, events);

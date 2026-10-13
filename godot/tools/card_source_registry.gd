@@ -50,6 +50,8 @@ static func validate_cards(cards: Dictionary, manifest: Dictionary) -> String:
 		return error
 	for card_id in cards:
 		var card: Dictionary = cards[card_id]
+		if str(card_id).begins_with("csv5-") and (int(manifest.cards[card_id].collection_id) != 298 or card.get("set_id") != "CSV5C" or str(card.get("number", "")).get_slice("/",0) != str(card_id).trim_prefix("csv5-")):
+			return "csv5_printing_number_mismatch:%s" % card_id
 		for field in METADATA_FIELDS:
 			if not card.get(field) is String:
 				return "card_source_metadata_type:%s:%s" % [card_id, field]

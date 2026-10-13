@@ -52,6 +52,16 @@ func _initialize() -> void:
 			if not bool(summary.get("success", false)):
 				failures.append("%s %s: %s" % [
 					mode, deck_key, summary.get("error", "unknown")])
+	var custom_catalog := CardCatalog.new(true)
+	custom_catalog.decks["custom"] = {"name":"自定义卡组", "cards":[
+		{"card_id":"csv5-049","count":4},{"card_id":"csv5-070","count":4},{"card_id":"sv1-ener-4","count":52}]}
+	var custom_engine := GameEngine.new(custom_catalog)
+	for preset in ["fire", "psychic", "happy4_miraidon"]:
+		if not requested_deck.is_empty() and requested_deck != preset: continue
+		var summary := _play_game("challenge",preset,"custom",20261010,custom_catalog,custom_engine,worker)
+		summaries.append(summary)
+		print("AI_CUSTOM_DECK_GAME ",JSON.stringify(summary))
+		if not summary.get("success",false): failures.append("Custom opponent " + preset + ": " + str(summary.get("error")))
 	if failures.is_empty():
 		print("AI_REGRESSION_OK ", JSON.stringify({
 			"games": summaries,

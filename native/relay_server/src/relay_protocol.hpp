@@ -9,7 +9,7 @@
 
 namespace ptcg::relay {
 
-inline constexpr int kProtocolVersion = 6;
+inline constexpr int kProtocolVersion = 7;
 inline constexpr std::size_t kMaxMessageBytes = 262144;
 inline constexpr std::size_t kMaxControlMessageBytes = 1024;
 inline constexpr int kMaxMessagesPerSecond = 60;

@@ -51,6 +51,12 @@ if ($joinedImportOutput -match $fatalGodotErrorPattern) {
 }
 
 $contracts = @(
+    @('deck_editor_interaction_contract', 'DECK_EDITOR_INTERACTION_CONTRACT_OK', 'Stable editor controls, recoverable first save, sharing limits and selection round trips'),
+    @('csv5_presentation_contract', 'CSV5_PRESENTATION_CONTRACT_OK', 'CSV5 searches, precise movement endpoints, attachments and non-KO departures'),
+    @('csv5_animation_contract', 'CSV5_ANIMATION_CONTRACT_OK', 'CSV5 native transitions, landing order, both viewpoints and hidden-hand rendering'),
+    @('deck_library_contract', 'DECK_LIBRARY_CONTRACT_OK', 'Custom deck validation, drafts, atomic storage, backup and sharing'),
+    @('custom_deck_privacy_contract', 'CUSTOM_DECK_PRIVACY_CONTRACT_OK', 'Protocol 7 deck submission, reconnect digests, private projections and AI invariance'),
+    @('csv5_rules_contract', 'CSV5_RULES_CONTRACT_OK', 'CSV5C full printed attacks, abilities, Trainers, setup and effect protection'),
     @('audio_system_contract', 'AUDIO_SYSTEM_CONTRACT_OK', 'Audio assets, variations, scoped voices, music lifecycle and settings'),
     @('happy4_contract', 'HAPPY4_CONTRACT_OK', 'Happy Set 4 deck lists, real card effects and choice privacy'),
     @('card_catalog_contract', 'CARD_CATALOG_CONTRACT_OK', 'Card catalog contract'),

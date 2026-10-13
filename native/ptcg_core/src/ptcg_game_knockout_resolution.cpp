@@ -1,5 +1,6 @@
 #include "ptcg_game.hpp"
 #include "ptcg_game_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -109,7 +110,7 @@ std::int64_t pokemon_hp(
             condition != nullptr
             && condition->is_object()
             && bool_arg(*condition, "target_basic")
-            && !is_basic_pokemon(*definition)
+            && !card_runtime::basic_in_play(cards,pokemon_value)
         ) {
             continue;
         }
@@ -365,6 +366,7 @@ std::int64_t knockout_prize_value(
     const std::string &card_id
 ) {
     const Value *definition = card_definition(cards, card_id);
+    if (card_runtime::rule(cards,card_id,"setup_pokemon")) return 0;
     return std::max<std::int64_t>(
         1,
         definition == nullptr
@@ -508,6 +510,18 @@ void finish_turn(
 ) {
     Value &state = result.state;
     std::vector<std::string> &event_types = result.event_types;
+    std::vector<std::pair<std::string,const Value *>> tool_holders;
+    append_pokemon_rows(player(state,actor),tool_holders);
+    for (const auto &[slot,holder] : tool_holders) {
+        const auto tool=string_arg(*holder,"attached_tool_id");
+        if (!card_runtime::rule(cards,tool,"tool_attack_expires")) continue;
+        Value *target=pokemon(player(state,actor),slot);
+        (*target)["attached_tool_id"]=Value("");
+        required(player(state,actor),"discard").as_array().emplace_back(tool);
+        append_event(result,"cards_discarded",Object{{"player",Value(actor)},{"card_ids",Value(Array{Value(tool)})},
+            {"source_slot",Value(slot)},{"target_zone",Value("discard")},{"visibility",Value("public")}});
+        event_types.emplace_back("cards_discarded");
+    }
     event_types.emplace_back("turn_end");
     append_event(result, "turn_end", Object{
         {"actor", Value(actor)},
@@ -643,7 +657,8 @@ void finish_turn(
     for (std::int32_t owner = 0; owner < 2; ++owner) {
         Value *target = pokemon(player(state, owner), "active");
         if (has_status(target, "POISONED")) {
-            place_checkup_counters(owner, "POISONED", 10);
+            const auto poison = card_runtime::temporary_rule(*target,"poison_counters",integer_arg(state,"turn_number"));
+            place_checkup_counters(owner, "POISONED", std::max<std::int64_t>(1,poison)*10);
         }
     }
     for (std::int32_t owner = 0; owner < 2; ++owner) {
@@ -679,6 +694,20 @@ void finish_turn(
         ) {
             append_status_removed(owner, "PARALYZED", "checkup_expiry");
         }
+    }
+    // Checkup abilities resolve for both sides before the simultaneous KO check.
+    for (int owner : {actor,1-actor}) {
+        const auto *active=pokemon(player(state,owner),"active");
+        const auto *ability=active?card_runtime::rule(cards,string_arg(*active,"card_id"),"checkup_counters"):nullptr;
+        auto *target=pokemon(player(state,1-owner),"active");
+        if (!ability || !target) continue;
+        const auto amount=integer_arg(*ability,"amount")*10;
+        add_damage(*target,amount);
+        if (card_runtime::knocked_out(cards,*target) && !target->find("pending_ko_source_kind")) (*target)["pending_ko_source_kind"]=Value("damage_counters");
+        event_types.emplace_back("damage_counters_placed");
+        append_event(result,"damage_counters_placed",Object{{"actor",Value(owner)},{"player",Value(1-owner)},
+            {"target_player",Value(1-owner)},{"target_slot",Value("active")},{"amount",Value(amount)},
+            {"damage_kind",Value("damage_counters")},{"source_kind",Value("ability")},{"visibility",Value("public")}});
     }
     result.rng_state = rng.state();
 

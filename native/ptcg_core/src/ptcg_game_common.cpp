@@ -1,5 +1,6 @@
 #include "ptcg_game.hpp"
 #include "ptcg_game_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 #include "ptcg_rules_internal.hpp"
 
 #include <algorithm>
@@ -984,6 +985,9 @@ std::int64_t attached_defender_damage_delta(
         defender_is_active,
         false
     );
+    result -= card_runtime::temporary_rule(defender,"incoming_damage_reduction",0);
+    const auto *full_hp = card_runtime::rule(cards,string_arg(defender,"card_id"),"full_hp_damage_reduction");
+    if (full_hp && integer_arg(defender,"damage_counters")==0) result -= integer_arg(*full_hp,"amount");
     const Value *energy = defender.find("energy_card_ids");
     if (energy != nullptr && energy->is_array()) {
         for (const Value &entry : energy->as_array()) {
@@ -1304,7 +1308,7 @@ std::int64_t effective_retreat_cost(
     if (
         stadium != nullptr
         && active_card != nullptr
-        && is_basic_pokemon(*active_card)
+        && card_runtime::basic_in_play(cards,active)
     ) {
         const Value *effects = stadium->find("compiled_trainer_effects");
         if (effects != nullptr && effects->is_array()) {

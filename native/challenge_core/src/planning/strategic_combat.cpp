@@ -1,4 +1,5 @@
 #include "planning/strategic_facts.hpp"
+#include "ptcg_card_runtime.hpp"
 #include "card_evaluation_detail.hpp"
 
 #include <functional>
@@ -411,7 +412,7 @@ AttackerClock StrategicAnalyzer::combat_clock(const RulesSession &position, cons
         const Value *definition = card(cards_, evolution.id);
         if (definition == nullptr)
             continue;
-        const auto &attacks = array_field(*definition, "attacks");
+        const auto attacks=card_runtime::attacks(cards_,probe).as_array();
         for (std::size_t index = 0; index < attacks.size(); ++index) {
             const auto &cost = array_field(attacks[index], "cost");
             std::string cost_key;
@@ -582,7 +583,7 @@ double StrategicAnalyzer::prize_route(const RulesSession &position, const Value 
         const Value *definition = card(cards_, attacker.planned_card_id);
         if (source == nullptr || definition == nullptr)
             continue;
-        const auto &moves = array_field(*definition, "attacks");
+        const auto moves=card_runtime::attacks(cards_,attacker.forecast_pokemon).as_array();
         if (attacker.attack_index >= moves.size())
             continue;
         const Value &forecast = attacker.forecast_pokemon;

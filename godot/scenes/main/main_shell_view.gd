@@ -557,6 +557,7 @@ func show_title() -> void:
 	page.network_selected.connect(show_network_setup)
 	page.settings_requested.connect(main._show_settings)
 	page.help_requested.connect(main._show_help)
+	page.decks_requested.connect(show_deck_editor)
 	page.card_art_requested.connect(main._show_home_card_art)
 	page.showcase_sound_requested.connect(main.audio_director.play_home)
 	if title_backdrop:
@@ -581,16 +582,103 @@ func show_network_setup(kind: String) -> void:
 		main.auxiliary_panels.show_deck_picker(page)
 	)
 
-func show_deck_select(mode: String = MODE_LOCAL) -> void:
+func show_deck_select(mode: String = MODE_LOCAL, editor_context: Dictionary = {}) -> void:
 	main._play_click()
 	main.game_mode = mode
 	main.current_screen = SCREEN_DECKS
 	main.audio_director.play_music("preparation")
 	var page := mount(DECK_SELECT_SCENE) as DeckSelectPage
 	page.configure(main.catalog, main.game_mode)
+	if not editor_context.is_empty(): page.restore_editor_context(editor_context)
 	page.back_requested.connect(show_title)
 	page.deck_details_requested.connect(main._show_deck_details)
 	page.start_requested.connect(main._on_match_start_requested)
+	page.edit_requested.connect(func() -> void:
+		var context := page.editor_context()
+		show_deck_editor(mode, str(context.preview_key), context)
+	)
+
+func show_deck_editor(return_mode: String = "", key: String = "", editor_context: Dictionary = {}) -> void:
+	main._play_click()
+	main.current_screen = "deck_editor"
+	main.audio_director.play_music("preparation")
+	var page := mount(preload("res://scenes/decks/deck_editor_page.tscn")) as DeckEditorPage
+	page.configure(main.catalog as DeckLibrary, key)
+	page.back_requested.connect(func() -> void:
+		if return_mode.is_empty(): show_title()
+		else:
+			var context := editor_context.duplicate(true)
+			if not page.selected_key.is_empty(): context.preview_key = page.selected_key
+			show_deck_select(return_mode, context)
+	)
+	page.card_requested.connect(func(id: String) -> void:
+		main._prepare_auxiliary_panels()
+		main.auxiliary_panels._show_card_inspector({"card_id": id})
+	)
+	page.confirmation_requested.connect(_confirm_deck_action)
+	page.import_requested.connect(_import_deck.bind(page))
+	page.share_requested.connect(_share_deck)
+	page.validation_requested.connect(_show_deck_validation)
+
+func _show_deck_validation(message: String) -> void:
+	var host: ModalHost = main.modal_host_controller
+	host.open("构筑检查", "关闭", "", false, ModalSpec.frontend(Vector2(700, 520)))
+	var label := Label.new()
+	label.text = message
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	host.modal_body.add_child(label)
+	host.modal_confirm.pressed.connect(host.close, CONNECT_ONE_SHOT)
+	host.back_action = host.close
+
+func _confirm_deck_action(message: String, action: Callable) -> void:
+	var host: ModalHost = main.modal_host_controller
+	host.open("确认操作", "确定", "取消", false, ModalSpec.frontend(Vector2(640, 300)))
+	var label := Label.new()
+	label.text = message
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	host.modal_body.add_child(label)
+	host.modal_confirm.pressed.connect(host.close.bind(action), CONNECT_ONE_SHOT)
+	host.modal_cancel.pressed.connect(host.close, CONNECT_ONE_SHOT)
+	host.back_action = host.close
+
+func _import_deck(page: DeckEditorPage) -> void:
+	var host: ModalHost = main.modal_host_controller
+	host.open("粘贴卡组分享码", "导入", "取消", false, ModalSpec.frontend(Vector2(800, 420)))
+	var input := TextEdit.new()
+	input.custom_minimum_size = Vector2(0, 180)
+	input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	input.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	input.focus_mode = Control.FOCUS_CLICK
+	input.placeholder_text = "PTCG1:…"
+	host.modal_body.add_child(input)
+	var error_label := Label.new()
+	error_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	host.modal_body.add_child(error_label)
+	host.modal_confirm.pressed.connect(func() -> void:
+		if page.import_text(input.text): host.close()
+		else: error_label.text = page.notice.text
+	)
+	host.modal_cancel.pressed.connect(host.close, CONNECT_ONE_SHOT)
+	host.back_action = host.close
+
+func _share_deck(code: String) -> void:
+	var host: ModalHost = main.modal_host_controller
+	host.open("卡组分享码", "复制", "关闭", false, ModalSpec.frontend(Vector2(800, 420)))
+	var output := TextEdit.new()
+	output.text = code
+	output.editable = false
+	output.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	output.custom_minimum_size = Vector2(0, 180)
+	output.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	output.focus_mode = Control.FOCUS_CLICK
+	host.modal_body.add_child(output)
+	host.modal_confirm.pressed.connect(func() -> void:
+		DisplayServer.clipboard_set(code)
+		show_toast("分享码已复制。")
+	)
+	host.modal_cancel.pressed.connect(host.close, CONNECT_ONE_SHOT)
+	host.back_action = host.close
 
 func build_game_screen() -> void:
 	main.current_screen = SCREEN_GAME
@@ -662,7 +750,7 @@ func show_end_screen() -> void:
 			"mode": main.game_mode,
 			"mode_label": mode_label,
 			"winner_deck": winner_deck_key,
-			"winner_deck_name": winner_deck.get("name", winner_deck_key),
+			"winner_deck_name": "自定义卡组" if winner_deck_key == "custom" else winner_deck.get("name", winner_deck_key),
 			"winner_card_name": main.catalog.card_name(winner_card_id),
 			"result_status": main.state.result_status,
 			"result_reason": main.state.result_reason,

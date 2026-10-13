@@ -240,6 +240,7 @@ ChoiceRequestKind choice_request_kind_from_string(
     }
 
 ModifierHook modifier_hook_from_string(const std::string &value) {
+    if (value == "CARD_RULE") return ModifierHook::card_rule;
     if (value == "MODIFY_DAMAGE") return ModifierHook::modify_damage;
     if (value == "MAX_HP") return ModifierHook::max_hp;
     if (value == "CAN_RETREAT") return ModifierHook::can_retreat;
@@ -250,6 +251,7 @@ ModifierHook modifier_hook_from_string(const std::string &value) {
 
 const char *modifier_hook_to_string(ModifierHook value) noexcept {
     switch (value) {
+        case ModifierHook::card_rule: return "CARD_RULE";
         case ModifierHook::modify_damage: return "MODIFY_DAMAGE";
         case ModifierHook::max_hp: return "MAX_HP";
         case ModifierHook::can_retreat: return "CAN_RETREAT";
@@ -365,6 +367,7 @@ const char *modifier_conflict_to_string(ModifierConflict value) noexcept {
 }
 
 ModifierOperationKind modifier_operation_from_string(const std::string &value) {
+    if (value == "card_rule") return ModifierOperationKind::card_rule;
     if (value == "damage_delta") return ModifierOperationKind::damage_delta;
     if (value == "prevent_damage") return ModifierOperationKind::prevent_damage;
     if (value == "hp_delta") return ModifierOperationKind::hp_delta;
@@ -378,6 +381,7 @@ ModifierOperationKind modifier_operation_from_string(const std::string &value) {
 
 const char *modifier_operation_to_string(ModifierOperationKind value) noexcept {
     switch (value) {
+        case ModifierOperationKind::card_rule: return "card_rule";
         case ModifierOperationKind::damage_delta: return "damage_delta";
         case ModifierOperationKind::prevent_damage: return "prevent_damage";
         case ModifierOperationKind::hp_delta: return "hp_delta";
@@ -538,6 +542,8 @@ bool decode_modifier(
     target.condition.target_stage = optional_string("target_stage");
     target.condition.target_basic = optional_bool("target_basic");
     target.condition.expires_after_turn = optional_integer("expires_after_turn");
+    target.condition.starts_on_turn = optional_integer("starts_on_turn");
+    target.condition.attack_name = optional_string("attack_name");
     const Value *operation = field(source, "operation");
     if (operation == nullptr || !operation->is_object()) return false;
     target.operation.kind = modifier_operation_from_string(
@@ -551,7 +557,7 @@ bool decode_modifier(
     target.operation.text = string_field(
         *operation,
         target.operation.kind == ModifierOperationKind::attack_lock
-            ? "attack_name" : "reason"
+            ? "attack_name" : target.operation.kind == ModifierOperationKind::card_rule ? "effect" : "reason"
     );
     return true;
 }
@@ -577,9 +583,15 @@ Value encode_modifier(const Modifier &source, const CardStringTable &cards) {
     add_string("target_stage", source.condition.target_stage);
     add_bool("target_basic", source.condition.target_basic);
     add_integer("expires_after_turn", source.condition.expires_after_turn);
+    add_integer("starts_on_turn", source.condition.starts_on_turn);
+    add_string("attack_name", source.condition.attack_name);
 
     Object operation{{"kind", Value(modifier_operation_to_string(source.operation.kind))}};
     switch (source.operation.kind) {
+        case ModifierOperationKind::card_rule:
+            operation["amount"] = Value(source.operation.number);
+            operation["effect"] = Value(source.operation.text);
+            break;
         case ModifierOperationKind::damage_delta:
         case ModifierOperationKind::hp_delta:
         case ModifierOperationKind::retreat_delta:

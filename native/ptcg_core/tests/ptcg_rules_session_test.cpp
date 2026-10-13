@@ -32,6 +32,8 @@ Value catalog() {
     return Value(Object{
         {"test-basic", Value(Object{
             {"name", Value("Test Basic")},
+            // Unlimited-copy synthetic basic keeps setup fixtures deterministic.
+            {"deck_copy_limit", Value(60)},
             {"supertype", Value("Pokémon")},
             {"subtypes", Value(Array{Value("Basic")})},
             {"energy_types", Value(Array{Value("Fire")})},

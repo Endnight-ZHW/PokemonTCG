@@ -183,7 +183,29 @@
 .\tools\content.ps1 check
 ```
 
-修改作者 JSON 后通过内容编译器生成数据，不手改 `godot/data`。新增卡图放入唯一卡图目录；更新审核清单后重新导出映射与哈希。新牌组必须为 60 张，并同步策略作者源。当前内容为 177 张卡、14 套牌、218 个效果、80 个 VM 操作。
+修改作者 JSON 后通过内容编译器生成数据，不手改 `godot/data`。新增卡图放入唯一卡图目录；更新审核清单后重新导出映射与哈希。新增 AI 预设才需要同步策略作者源；用户卡组只进入 `DeckLibrary`。当前内容为 341 张卡、14 套预设、478 个效果、99 个 VM 操作。
+
+后续系列收录步骤：
+
+1. 在 `card_source_manifest.json` 固定数据源提交、集合、编号、源卡 ID 和原图 SHA-256。当前数据源为
+   `duanxr/PTCG-CHS-Datasets@ea69b4e3916a717ffe0c0116984c99d3e4a3cb8c`；CSV5C 固定 collection 298、001–164。
+   同编号优先普通加工；不同编号的异画保留独立图片与 ID，用 `gameplay_identity` 记录规则一致性。
+2. 在 `authoring/cards` 编写显示字段和显式命令。新增机制需实现原生 VM 执行、选择恢复、合法动作、
+   隐私投影、AI 和展示，并更新描述符及原生类型映射。不能以空效果或免费招式代替缺失字段。
+3. 逐张查看原始卡图，核对数值、能量费用、招式、特性及完整卡文。转录错误使用与原图 SHA-256 绑定的
+   `printed_text_review.source_overrides`；本系列 119/120 补录 1 无色招式，156 将回复 2 更正为 20。
+4. 更新 `card_review_manifest.json`，执行 `sync_card_sources.gd -- import <固定缓存目录>`，生成无损 WebP；
+   再执行 `content.ps1 export` 与 `content.ps1 check`。发布门禁固定卡牌、预设、效果及 VM 数量，
+   并逐个核对 CSV5C 编号；新增系列要明确修改预期，不以动态计数掩盖漏卡。
+5. 每种效果增加正常与不满足条件的场景，包含暂停恢复、触发顺序和信息可见性；异画应执行同样的命令。
+   当前系列入口是 `csv5_rules_contract.gd`；卡库、隐私和界面分别见 `deck_library_contract.gd`、
+   `custom_deck_privacy_contract.gd` 与 `deck_editor_visual_contract.gd`。
+   不能仅断言招式执行成功：搜寻要检查非空候选的可选上限与实际移入／附着结果，
+   多阶段效果要检查事件在对应阶段提交。`csv5_presentation_contract.gd` 校验来源、附件身份和退化昏厥对象；
+   `csv5_animation_contract.gd` 在实际渲染中覆盖双方视角、落地顺序、形态变化及隐藏手牌。
+6. 规则行为变更要更新原生 `rules_implementation_id`，重新编译后由内容导出更新规则指纹。完成
+   `test_fast.ps1`、`test_standard.ps1`、`test_godot_ai.ps1` 和 `test_frontend_club_graphics.ps1` 的实际图形检查，构建 Windows／Android。
+   尚未完整实现或未核对卡图的牌不能进入发布卡池；游戏本身不下载卡包。
 
 全部卡牌统一使用 [PTCG-CHS-Datasets](https://github.com/duanxr/PTCG-CHS-Datasets) 的简中数据。
 `godot/authoring/card_source_manifest.json` 固定上游提交、数据集 SHA-256，以及每张卡的收录集合、
@@ -205,7 +227,7 @@
 
 权威规则只在 C++ 会话执行，流程为 Action V4 → 原子结算 → ChoiceView v2／事件／状态投影。ChoiceResponse 必须携带原请求、revision 和合法选项。失败回滚、RNG、嵌套选择、快照和 journal 由规则核心管理，UI 只提交意图。
 
-当前接口为 Protocol 6、Snapshot 3、Journal 1、RNG 2、Native ABI 2 和 Card IR 4。旧协议和快照明确拒绝；不添加迁移分支。玩法、临时效果及结算顺序见 [规则说明](RULES.md)。
+当前接口为 Protocol 7、Snapshot 3、Journal 1、RNG 2、Native ABI 2 和 Card IR 4。旧协议和快照明确拒绝；不添加迁移分支。玩法、临时效果及结算顺序见 [规则说明](RULES.md)。
 
 隐私边界包括：对手手牌身份、双方牌库顺序和奖赏身份不可见；开局完成前，对手盖放宝可梦仅显示隐藏占位。事件中的 owner 是卡牌拥有者，可能不同于触发效果的 actor。浏览整副牌库的 `browse_card_refs` 仅提供给该选择的拥有者，不属于合法选择集合。
 

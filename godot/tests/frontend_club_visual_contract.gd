@@ -73,7 +73,9 @@ func run() -> void:
 					inside(page.find_child(name, true, false), "title/" + name)
 				check(not page.card_stage.is_processing(),
 					"Reduced animation must stop the decorative motion loop")
-				check(page.card_stage.viewport.render_target_update_mode == SubViewport.UPDATE_WHEN_VISIBLE,
+				# UPDATE_ALWAYS keeps Android's recreated transparent targets live
+				# before their first sample; both modes continuously render a visible title.
+				check(page.card_stage.viewport.render_target_update_mode in [SubViewport.UPDATE_WHEN_VISIBLE, SubViewport.UPDATE_ALWAYS],
 					"Static homepage must remain drawable while visible")
 			elif page_kind == "decks":
 				var assigned: String = page.selected_deck_key(0)

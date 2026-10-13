@@ -39,7 +39,7 @@ static func mismatches(card: Dictionary, row: Dictionary, overrides: Dictionary 
 	_compare(errors, "supertype", card.get("supertype"), SUPERTYPES.get(str(source.get("cardType", "")), "unknown"))
 	_compare(errors, "hp", int(card.get("hp", 0)), int(source.get("hp", 0)))
 	var attacks: Array = card.get("attacks", [])
-	var source_attacks: Array = source.get("abilityItemList", [])
+	var source_attacks: Array = overrides.get("abilityItemList", source.get("abilityItemList", []))
 	_compare(errors, "attacks.count", attacks.size(), source_attacks.size())
 	for index in mini(attacks.size(), source_attacks.size()):
 		var attack: Dictionary = attacks[index]
@@ -56,7 +56,7 @@ static func mismatches(card: Dictionary, row: Dictionary, overrides: Dictionary 
 		_compare(errors, prefix + "damage_text", attack.get("damage_text"), printed_text(source_attack.get("abilityDamage", "")))
 		_compare(errors, prefix + "text", printed_text(attack.get("text", "")), printed_text(source_attack.get("abilityText", "")))
 	var abilities: Array = card.get("abilities", [])
-	var source_abilities: Array = source.get("cardFeatureItemList", [])
+	var source_abilities: Array = overrides.get("cardFeatureItemList", source.get("cardFeatureItemList", []))
 	_compare(errors, "abilities.count", abilities.size(), source_abilities.size())
 	for index in mini(abilities.size(), source_abilities.size()):
 		_compare(errors, "abilities.%d.name" % index, abilities[index].get("name", ""), source_abilities[index].get("featureName", ""))

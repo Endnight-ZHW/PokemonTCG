@@ -1,3 +1,4 @@
+#include "ptcg_card_runtime.hpp"
 #include "card_evaluation_detail.hpp"
 
 namespace ptcg::ai::card_evaluation {
@@ -894,8 +895,7 @@ std::int64_t best_potential_retaliation_damage(const RulesSession &position, con
     if (pokemon == nullptr)
         return 0;
     const Value *definition = card(cards, string_field(*pokemon, "card_id"));
-    const auto &attacks =
-        definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+    const auto attacks = card_runtime::attacks(cards, *pokemon).as_array();
     std::int64_t best = 0;
     for (std::size_t index = 0; index < attacks.size(); ++index) {
         if (missing_energy(cards, *pokemon, array_field(attacks[index], "cost")) <= 1) {
@@ -917,7 +917,8 @@ bool attack_feeds_dangerous_retaliation(const RulesSession &position, const Valu
     const Value *opponent_definition = card(cards, string_field(*opponent_active, "card_id"));
     bool has_scaler = false;
     if (opponent_definition != nullptr) {
-        for (const Value &attack : array_field(*opponent_definition, "attacks")) {
+        const auto attacks=card_runtime::attacks(cards,*opponent_active).as_array();
+        for (const Value &attack : attacks) {
             for (const Value *effect : flatten_effects(array_field(attack, "effects"))) {
                 if (string_field(*effect, "effect_type") == "damage_per_self_damage") {
                     has_scaler = true;
@@ -963,7 +964,8 @@ double hand_size_plan(const Value &state, std::int32_t actor, const Value &cards
         const Value *definition = card(cards, string_field(*pokemon, "card_id"));
         if (definition == nullptr)
             continue;
-        for (const Value &attack : array_field(*definition, "attacks")) {
+        const auto effective_attacks = card_runtime::attacks(cards, *pokemon).as_array();
+        for (const Value &attack : effective_attacks) {
             const auto missing = missing_energy(cards, *pokemon, array_field(attack, "cost"));
             double readiness = 0.0;
             if (missing == 0)

@@ -2,6 +2,7 @@
 #include "ptcg_session_internal.hpp"
 
 #include "ptcg_random.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -120,8 +121,18 @@ std::string prepare_opening_hands(
     const Value &cards,
     Value &state,
     XorShift32 &rng,
-    std::vector<Value> &events
+    std::vector<Value> &events,
+    bool initial,
+    int force_redraw
 ) {
+    const auto may_keep = [&](int owner) {
+        if (owner == force_redraw) return false;
+        if (hand_has_basic(cards,player(state,owner))) return true;
+        for (const auto &id : required(player(state,owner),"hand").as_array())
+            if (card_runtime::rule(cards,id.string_or(),"setup_pokemon")) return true;
+        return false;
+    };
+    if (initial) {
     state["turn_number"] = Value(1);
     state["mulligan_count"] = Value(Array{Value(0), Value(0)});
     for (std::int32_t actor = 0; actor < 2; ++actor) {
@@ -140,19 +151,19 @@ std::string prepare_opening_hands(
             "owner"
         ));
     }
+    }
     std::int64_t guard = 0;
     while (
-        !hand_has_basic(cards, player(state, 0))
-        || !hand_has_basic(cards, player(state, 1))
+        !may_keep(0) || !may_keep(1)
     ) {
         ++guard;
         if (guard > 64) {
             return "mulligan_guard";
         }
         std::array<bool, 2> redraw = {
-            !hand_has_basic(cards, player(state, 0)),
-            !hand_has_basic(cards, player(state, 1)),
+            !may_keep(0), !may_keep(1),
         };
+        force_redraw = -1;
         for (std::int32_t actor = 0; actor < 2; ++actor) {
             if (!redraw[static_cast<std::size_t>(actor)]) {
                 continue;
@@ -225,6 +236,21 @@ std::string prepare_opening_hands(
     state["setup_actor_idx"] = state["first_player_idx"];
     state["setup_ready"] = Value(Array{Value(false), Value(false)});
     return {};
+}
+
+bool opening_doll_choice(const Value &cards, Value &state, const Array &accepted,
+    Value &pending, Value &continuation) {
+    for (int owner : {static_cast<int>(integer_field(state,"first_player_idx")),
+            1-static_cast<int>(integer_field(state,"first_player_idx"))}) {
+        if (hand_has_basic(cards,player(state,owner)) || std::any_of(accepted.begin(),accepted.end(),
+            [&](const Value &entry){return entry.as_integer(-1)==owner;})) continue;
+        pending=setup_choice(state,owner,"confirm","手牌没有基础宝可梦。是否使用卡比兽娃娃开始对战？",
+            Array{Value(Object{{"option_id",Value("confirm:yes")},{"label",Value("使用卡比兽娃娃")}}),
+                Value(Object{{"option_id",Value("confirm:no")},{"label",Value("重新抽取起始手牌")}})},"setup_doll");
+        continuation=Value(Object{{"kind",Value("setup_doll")},{"actor",Value(owner)},{"accepted",Value(accepted)}});
+        return true;
+    }
+    pending=Value();continuation=Value();return false;
 }
 
 

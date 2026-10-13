@@ -1,3 +1,4 @@
+#include "ptcg_card_runtime.hpp"
 #include "card_evaluator.hpp"
 
 #include "card_evaluation_detail.hpp"
@@ -276,8 +277,7 @@ std::optional<double> CardEvaluator::semantic_action_score(const RulesSession &p
         const std::int64_t attack_index = payload != nullptr && payload->is_object()
                                               ? integer_field(*payload, "attack_index", -1)
                                               : -1;
-        const auto &attacks =
-            definition == nullptr ? Value::Array{} : array_field(*definition, "attacks");
+        const auto attacks = active(state,actor) ? card_runtime::attacks(cards_, *active(state,actor)).as_array() : Value::Array{};
         if (attack_index < 0 || static_cast<std::size_t>(attack_index) >= attacks.size()) {
             return std::nullopt;
         }

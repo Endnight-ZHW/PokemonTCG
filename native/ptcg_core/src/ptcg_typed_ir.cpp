@@ -32,6 +32,26 @@ std::string_view enum_to_string(
 
 #define PTCG_VM_OP_ROW(name) std::pair<std::string_view, VmOp>{#name, VmOp::name}
 constexpr std::array VM_OP_ROWS{
+    PTCG_VM_OP_ROW(register_rule),
+    PTCG_VM_OP_ROW(set_temporary_rule),
+    PTCG_VM_OP_ROW(mill_cards),
+    PTCG_VM_OP_ROW(select_opponent_cards),
+    PTCG_VM_OP_ROW(inspect_cards),
+    PTCG_VM_OP_ROW(discard_opponent_tool),
+    PTCG_VM_OP_ROW(return_attached_energy),
+    PTCG_VM_OP_ROW(discard_field_energy),
+    PTCG_VM_OP_ROW(place_counters),
+    PTCG_VM_OP_ROW(attach_named_bench),
+    PTCG_VM_OP_ROW(knockout_if_damaged),
+    PTCG_VM_OP_ROW(select_top_outcome),
+    PTCG_VM_OP_ROW(flip_recover_cards),
+    PTCG_VM_OP_ROW(require_condition),
+    PTCG_VM_OP_ROW(evolve_from_deck),
+    PTCG_VM_OP_ROW(devolve_pokemon),
+    PTCG_VM_OP_ROW(optional_effects),
+    PTCG_VM_OP_ROW(discard_from_play),
+    PTCG_VM_OP_ROW(resolve_bench_limit),
+
     PTCG_VM_OP_ROW(apply_attack_lock_basic),
     PTCG_VM_OP_ROW(apply_dazzling_beam),
     PTCG_VM_OP_ROW(apply_outgoing_damage_reduction),
@@ -117,6 +137,12 @@ constexpr std::array VM_OP_ROWS{
 
 #define PTCG_VM_ARG_ROW(name) std::pair<std::string_view, VmArgKey>{#name, VmArgKey::name}
 constexpr std::array VM_ARG_ROWS{
+    PTCG_VM_ARG_ROW(rest_bottom),
+    PTCG_VM_ARG_ROW(progressive_bonus),
+    PTCG_VM_ARG_ROW(count_discard_name),
+    PTCG_VM_ARG_ROW(all_required),
+    PTCG_VM_ARG_ROW(draw_until),
+
     PTCG_VM_ARG_ROW(amount), PTCG_VM_ARG_ROW(target),
     PTCG_VM_ARG_ROW(scope), PTCG_VM_ARG_ROW(attack_name),
     PTCG_VM_ARG_ROW(status), PTCG_VM_ARG_ROW(filter),
@@ -182,6 +208,11 @@ bool fail(std::string *error, std::string message) {
 }
 
 FormulaOp formula_op_from_string(std::string_view value) noexcept {
+    if (value == "prizes_taken") return FormulaOp::prizes_taken;
+    if (value == "retreat_cost") return FormulaOp::retreat_cost;
+    if (value == "energized_bench_count") return FormulaOp::energized_bench_count;
+    if (value == "hand_type_count") return FormulaOp::hand_type_count;
+
     if (value == "damage_counters") return FormulaOp::damage_counters;
     if (value == "bench_count") return FormulaOp::bench_count;
     if (value == "pokemon_count") return FormulaOp::pokemon_count;
@@ -247,6 +278,8 @@ bool compile_formula(
 }
 
 std::optional<VmBranchKey> branch_key(std::string_view value) noexcept {
+    if (value == "on_success") return VmBranchKey::on_success;
+    if (value == "on_failure") return VmBranchKey::on_failure;
     if (value == "cost") return VmBranchKey::cost;
     if (value == "on_pay") return VmBranchKey::on_pay;
     if (value == "on_heads") return VmBranchKey::on_heads;

@@ -492,7 +492,7 @@ func action_label(action: GameAction, current_state: GameState, p_catalog: CardC
 			]
 		"DECLARE_ATTACK":
 			var active := current_state.get_player(action.actor).active if current_state else null
-			var attacks: Array = p_catalog.get_card(active.card_id).get("attacks", []) if active else []
+			var attacks: Array = p_catalog.effective_attacks(active)
 			var attack_idx := action.attack_index(0)
 			var attack_name := "招式 %d" % (attack_idx + 1)
 			if attack_idx >= 0 and attack_idx < attacks.size():
@@ -523,7 +523,7 @@ func show_attack_confirmation(action: GameAction, state: GameState, p_catalog: C
 	var active := state.get_player(action.actor).active
 	if active == null:
 		return
-	var attacks: Array = p_catalog.get_card(active.card_id).get("attacks", [])
+	var attacks: Array = p_catalog.effective_attacks(active)
 	if action.attack_index() < 0 or action.attack_index() >= attacks.size():
 		return
 	var card := p_catalog.get_card(active.card_id)

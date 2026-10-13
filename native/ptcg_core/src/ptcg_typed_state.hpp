@@ -164,6 +164,7 @@ struct ChoiceView {
 };
 
 enum class ModifierHook : std::uint8_t {
+    card_rule,
     modify_damage,
     max_hp,
     can_retreat,
@@ -216,6 +217,7 @@ enum class ModifierConflict : std::uint8_t {
 };
 
 enum class ModifierOperationKind : std::uint8_t {
+    card_rule,
     damage_delta,
     prevent_damage,
     hp_delta,
@@ -227,6 +229,8 @@ enum class ModifierOperationKind : std::uint8_t {
 };
 
 struct ModifierCondition {
+    std::optional<std::string> attack_name;
+    std::optional<std::int64_t> starts_on_turn;
     std::optional<std::string> attacker_subtype;
     std::optional<std::string> defender_type;
     std::optional<bool> requires_attached_energy;

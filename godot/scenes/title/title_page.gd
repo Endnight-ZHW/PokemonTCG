@@ -5,6 +5,7 @@ signal mode_selected(mode: String)
 signal network_selected(kind: String)
 signal settings_requested
 signal help_requested
+signal decks_requested
 signal showcase_changed(accent: Color)
 signal card_art_requested(card_id: String)
 signal showcase_sound_requested(cue: String)
@@ -89,6 +90,7 @@ func _connect_actions() -> void:
 		[%NetworkButton, network_selected.emit.bind("relay")],
 		[%SettingsButton, settings_requested.emit],
 		[%HelpButton, help_requested.emit],
+		[%MyDecksButton, decks_requested.emit],
 	]:
 		var button := row[0] as Button
 		var callback: Callable = row[1]

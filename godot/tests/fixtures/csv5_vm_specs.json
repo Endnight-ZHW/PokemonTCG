@@ -1,0 +1,186 @@
+{
+  "cases": {
+    "attach_named_bench": {
+      "command_spec": {
+        "args": {
+          "energy_type": "Darkness",
+          "filter_name": "戴鲁比"
+        },
+        "branches": {},
+        "op": "attach_named_bench"
+      }
+    },
+    "devolve_pokemon": {
+      "command_spec": {
+        "args": {
+          "count": 2
+        },
+        "branches": {},
+        "op": "devolve_pokemon"
+      }
+    },
+    "discard_field_energy": {
+      "command_spec": {
+        "args": {
+          "amount": 4,
+          "min_select": 0,
+          "per_energy": 60
+        },
+        "branches": {},
+        "op": "discard_field_energy"
+      }
+    },
+    "discard_from_play": {
+      "command_spec": {
+        "args": {},
+        "branches": {},
+        "op": "discard_from_play"
+      }
+    },
+    "discard_opponent_tool": {
+      "command_spec": {
+        "args": {},
+        "branches": {},
+        "op": "discard_opponent_tool"
+      }
+    },
+    "evolve_from_deck": {
+      "command_spec": {
+        "args": {
+          "count": 2
+        },
+        "branches": {},
+        "op": "evolve_from_deck"
+      }
+    },
+    "flip_recover_cards": {
+      "command_spec": {
+        "args": {
+          "flips": 3
+        },
+        "branches": {},
+        "op": "flip_recover_cards"
+      }
+    },
+    "inspect_cards": {
+      "command_spec": {
+        "args": {
+          "count": 1,
+          "from_zone": "deck",
+          "player": "self",
+          "rest_bottom": true
+        },
+        "branches": {},
+        "op": "inspect_cards"
+      }
+    },
+    "knockout_if_damaged": {
+      "command_spec": {
+        "args": {
+          "amount": 4
+        },
+        "branches": {},
+        "op": "knockout_if_damaged"
+      }
+    },
+    "mill_cards": {
+      "command_spec": {
+        "args": {
+          "amount": 1,
+          "player": "opponent"
+        },
+        "branches": {},
+        "op": "mill_cards"
+      }
+    },
+    "optional_effects": {
+      "command_spec": {
+        "args": {},
+        "branches": {
+          "on_success": []
+        },
+        "op": "optional_effects"
+      }
+    },
+    "place_counters": {
+      "command_spec": {
+        "args": {
+          "amount": 3,
+          "player": "opponent",
+          "target": "damaged_bench"
+        },
+        "branches": {},
+        "op": "place_counters"
+      }
+    },
+    "register_rule": {
+      "command_spec": {
+        "args": {
+          "amount": 1,
+          "effect": "checkup_counters",
+          "requires_active": true
+        },
+        "branches": {},
+        "op": "register_rule"
+      }
+    },
+    "require_condition": {
+      "command_spec": {
+        "args": {
+          "condition": "behind_on_prizes"
+        },
+        "branches": {},
+        "op": "require_condition"
+      }
+    },
+    "resolve_bench_limit": {
+      "command_spec": {
+        "args": {},
+        "branches": {},
+        "op": "resolve_bench_limit"
+      }
+    },
+    "return_attached_energy": {
+      "command_spec": {
+        "args": {
+          "amount": 2
+        },
+        "branches": {},
+        "op": "return_attached_energy"
+      }
+    },
+    "select_opponent_cards": {
+      "command_spec": {
+        "args": {
+          "amount": 1,
+          "destination": "discard",
+          "filter": "any",
+          "from_zone": "hand",
+          "reveal": false
+        },
+        "branches": {},
+        "op": "select_opponent_cards"
+      }
+    },
+    "select_top_outcome": {
+      "command_spec": {
+        "args": {
+          "count": 3
+        },
+        "branches": {},
+        "op": "select_top_outcome"
+      }
+    },
+    "set_temporary_rule": {
+      "command_spec": {
+        "args": {
+          "amount": 30,
+          "effect": "incoming_damage_reduction",
+          "target": "self"
+        },
+        "branches": {},
+        "op": "set_temporary_rule"
+      }
+    }
+  }
+}

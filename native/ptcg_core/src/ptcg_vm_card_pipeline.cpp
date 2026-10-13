@@ -1,5 +1,6 @@
 #include "ptcg_rules.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -146,8 +147,8 @@ bool execute_vm_card_pipeline(
             Array flips;
             if (op == "flip_coin_repeat_damage") {
                 const std::int64_t count = std::min<std::int64_t>(
-                    32,
-                    integer_arg(args, "flips", 3)
+                    128,
+                    integer_arg(args, "flips", 3) < 0 ? energy_units(cards,source) : integer_arg(args,"flips",3)
                 );
                 for (std::int64_t index = 0; index < count; ++index) {
                     flips.emplace_back((rng.next_u32() & 1U) == 0U);
@@ -517,7 +518,7 @@ bool execute_vm_card_pipeline(
                     target != nullptr
                     && !(
                         context_mode == "attack"
-                        && prevents_attack_effects(*target)
+                        && (prevents_attack_effects(*target) || card_runtime::protects_effect(cards,result.state,1-actor,target_slot,true))
                     )
                 ) {
                     const std::int64_t amount = integer_arg(
@@ -771,7 +772,7 @@ bool execute_vm_card_pipeline(
             );
             const bool optional_count = args.find("min_select") != nullptr
                 || bool_arg(args, "optional");
-            const std::int64_t minimum = optional_count
+            const std::int64_t minimum = bool_arg(args, "all_required") ? amount : optional_count
                 ? std::min(
                     amount,
                     integer_arg(args, "min_select")
@@ -796,7 +797,8 @@ bool execute_vm_card_pipeline(
                 continuation_kind = "energy_relocate_attachments";
             } else {
                 for (const Value &target : board) {
-                    if (string_arg(target, "slot") == only.slot) {
+                    if (string_arg(target, "slot") == only.slot
+                        || (string_arg(args, "target") == "bench" && string_arg(target, "slot") == "active")) {
                         continue;
                     }
                     options.push_back(target);

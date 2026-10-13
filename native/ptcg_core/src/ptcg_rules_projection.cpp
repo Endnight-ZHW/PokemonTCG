@@ -30,7 +30,8 @@ std::string string_field(
 Value RulesSession::contract() const {
     return Value(Value::Object{
         {"native_abi_version", Value(NATIVE_RULES_SESSION_ABI_VERSION)},
-        {"protocol_version", Value(6)},
+        {"rules_implementation_id", Value("ptcg_core/0.9.0-csv5-rules-2")},
+        {"protocol_version", Value(7)},
         {"action_schema_version", Value(4)},
         {"choice_view_schema_version", Value(2)},
         {"snapshot_schema_version", Value(SNAPSHOT_SCHEMA_VERSION)},

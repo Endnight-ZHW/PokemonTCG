@@ -1,11 +1,17 @@
 # PokemonTCG
 
-基于 Godot 4.7 的宝可梦卡牌对战游戏，当前版本为 0.8.0。产品支持本地双人、
+基于 Godot 4.7 的宝可梦卡牌对战游戏，当前版本为 0.9.1。产品支持本地双人、
 Challenge AI、ENet LAN 与 WebSocket Relay；协议与存档边界保持 Action 4、
-ChoiceView 2、Protocol 6、Snapshot 3、Journal 1 和 RNG 2。
+ChoiceView 2、Protocol 7、Snapshot 3、Journal 1 和 RNG 2。
 
-当前收录 177 张卡牌、14 套预设卡组，包括简中嗨皮组合第4弹的狙射树枭、美录梅塔ex、
-故勒顿和密勒顿ex。四套均为 60 张，支持本地双人、Challenge AI 和两种联机模式。
+当前收录 341 张卡牌、14 套预设卡组。“黑晶炽诚”CSV5C 001–164 全部编号已收录，
+每个编号保留一种印刷版本。发行信息见[宝可梦官方公告](https://www.pokemon.cn/tcg/product/15453.html)。
+
+首页选择“我的卡组”，可新建卡组、复制预设、搜索和筛选卡牌、调整数量、重命名、保存草稿，
+并通过 `PTCG1:` 分享码导入导出。全部卡牌直接可用。60 张、至少 1 张基础宝可梦、同名最多
+4 张（基本能量及卡文例外除外）的合法卡组，可用于所有对战模式。AI 仍只使用 14 套预设。
+自定义卡组保存在 Godot 用户目录的 `decks.json`，备份为 `decks.json.bak`；Windows 默认位置是
+`%APPDATA%/Godot/app_userdata/PokemonTCG/`。非法或缺卡的草稿可保存，但不能用于对战。
 
 ![Godot 4.7 实体牌组展示首页](docs/images/godot-guide/title-club.png)
 
@@ -16,7 +22,7 @@ ChoiceView 2、Protocol 6、Snapshot 3、Journal 1 和 RNG 2。
 
 - `native/ptcg_core`：无 Godot/Python 业务依赖的权威规则与内容编译器。
 - `native/challenge_core`：唯一的产品 AI 策略与 `ChallengeController`。
-- `native/relay_server`：独立发布的 Boost.Beast Protocol v6 Relay。
+- `native/relay_server`：独立发布的 Boost.Beast Protocol v7 Relay。
 - `godot/native/bindings`：Godot 类型转换及 `NativeContentCompiler` 等绑定。
 - `godot/authoring`：卡牌、牌组、策略和 VM 描述符的唯一 JSON 作者源。
 - `godot`：发布客户端、UI、网络、生成数据与唯一卡图资源。

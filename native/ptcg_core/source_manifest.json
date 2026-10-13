@@ -1,5 +1,7 @@
 {
   "runtime": [
+    "ptcg_deck_validation.cpp",
+    "ptcg_card_runtime.cpp",
     "ptcg_random.cpp",
     "ptcg_rules.cpp",
     "ptcg_vm_support.cpp",
@@ -41,7 +43,9 @@
     "ptcg_rules_queries.cpp",
     "ptcg_rules_projection.cpp",
     "ptcg_typed_state.cpp",
-    "ptcg_typed_ir.cpp"
+    "ptcg_typed_ir.cpp",
+    "ptcg_vm_extended.cpp",
+    "ptcg_vm_extended_choice.cpp"
   ],
   "product_only": [
     "ptcg_content_compiler.cpp"

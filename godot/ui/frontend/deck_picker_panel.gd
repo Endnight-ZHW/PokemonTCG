@@ -13,6 +13,8 @@ func configure(catalog: CardCatalog, selected_key: String) -> void:
 	grid.add_theme_constant_override("v_separation", 14)
 	add_child(grid)
 	for key in DeckVisualCatalog.ordered_deck_keys(catalog):
+		if catalog is DeckLibrary and not catalog.validate_key(key).valid:
+			continue
 		var tile := TILE.instantiate() as DeckGalleryTile
 		tile.custom_minimum_size = Vector2(180, 324)
 		tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL

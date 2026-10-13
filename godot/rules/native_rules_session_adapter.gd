@@ -54,6 +54,17 @@ func start_match(
 ) -> StepResult:
 	if not is_available():
 		return _failure("native_rules_unavailable")
+	if catalog is DeckLibrary:
+		var first: Dictionary = catalog.freeze_deck(host_deck)
+		var second: Dictionary = catalog.freeze_deck(client_deck)
+		if not first.ok or not second.ok:
+			return _failure("invalid_deck")
+		return start_match_from_decks(first.cards, second.cards, seed, forced_first, {
+			"public_deck_keys": [first.public_key, second.public_key],
+			"player_names": player_names.duplicate(),
+			"rules_options": rules_options.duplicate(true),
+			"private_deck_definitions": [first.definition, second.definition],
+		})
 	if not catalog.decks.has(host_deck) or not catalog.decks.has(client_deck):
 		return _failure("invalid_deck")
 	var result: Dictionary = native.create(

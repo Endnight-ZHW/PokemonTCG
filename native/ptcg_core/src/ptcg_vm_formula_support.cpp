@@ -1,5 +1,7 @@
 #include "ptcg_rules.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_card_runtime.hpp"
+#include "ptcg_game_internal.hpp"
 
 #include <algorithm>
 #include <array>
@@ -26,6 +28,21 @@ bool condition_applies(
     const Value &self = player(state, actor);
     const Value &opponent = player(state, 1 - actor);
     const Value *opponent_active = pokemon(opponent, "active");
+    const Value *own_active = pokemon(self, "active");
+    if (condition == "always") return true;
+    if (condition == "behind_on_prizes") return required(self, "prizes").as_array().size() > required(opponent, "prizes").as_array().size();
+    if (condition == "self_damaged") return own_active && get_integer(*own_active, "damage_counters") > 0;
+    if (condition == "self_has_tool") return own_active && !string_arg(*own_active, "attached_tool_id").empty();
+    if (condition == "self_has_water") return own_active && energy_units(cards, own_active, "Water") > 0;
+    if (condition == "own_deck_le_3") return required(self, "deck").as_array().size() <= 3;
+    if (condition == "opponent_prizes_2_or_4") {
+        const auto size = required(opponent, "prizes").as_array().size();
+        return size == 2 || size == 4;
+    }
+    if (condition == "opponent_poisoned" && opponent_active) {
+        const auto &statuses = required(*opponent_active, "status_conditions").as_array();
+        return std::any_of(statuses.begin(), statuses.end(), [](const Value &v) { return v.string_or() == "POISONED"; });
+    }
     if (condition == "hand_sizes_equal") {
         return required(self, "hand").as_array().size()
             == required(opponent, "hand").as_array().size();
@@ -55,12 +72,7 @@ bool condition_applies(
             && get_integer(*opponent_active, "damage_counters") > 0;
     }
     if (condition == "opponent_active_evolved") {
-        return opponent_active != nullptr
-            && !card_has_subtype(
-                cards,
-                card_id(*opponent_active),
-                "Basic"
-            );
+        return opponent_active != nullptr && !card_runtime::basic_in_play(cards,*opponent_active);
     }
     if (condition == "own_hand_empty") {
         return required(self, "hand").as_array().empty();
@@ -143,6 +155,30 @@ std::int64_t evaluate_formula_ast(
         return formula.as_integer();
     }
     const std::string op = string_arg(formula, "op");
+    if (op == "prizes_taken") {
+        const int owner = string_arg(formula, "player", "self") == "opponent" ? 1 - actor : actor;
+        return 6 - static_cast<std::int64_t>(required(player(state, owner), "prizes").as_array().size());
+    }
+    if (op == "retreat_cost") {
+        const int owner = string_arg(formula, "player", "opponent") == "opponent" ? 1 - actor : actor;
+        const Value *target = pokemon(player(state, owner), "active");
+        return target ? game_detail::effective_retreat_cost(cards, state, *target, card_definition(cards, card_id(*target))) : 0;
+    }
+    if (op == "energized_bench_count") {
+        std::int64_t count = 0;
+        for (const Value &target : required(player(state, actor), "bench").as_array()) {
+            if (target.is_object() && energy_units(cards, &target, string_arg(formula, "energy_type")) > 0) ++count;
+        }
+        return count;
+    }
+    if (op == "hand_type_count") {
+        const int owner = string_arg(formula, "player", "self") == "opponent" ? 1 - actor : actor;
+        std::int64_t count = 0;
+        const Value *filter = formula.find("filter");
+        for (const Value &id : required(player(state, owner), "hand").as_array())
+            if (card_matches_filter(cards, id.string_or(), filter ? string_arg(*filter, "card_type") : "any")) ++count;
+        return count;
+    }
     if (op == "const") {
         return integer_arg(formula, "value");
     }

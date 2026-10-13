@@ -24,6 +24,8 @@ public:
     NativeRulesSession();
 
     bool set_catalog(const Dictionary &catalog);
+    String get_catalog_error() const { return String::utf8(catalog_error_.c_str()); }
+    Dictionary validate_deck(const Array &entries) const;
     Dictionary create(
         const Dictionary &catalog,
         const Array &decks,
@@ -66,6 +68,7 @@ public:
     bool is_initialized() const;
 
 private:
+    std::string catalog_error_;
     std::unique_ptr<ptcg::ai::RulesSession> session_;
 };
 

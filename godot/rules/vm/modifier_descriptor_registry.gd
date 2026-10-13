@@ -16,6 +16,7 @@ const REQUIRED_FIELDS: Array[String] = [
 ]
 
 const HOOK_LAYERS := {
+	"CARD_RULE": ["permission"],
 	"MODIFY_DAMAGE": [
 		"base_replacement", "attacker_adjust", "weakness", "resistance",
 		"defender_adjust", "prevent", "clamp",
@@ -27,6 +28,10 @@ const HOOK_LAYERS := {
 }
 
 const OPERATION_DEFINITIONS := {
+	"card_rule": {
+		"hook": "CARD_RULE", "layers": ["permission"],
+		"keys": ["kind", "effect", "amount"], "integer_keys": ["amount"],
+	},
 	"damage_delta": {
 		"hook": "MODIFY_DAMAGE",
 		"layers": ["attacker_adjust", "defender_adjust"],
@@ -87,6 +92,8 @@ const DURATIONS: Array[String] = [
 const STACKING: Array[String] = ["stack", "replace_same_source", "maximum", "unique"]
 const CONFLICT_POLICIES: Array[String] = ["commutative", "controller_choice"]
 const CONDITION_TYPES := {
+	"attack_name": TYPE_STRING,
+	"starts_on_turn": TYPE_INT,
 	"attacker_subtype": TYPE_STRING,
 	"defender_type": TYPE_STRING,
 	"requires_attached_energy": TYPE_BOOL,

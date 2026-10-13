@@ -2,6 +2,7 @@ class_name DeckSelectPage
 extends Control
 
 signal back_requested
+signal edit_requested
 signal deck_details_requested(deck_key: String)
 signal start_requested(
 	mode: String,
@@ -131,6 +132,8 @@ func _resolve_nodes() -> void:
 
 
 func _ensure_connections() -> void:
+	if not %EditDecksButton.pressed.is_connected(edit_requested.emit):
+		%EditDecksButton.pressed.connect(edit_requested.emit)
 	var back_button := %BackButton as Button
 	var back_callable := Callable(self, "_emit_back_requested")
 	if not back_button.pressed.is_connected(back_callable):
@@ -207,6 +210,10 @@ func selected_deck_key(player_idx: int) -> String:
 
 
 func select_deck(player_idx: int, deck_key: String) -> bool:
+	if mode == MODE_CHALLENGE and player_idx == 1 and catalog is DeckLibrary and catalog.is_custom(deck_key):
+		return false
+	if catalog is DeckLibrary and not catalog.validate_key(deck_key).valid:
+		return false
 	if (
 		player_idx < 0
 		or player_idx >= _selected_keys.size()
@@ -224,6 +231,29 @@ func select_deck(player_idx: int, deck_key: String) -> bool:
 func deck_count() -> int:
 	return _deck_keys.size()
 
+func editor_context() -> Dictionary:
+	return {"selected_keys": _selected_keys.duplicate(), "preview_key": _preview_deck_key,
+		"active_player": _active_player_idx, "type_matchups": matchup_toggle.button_pressed,
+		"gallery_scroll": gallery_scroll.scroll_vertical}
+
+func restore_editor_context(context: Dictionary) -> void:
+	var selected: Array = context.get("selected_keys", [])
+	for index in mini(2, selected.size()):
+		var key := str(selected[index])
+		# Keep invalid drafts visibly selected with Start disabled. Deleting a
+		# deck clears its slot rather than silently assigning a different deck.
+		_selected_keys[index] = key if catalog.decks.has(key) else ""
+		if index == 1 and mode == MODE_CHALLENGE and not CardCatalog.shared().decks.has(key):
+			_selected_keys[index] = ""
+	_active_player_idx = clampi(int(context.get("active_player", 0)), 0, 1)
+	_preview_deck_key = str(context.get("preview_key", _selected_keys[_active_player_idx]))
+	if not catalog.decks.has(_preview_deck_key): _preview_deck_key = _selected_keys[_active_player_idx]
+	matchup_toggle.set_pressed_no_signal(bool(context.get("type_matchups", false)))
+	_refresh_matchup_toggle_presentation()
+	_populate_gallery()
+	_refresh_all()
+	gallery_scroll.set_deferred("scroll_vertical", int(context.get("gallery_scroll", 0)))
+
 
 func handle_back() -> bool:
 	return false
@@ -235,6 +265,8 @@ func _populate_gallery() -> void:
 		child.queue_free()
 	_tiles.clear()
 	for deck_key in _deck_keys:
+		if mode == MODE_CHALLENGE and _active_player_idx == 1 and catalog is DeckLibrary and catalog.is_custom(deck_key):
+			continue
 		var tile := DECK_TILE_SCENE.instantiate() as DeckGalleryTile
 		tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		gallery_grid.add_child(tile)
@@ -282,6 +314,7 @@ func _set_active_player(player_idx: int) -> void:
 	if player_idx < 0 or player_idx > 1:
 		return
 	_active_player_idx = player_idx
+	_populate_gallery()
 	_preview_deck_key = selected_deck_key(player_idx)
 	_refresh_all()
 
@@ -331,6 +364,7 @@ func _refresh_detail() -> void:
 		detail_meta.text = ""
 		detail_counts.text = ""
 		assign_deck_button.disabled = true
+		assign_player_two_button.disabled = true
 		details_button.disabled = true
 		return
 	detail_assignment.text = "正在浏览"
@@ -339,9 +373,12 @@ func _refresh_detail() -> void:
 		var assigned := selected_deck_key(idx) == deck_key
 		var label := "玩家 1" if idx == 0 else ("玩家 2" if mode == MODE_LOCAL else "AI")
 		button.text = ("✓ %s 已选用" if assigned else "%s 使用") % label
-		button.disabled = assigned
+		button.disabled = assigned or (catalog is DeckLibrary and (
+			not catalog.validate_key(deck_key).valid or (idx == 1 and mode == MODE_CHALLENGE and catalog.is_custom(deck_key))))
 	detail_title.text = str(deck.get("name", deck_key))
 	detail_tagline.text = ""
+	if catalog is DeckLibrary and catalog.is_custom(deck_key):
+		detail_tagline.text = DeckLibrary.validation_text(catalog.validate_key(deck_key))
 	var energy_type := str(deck.get("energy_type", "Colorless"))
 	detail_accent.color = DesignTokens.type_color(energy_type)
 	detail_meta.text = "%s · %d 张" % [
@@ -413,6 +450,9 @@ func _refresh_start_state() -> void:
 		and not catalog.get_deck(_selected_keys[1]).is_empty()
 	)
 	start_button.disabled = not ready
+	if ready and catalog is DeckLibrary:
+		ready = catalog.validate_key(_selected_keys[0]).valid and catalog.validate_key(_selected_keys[1]).valid
+		start_button.disabled = not ready
 	action_summary.text = (
 		"%s  对战  %s" % [
 			_deck_display_name(_selected_keys[0]),

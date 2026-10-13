@@ -1,5 +1,6 @@
 #include "ptcg_rules.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -92,6 +93,15 @@ bool execute_vm_trigger_pipeline(
                 filter = string_arg(args, "filter", "any");
                 minimum = integer_arg(args, "min_select", 1);
                 maximum = integer_arg(args, "count", 1);
+                if (!string_arg(args, "count_discard_name").empty()) {
+                    std::int64_t matching = 0;
+                    for (const auto &id : required(self, "discard").as_array()) {
+                        const auto *definition = cards.find(id.string_or());
+                        if (definition && string_arg(*definition, "name") == string_arg(args, "count_discard_name")) ++matching;
+                    }
+                    // This checkpoint precedes the played Supporter entering discard.
+                    maximum += matching;
+                }
                 can_cancel = minimum == 0;
             } else {
                 request_type = "arven";
@@ -140,7 +150,7 @@ bool execute_vm_trigger_pipeline(
                     maximum,
                     std::max<std::int64_t>(
                         0,
-                        5 - static_cast<std::int64_t>(
+                        card_runtime::bench_limit(cards,result.state,actor) - static_cast<std::int64_t>(
                             bench_count(self)
                         )
                     )
@@ -339,6 +349,10 @@ bool execute_vm_trigger_pipeline(
                 false,
                 true
             );
+            if (opponent_target && context_mode=="attack") options.erase(std::remove_if(options.begin(),options.end(),[&](const Value &entry) {
+                const auto target_slot=string_arg(entry,"slot");const auto *candidate=pokemon(target,target_slot);
+                return candidate && (prevents_attack_effects(*candidate) || card_runtime::protects_effect(cards,result.state,1-actor,target_slot));
+            }),options.end());
             if (options.empty()) {
                 result.success = true;
                 result.rng_state = rng.state();
@@ -488,10 +502,11 @@ bool execute_vm_trigger_pipeline(
             ) {
                 const std::int64_t amount = integer_arg(args, "count") * 10;
                 add_damage(*target, amount);
+                if (card_runtime::knocked_out(cards,*target) && !target->find("pending_ko_source_kind")) (*target)["pending_ko_source_kind"]=Value("damage_counters");
                 append_damage_feedback_event(
                     result,
                     "damage_counters_placed",
-                    actor,
+                    static_cast<int>(integer_arg(args,"from_player",actor)),
                     target_owner,
                     target_slot,
                     amount

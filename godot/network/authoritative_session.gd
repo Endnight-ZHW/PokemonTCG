@@ -66,6 +66,25 @@ func start_match(
 	return result
 
 
+func start_frozen_match(first: Dictionary, second: Dictionary, seed: int,
+	forced_first: int = -1, rules_options: Dictionary = {"apply_type_matchups": false}) -> StepResult:
+	var expanded: Array = []
+	for selection in [first, second]:
+		var cards: Array[String] = []
+		for row in selection.definition.cards:
+			for _i in range(int(row.count)): cards.append(str(row.card_id))
+		expanded.append(cards)
+	deck_keys = [str(first.deck_key), str(second.deck_key)]
+	var result := native_rules.start_match_from_decks(expanded[0], expanded[1], seed, forced_first, {
+		"public_deck_keys": deck_keys.duplicate(), "player_names": ["房主", "挑战者"],
+		"rules_options": rules_options.duplicate(true),
+		"private_deck_definitions": [first.definition.duplicate(true), second.definition.duplicate(true)],
+		"private_deck_digests": [first.digest, second.digest],
+	})
+	state = native_rules.state
+	if state != null: rng = PortableRandomSource.new(native_rules.rng_state)
+	return result
+
 func submit_action(player_idx: int, action_data: Dictionary) -> StepResult:
 	if state == null:
 		return StepResult.new(false, "对局尚未开始。", null, [], -1, false, "not_started")
@@ -105,8 +124,8 @@ func submit_choice(player_idx: int, response_data: Dictionary) -> StepResult:
 		if other_request != null:
 			return StepResult.new(false, "该选择不属于当前玩家。", null, [], state.winner, false, "wrong_actor")
 		return StepResult.new(false, "当前没有待处理选择。", null, [], state.winner, false, "stale_choice")
-	var schema := ProtocolV6.validate_payload(
-		ProtocolV6.CHOICE_SUBMIT, {"response": response_data})
+	var schema := ProtocolV7.validate_payload(
+		ProtocolV7.CHOICE_SUBMIT, {"response": response_data})
 	if not bool(schema.get("ok", false)):
 		return StepResult.new(
 			false,

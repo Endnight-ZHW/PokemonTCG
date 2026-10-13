@@ -63,10 +63,12 @@ horizontal_alignment = 0
 vertical_alignment = 1
 text_overrun_behavior = 3
 
-[node name="TopSpacer" type="Control" parent="ContentMargin/PageContent/TopBar"]
-custom_minimum_size = Vector2(118, 0)
+[node name="EditDecksButton" type="Button" parent="ContentMargin/PageContent/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(118, 48)
 layout_mode = 2
-mouse_filter = 2
+focus_mode = 0
+text = "编辑卡组"
 
 [node name="ModeDescription" type="Label" parent="ContentMargin/PageContent"]
 unique_name_in_owner = true

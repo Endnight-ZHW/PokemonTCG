@@ -76,8 +76,8 @@ func _run() -> void:
 	)
 	var core_contract: Dictionary = contract_session.get_contract()
 	_check(
-		int(core_contract.get("implemented_op_count", 0)) == 80
-		and int(core_contract.get("required_op_count", 0)) == 80
+		int(core_contract.get("implemented_op_count", 0)) == 99
+		and int(core_contract.get("required_op_count", 0)) == 99
 		and bool(core_contract.get("typed_authoritative_state", false))
 		and bool(core_contract.get("typed_vm_ir", false))
 		and int(core_contract.get("typed_vm_program_count", 0)) > 0
@@ -109,7 +109,7 @@ func _run() -> void:
 	var contract: Dictionary = first.get_contract()
 	_check(
 		int(contract.get("native_abi_version", 0)) == 2
-		and int(contract.get("protocol_version", 0)) == 6
+		and int(contract.get("protocol_version", 0)) == 7
 		and int(contract.get("action_schema_version", 0)) == 4
 		and int(contract.get("choice_view_schema_version", 0)) == 2
 		and int(contract.get("snapshot_schema_version", 0)) == 3

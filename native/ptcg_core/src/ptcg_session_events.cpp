@@ -702,6 +702,18 @@ private:
         return selected;
     }
 
+    bool is_devolution_knockout(const CardMoveFact &move) const {
+        if (move.source.role != "evolution" || move.target.zone != "discard") return false;
+        bool top_returned = false;
+        for (const auto &other : moves_) {
+            if (other.source.player != move.source.player || other.source.slot != move.source.slot) continue;
+            // The highest underlying evolution becomes the in-play Pokemon.
+            if (other.source.role == "evolution" && other.source.index > move.source.index) return false;
+            top_returned = top_returned || (other.source.role == "pokemon" && other.target.zone == "hand");
+        }
+        return top_returned;
+    }
+
     bool matches_event(
         const CardMoveFact &move,
         const std::string &event_type,
@@ -728,7 +740,7 @@ private:
                 && move.target.role == "pokemon";
         }
         if (event_type == "pokemon_evolved") {
-            return move.source.zone == "hand"
+            return (move.source.zone == "hand" || move.source.zone == "deck")
                 && move.target.role == "pokemon";
         }
         if (event_type == "energy_attached") {
@@ -746,7 +758,7 @@ private:
             return move.target.zone == "stadium";
         }
         if (event_type == "pokemon_ko") {
-            return move.source.role == "pokemon"
+            return (move.source.role == "pokemon" || is_devolution_knockout(move))
                 && is_board_place(move.source)
                 && move.target.zone == "discard";
         }
@@ -754,7 +766,7 @@ private:
             event_type == "card_moved"
             && previous_type == "pokemon_ko"
         ) {
-            return move.source.role == "pokemon"
+            return (move.source.role == "pokemon" || is_devolution_knockout(move))
                 && is_board_place(move.source)
                 && move.target.zone == "discard";
         }
@@ -956,10 +968,17 @@ private:
             event_value, "amount",
             Value(static_cast<std::int64_t>(selected.size()))
         );
-        set_if_empty(
-            event_value, "source", endpoint_from_place(first.source));
-        set_if_empty(
-            event_value, "target", endpoint_from_place(first.target));
+        const auto complete_endpoint = [&](const char *key, const CardPlace &place) {
+            const Value inferred = endpoint_from_place(place);
+            set_if_empty(event_value, key, inferred);
+            Value &endpoint = required(event_value, key);
+            for (const auto &[field, value] : inferred.as_object())
+                set_if_empty(endpoint, field, value);
+        };
+        // Declared slot/zone hints are partial. Hydrate the physical role too,
+        // otherwise removing an Energy is animated from the whole Pokemon.
+        complete_endpoint("source", first.source);
+        complete_endpoint("target", first.target);
         // A choice payload can identify an exact physical slot that a multiset
         // before/after diff cannot recover (notably duplicate face-down Prize
         // cards). Preserve that authoritative index in the canonical endpoint.

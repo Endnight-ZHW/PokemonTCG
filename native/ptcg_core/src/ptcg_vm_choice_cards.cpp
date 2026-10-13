@@ -1,5 +1,6 @@
 #include "ptcg_rules.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -286,6 +287,7 @@ bool resume_vm_cards(
                         "energy_attachment_source_missing"
                     );
                 }
+                const auto attached_id=energy->string_or();
                 append_energy_attachment_event(result, actor, energy->string_or(),
                     Object{
                         {"zone", Value(from_zone)},
@@ -298,18 +300,20 @@ bool resume_vm_cards(
                     "energy_card_ids"
                 ).as_array().push_back(std::move(*energy));
                 source_cards.erase(energy);
+                if (from_zone == "hand") card_runtime::on_hand_attachment(cards,result,actor,selected_target_slot,attached_id);
             }
             if (from_zone == "deck") {
                 shuffle_array(source_cards, rng);
                 result.event_types.emplace_back("deck_shuffled");
             }
         } else if (op == "discard_then_draw_cards") {
+            const bool optional_discard = integer_arg(args, "discard_amount", 1) == -1;
             const std::int64_t discard_amount = std::max<std::int64_t>(
                 0,
-                integer_arg(args, "discard_amount", 1)
+                optional_discard ? required(self, "hand").as_array().size() : integer_arg(args, "discard_amount", 1)
             );
             if (
-                selected_options.as_array().empty()
+                (!optional_discard && selected_options.as_array().empty())
                 || static_cast<std::int64_t>(
                     selected_options.as_array().size()
                 ) > discard_amount
@@ -349,7 +353,8 @@ bool resume_vm_cards(
             }
             const auto drawn = draw_cards(
                 self,
-                integer_arg(
+                optional_discard ? std::max<std::int64_t>(0, integer_arg(args, "draw_until", 5)
+                    - required(self, "hand").as_array().size()) : integer_arg(
                     args,
                     "draw_amount",
                     integer_arg(args, "draw", 7)
@@ -549,7 +554,8 @@ bool resume_vm_cards(
             || op == "choose_heal_damage"
         ) {
             const bool damage = op == "choose_damage_target";
-            Value &target_player = damage ? opponent : self;
+            const int target_owner = damage && string_arg(args, "player") != "self" ? 1 - actor : actor;
+            Value &target_player = target_owner == actor ? self : opponent;
             const std::string target_slot = selected_slot(
                 selected_options
             );
@@ -574,7 +580,7 @@ bool resume_vm_cards(
                         packets = result.context.find("damage_packets");
                     }
                     packets->as_array().emplace_back(Object{
-                        {"target_player", Value(1 - actor)},
+                        {"target_player", Value(target_owner)},
                         {"target_slot", Value(target_slot)},
                         {"amount", Value(amount)},
                     });
@@ -587,7 +593,7 @@ bool resume_vm_cards(
                         result,
                         "damage_dealt",
                         actor,
-                        1 - actor,
+                        target_owner,
                         target_slot,
                         amount
                     );
@@ -880,6 +886,14 @@ bool resume_vm_cards(
                         actor
                     );
                 std::int64_t maximum = integer_arg(args, "count", 1);
+                if (!string_arg(args,"count_discard_name").empty()) {
+                    std::int64_t matching=0;
+                    for (const auto &id:required(self,"discard").as_array()) {
+                        const auto *definition=cards.find(id.string_or());
+                        if (definition && string_arg(*definition,"name")==string_arg(args,"count_discard_name")) ++matching;
+                    }
+                    maximum += std::max<std::int64_t>(0,matching-(string_arg(continuation,"context_mode")=="trainer"?1:0));
+                }
                 if (op == "conditional_search") {
                     const bool going_second_first_turn = (
                         actor != integer_arg(
@@ -925,7 +939,7 @@ bool resume_vm_cards(
                     && string_arg(args, "destination", "hand") == "bench"
                     && selected_options.as_array().size()
                         > static_cast<std::size_t>(
-                            std::max<std::int64_t>(0, 5 - bench_count(self))
+                            std::max<std::int64_t>(0, card_runtime::bench_limit(cards,result.state,actor) - bench_count(self))
                         )
                 ) {
                     throw std::invalid_argument(

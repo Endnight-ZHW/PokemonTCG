@@ -18,7 +18,7 @@ void require(bool condition, const char *message) {
 
 json valid_frame() {
     return {
-        {"protocol_version", 6},
+        {"protocol_version", 7},
         {"message_type", "ping"},
         {"room_id", "1234"},
         {"sender", 0},
@@ -61,9 +61,11 @@ int main() {
     require(!parse_strict_json_object(deep, "object").ok, "JSON depth");
 
     json frame = valid_frame();
-    require(validate_forward_message(frame, "1234", 0).ok, "valid v6 frame");
+    require(validate_forward_message(frame, "1234", 0).ok, "valid v7 frame");
     frame["protocol_version"] = 5;
     require(!validate_forward_message(frame, "1234", 0).ok, "protocol 5 rejection");
+    frame["protocol_version"] = 6;
+    require(!validate_forward_message(frame, "1234", 0).ok, "protocol 6 rejection");
     frame = valid_frame();
     frame["sender"] = true;
     require(!validate_forward_message(frame, "1234", 0).ok, "bool is not wire integer");
@@ -78,7 +80,7 @@ int main() {
     require(!validate_forward_message(frame, "1234", 0).ok, "required field");
 
     const auto error = error_message("bad");
-    require(error["type"] == "error" && error["expected_version"] == 6, "error envelope");
+    require(error["type"] == "error" && error["expected_version"] == 7, "error envelope");
     std::cout << "RELAY_PROTOCOL_TESTS_OK\n";
     return 0;
 }

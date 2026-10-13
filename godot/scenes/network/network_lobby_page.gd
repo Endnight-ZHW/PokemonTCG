@@ -111,6 +111,8 @@ func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> voi
 	deck_keys.sort()
 	for key_value in deck_keys:
 		var key := str(key_value)
+		if p_catalog is DeckLibrary and not p_catalog.validate_key(key).valid:
+			continue
 		var deck := p_catalog.get_deck(key)
 		deck_option.add_item("%s · %s" % [
 			deck.get("name", key),

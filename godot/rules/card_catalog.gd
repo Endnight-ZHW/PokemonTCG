@@ -108,6 +108,40 @@ func expand_deck(deck_key: String) -> Array[String]:
 func card_name(card_id: String) -> String:
 	return str(get_card(card_id).get("name", card_id))
 
+func effective_attacks(pokemon: PokemonState) -> Array:
+	if pokemon == null: return []
+	var attacks: Array = Array(get_card(pokemon.card_id).get("attacks", [])).duplicate(true)
+	attacks.append_array(get_card(pokemon.attached_tool_id).get("attacks", []))
+	return attacks
+
+func is_setup_doll(card_id: String) -> bool:
+	for command in get_card(card_id).get("compiled_trainer_effects", []):
+		if command.get("op") == "register_rule" and command.get("args", {}).get("effect") == "setup_pokemon":
+			return true
+	return false
+
+func in_play_card(pokemon: PokemonState) -> Dictionary:
+	if pokemon == null: return {}
+	var card := get_card(pokemon.card_id)
+	if not is_setup_doll(pokemon.card_id): return card
+	card = card.duplicate(true)
+	card["image_path"] = "res://assets/cards/card_back.webp"
+	card["supertype"] = "Pokémon"
+	card["energy_types"] = ["Colorless"]
+	card["subtypes"] = ["Basic"]
+	return card
+
+func bench_limit(state: GameState, owner: int) -> int:
+	if state == null or owner not in [0,1]: return 5
+	var opponent := state.get_player(1-owner).active
+	if opponent == null: return 5
+	for ability in get_card(opponent.card_id).get("abilities", []):
+		if ability.get("trigger") != "passive": continue
+		for command in ability.get("compiled_effects", []):
+			if command.get("op") == "register_rule" and command.get("args", {}).get("effect") == "opponent_bench_limit":
+				return int(command.args.get("amount",5))
+	return 5
+
 
 func is_pokemon(card_id: String) -> bool:
 	return _card_supertype(card_id) == "Pokémon"

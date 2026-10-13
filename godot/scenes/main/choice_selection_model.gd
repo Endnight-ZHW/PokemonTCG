@@ -709,7 +709,7 @@ func _retreat_payment_option_units(
 ) -> int:
 	if (
 		request == null
-		or request.request_type != "select_retreat_payment"
+		or not (_choice_presentation(request).has("required_units") or _choice_presentation(request).get("selection_mode") == "energy_units")
 		or state == null
 		or request.player not in [0, 1]
 		or catalog == null
@@ -720,14 +720,15 @@ func _retreat_payment_option_units(
 	if not ref_value is Dictionary:
 		return 0
 	var ref := Dictionary(ref_value)
-	var active := state.get_player(request.player).active
+	var target_owner := int(ref.get("player", -1))
+	if target_owner not in [0,1]: return 0
+	var target_slot := str(ref.get("slot", "active"))
+	var active: PokemonState = state.get_player(target_owner).active if target_slot == "active" else state.get_player(target_owner).bench[target_slot.trim_prefix("bench_").to_int()]
 	var attachment_index := int(ref.get("index", -1))
 	if (
 		active == null
 		or str(ref.get("kind", "")) != "attachment"
 		or str(ref.get("attachment_type", "")) != "energy"
-		or int(ref.get("player", -1)) != request.player
-		or str(ref.get("slot", "")) != "active"
 		or attachment_index < 0
 		or attachment_index >= active.energy_card_ids.size()
 	):
@@ -778,8 +779,10 @@ func _choice_selection_is_complete(
 		or selected_ids.size() > request.max_select
 	):
 		return false
-	if request.request_type == "select_retreat_payment":
+	if _choice_presentation(request).has("required_units"):
 		return _retreat_payment_selection_is_minimal(request, selected_ids)
+	if _choice_presentation(request).get("selection_mode") == "energy_units":
+		return _retreat_payment_selected_units(request, selected_ids) <= int(_choice_presentation(request).get("energy_count",0))
 	return true
 
 func _choice_category_label(category: String) -> String:
@@ -808,7 +811,10 @@ func _choice_addition_blocked_reason(request: ChoiceView, option_id: String) -> 
 
 	var category := _choice_option_category(option)
 	var presentation := _choice_presentation(request)
-	if request.request_type == "select_retreat_payment":
+	if presentation.get("selection_mode") == "energy_units":
+		if _retreat_payment_selected_units(request,selected_ids) + _retreat_payment_option_units(request,option_id) > int(presentation.get("energy_count",0)):
+			return "所选能量超过卡文允许的数量"
+	if presentation.has("required_units"):
 		var candidate_units := _retreat_payment_option_units(request, option_id)
 		if candidate_units <= 0:
 			return "无法读取这张附着能量提供的点数"

@@ -1,5 +1,6 @@
 #include "ptcg_game.hpp"
 #include "ptcg_game_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -605,6 +606,7 @@ std::int64_t calculated_attack_damage(
     std::int64_t damage = std::max<std::int64_t>(
         0,
         base_damage
+            + (attacker ? card_runtime::temporary_rule(*attacker,"next_attack_bonus",integer_arg(state,"turn_number"),string_arg(context,"attack_name")) : 0)
             + (
                 attacker == nullptr
                 ? 0
@@ -858,6 +860,7 @@ void apply_attack_damage_before_effect(
             }
             target.calculated = damage;
         }
+        if (card_runtime::tera_protection(cards,*defender,target.slot)) target.calculated=0;
     }
     std::int64_t active_damage = 0;
     for (const DamageTarget &target : targets) {
@@ -963,7 +966,11 @@ void apply_reactive_thorns(
             continue;
         }
         for (const Value &effect : effects->as_array()) {
-            if (string_arg(effect, "op") != "register_reactive_thorns") {
+            const auto *rule_args = effect.find("args");
+            const bool tool_reactive = string_arg(effect,"op")=="register_rule" && rule_args
+                && string_arg(*rule_args,"effect")=="tool_reactive_counters"
+                && !string_arg(*defender,"attached_tool_id").empty();
+            if (string_arg(effect, "op") != "register_reactive_thorns" && !tool_reactive) {
                 continue;
             }
             const Value *args = effect.find("args");
@@ -1045,6 +1052,7 @@ bool attack_effect_runs_before_damage(
 ) {
     if (bool_arg(args, "fail_attack_if_unpaid") || bool_arg(args, "before_damage"))
         return true;
+    if (op == "discard_field_energy") return args.find("per_energy") != nullptr;
     if (op == "deal_damage") {
         return string_arg(
             args,
@@ -1076,6 +1084,8 @@ bool attack_effect_runs_before_damage(
         "mill_then_damage",
         "set_attack_damage_formula",
         "set_attack_flags",
+        "discard_opponent_tool",
+        "discard_field_energy",
     };
     return before_damage.find(op) != before_damage.end();
 }
@@ -1146,9 +1156,7 @@ void finish_attack_resolution(
             Value *target = pokemon(owner_state, slot);
             if (
                 target == nullptr
-                || pokemon_hp(cards, *target) <= 0
-                || integer_arg(*target, "damage_counters") * 10
-                    < pokemon_hp(cards, *target)
+                || !card_runtime::knocked_out(cards,*target)
             ) {
                 continue;
             }
@@ -1164,18 +1172,32 @@ void finish_attack_resolution(
                 owner,
                 slot,
                 defeated_id,
-                std::max<std::int64_t>(
-                    1,
-                    definition == nullptr
-                        ? 1
-                        : integer_arg(*definition, "prize_value", 1)
-                ),
+                knockout_prize_value(cards,defeated_id),
                 string_arg(
                     *target,
                     "pending_ko_source_kind",
                     "attack_effect"
                 ),
             });
+        }
+    }
+    if (!context.find("curse_duster_slots")) context["curse_duster_slots"]=Value::make_array();
+    for (const auto &entry:knockout_entries) {
+        if (entry.owner!=1-actor || array_contains_string(context.find("curse_duster_slots"),entry.slot)) continue;
+        required(context,"curse_duster_slots").as_array().emplace_back(entry.slot);
+        const auto *defender=pokemon(player(result.state,1-actor),entry.slot);
+        if (defender && string_arg(*defender,"pending_ko_source_kind")=="attack_damage"
+            && card_runtime::rule(cards,string_arg(*defender,"attached_tool_id"),"ko_discard_opponent_hand")
+            && !required(player(result.state,actor),"hand").as_array().empty()) {
+            const Value spec(Object{{"op",Value("select_opponent_cards")},
+                {"args",Value(Object{{"from_zone",Value("hand")},{"amount",Value(1)},
+                    {"destination",Value("discard")},{"reveal",Value(false)}})},
+                {"branches",Value::make_object()}});
+            NativeRulesKernel rules(cards);
+            auto vm=rules.execute(std::move(result.state),spec,1-actor,entry.slot,result.rng_state,"ability",context);
+            if (!vm.success) throw std::invalid_argument(vm.error_code);
+            result.state=std::move(vm.state);result.rng_state=vm.rng_state;
+            if (!vm.pending.as_object().empty()) {attach_game_continuation(result,vm,actor,true);return;}
         }
     }
     if (suspend_exp_share_trigger_if_available(result, cards, actor)) {
@@ -1277,11 +1299,7 @@ void finish_attack_resolution(
         for (std::size_t index = 0; index < bench.size(); ++index) {
             if (
                 !bench[index].is_object()
-                || pokemon_hp(cards, bench[index]) <= 0
-                || integer_arg(
-                    bench[index],
-                    "damage_counters"
-                ) * 10 < pokemon_hp(cards, bench[index])
+                || !card_runtime::knocked_out(cards,bench[index])
             ) {
                 continue;
             }
@@ -1301,12 +1319,7 @@ void finish_attack_resolution(
                 cards,
                 defeated_id
             );
-            const std::int64_t prize_value = std::max<std::int64_t>(
-                1,
-                definition == nullptr
-                    ? 1
-                    : integer_arg(*definition, "prize_value", 1)
-            );
+            const std::int64_t prize_value = knockout_prize_value(cards,defeated_id);
             if (attack_damage) {
                 owner_state["was_ko_by_attack"] = Value(true);
             }
@@ -1349,9 +1362,7 @@ void finish_attack_resolution(
     Value *attacker = pokemon(player(result.state, actor), "active");
     if (
         attacker != nullptr
-        && pokemon_hp(cards, *attacker) > 0
-        && integer_arg(*attacker, "damage_counters") * 10
-            >= pokemon_hp(cards, *attacker)
+        && card_runtime::knocked_out(cards,*attacker)
     ) {
         const std::string defeated_id = string_arg(*attacker, "card_id");
         const std::string source_kind = string_arg(
@@ -1380,9 +1391,7 @@ void finish_attack_resolution(
     Value *defender = pokemon(player(result.state, 1 - actor), "active");
     if (
         defender != nullptr
-        && pokemon_hp(cards, *defender) > 0
-        && integer_arg(*defender, "damage_counters") * 10
-            >= pokemon_hp(cards, *defender)
+        && card_runtime::knocked_out(cards,*defender)
     ) {
         const std::string source_kind = string_arg(
             *defender,

@@ -1,5 +1,6 @@
 #include "ptcg_rules.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -64,12 +65,13 @@ bool resume_vm_triggers(
         } else if (op == "relocate_energy") {
             auto relocation_targets = [
                 &self,
+                &args,
                 actor
             ](const std::string &excluded_slot) {
                 Array options = pokemon_options(
                     self,
                     actor,
-                    true,
+                    string_arg(args, "target") != "bench",
                     true
                 );
                 options.erase(
@@ -186,7 +188,7 @@ bool resume_vm_triggers(
                 const bool optional_count =
                     args.find("min_select") != nullptr
                     || bool_arg(args, "optional");
-                const std::int64_t minimum = optional_count
+                const std::int64_t minimum = bool_arg(args, "all_required") ? amount : optional_count
                     ? std::min(
                         amount,
                         integer_arg(args, "min_select")
@@ -277,6 +279,11 @@ bool resume_vm_triggers(
                     }
                 }
                 Value continued = continuation;
+                if (!bool_arg(args,"all_required")) {
+                    std::int64_t units=0;
+                    for (const auto &attachment:selected_options.as_array()) units+=card_runtime::attachment_units(cards,*selected_source,integer_arg(attachment,"index"));
+                    if (units>integer_arg(args,"amount",1)) throw std::invalid_argument("energy_relocate_units_exceeded");
+                }
                 request_relocation_targets(
                     std::move(continued),
                     source_slot,
@@ -594,6 +601,10 @@ bool resume_vm_triggers(
                         false,
                         true
                     );
+                    if (opponent_target && string_arg(continuation,"context_mode")=="attack") options.erase(std::remove_if(options.begin(),options.end(),[&](const Value &entry) {
+                        const auto target_slot=string_arg(entry,"slot");const auto *candidate=pokemon(target,target_slot);
+                        return candidate && (prevents_attack_effects(*candidate) || card_runtime::protects_effect(cards,result.state,1-actor,target_slot));
+                    }),options.end());
                     if (options.size() == 1) {
                         switch_active_with_event(
                             result,
@@ -622,6 +633,10 @@ bool resume_vm_triggers(
                     }
                 }
             } else {
+                if (opponent_target && string_arg(continuation,"context_mode")=="attack") {
+                    const auto target_slot=selected_slot(selected_options);const auto *candidate=pokemon(target,target_slot);
+                    if (candidate && (prevents_attack_effects(*candidate) || card_runtime::protects_effect(cards,result.state,1-actor,target_slot))) return true;
+                }
                 switch_active_with_event(
                     result,
                     target,

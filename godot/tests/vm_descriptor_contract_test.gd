@@ -21,15 +21,16 @@ func _run_tests() -> void:
 	var ops := VMContract.native_command_ops()
 	var fixture := _read_json(FIXTURE_PATH)
 	var cases: Dictionary = fixture.get("cases", {})
+	cases.merge(_read_json("res://tests/fixtures/csv5_vm_specs.json").get("cases", {}))
 	var supported: Dictionary = {}
 	for op_value in ops:
 		supported[str(op_value)] = true
 	_check(
-		descriptors.size() == 80
-		and ops.size() == 80
-		and cases.size() == 80
+		descriptors.size() == 99
+		and ops.size() == 99
+		and cases.size() == 99
 		and VMContract.descriptor_load_error().is_empty(),
-		"generated VM descriptor inventory did not load as 80 ops",
+		"generated VM descriptor inventory did not load as 99 ops",
 	)
 
 	var typed_cases := 0

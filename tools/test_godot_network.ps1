@@ -44,7 +44,7 @@ try {
             $health = Invoke-RestMethod -Uri "http://127.0.0.1:$RelayPort/healthz" -TimeoutSec 1
             if (
                 $health.status -eq 'ok' -and $health.version -eq $expectedVersion -and
-                [int]$health.protocol -eq 6
+                [int]$health.protocol -eq 7
             ) {
                 $ready = $true
                 break

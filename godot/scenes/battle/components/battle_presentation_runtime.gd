@@ -760,6 +760,11 @@ func _on_presentation_event_started(event: Dictionary) -> void:
 	var keys := _slot_visual_keys_for_event(event)
 	if event_type == "card_moved":
 		for key in keys:
+			if str(data.get("reason", "")) == "devolution":
+				# Reveal the underlying card when the top evolution takes off.
+				# Keep that form staged if the lower HP immediately causes a KO.
+				_apply_event_to_slot_cover(key, event, "takeoff")
+				continue
 			# Once a deferred KO has been declared, unrelated trigger movement
 			# must not remove its old rendered stack. Only the explicit serialized
 			# KO leave-play event is allowed to do that.
@@ -891,6 +896,10 @@ func _apply_event_to_slot_cover(
 				state.evolution_stack_ids.append(state.card_id)
 			state.card_id = str(event.get("card_id", data.get("card_id", state.card_id)))
 			state.status_conditions.clear()
+		"card_moved":
+			if str(data.get("reason", "")) == "devolution" and phase == "takeoff" and not state.evolution_stack_ids.is_empty():
+				state.card_id = state.evolution_stack_ids.pop_back()
+				state.status_conditions.clear()
 	cover.configure(
 		state.card_id,
 		state,

@@ -31,7 +31,7 @@ const TOAST_Z_INDEX := 350
 const DESIGN_CANVAS_SIZE := Vector2i(1600, 900)
 const MAX_AI_PUBLIC_HISTORY := 4096
 
-var catalog: CardCatalog = CardDatabase.catalog
+var catalog: CardCatalog = DeckLibrary.default_library()
 var native_rules := NativeRulesSessionAdapter.new(catalog)
 var choice_model = ChoiceSelectionModelScript.new(catalog)
 var choice_presenter: ChoicePresenter
@@ -592,8 +592,8 @@ func _network_view_is_fresh_match_start() -> bool:
 	)
 
 func _network_view_is_valid(view: Dictionary) -> bool:
-	return bool(ProtocolV6.validate_payload(
-		ProtocolV6.STATE_UPDATE,
+	return bool(ProtocolV7.validate_payload(
+		ProtocolV7.STATE_UPDATE,
 		view,
 	).get("ok", false))
 
@@ -684,6 +684,8 @@ func _start_ai_match(
 	play_startup: bool = false,
 	apply_type_matchups: bool = false,
 ) -> bool:
+	if mode != MODE_LOCAL and not CardCatalog.shared().decks.has(opponent_key):
+		return false
 	game_mode = MODE_CHALLENGE if mode != MODE_LOCAL else MODE_LOCAL
 	ai_deck_key = opponent_key
 	return _start_match(
@@ -2270,6 +2272,10 @@ func _notification(what: int) -> void:
 				)
 				if deck_page == null or not deck_page.handle_back():
 					shell_view.show_title()
+			"deck_editor":
+				if screen_host and screen_host.get_child_count() > 0:
+					var editor := screen_host.get_child(0) as DeckEditorPage
+					if editor: editor.handle_back()
 			SCREEN_NETWORK:
 				if (
 					current_network_page == null

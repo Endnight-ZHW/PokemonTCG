@@ -1,3 +1,4 @@
+#include "ptcg_card_runtime.hpp"
 #include "card_evaluator.hpp"
 #include "ptcg_traditional_card.hpp"
 #include "ptcg_traditional_value.hpp"
@@ -58,7 +59,8 @@ AttackProfile public_attack_profile(const Value &cards, const Value &pokemon) {
     AttackProfile result;
     const std::vector<std::string> available = energy_units(cards, pokemon);
     const Value *definition = card(cards, string_field(pokemon, "card_id"));
-    const Value *attacks = definition == nullptr ? nullptr : field(*definition, "attacks");
+    const Value effective_attacks = card_runtime::attacks(cards,pokemon);
+    const Value *attacks = &effective_attacks;
     std::int64_t eligible = 0;
     std::int64_t ready = 0;
     if (attacks != nullptr && attacks->is_array()) {

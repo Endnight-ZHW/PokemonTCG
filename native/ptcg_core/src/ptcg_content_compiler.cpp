@@ -1,5 +1,6 @@
 #include "../../common/ptcg_json_string.hpp"
 #include "ptcg_content_compiler.hpp"
+#include "ptcg_deck_validation.hpp"
 
 #include "ptcg_typed_ir.hpp"
 #include "ptcg_typed_state.hpp"
@@ -371,6 +372,12 @@ bool validate_decks(
                 "/decks/" + pointer_token(deck_key));
         }
         std::int64_t total = 0;
+        const Value deck_validation = ptcg::ai::validate_deck(cards, *rows);
+        for (const Value &issue : deck_validation.find("errors")->as_array()) {
+            diagnostic(diagnostics, string_field(issue, "code"),
+                "release deck violates construction rules", "godot/authoring/decks.json",
+                "/decks/" + pointer_token(deck_key), string_field(issue, "card_id"));
+        }
         std::set<std::string> seen_cards;
         for (const Value &row : rows->as_array()) {
             const std::string card_id = string_field(row, "card_id");
@@ -634,16 +641,22 @@ Value compile_content_bundle(const Value &bundle) {
         });
     }
 
-    if (runtime_cards.as_object().size() != 177U) {
-        diagnostic(diagnostics, "content_card_count_invalid", "release catalog must contain 177 cards");
+    if (runtime_cards.as_object().size() != 341U) {
+        diagnostic(diagnostics, "content_card_count_invalid", "release catalog must contain 341 cards");
+    }
+    for (int number=1;number<=164;++number) {
+        const std::string id="csv5-"+std::string(number<10?2:number<100?1:0,'0')+std::to_string(number);
+        const auto *card=runtime_cards.find(id);
+        if (!card || string_field(*card,"set_id")!="CSV5C")
+            diagnostic(diagnostics,"content_csv5_number_missing","CSV5C must include every number 001-164",{},{},id);
     }
     auto card_strings = std::make_shared<CardStringTable>(runtime_cards);
     VmCatalog vm_catalog(runtime_cards, card_strings);
     if (!vm_catalog.valid()) {
         diagnostic(diagnostics, "content_vm_compile_failed", vm_catalog.error());
     }
-    if (descriptor_rows->as_object().size() != 80U) {
-        diagnostic(diagnostics, "content_descriptor_count_invalid", "expected exactly 80 VM descriptors");
+    if (descriptor_rows->as_object().size() != 99U) {
+        diagnostic(diagnostics, "content_descriptor_count_invalid", "expected exactly 99 VM descriptors");
     }
     for (const auto &[op, ignored] : descriptor_rows->as_object()) {
         (void)ignored;
@@ -680,11 +693,11 @@ Value compile_content_bundle(const Value &bundle) {
             }
         }
     }
-    if (command_count != 218) {
+    if (command_count != 478) {
         diagnostic(
             diagnostics,
             "content_effect_count_invalid",
-            "release catalog must compile exactly 218 effects");
+            "release catalog must compile exactly 478 effects");
     }
     validate_decks(*decks, runtime_cards, diagnostics);
     if (decks->as_object().size() != 14U) {

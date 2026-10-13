@@ -93,6 +93,7 @@ bool selected_confirmation(const Value &selected_options);
 void switch_active(Value &player_value, const std::string &bench_slot);
 void switch_active_with_event( VmExecutionResult &result, Value &player_value, std::int32_t actor, std::int32_t target_player, const std::string &bench_slot, const std::string &reason = "effect" );
 void discard_pokemon(Value &player_value, const std::string &slot);
+void discard_pokemon_with_event(VmExecutionResult &result, std::int32_t owner, const std::string &slot);
 
 bool execute_vm_modifier_pipeline(const Value &cards, const Value &command_spec, const std::string &op, const Value &args, std::int32_t actor, const std::string &source_slot, const std::string &context_mode, XorShift32 &rng, VmExecutionResult &result, bool &early_return);
 bool execute_vm_damage_pipeline(const Value &cards, const Value &command_spec, const std::string &op, const Value &args, std::int32_t actor, const std::string &source_slot, const std::string &context_mode, XorShift32 &rng, VmExecutionResult &result, bool &early_return);

@@ -1,5 +1,6 @@
 #include "ptcg_game.hpp"
 #include "ptcg_game_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 #include "ptcg_rules_internal.hpp"
 
 #include <algorithm>
@@ -170,6 +171,26 @@ GameExecutionResult NativeGameKernel::apply_action(
             append_hand_movement(result, "pokemon_evolved", actor, next_id,
                 hand_index, Object{{"slot", Value(string_arg(
                     action_params, "slot", "active"))}});
+            const auto evolved_slot = string_arg(action_params,"slot","active");
+            const auto *evolved_card = cards_.find(next_id);
+            const auto *abilities = evolved_card ? evolved_card->find("abilities") : nullptr;
+            if (abilities && abilities->is_array()) {
+                for (const auto &ability : abilities->as_array()) {
+                    if (string_arg(ability,"trigger") != "on_evolve") continue;
+                    const auto *commands = ability.find("compiled_effects");
+                    if (!commands || !commands->is_array()) continue;
+                    const Value optional(Object{{"op",Value("optional_effects")},{"args",Value::make_object()},
+                        {"branches",Value(Object{{"on_success",*commands}})}});
+                    auto vm = rules_.execute(std::move(result.state),optional,actor,evolved_slot,result.rng_state,"ability");
+                    if (!vm.success) throw std::invalid_argument(vm.error_code);
+                    result.state=std::move(vm.state);result.rng_state=vm.rng_state;
+                    append_events(result.events,vm.events);
+                    if (!vm.pending.as_object().empty()) {
+                        attach_game_continuation(result,vm,actor,false,Value::make_array(),evolved_slot,"ability");
+                        break;
+                    }
+                }
+            }
             settle_ability_effect_knockouts(result, cards_, actor);
         } else if (kind == "ATTACH_ENERGY") {
             Array &hand = required(self, "hand").as_array();
@@ -204,21 +225,20 @@ GameExecutionResult NativeGameKernel::apply_action(
                     {"index", Value(static_cast<std::int64_t>(
                         required(*target, "energy_card_ids").as_array().size() - 1))},
                 });
-            if (energy_switches_with_active_on_attach(
-                cards_,
-                energy_id,
-                target_slot
-            )) {
-                switch_active_with_event(
-                    result,
-                    self,
-                    actor,
-                    actor,
-                    target_slot,
-                    "switched",
-                    "energy_switch_on_attach"
-                );
+            VmExecutionResult attached;
+            attached.state=std::move(result.state);
+            card_runtime::on_hand_attachment(cards_,attached,actor,target_slot,energy_id);
+            result.state=std::move(attached.state);
+            append_events(result.events,attached.events);
+            result.event_types.insert(result.event_types.end(),attached.event_types.begin(),attached.event_types.end());
+            const Value attachment_trigger=card_runtime::take_hand_attachment_trigger(attached.context);
+            if (!attachment_trigger.as_object().empty()) {
+                auto vm=rules_.execute(std::move(result.state),attachment_trigger,actor,target_slot,result.rng_state,"ability",attached.context);
+                if (!vm.success) throw std::invalid_argument(vm.error_code);
+                result.state=std::move(vm.state);result.rng_state=vm.rng_state;
+                if (!vm.pending.as_object().empty()) attach_game_continuation(result,vm,actor,false,Value::make_array(),target_slot,"ability");
             }
+            if (result.pending.as_object().empty()) settle_ability_effect_knockouts(result,cards_,actor);
         } else if (kind == "RETREAT") {
             Value *active = pokemon(self, "active");
             if (active == nullptr) {
@@ -419,6 +439,10 @@ GameExecutionResult NativeGameKernel::apply_action(
                         vm.event_types.end()
                     );
                     append_events(result.events, vm.events);
+                    if (!vm.pending.as_object().empty()) {
+                        attach_game_continuation(result,vm,actor,false,Value::make_array(),"active","trainer");
+                        break;
+                    }
                 }
             }
             player(result.state, actor)["stadium_used_this_turn"] =
@@ -449,7 +473,16 @@ GameExecutionResult NativeGameKernel::apply_action(
             hand.erase(
                 hand.begin() + static_cast<std::ptrdiff_t>(hand_index)
             );
-            if (trainer_type == "Tool") {
+            if (trainer_type == "Stadium") {
+                const auto previous=string_arg(result.state,"stadium_card_id");
+                const int previous_owner=static_cast<int>(integer_arg(result.state,"stadium_owner_idx",-1));
+                if (!previous.empty() && previous_owner>=0)
+                    required(player(result.state,previous_owner),"discard").as_array().emplace_back(previous);
+                result.state["stadium_card_id"]=Value(id);result.state["stadium_owner_idx"]=Value(actor);
+                self["stadium_played_this_turn"]=Value(true);
+                for (int owner=0;owner<2;++owner) player(result.state,owner)["stadium_used_this_turn"]=Value(false);
+                append_hand_movement(result,"stadium_changed",actor,id,hand_index,Object{{"zone",Value("stadium")}});
+            } else if (trainer_type == "Tool") {
                 const std::string target_slot = string_arg(
                     action_params,
                     "target_slot",
@@ -672,6 +705,9 @@ GameExecutionResult NativeGameKernel::apply_action(
             const Value *ability = definition == nullptr
                 ? nullptr
                 : find_named_ability(*definition, ability_name);
+            const Value doll_ability(Object{{"name",Value("弃置卡比兽娃娃")},{"trigger",Value("repeatable")},
+                {"compiled_effects",Value(Array{Value(Object{{"op",Value("discard_from_play")},{"args",Value::make_object()},{"branches",Value::make_object()}})})}});
+            if (ability_name=="弃置卡比兽娃娃" && card_runtime::rule(cards_,source_card_id,"setup_pokemon")) ability=&doll_ability;
             if (ability == nullptr) {
                 throw std::invalid_argument("ability_missing");
             }
@@ -759,9 +795,8 @@ GameExecutionResult NativeGameKernel::apply_action(
                 cards_,
                 string_arg(*attacker, "card_id")
             );
-            const Value *attacks = definition == nullptr
-                ? nullptr
-                : definition->find("attacks");
+            const Value attack_list = card_runtime::attacks(cards_, *attacker);
+            const Value *attacks = &attack_list;
             const std::size_t attack_index = static_cast<std::size_t>(
                 integer_arg(action_params, "attack_idx")
             );
@@ -851,7 +886,7 @@ GameExecutionResult NativeGameKernel::apply_action(
                     return result;
                 }
             }
-            bool dazzled = false;
+            bool dazzled = card_runtime::temporary_rule(*attacker,"attack_coin_check",integer_arg(result.state,"turn_number")) > 0;
             Value *modifiers = attacker->find("modifiers");
             if (modifiers != nullptr && modifiers->is_array()) {
                 const auto gate = std::find_if(
@@ -914,6 +949,7 @@ GameExecutionResult NativeGameKernel::apply_action(
                 }
             }
             Value context = Value(Object{
+                {"attack_name",Value(string_arg(attack,"name"))},
                 {
                     "base_damage",
                     Value(
@@ -1057,11 +1093,12 @@ GameExecutionResult NativeGameKernel::apply_action(
                         );
                         const bool should_register = (
                             !bool_arg(*target, "all_prevented")
+                            && !card_runtime::protects_effect(cards_,result.state,1-actor,"active")
                             && (
                                 op != "apply_attack_lock_basic"
                                 || (
                                     target_card != nullptr
-                                    && is_basic_pokemon(*target_card)
+                                    && card_runtime::basic_in_play(cards_,*target)
                                 )
                             )
                         );
@@ -1087,6 +1124,13 @@ GameExecutionResult NativeGameKernel::apply_action(
             finish_attack_resolution(result, cards_, actor, context);
         } else {
             throw std::invalid_argument("unsupported_native_action:" + kind);
+        }
+        if (result.pending.as_object().empty() && string_arg(result.state,"result_status","ONGOING")=="ONGOING") {
+            const Value barrier(Object{{"op",Value("resolve_bench_limit")},{"args",Value::make_object()},{"branches",Value::make_object()}});
+            auto vm=rules_.execute(std::move(result.state),barrier,actor,"active",result.rng_state,"ability");
+            if (!vm.success) throw std::invalid_argument(vm.error_code);
+            result.state=std::move(vm.state);result.rng_state=vm.rng_state;
+            if (!vm.pending.as_object().empty()) attach_game_continuation(result,vm,actor,false,Value::make_array(),"active","ability");
         }
         result.success = true;
     } catch (const std::exception &error) {

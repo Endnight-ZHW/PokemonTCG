@@ -16,6 +16,8 @@ var player_idx := -1
 var room_id := ""
 var local_deck_key := ""
 var remote_deck_key := ""
+var local_deck_selection: Dictionary = {}
+var remote_deck_digest := ""
 var send_sequence := 0
 var receive_sequence := 0
 var current_revision := -1
@@ -55,7 +57,7 @@ func request_resync() -> void:
 	if not host and connection_phase == ConnectionPhase.PLAYING:
 		if resync_in_progress:
 			return
-		if _send(ProtocolV6.RESYNC_REQUEST, {}, get_revision()):
+		if _send(ProtocolV7.RESYNC_REQUEST, {}, get_revision()):
 			resync_in_progress = true
 		elif _can_reconnect_match():
 			_begin_reconnect("resync_send_failed")
@@ -83,6 +85,8 @@ func close() -> void:
 	room_id = ""
 	local_deck_key = ""
 	remote_deck_key = ""
+	local_deck_selection = {}
+	remote_deck_digest = ""
 	send_sequence = 0
 	receive_sequence = 0
 	current_revision = -1
@@ -109,6 +113,41 @@ func close() -> void:
 	events.clear()
 
 
+
+func _freeze_selection(key: String) -> Dictionary:
+	var deck := catalog.get_deck(key)
+	if deck.is_empty(): return {}
+	var normalized := DeckLibrary.normalize_definition(deck)
+	if not normalized.ok: return {}
+	var adapter := NativeRulesSessionAdapter.new(catalog)
+	if not adapter.prepare_catalog() or not adapter.native.validate_deck(normalized.deck.cards).valid:
+		return {}
+	var custom: bool = catalog is DeckLibrary and catalog.is_custom(key)
+	var definition: Dictionary = normalized.deck
+	if custom: definition.name = "自定义卡组"
+	return {"deck_key": "custom" if custom else key, "definition": definition,
+		"digest": DeckLibrary.deck_digest(definition)}
+
+func _receive_selection(payload: Dictionary) -> Dictionary:
+	var key := str(payload.get("deck_key", ""))
+	var definition: Variant = payload.get("deck_definition")
+	if key != "custom":
+		# Published keys cannot be repurposed to smuggle an altered deck.
+		var preset := CardCatalog.shared().get_deck(key)
+		if preset.is_empty(): return {}
+		if definition == null: definition = preset
+		if not definition is Dictionary or DeckLibrary.deck_digest(definition) != DeckLibrary.deck_digest(preset):
+			return {}
+	var normalized := DeckLibrary.normalize_definition(definition)
+	if not normalized.ok: return {}
+	var digest := DeckLibrary.deck_digest(normalized.deck)
+	if str(payload.get("deck_digest", digest if key != "custom" else "")) != digest:
+		return {}
+	var adapter := NativeRulesSessionAdapter.new(catalog)
+	if not adapter.prepare_catalog() or not adapter.native.validate_deck(normalized.deck.cards).valid:
+		return {}
+	if key == "custom": normalized.deck.name = "自定义卡组"
+	return {"deck_key": key, "definition": normalized.deck, "digest": digest}
 
 func _revision_matches(row: Dictionary) -> bool:
 	if session == null or session.state == null:
@@ -180,7 +219,7 @@ func _send_state_to_client(
 	if session == null or session.state == null:
 		return
 	var sent := _send(
-		ProtocolV6.STATE_UPDATE,
+		ProtocolV7.STATE_UPDATE,
 		session.view_for(1, presentation_events),
 		session.state.revision,
 		origin_action_id,
@@ -196,8 +235,8 @@ func _reject(
 	origin: Dictionary = {},
 ) -> void:
 	_send(
-		ProtocolV6.ERROR,
-		ProtocolV6.error_payload(code, message),
+		ProtocolV7.ERROR,
+		ProtocolV7.error_payload(code, message),
 		get_revision(),
 		str(origin.get("action_id", "")),
 		str(origin.get("request_id", "")),
@@ -339,7 +378,7 @@ func _envelope_identifier(message: Variant, field: String) -> String:
 	if not value is String:
 		return ""
 	var identifier := str(value)
-	if identifier.to_utf8_buffer().size() > ProtocolV6.MAX_IDENTIFIER_BYTES:
+	if identifier.to_utf8_buffer().size() > ProtocolV7.MAX_IDENTIFIER_BYTES:
 		return ""
 	return identifier
 
@@ -354,7 +393,7 @@ func _send(
 	if transport == null or not transport.connected_state():
 		return false
 	var next_sequence := send_sequence + 1
-	var sent := transport.send(ProtocolV6.envelope(
+	var sent := transport.send(ProtocolV7.envelope(
 		message_type,
 		room_id,
 		0 if host else 1,
@@ -398,7 +437,7 @@ func _send_terminal_ack(now_msec: int) -> bool:
 	if host or terminal_revision < 0:
 		return false
 	var sent := _send(
-		ProtocolV6.PONG,
+		ProtocolV7.PONG,
 		{},
 		terminal_revision,
 	)
@@ -475,10 +514,15 @@ func _core_fingerprint() -> String:
 	var manifest := _release_manifest()
 	var native_rules: Dictionary = Dictionary(manifest.get("native_rules", {}))
 	var native_core_fingerprint := str(native_rules.get("core_fingerprint", ""))
+	var runtime: Variant = ClassDB.instantiate("NativeRulesSession")
+	var contract: Dictionary = runtime.get_contract() if runtime != null else {}
+	var implementation_id := str(contract.get("rules_implementation_id", ""))
+	if implementation_id.is_empty() or int(contract.get("protocol_version",-1)) != ProtocolV7.VERSION or implementation_id.sha256_text() != native_core_fingerprint:
+		return ""
 	if (
-		not ProtocolV6._valid_sha256(content_fingerprint)
-		or not ProtocolV6._valid_sha256(contract_fingerprint)
-		or not ProtocolV6._valid_sha256(native_core_fingerprint)
+		not ProtocolV7._valid_sha256(content_fingerprint)
+		or not ProtocolV7._valid_sha256(contract_fingerprint)
+		or not ProtocolV7._valid_sha256(native_core_fingerprint)
 		or str(native_rules.get("card_ir_content_fingerprint", ""))
 		!= content_fingerprint
 		or str(native_rules.get("card_ir_contract_fingerprint", ""))

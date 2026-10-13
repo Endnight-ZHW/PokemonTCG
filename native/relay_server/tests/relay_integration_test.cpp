@@ -72,7 +72,7 @@ private:
     websocket::stream<beast::tcp_stream> websocket_;
 };
 
-json frame(const std::string &room, int sender, int sequence, int protocol = 6) {
+json frame(const std::string &room, int sender, int sequence, int protocol = 7) {
     return {
         {"protocol_version", protocol},
         {"message_type", "ping"},
@@ -120,7 +120,7 @@ void basic_and_resume(const std::string &host, const std::string &port) {
 
     pair.host->send(frame(pair.room, 0, 2, 5));
     const json rejected = pair.host->receive();
-    require(rejected.value("type", "") == "error" && rejected.value("expected_version", 0) == 6,
+    require(rejected.value("type", "") == "error" && rejected.value("expected_version", 0) == 7,
         "protocol 5 rejection");
 
     pair.guest->disconnect();

@@ -189,8 +189,8 @@ func _collect_direct_ko_view_events(
 	for player_idx in [0, 1]:
 		var view := session.view_for(player_idx, step.events)
 		_expect(
-			bool(ProtocolV6.validate_payload(
-				ProtocolV6.STATE_UPDATE, view
+			bool(ProtocolV7.validate_payload(
+				ProtocolV7.STATE_UPDATE, view
 			).get("ok", false)),
 			"direct-KO state update was not Protocol v6-valid for player %d"
 			% player_idx,
@@ -256,8 +256,8 @@ func _run_setup_hidden_information_contract() -> void:
 		"opponent setup Pokemon was not serialized as the strict placeholder",
 	)
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, opponent_view
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, opponent_view
 		).get("ok", false)),
 		"actual hidden setup view was not Protocol v6 valid",
 	)
@@ -375,8 +375,8 @@ func _run_mulligan_presentation_contract() -> void:
 	for perspective in [0, 1]:
 		var view := session.view_for(perspective, started.events)
 		_expect(
-			bool(ProtocolV6.validate_payload(
-				ProtocolV6.STATE_UPDATE,
+			bool(ProtocolV7.validate_payload(
+				ProtocolV7.STATE_UPDATE,
 				view,
 			).get("ok", false)),
 			"mulligan presentation view was not Protocol v6-valid for player %d"
@@ -425,8 +425,8 @@ func _run_setup_stage_recovery_contract() -> void:
 			)
 			var has_board := state.get_player(1 - perspective).active != null
 			_expect(
-				bool(ProtocolV6.validate_payload(
-					ProtocolV6.STATE_UPDATE,
+				bool(ProtocolV7.validate_payload(
+					ProtocolV7.STATE_UPDATE,
 					view,
 				).get("ok", false))
 				and (
@@ -450,8 +450,8 @@ func _run_setup_stage_recovery_contract() -> void:
 		var complete_view := _state_update_payload(complete_state, perspective)
 		var opponent: Dictionary = complete_view["state"]["opponent"]
 		_expect(
-			bool(ProtocolV6.validate_payload(
-				ProtocolV6.STATE_UPDATE,
+			bool(ProtocolV7.validate_payload(
+				ProtocolV7.STATE_UPDATE,
 				complete_view,
 			).get("ok", false))
 			and opponent.get("active") is Dictionary
@@ -563,8 +563,8 @@ func _run_final_setup_publication_contract() -> void:
 		var draw_ids: Array = Dictionary(draw_event.get("data", {})).get(
 			"card_ids", [])
 		_expect(
-			bool(ProtocolV6.validate_payload(
-				ProtocolV6.STATE_UPDATE,
+			bool(ProtocolV7.validate_payload(
+				ProtocolV7.STATE_UPDATE,
 				view,
 			).get("ok", false))
 			and session.state.setup_stage == GameState.SETUP_COMPLETE

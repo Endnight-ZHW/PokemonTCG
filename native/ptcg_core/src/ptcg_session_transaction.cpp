@@ -359,6 +359,37 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
     }
     const std::int64_t revision_before = revision();
     const std::string continuation_kind = string_field(continuation_, "kind");
+    if (continuation_kind == "setup_doll") {
+        const Value previous_state=state_, previous_pending=pending_, previous_raw=pending_raw_, previous_continuation=continuation_;
+        const auto previous_authoritative=authoritative_state_;
+        const auto previous_rng=rng_state_;
+        if (cancelled || selected_ids.size()!=1) return result(false,"choice_count","choice_count");
+        const auto selected=selected_ids.front().string_or();
+        if (selected!="confirm:yes" && selected!="confirm:no") return result(false,"invalid_choice","invalid_choice");
+        Array accepted=required(continuation_,"accepted").as_array();
+        const int owner=static_cast<int>(integer_field(continuation_,"actor"));
+        std::vector<Value> events;
+        if (selected=="confirm:yes") accepted.emplace_back(owner);
+        else {
+            XorShift32 rng(rng_state_);
+            const auto error=prepare_opening_hands(cards(),state_,rng,events,false,owner);
+            if (!error.empty()) {state_=previous_state;return result(false,error,error);}
+            rng_state_=rng.state();
+        }
+        state_["revision"]=Value(revision_before+1);
+        if (opening_doll_choice(cards(),state_,accepted,pending_,continuation_)) {
+            pending_raw_=pending_;materialize_resolution_stack();
+        } else { pending_raw_=Value();clear_resolution_stack(); }
+        append_choice_action_log(state_,previous_state,previous_pending,response,events);
+        append_public_event_logs(state_,cards(),previous_state,events);
+        std::string error;
+        if (!commit_authoritative_state(&error)) {
+            state_=previous_state;pending_=previous_pending;pending_raw_=previous_raw;continuation_=previous_continuation;
+            authoritative_state_=previous_authoritative;rng_state_=previous_rng;return result(false,error,error);
+        }
+        append_journal_entry("choice",response,revision_before,events);
+        return result(true,{},"choice_applied",std::move(events));
+    }
     if (continuation_kind == "setup_turn_order") {
         const Value previous_state = state_;
         const Value previous_pending = pending_;
@@ -398,6 +429,9 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
         pending_raw_ = Value();
         continuation_ = Value();
         clear_resolution_stack();
+        if (opening_doll_choice(cards(),state_,{},pending_,continuation_)) {
+            pending_raw_=pending_;materialize_resolution_stack();
+        }
         append_choice_action_log(
             state_, previous_state, previous_pending, response, events);
         append_public_event_logs(
@@ -605,9 +639,14 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
         );
         combined.insert(
             combined.end(), choice_events.begin(), choice_events.end());
+        const Value *transaction_action = session_transaction->find("action");
+        const auto transaction_actor = transaction_action != nullptr
+            ? integer_field(*transaction_action, "actor", -1) : -1;
         if (
             native_result.pending.is_object()
             && !native_result.pending.as_object().empty()
+            && bool_field(native_result.pending, "can_cancel")
+            && integer_field(native_result.pending, "player", -1) == transaction_actor
         ) {
             if (
                 !native_result.continuation.is_object()
@@ -632,6 +671,11 @@ RulesSessionResult RulesSession::apply_choice(const Value &response) {
             native_result.events.clear();
             native_result.event_types.clear();
         } else {
+            // Once payment completes or control passes to the opponent, the
+            // action is committed. Publish its movement before the new choice
+            // instead of replaying a retreat/evolution after that choice ends.
+            if (native_result.continuation.is_object())
+                native_result.continuation.erase("session_transaction");
             native_result.events = std::move(combined);
             native_result.event_types.clear();
         }

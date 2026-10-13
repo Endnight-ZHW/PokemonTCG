@@ -1241,6 +1241,8 @@ func _sync_detached_selection_ring() -> void:
 
 
 func _card_data(value: String) -> Dictionary:
+	if pokemon != null and pokemon.card_id == value and CardCatalog.shared().is_setup_doll(value):
+		return CardCatalog.shared().in_play_card(pokemon)
 	var database := _root_child("CardDatabase")
 	if database and database.has_method("get_card"):
 		return database.call("get_card", value)

@@ -1,5 +1,6 @@
 #include "ptcg_rules.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -71,10 +72,11 @@ bool execute_vm_damage_pipeline(
             || op == "choose_heal_damage"
         ) {
             const bool damage = op == "choose_damage_target";
-            Value &target_player = damage ? opponent : self;
+            const int target_owner = damage && string_arg(args, "player") != "self" ? 1 - actor : actor;
+            Value &target_player = target_owner == actor ? self : opponent;
             Array options = pokemon_options(
                 target_player,
-                damage ? 1 - actor : actor,
+                target_owner,
                 string_arg(args, "target") != "bench",
                 true
             );
@@ -617,9 +619,10 @@ bool execute_vm_damage_pipeline(
                 result.rng_state = rng.state();
                 early_return = true; return true;
             }
-            if (
-                static_cast<std::int64_t>(options.size()) == amount
-            ) {
+            std::int64_t available_units=0;
+            for (const auto &option:options) available_units+=card_runtime::attachment_units(cards,*target,integer_arg(option,"index"));
+            const auto required_units=std::min(integer_arg(args,"amount",1),available_units);
+            if (static_cast<std::int64_t>(options.size()) == amount && available_units==amount) {
                 Array &energy = required(
                     *target,
                     "energy_card_ids"
@@ -660,7 +663,7 @@ bool execute_vm_damage_pipeline(
                 pending_request(
                     "select_attachment",
                     actor,
-                    amount,
+                    1,
                     amount,
                     false,
                     false,
@@ -674,6 +677,8 @@ bool execute_vm_damage_pipeline(
                     source_slot
                 )
             );
+            result.pending["presentation"]=Value(Object{{"domain",Value("effect")},{"purpose",Value("discard_energy_attachments")},
+                {"required_units",Value(required_units)}});
         } else if (op == "discard_energy_then_damage") {
             if (source != nullptr) {
                 Array &attached = required(
@@ -735,6 +740,17 @@ bool execute_vm_damage_pipeline(
         } else if (op == "discard_then_draw_cards") {
             Array &hand = required(self, "hand").as_array();
             Array &discard = required(self, "discard").as_array();
+            if (integer_arg(args, "discard_amount", 1) == -1) {
+                if (hand.empty()) {
+                    append_cards_drawn_event(result, actor, draw_cards(self,
+                        std::max<std::int64_t>(0, integer_arg(args, "draw_until", 5))), op);
+                } else {
+                    suspend(pending_request("search_move", actor, 0, hand.size(), false, false,
+                        zone_options(cards, self, actor, "hand", "any"), "discard_hand_then_draw"),
+                        make_continuation(op, command_spec, actor, source_slot));
+                }
+                return true;
+            }
             const bool discard_hand = bool_arg(
                 args,
                 "discard_hand"

@@ -41,6 +41,7 @@ public:
     RulesSession &operator=(const RulesSession &) = default;
 
     void set_cards(Value cards);
+    Value validate_deck(const Value &entries) const;
     bool initialized() const noexcept;
 
     RulesSessionResult create(

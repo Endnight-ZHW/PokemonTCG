@@ -1,5 +1,7 @@
 #include "ptcg_rules.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_game_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -125,10 +127,15 @@ bool resume_vm_damage(
                 std::max<std::int64_t>(0, integer_arg(args, "amount", 1)),
                 matching_count
             );
-            if (
-                selected_options.as_array().size()
-                != static_cast<std::size_t>(expected_count)
-            ) {
+            std::int64_t available_units=0,total_units=0;
+            for (std::size_t index=0;index<energy.size();++index)
+                if (attached_energy_card_matches(cards,*target,index,filter)) available_units+=card_runtime::attachment_units(cards,*target,index);
+            const auto required_units=std::min(integer_arg(args,"amount",1),available_units);
+            std::vector<std::int64_t> selected_units;
+            for (const auto &entry:selected_options.as_array()) {
+                const auto units=card_runtime::attachment_units(cards,*target,integer_arg(entry,"index"));selected_units.push_back(units);total_units+=units;
+            }
+            if (total_units<required_units || std::any_of(selected_units.begin(),selected_units.end(),[&](auto n){return total_units-n>=required_units;})) {
                 throw std::invalid_argument(
                     "energy_discard_selection_count_invalid"
                 );
@@ -379,6 +386,25 @@ bool resume_vm_damage(
             (*target)["card_id"] = std::move(removed);
             (*target)["can_evolve_this_turn"] = Value(false);
             result.event_types.emplace_back("pokemon_evolved");
+            (*target)["status_conditions"]=Value::make_array();
+            game_detail::clear_attack_effects_on_leave(*target);
+            (*target)["used_abilities"]=Value::make_array();
+            std::string evolved_slot="active";
+            for (const auto &entry:pokemon_options(self,actor,true,true))
+                if (pokemon(self,string_arg(entry,"slot"))==target) evolved_slot=string_arg(entry,"slot");
+            const auto *definition=cards.find(card_id(*target));
+            const auto *abilities=definition?definition->find("abilities"):nullptr;
+            if (abilities && abilities->is_array()) for (const auto &ability:abilities->as_array()) {
+                if (string_arg(ability,"trigger")!="on_evolve") continue;
+                const auto *commands=ability.find("compiled_effects");if (!commands) continue;
+                Value spec(Object{{"op",Value("optional_effects")},{"args",Value::make_object()},
+                    {"branches",Value(Object{{"on_success",*commands}})}});
+                auto next=kernel.execute(std::move(result.state),spec,actor,evolved_slot,rng.state(),"ability",result.context);
+                if (!next.success) throw std::invalid_argument(next.error_code);
+                result.state=std::move(next.state);result.context=std::move(next.context);rng.set_state(next.rng_state);
+                result.pending=std::move(next.pending);result.continuation=std::move(next.continuation);
+                append_events(result.events,next.events);break;
+            }
         } else if (
             op == "flip_coin"
             || op == "flip_coin_repeat_damage"
@@ -474,7 +500,8 @@ bool resume_vm_damage(
             } else if (op == "flip_coin_repeat_damage") {
                 set_attack_damage(
                     result.context,
-                    heads * integer_arg(args, "damage_per_head", 10),
+                    bool_arg(args,"progressive_bonus") ? integer_arg(args,"base") + heads*(heads+1)*10
+                        : heads * integer_arg(args, "damage_per_head", 10),
                     true
                 );
             } else if (op == "flip_coin_then_discard_energy") {
@@ -612,7 +639,7 @@ bool resume_vm_damage(
                     target != nullptr
                     && !(
                         string_arg(continuation, "context_mode") == "attack"
-                        && prevents_attack_effects(*target)
+                        && (prevents_attack_effects(*target) || card_runtime::protects_effect(cards,result.state,1-actor,"active"))
                     )
                 ) {
                     const std::string defeated_id = card_id(*target);

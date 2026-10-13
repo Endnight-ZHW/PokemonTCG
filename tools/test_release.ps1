@@ -88,7 +88,7 @@ try {
     try { $buildInfo = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
     if (
         [string]$buildInfo.version -ne $version -or
-        [int]$buildInfo.protocol -ne 6 -or
+        [int]$buildInfo.protocol -ne 7 -or
         [int]$buildInfo.action_schema -ne 4 -or
         [int]$buildInfo.choice_view_schema -ne 2 -or
         [string]$buildInfo.native_rules -ne 'ptcg_core' -or

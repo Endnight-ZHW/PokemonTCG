@@ -12,7 +12,8 @@ func host_lan(
 	apply_type_matchups: bool = false,
 ) -> Error:
 	close()
-	if not catalog.decks.has(deck_key):
+	local_deck_selection = _freeze_selection(deck_key)
+	if local_deck_selection.is_empty():
 		return ERR_INVALID_PARAMETER
 	host = true
 	player_idx = 0
@@ -36,7 +37,8 @@ func host_lan(
 
 func join_lan(address: String, port: int, deck_key: String) -> Error:
 	close()
-	if not catalog.decks.has(deck_key):
+	local_deck_selection = _freeze_selection(deck_key)
+	if local_deck_selection.is_empty():
 		return ERR_INVALID_PARAMETER
 	host = false
 	player_idx = 1
@@ -62,7 +64,8 @@ func host_relay(
 	apply_type_matchups: bool = false,
 ) -> Error:
 	close()
-	if not catalog.decks.has(deck_key):
+	local_deck_selection = _freeze_selection(deck_key)
+	if local_deck_selection.is_empty():
 		return ERR_INVALID_PARAMETER
 	host = true
 	player_idx = 0
@@ -84,7 +87,8 @@ func host_relay(
 
 func join_relay(relay_url: String, target_room: String, deck_key: String) -> Error:
 	close()
-	if not catalog.decks.has(deck_key):
+	local_deck_selection = _freeze_selection(deck_key)
+	if local_deck_selection.is_empty():
 		return ERR_INVALID_PARAMETER
 	host = false
 	player_idx = 1
@@ -139,7 +143,7 @@ func poll() -> Array[Dictionary]:
 				if host:
 					if session == null:
 						session = AuthoritativeSession.new(room_id, catalog)
-					_send(ProtocolV6.WELCOME, {
+					_send(ProtocolV7.WELCOME, {
 						"player_idx": 1,
 						"rules_version": AppState.RULES_SCHEMA_VERSION,
 						"action_version": AppState.ACTION_SCHEMA_VERSION,
@@ -191,7 +195,7 @@ func poll() -> Array[Dictionary]:
 		and connection_phase != ConnectionPhase.CLOSED
 		and now - last_send_msec >= HEARTBEAT_INTERVAL_MSEC
 	):
-		_send(ProtocolV6.PING, {}, get_revision())
+		_send(ProtocolV7.PING, {}, get_revision())
 	if (
 		connected
 		and connection_phase != ConnectionPhase.CLOSED
@@ -246,7 +250,7 @@ func submit_action(action: GameAction) -> bool:
 		return true
 	var base_revision := get_revision()
 	var sent := _send(
-		ProtocolV6.ACTION_SUBMIT,
+		ProtocolV7.ACTION_SUBMIT,
 		{"action": action.to_dict()},
 		get_revision(),
 		action.action_id,
@@ -278,7 +282,7 @@ func submit_choice(response: ChoiceResponse) -> bool:
 		return true
 	var base_revision := get_revision()
 	var sent := _send(
-		ProtocolV6.CHOICE_SUBMIT,
+		ProtocolV7.CHOICE_SUBMIT,
 		{"response": response.to_dict()},
 		get_revision(),
 		"",
@@ -306,7 +310,7 @@ func surrender() -> void:
 				return
 			_broadcast_state(step.events)
 	else:
-		_send(ProtocolV6.SURRENDER, {}, get_revision())
+		_send(ProtocolV7.SURRENDER, {}, get_revision())
 
 
 

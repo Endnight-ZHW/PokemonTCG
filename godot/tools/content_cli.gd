@@ -5,10 +5,10 @@ const AUTHORING_ROOT := "res://authoring"
 const CARD_ROOT := AUTHORING_ROOT + "/cards"
 const DATA_ROOT := "res://data"
 const CARD_REVIEW_MANIFEST := AUTHORING_ROOT + "/card_review_manifest.json"
-const EXPECTED_CARDS := 177
+const EXPECTED_CARDS := 341
 const EXPECTED_DECKS := 14
-const EXPECTED_EFFECTS := 218
-const EXPECTED_VM_DESCRIPTORS := 80
+const EXPECTED_EFFECTS := 478
+const EXPECTED_VM_DESCRIPTORS := 99
 
 
 func _init() -> void:
@@ -394,12 +394,16 @@ func _finalize_outputs(outputs: Dictionary) -> Dictionary:
 	if not manifest_value is Dictionary:
 		return {"success": false, "error": "release_manifest_missing"}
 	var manifest: Dictionary = Dictionary(manifest_value).duplicate(true)
-	manifest["version"] = "0.8.0"
-	manifest["android_version_code"] = 9
+	manifest["version"] = "0.9.1"
+	manifest["android_version_code"] = 11
 	var schemas: Dictionary = Dictionary(manifest.get("schemas", {})).duplicate(true)
 	schemas["card_ir"] = 4
 	manifest["schemas"] = schemas
 	var native_rules: Dictionary = Dictionary(manifest.get("native_rules", {})).duplicate(true)
+	var rules_session: Variant = ClassDB.instantiate("NativeRulesSession")
+	var implementation_id := str(rules_session.get_contract().get("rules_implementation_id", ""))
+	if implementation_id.is_empty(): return {"success": false, "error": "native_implementation_id_missing"}
+	native_rules["core_fingerprint"] = implementation_id.sha256_text()
 	native_rules["card_ir_version"] = 4
 	native_rules["card_ir_content_fingerprint"] = content_fingerprint
 	native_rules["card_ir_source_fingerprint"] = source_fingerprint

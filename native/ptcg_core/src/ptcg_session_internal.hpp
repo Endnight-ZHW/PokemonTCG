@@ -66,7 +66,8 @@ void strip_internal_pokemon_fields(Value &pokemon_value);
 Value player_view( const Value &owner, bool show_hand, bool hide_setup_board );
 void set_prizes(Value &state);
 void finish_setup(Value &state, std::vector<Value> &events);
-std::string prepare_opening_hands( const Value &cards, Value &state, XorShift32 &rng, std::vector<Value> &events );
+std::string prepare_opening_hands( const Value &cards, Value &state, XorShift32 &rng, std::vector<Value> &events, bool initial = true, int force_redraw = -1 );
+bool opening_doll_choice(const Value &cards, Value &state, const Array &accepted, Value &pending, Value &continuation);
 std::string validate_snapshot_payload( const Value &snapshot, const Value &cards );
 
 bool typed_action_equivalent(const typed::Action &submitted, const typed::Action &candidate);

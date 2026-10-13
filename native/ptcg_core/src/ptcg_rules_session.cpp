@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <utility>
+#include <cstdio>
 
 
 namespace ptcg::ai {

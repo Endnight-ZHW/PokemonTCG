@@ -263,6 +263,35 @@ void check_known_hand_determinization(const json &cards_json) {
             &error)
             && error == "private_public_history",
         "information set accepted authoritative hidden identity history");
+
+    InformationSet unknown;
+    Value closed=known_hand_state(2,50);
+    closed["public_deck_keys"]=Value(Array{Value("custom"),Value("")});
+    require(unknown.capture(closed,1,catalog,decks,Value::make_array(),Value(Array{public_entry}),17,&error),
+        "unknown custom deck rejected a publicly known card");
+    const Value sample=unknown.sample_state(31);
+    require(sample==unknown.sample_state(31),"unknown deck sampling is not seed deterministic");
+    const auto &hidden=sample.find("players")->as_array()[0];
+    bool non_energy=false;
+    std::map<std::string,int> counts;
+    for (const char *zone:{"hand","deck","prizes"}) {
+        const auto *entries=hidden.find(zone);if (!entries) continue;
+        for (const auto &id:entries->as_array()) {
+            const auto *card=catalog.find(id.string_or());require(card!=nullptr,"unknown sampler invented a card");
+            const auto type=card->find("supertype")->string_or();
+            // The known Trainer in hand must not make this assertion pass:
+            // unseen deck/prize cards must also sample the public card pool.
+            non_energy=non_energy || (std::string(zone)!="hand" && type!="Energy");
+            const auto name=card->find("name")->string_or();
+            ++counts[name];
+            bool basic_energy=false;
+            if (const auto *subtypes=card->find("subtypes")) for (const auto &sub:subtypes->as_array()) basic_energy=basic_energy || (type=="Energy" && sub.string_or()=="Basic");
+            require(basic_energy || counts[name]<=4,"unknown deck violated same-name copy limit");
+        }
+    }
+    require(non_energy,"unknown deck became only basic Energy");
+    require(std::any_of(hidden.find("hand")->as_array().begin(),hidden.find("hand")->as_array().end(),
+        [](const Value &id){return id.string_or()=="sv1-151";}),"unknown sampling forgot publicly known hand identity");
 }
 
 Value deck_browse_ref(

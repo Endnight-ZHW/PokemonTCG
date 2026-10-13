@@ -28,10 +28,10 @@ func _run_protocol_boundaries() -> void:
 		_expect(WireValue.is_integer(integer), "Wire integer validation rejected a supported native/JSON number")
 	for invalid in [true, false, "1", null, 0.5, NAN, INF, -INF, -2147483649.0, 2147483648.0]:
 		_expect(not WireValue.is_integer(invalid), "Wire integer validation accepted an ambiguous or out-of-range value")
-	var envelope := ProtocolV6.envelope(ProtocolV6.PING, "contract", 0, 1)
+	var envelope := ProtocolV7.envelope(ProtocolV7.PING, "contract", 0, 1)
 	var legacy_envelope: Dictionary = envelope.duplicate(true)
 	legacy_envelope["protocol_version"] = 4
-	var legacy_validation := ProtocolV6.validate(legacy_envelope)
+	var legacy_validation := ProtocolV7.validate(legacy_envelope)
 	_expect(
 		not bool(legacy_validation.get("ok", false))
 		and str(legacy_validation.get("code", "")) == "protocol_mismatch",
@@ -39,7 +39,7 @@ func _run_protocol_boundaries() -> void:
 	)
 	var protocol_five_envelope: Dictionary = envelope.duplicate(true)
 	protocol_five_envelope["protocol_version"] = 5
-	var protocol_five_validation := ProtocolV6.validate(protocol_five_envelope)
+	var protocol_five_validation := ProtocolV7.validate(protocol_five_envelope)
 	_expect(
 		not bool(protocol_five_validation.get("ok", false))
 		and str(protocol_five_validation.get("code", "")) == "protocol_mismatch"
@@ -56,14 +56,14 @@ func _run_protocol_boundaries() -> void:
 		var malformed: Dictionary = envelope.duplicate(true)
 		malformed[row["field"]] = row["value"]
 		_expect(
-			not bool(ProtocolV6.validate(malformed).get("ok", false)),
+			not bool(ProtocolV7.validate(malformed).get("ok", false)),
 			"envelope accepted malformed %s" % row["field"],
 		)
 
 	var fingerprint_controller := NetworkMatchController.new()
 	var match_fingerprint := fingerprint_controller._core_fingerprint()
 	_expect(
-		ProtocolV6._valid_sha256(match_fingerprint)
+		ProtocolV7._valid_sha256(match_fingerprint)
 		and match_fingerprint != str(CardCatalog.shared().card_ir.get(
 			"contract_fingerprint", ""))
 		and match_fingerprint != str(CardCatalog.shared().card_ir.get(
@@ -80,23 +80,23 @@ func _run_protocol_boundaries() -> void:
 		"resume": false,
 	}
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.WELCOME, welcome_payload).get("ok", false))
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.WELCOME, welcome_payload).get("ok", false))
 		and fingerprint_controller._peer_core_compatible(welcome_payload),
 		"valid content/rules match fingerprint was rejected",
 	)
 	var malformed_fingerprint: Dictionary = welcome_payload.duplicate(true)
 	malformed_fingerprint["core_fingerprint"] = "not-a-sha256"
 	_expect(
-		not bool(ProtocolV6.validate_payload(
-			ProtocolV6.WELCOME, malformed_fingerprint).get("ok", false)),
+		not bool(ProtocolV7.validate_payload(
+			ProtocolV7.WELCOME, malformed_fingerprint).get("ok", false)),
 		"malformed content/rules match fingerprint was accepted",
 	)
 	var missing_fingerprint: Dictionary = welcome_payload.duplicate(true)
 	missing_fingerprint.erase("core_fingerprint")
 	_expect(
-		not bool(ProtocolV6.validate_payload(
-			ProtocolV6.WELCOME, missing_fingerprint).get("ok", false)),
+		not bool(ProtocolV7.validate_payload(
+			ProtocolV7.WELCOME, missing_fingerprint).get("ok", false)),
 		"missing match fingerprint was accepted",
 	)
 	var mismatched_fingerprint: Dictionary = welcome_payload.duplicate(true)
@@ -116,7 +116,7 @@ func _run_protocol_boundaries() -> void:
 		return
 	var view := session.view_for(0)
 	_expect(
-		bool(ProtocolV6.validate_payload(ProtocolV6.STATE_UPDATE, view).get("ok", false)),
+		bool(ProtocolV7.validate_payload(ProtocolV7.STATE_UPDATE, view).get("ok", false)),
 		"authoritative fixture view is not protocol-valid",
 	)
 	_run_wire_integer_action_contract()
@@ -136,8 +136,8 @@ func _run_protocol_boundaries() -> void:
 		Dictionary(Dictionary(wire_locked_view.get("state", {})).get("your", {})),
 	)
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE,
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE,
 			wire_locked_view,
 		).get("ok", false))
 		and parsed_locked_player.attack_locked_names.get("岩窟冲撞") is int
@@ -155,8 +155,8 @@ func _run_protocol_boundaries() -> void:
 	var hidden_view: Dictionary = view.duplicate(true)
 	hidden_view["state"]["opponent"]["active"] = {"hidden": true}
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, hidden_view
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, hidden_view
 		).get("ok", false)),
 		"strict hidden setup placeholder was rejected",
 	)
@@ -185,8 +185,8 @@ func _run_protocol_boundaries() -> void:
 	var complete_visible_view: Dictionary = visible_setup_view.duplicate(true)
 	complete_visible_view["state"]["setup_stage"] = GameState.SETUP_COMPLETE
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE,
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE,
 			complete_visible_view,
 		).get("ok", false)),
 		"visible opponent Pokemon was rejected after setup completion",
@@ -214,8 +214,8 @@ func _run_protocol_boundaries() -> void:
 		and str(Dictionary(setup_events[0]).get("event_type", "")) == "coin_flip"
 		and str(Dictionary(setup_events[0]).get("data", {}).get("purpose", ""))
 		== "setup_turn_order"
-		and bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE,
+		and bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE,
 			random_view,
 		).get("ok", false)),
 		"random setup coin was not public and protocol-valid",
@@ -227,8 +227,8 @@ func _run_protocol_boundaries() -> void:
 	draw_view["state"]["result_status"] = "DRAW"
 	draw_view["state"]["result_reason"] = "equal_win_conditions"
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, draw_view
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, draw_view
 		).get("ok", false)),
 		"DRAW with winner=-1 was rejected",
 	)
@@ -246,8 +246,8 @@ func _run_protocol_boundaries() -> void:
 		int(view["state"]["revision"]),
 	).to_dict()
 	_expect(
-		not bool(ProtocolV6.validate_payload(
-			ProtocolV6.ACTION_SUBMIT,
+		not bool(ProtocolV7.validate_payload(
+			ProtocolV7.ACTION_SUBMIT,
 			{"action": malformed_action},
 		).get("ok", false)),
 		"action payload accepted a non-integer hand index",
@@ -281,8 +281,8 @@ func _run_protocol_boundaries() -> void:
 	var choice_view: Dictionary = view.duplicate(true)
 	choice_view["choice_request"] = choice_request
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, choice_view
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, choice_view
 		).get("ok", false)),
 		"valid choice request fixture was rejected",
 	)
@@ -301,8 +301,8 @@ func _run_protocol_boundaries() -> void:
 	var source_zone_choice: Dictionary = choice_view.duplicate(true)
 	source_zone_choice["choice_request"]["presentation"]["source_zone"] = "hand"
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, source_zone_choice
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, source_zone_choice
 		).get("ok", false)),
 		"valid choice metadata source_zone was rejected",
 	)
@@ -336,8 +336,8 @@ func _run_protocol_boundaries() -> void:
 		},
 	).to_dict()
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, deck_browse_view
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, deck_browse_view
 		).get("ok", false)),
 		"owner-only 60-card deck browse contract was rejected",
 	)
@@ -376,8 +376,8 @@ func _run_protocol_boundaries() -> void:
 		{"domain": "knockout", "purpose": "select_prize"},
 	).to_dict()
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, prize_choice_view
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, prize_choice_view
 		).get("ok", false)),
 		"identity-free Prize ChoiceView was rejected",
 	)
@@ -470,8 +470,8 @@ func _run_protocol_boundaries() -> void:
 	retreat_wire_view["wait_context"] = null
 	var parsed_retreat := ChoiceView.from_dict(retreat_wire)
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, retreat_wire_view,
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, retreat_wire_view,
 		).get("ok", false))
 		and parsed_retreat.presentation.get("required_units") is int
 		and int(parsed_retreat.presentation.get("required_units", 0)) == 1
@@ -503,10 +503,10 @@ func _run_protocol_boundaries() -> void:
 		"non-chooser did not receive the coarse attachment wait context",
 	)
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, waiting_view
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, waiting_view
 		).get("ok", false)),
-		"coarse attachment wait context was rejected by ProtocolV6",
+		"coarse attachment wait context was rejected by ProtocolV7",
 	)
 	var malformed_wait_view: Dictionary = waiting_view.duplicate(true)
 	malformed_wait_view["wait_context"]["card_ids"] = ["sv1-ener-2"]
@@ -625,8 +625,8 @@ func _run_protocol_boundaries() -> void:
 	var presentation_view: Dictionary = view.duplicate(true)
 	presentation_view["presentation_events"] = [presentation_event, cross_owner_move]
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, presentation_view
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, presentation_view
 		).get("ok", false)),
 		"valid presentation event fixture was rejected",
 	)
@@ -658,8 +658,8 @@ func _run_protocol_boundaries() -> void:
 		},
 	}, int(view["state"]["revision"]))]
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, reveal_view
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, reveal_view
 		).get("ok", false)),
 		"valid structured public reveal event was rejected",
 	)
@@ -677,8 +677,8 @@ func _run_protocol_boundaries() -> void:
 	}
 	empty_reveal["presentation_events"][0]["amount"] = 0
 	_expect(
-		bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, empty_reveal
+		bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, empty_reveal
 		).get("ok", false)),
 		"valid zero-card public reveal event was rejected",
 	)

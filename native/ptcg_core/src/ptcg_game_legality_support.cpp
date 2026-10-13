@@ -1,6 +1,7 @@
 #include "ptcg_game.hpp"
 #include "ptcg_game_internal.hpp"
 #include "ptcg_rules_internal.hpp"
+#include "ptcg_card_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -136,6 +137,7 @@ bool card_matches_filter(
     if (
         normalized.rfind("basic_", 0) == 0
         && normalized != "basic_energy"
+        && normalized != "basic_pokemon"
     ) {
         basic_typed_energy = true;
         normalized = normalized.substr(6);
@@ -342,6 +344,7 @@ bool pokemon_matches_type(
     if (required_type.empty()) {
         return true;
     }
+    if (card_runtime::rule(cards,string_arg(pokemon_value,"card_id"),"setup_pokemon")) return required_type=="Colorless";
     const Value *card = card_definition(
         cards,
         string_arg(pokemon_value, "card_id")
@@ -409,10 +412,7 @@ bool has_energy_target(
                         cards,
                         string_arg(*row.second, "card_id")
                     ) == nullptr
-                    || !is_basic_pokemon(*card_definition(
-                        cards,
-                        string_arg(*row.second, "card_id")
-                    ))
+                    || !card_runtime::basic_in_play(cards,*row.second)
                 )
             ) {
                 return false;
@@ -481,6 +481,10 @@ bool effect_has_visible_target(
     ) ? *args_value : empty_args;
     const Value &owner = player(state, actor);
     const Value &opponent = player(state, 1 - actor);
+    if (op=="register_rule" && string_arg(args,"effect")=="setup_pokemon") return false;
+    if (op=="require_condition") return rules_detail::condition_applies(cards,state,actor,string_arg(args,"condition"));
+    if (((op=="search_cards" && string_arg(args,"from_zone","deck")=="discard" && string_arg(args,"destination","hand")=="hand")
+        || op=="recover_clara") && card_runtime::board_rule(cards,state,1-actor,"block_discard_recovery")) return false;
     const std::int64_t visible_hand_size = static_cast<std::int64_t>(
         required(owner, "hand").as_array().size());
     const bool source_is_hand_card = source_hand_index
@@ -561,7 +565,7 @@ bool effect_has_visible_target(
         );
         if (
             destination == "bench"
-            && occupied_bench_count(owner) >= 5
+            && static_cast<std::int64_t>(occupied_bench_count(owner)) >= card_runtime::bench_limit(cards,state,actor)
         ) {
             return false;
         }
@@ -876,6 +880,10 @@ bool effect_list_has_visible_target(
     }
     bool has_visible_effect = false;
     for (const Value &effect : effects.as_array()) {
+        if (string_arg(effect,"op")=="require_condition") {
+            if (!effect_has_visible_target(cards,state,actor,effect,source_hand_index,source_slot)) return false;
+            continue;
+        }
         if (string_arg(effect, "op") == "discard_cards") {
             if (!effect_has_visible_target(cards, state, actor, effect, source_hand_index, source_slot))
                 return false;

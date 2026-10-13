@@ -121,7 +121,7 @@ func poll() -> Array[Dictionary]:
 		return _drain_events()
 	while socket != null and socket.get_available_packet_count() > 0:
 		var bytes := socket.get_packet()
-		if bytes.size() > ProtocolV6.MAX_MESSAGE_BYTES:
+		if bytes.size() > ProtocolV7.MAX_MESSAGE_BYTES:
 			events.append({"type": "transport_error", "code": "message_too_large"})
 			continue
 		var parsed: Variant = JSON.parse_string(bytes.get_string_from_utf8())
@@ -195,7 +195,7 @@ func send(message: Dictionary) -> bool:
 	if socket == null or not connected:
 		return false
 	var text := JSON.stringify(message)
-	if text.to_utf8_buffer().size() > ProtocolV6.MAX_MESSAGE_BYTES:
+	if text.to_utf8_buffer().size() > ProtocolV7.MAX_MESSAGE_BYTES:
 		return false
 	return socket.send_text(text) == OK
 

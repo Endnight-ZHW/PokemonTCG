@@ -45,8 +45,8 @@ func _run_terminal_state_contract() -> void:
 		"finishing host did not retry an unacknowledged terminal snapshot",
 	)
 	var retried_terminal_send_count := host_transport.sent_messages.size()
-	host._handle_message(ProtocolV6.envelope(
-		ProtocolV6.RESYNC_REQUEST,
+	host._handle_message(ProtocolV7.envelope(
+		ProtocolV7.RESYNC_REQUEST,
 		"terminal-contract",
 		1,
 		1,
@@ -91,7 +91,7 @@ func _run_terminal_state_contract() -> void:
 		and client.terminal_revision == terminal_revision
 		and not client_transport.sent_messages.is_empty()
 		and client_transport.sent_messages[-1]["message_type"]
-		== ProtocolV6.PONG
+		== ProtocolV7.PONG
 		and int(client_transport.sent_messages[-1]["state_revision"])
 		== terminal_revision,
 		"client did not acknowledge the terminal state",
@@ -120,8 +120,8 @@ func _run_terminal_state_contract() -> void:
 		"client treated the acknowledged terminal close as a reconnectable failure",
 	)
 
-	var remote_repeat := ProtocolV6.envelope(
-		ProtocolV6.SURRENDER,
+	var remote_repeat := ProtocolV7.envelope(
+		ProtocolV7.SURRENDER,
 		"terminal-contract",
 		1,
 		3,
@@ -161,8 +161,8 @@ func _run_submission_correlation_contract() -> void:
 	var remote_action: GameAction = legal_actions[0]
 	remote_action.action_id = "remote-action:success"
 	remote_action.actor = 1
-	host_controller._handle_message(ProtocolV6.envelope(
-		ProtocolV6.ACTION_SUBMIT,
+	host_controller._handle_message(ProtocolV7.envelope(
+		ProtocolV7.ACTION_SUBMIT,
 		"correlation-contract",
 		1,
 		1,
@@ -173,7 +173,7 @@ func _run_submission_correlation_contract() -> void:
 	))
 	_expect(
 		not host_transport.sent_messages.is_empty()
-		and host_transport.sent_messages[-1]["message_type"] == ProtocolV6.STATE_UPDATE
+		and host_transport.sent_messages[-1]["message_type"] == ProtocolV7.STATE_UPDATE
 		and host_transport.sent_messages[-1]["action_id"] == remote_action.action_id,
 		"successful authoritative state did not echo action_id",
 	)
@@ -185,8 +185,8 @@ func _run_submission_correlation_contract() -> void:
 
 	var rejected_action := remote_action.to_dict()
 	rejected_action["action_id"] = "remote-action:rejected"
-	host_controller._handle_message(ProtocolV6.envelope(
-		ProtocolV6.ACTION_SUBMIT,
+	host_controller._handle_message(ProtocolV7.envelope(
+		ProtocolV7.ACTION_SUBMIT,
 		"correlation-contract",
 		1,
 		2,
@@ -198,14 +198,14 @@ func _run_submission_correlation_contract() -> void:
 	var rejection_index := host_transport.sent_messages.size() - 2
 	_expect(
 		rejection_index >= 0
-		and host_transport.sent_messages[rejection_index]["message_type"] == ProtocolV6.ERROR
+		and host_transport.sent_messages[rejection_index]["message_type"] == ProtocolV7.ERROR
 		and host_transport.sent_messages[rejection_index]["action_id"]
 		== rejected_action["action_id"],
 		"authoritative rejection did not echo action_id",
 	)
 	var heartbeat_send_count := host_transport.sent_messages.size()
-	host_controller._handle_message(ProtocolV6.envelope(
-		ProtocolV6.PONG,
+	host_controller._handle_message(ProtocolV7.envelope(
+		ProtocolV7.PONG,
 		"correlation-contract",
 		1,
 		3,
@@ -299,8 +299,8 @@ func _run_submission_correlation_contract() -> void:
 	advanced_view["state"]["revision"] = session.state.revision + 1
 	advanced_view["legal_action_groups"] = []
 	advanced_view["legal_action_error"] = ""
-	uncorrelated_client._handle_message(ProtocolV6.envelope(
-		ProtocolV6.STATE_UPDATE,
+	uncorrelated_client._handle_message(ProtocolV7.envelope(
+		ProtocolV7.STATE_UPDATE,
 		"correlation-contract",
 		0,
 		2,
@@ -321,15 +321,15 @@ func _run_submission_correlation_contract() -> void:
 	error_client._begin_pending_submission(
 		"action", "rejected-client-action", "", session.state.revision
 	)
-	error_client._handle_message(ProtocolV6.envelope(
-		ProtocolV6.ERROR,
+	error_client._handle_message(ProtocolV7.envelope(
+		ProtocolV7.ERROR,
 		"correlation-contract",
 		0,
 		1,
 		session.state.revision,
 		"rejected-client-action",
 		"",
-		ProtocolV6.error_payload("illegal_action", "rejected"),
+		ProtocolV7.error_payload("illegal_action", "rejected"),
 	))
 	var error_events := error_client._drain_events()
 	_expect(
@@ -345,15 +345,15 @@ func _run_submission_correlation_contract() -> void:
 	nonmatching_error_client._begin_pending_submission(
 		"action", "still-pending-action", "", session.state.revision
 	)
-	nonmatching_error_client._handle_message(ProtocolV6.envelope(
-		ProtocolV6.ERROR,
+	nonmatching_error_client._handle_message(ProtocolV7.envelope(
+		ProtocolV7.ERROR,
 		"correlation-contract",
 		0,
 		1,
 		session.state.revision,
 		"different-action",
 		"",
-		ProtocolV6.error_payload("illegal_action", "unrelated"),
+		ProtocolV7.error_payload("illegal_action", "unrelated"),
 	))
 	var nonmatching_error_events := nonmatching_error_client._drain_events()
 	_expect(
@@ -368,15 +368,15 @@ func _run_submission_correlation_contract() -> void:
 	uncorrelated_error_client._begin_pending_submission(
 		"action", "heartbeat-safe-action", "", session.state.revision
 	)
-	uncorrelated_error_client._handle_message(ProtocolV6.envelope(
-		ProtocolV6.ERROR,
+	uncorrelated_error_client._handle_message(ProtocolV7.envelope(
+		ProtocolV7.ERROR,
 		"correlation-contract",
 		0,
 		1,
 		session.state.revision,
 		"",
 		"",
-		ProtocolV6.error_payload("protocol_notice", "uncorrelated"),
+		ProtocolV7.error_payload("protocol_notice", "uncorrelated"),
 	))
 	var uncorrelated_error_events := uncorrelated_error_client._drain_events()
 	_expect(
@@ -410,15 +410,15 @@ func _run_submission_correlation_contract() -> void:
 	rejected_request_client._begin_pending_submission(
 		"choice", "", "choice-request:rejected", session.state.revision
 	)
-	rejected_request_client._handle_message(ProtocolV6.envelope(
-		ProtocolV6.ERROR,
+	rejected_request_client._handle_message(ProtocolV7.envelope(
+		ProtocolV7.ERROR,
 		"correlation-contract",
 		0,
 		1,
 		session.state.revision,
 		"",
 		"choice-request:rejected",
-		ProtocolV6.error_payload("illegal_choice", "rejected"),
+		ProtocolV7.error_payload("illegal_choice", "rejected"),
 	))
 	var rejected_request_events := rejected_request_client._drain_events()
 	_expect(
@@ -455,7 +455,7 @@ func _run_submission_correlation_contract() -> void:
 	_expect(
 		timeout_transport.sent_messages.size() == 1
 		and timeout_transport.sent_messages[0]["message_type"]
-		== ProtocolV6.RESYNC_REQUEST,
+		== ProtocolV7.RESYNC_REQUEST,
 		"pending timeout did not request exactly one resync",
 	)
 	_expect(
@@ -463,15 +463,15 @@ func _run_submission_correlation_contract() -> void:
 		and timeout_transport.sent_messages.size() == 1,
 		"pending timeout emitted repeatedly before resync completed",
 	)
-	timeout_client._handle_message(ProtocolV6.envelope(
-		ProtocolV6.ERROR,
+	timeout_client._handle_message(ProtocolV7.envelope(
+		ProtocolV7.ERROR,
 		"correlation-contract",
 		0,
 		1,
 		session.state.revision,
 		"timed-out-action",
 		"",
-		ProtocolV6.error_payload("illegal_action", "late rejection"),
+		ProtocolV7.error_payload("illegal_action", "late rejection"),
 	))
 	_expect(
 		timeout_client.submission_locked()
@@ -506,8 +506,8 @@ func _run_recovery_contract() -> void:
 	client.transport = FakeNetworkTransport.new()
 	# A structurally valid gap establishes a new receive fence and sends one
 	# RESYNC request.  The following reply can then be accepted at sequence 4.
-	client._handle_message(ProtocolV6.envelope(
-		ProtocolV6.PING,
+	client._handle_message(ProtocolV7.envelope(
+		ProtocolV7.PING,
 		"recovery-room",
 		0,
 		3,
@@ -522,11 +522,11 @@ func _run_recovery_contract() -> void:
 		transport != null
 		and transport.sent_messages.size() == 1
 		and str(transport.sent_messages[0].get("message_type", ""))
-		== ProtocolV6.RESYNC_REQUEST,
+		== ProtocolV7.RESYNC_REQUEST,
 		"sequence gap did not request exactly one recovery snapshot",
 	)
-	client._handle_message(ProtocolV6.envelope(
-		ProtocolV6.STATE_UPDATE,
+	client._handle_message(ProtocolV7.envelope(
+		ProtocolV7.STATE_UPDATE,
 		"recovery-room",
 		0,
 		4,
@@ -552,12 +552,13 @@ func _run_recovery_contract() -> void:
 	host.room_id = "recovery-room"
 	host.local_deck_key = "fire"
 	host.remote_deck_key = "water"
+	host.remote_deck_digest = DeckLibrary.deck_digest(CardCatalog.shared().get_deck("water"))
 	host.session = session
 	host.transport = FakeNetworkTransport.new()
 	host.connection_phase = NetworkMatchController.ConnectionPhase.LOBBY
 	host.reconnecting = true
 	var revision_before := session.state.revision
-	host._handle_host_message({}, ProtocolV6.DECK_SELECT, {
+	host._handle_host_message({}, ProtocolV7.DECK_SELECT, {
 		"deck_key": "water",
 		"rules_version": AppState.RULES_SCHEMA_VERSION,
 		"action_version": AppState.ACTION_SCHEMA_VERSION,
@@ -601,7 +602,7 @@ func _run_recovery_contract() -> void:
 	locked_rules_host.session = AuthoritativeSession.new("rules-lock-contract")
 	locked_rules_host.transport = FakeNetworkTransport.new()
 	locked_rules_host.connection_phase = NetworkMatchController.ConnectionPhase.LOBBY
-	locked_rules_host._handle_host_message({}, ProtocolV6.DECK_SELECT, {
+	locked_rules_host._handle_host_message({}, ProtocolV7.DECK_SELECT, {
 		"deck_key": "water",
 		"rules_version": AppState.RULES_SCHEMA_VERSION,
 		"action_version": AppState.ACTION_SCHEMA_VERSION,
@@ -616,7 +617,7 @@ func _run_recovery_contract() -> void:
 		and locked_rules_host.remote_deck_key.is_empty()
 		and not locked_transport.sent_messages.is_empty()
 		and str(locked_transport.sent_messages[-1].get("message_type", ""))
-		== ProtocolV6.ERROR
+		== ProtocolV7.ERROR
 		and str(Dictionary(locked_transport.sent_messages[-1].get(
 			"payload", {})).get("code", "")) == "rules_options_mismatch",
 		"challenger was able to change the host-locked matchup option",
@@ -635,8 +636,8 @@ func _run_retired_transport_batch_contract() -> void:
 		{"type": "connected", "room_id": "retired-transport-contract"},
 		{
 			"type": "message",
-			"message": ProtocolV6.envelope(
-				ProtocolV6.PING,
+			"message": ProtocolV7.envelope(
+				ProtocolV7.PING,
 				"retired-transport-contract",
 				1,
 				1,
@@ -651,6 +652,7 @@ func _run_retired_transport_batch_contract() -> void:
 	host.room_id = "retired-transport-contract"
 	host.local_deck_key = "fire"
 	host.remote_deck_key = "water"
+	host.remote_deck_digest = DeckLibrary.deck_digest(CardCatalog.shared().get_deck("water"))
 	host.transport_kind = "relay"
 	host.relay_url = "ws://127.0.0.1:1"
 	host.transport = transport
@@ -703,8 +705,8 @@ func _run_modifier_wire_number_contract() -> void:
 	var relay_roundtrip: Variant = JSON.parse_string(JSON.stringify(view))
 	_expect(
 		relay_roundtrip is Dictionary
-		and bool(ProtocolV6.validate_payload(
-			ProtocolV6.STATE_UPDATE, relay_roundtrip).get("ok", false)),
+		and bool(ProtocolV7.validate_payload(
+			ProtocolV7.STATE_UPDATE, relay_roundtrip).get("ok", false)),
 		"relay JSON roundtrip rejected integral Modifier descriptor numbers",
 	)
 	if not relay_roundtrip is Dictionary:

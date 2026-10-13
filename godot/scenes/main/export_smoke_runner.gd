@@ -35,9 +35,9 @@ func _run_native_runtime() -> Dictionary:
 
 
 func _run_network_runtime() -> Dictionary:
-	if ProtocolV6.VERSION != 6:
+	if ProtocolV7.VERSION != 7:
 		return _failure(3, "PHASE6_EXPORT_NETWORK_FAILED")
-	return _success("PHASE6_EXPORT_NETWORK_OK protocol=6 transports=enet,websocket")
+	return _success("PHASE6_EXPORT_NETWORK_OK protocol=7 transports=enet,websocket")
 
 
 func _run_release_runtime(services: Dictionary) -> Dictionary:
@@ -86,6 +86,7 @@ func _load_release_ui_resources() -> bool:
 	for path in [
 		"res://scenes/title/title_page.tscn",
 		"res://scenes/decks/deck_select_page.tscn",
+		"res://scenes/decks/deck_editor_page.tscn",
 		"res://scenes/network/network_lobby_page.tscn",
 		"res://scenes/battle/components/battle_table.tscn",
 		"res://scenes/end/victory_screen.tscn",

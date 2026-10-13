@@ -69,7 +69,7 @@ struct Pair {
 
 json frame(const std::string &room, int sender, int sequence, const char *phase) {
     return {
-        {"protocol_version", 6}, {"message_type", "ping"}, {"room_id", room},
+        {"protocol_version", 7}, {"message_type", "ping"}, {"room_id", room},
         {"sender", sender}, {"sequence", sequence}, {"state_revision", -1},
         {"action_id", ""},
         {"request_id", std::string(phase) + "-" + std::to_string(sequence)},

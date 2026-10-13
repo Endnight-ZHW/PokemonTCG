@@ -12,6 +12,10 @@ def _consume_path_argument(name, default):
 godot_cpp_dir = _consume_path_argument("godot_cpp_dir", "godot-cpp")
 project_root = _consume_path_argument("project_root", "../..")
 
+# The rules core uses exceptions to reject malformed content and transactions.
+# /EHsc alone does not undo godot-cpp's _HAS_EXCEPTIONS=0: that changes MSVC's
+# std::exception layout and can crash the catch boundary on a content error.
+ARGUMENTS["disable_exceptions"] = "false"
 env = SConscript(os.path.join(godot_cpp_dir, "SConstruct"))
 repository_root = os.path.abspath(os.path.join("..", "..", ".."))
 rules_root = os.path.join(repository_root, "native", "ptcg_core")
